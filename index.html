@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Learning Hub</title>
+<meta name="description" content="Interactive, animated lessons that take you from the basics to expert-level AI, one topic at a time.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="home">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="hero">
+      <div class="big" style="background:#2386362e">🧭</div>
+      <div>
+        <h1>Learn how AI really works — by moving the data yourself</h1>
+        <p>Each topic is one page that climbs from beginner to expert. Every page walks the same pipeline — preprocessing, computation, inference, post-processing and storage — and lets you edit the equations and watch the result animate.</p>
+        <div class="chips"><a class="btn primary" href="machine-learning.html">Start with Machine Learning</a><a class="btn" href="mathematics.html">Mathematics for AI</a></div>
+      </div>
+    </div>
+
+    <section class="lesson" id="pipeline" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>The pipeline every topic follows</h2></div>
+      <div class="prose"><p>Data flows left to right. Click any stage to see what happens there, which hardware does the work, and where results are stored.</p></div>
+      <div data-lab="pipeline" data-id="hub"></div>
+    </section>
+
+    <section class="lesson" id="topics">
+      <div class="lesson-head"><h2>Topics</h2></div>
+      <div class="prose"><p>Two topics are live in this first draft. The rest are planned and will appear here as they are written.</p></div>
+      <div class="grid" id="topic-grid"></div>
+    </section>
+
+    <section class="lesson" id="how">
+      <div class="lesson-head"><h2>How a topic page is organised</h2></div>
+      <table class="tbl">
+        <tr><th>Level</th><th>You learn</th><th>You play with</th></tr>
+        <tr><td>1 · Foundations</td><td>The idea and the pipeline</td><td>Animated pipeline</td></tr>
+        <tr><td>2 · Data &amp; basics</td><td>Representations, preprocessing</td><td>Editable transforms</td></tr>
+        <tr><td>3 · Core methods</td><td>Models, losses, gradients</td><td>Editable equations with live training</td></tr>
+        <tr><td>4 · Architectures</td><td>Deeper and richer models</td><td>Architecture playgrounds</td></tr>
+        <tr><td>5 · Expert</td><td>Evaluation, deployment, storage, trade-offs</td><td>Thresholds, compute and cost</td></tr>
+      </table>
+    </section>
+  </main>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

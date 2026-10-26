@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Machine Learning · AI Learning Hub</title>
+<meta name="description" content="Machine learning from data and preprocessing to training, neural networks, evaluation and production — with editable, animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › Machine Learning</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">🧠</div>
+      <div style="flex:1">
+        <h1>Machine Learning</h1>
+        <p>Programs that improve from examples instead of explicit rules. Climb from the big picture to production trade-offs, editing equations along the way.</p>
+        <div class="chips"><span class="chip">Preprocessing</span><span class="chip">Regression</span><span class="chip">Gradient descent</span><span class="chip">Neural networks</span><span class="chip">Evaluation</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div><small style="color:var(--muted)">≈ 45 min with the labs</small></div>
+    </div>
+
+    <section class="lesson" id="intro" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">Level 1</span><h2>What is ML &amp; the pipeline</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <p>Traditional software: <i>rules + data → answers</i>. Machine learning flips it: <i>data + answers → rules</i>. We pick a family of functions and let an algorithm find the parameters that fit our examples.</p>
+        <div class="eq">\hat y = f(x;\,\theta) \qquad \theta^\star = \arg\min_\theta \; \frac1N \sum_{i=1}^{N} \ell\big(f(x_i;\theta),\,y_i\big)</div>
+        <table class="tbl"><tr><th>Setting</th><th>You have</th><th>Typical goal</th></tr>
+          <tr><td>Supervised</td><td>inputs <code>x</code> and labels <code>y</code></td><td>predict price, class, risk</td></tr>
+          <tr><td>Unsupervised</td><td>only <code>x</code></td><td>cluster, compress, find structure</td></tr>
+          <tr><td>Reinforcement</td><td>rewards from interaction</td><td>choose actions (own topic later)</td></tr></table>
+        <h3 id="pipeline">The pipeline, step by step</h3>
+        <p>Every ML system, from a spreadsheet model to a giant neural network, is the same six-stage flow. Click a stage below for what it does, what hardware it uses and where it stores things.</p>
+      </div>
+      <div data-lab="pipeline" data-id="ml"></div>
+      <div class="takeaways"><h4>Key takeaways</h4><ul><li>ML = choose a model family, define a loss, optimise parameters.</li><li>Training and inference are different workloads with different compute and storage needs.</li><li>The loop never ends: monitoring feeds new data back in.</li></ul></div>
+    </section>
+
+    <section class="lesson" id="data" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">Level 2</span><h2>Data &amp; preprocessing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <p>Models do arithmetic, so features must be numeric and comparably scaled. Income in dollars (tens of thousands) beside age in years (tens) lets income dominate distances and make gradient descent zig-zag. Preprocessing fixes this.</p>
+        <div class="eq">x' = \frac{x-\mu}{\sigma} \qquad\qquad x' = \frac{x-x_{\min}}{x_{\max}-x_{\min}}</div>
+        <p>Try the lab: pick the skewed <b>income</b> feature, then switch between <i>Standardize</i>, <i>Log</i> and <i>Clip</i>. Notice that standardizing changes scale but not shape, while log changes the shape. You can also type your own formula.</p>
+      </div>
+      <div data-lab="preprocess"></div>
+      <div class="callout warn"><b>Avoid data leakage</b>Split into train/test <i>first</i>, compute <code>mean</code> and <code>std</code> on the training split only, then apply those same numbers to validation, test and production data.</div>
+      <div class="takeaways"><h4>Key takeaways</h4><ul><li>Scale for optimisation, transform for shape, clip for outliers.</li><li>Fit preprocessing on training data only, and store the fitted parameters with the model.</li></ul></div>
+    </section>
+
+    <section class="lesson" id="training" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">Level 3</span><h2>Models &amp; training</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <p>Training measures how wrong the model is (the loss), then nudges every parameter in the direction that reduces it. For regression the standard loss is mean squared error:</p>
+        <div class="eq">L(\theta)=\frac1N\sum_i\big(f(x_i;\theta)-y_i\big)^2 \qquad \theta \leftarrow \theta-\eta\,\nabla_\theta L</div>
+        <p>The learning rate <span class="tex">\eta</span> is the step size. Too small and training crawls; too large and it overshoots and diverges. <b>Edit the model equation</b> — the lab differentiates it numerically and fits whatever you write, so you can see underfitting (a line on a sine wave) and good fits (a sine on a sine wave).</p>
+      </div>
+      <div data-lab="regression"></div>
+      <div class="takeaways"><h4>Key takeaways</h4><ul><li>The model family sets what <i>can</i> be learned; optimisation decides what <i>is</i> learned.</li><li>Watch the loss curve: flat = stuck or converged, rising = learning rate too high.</li><li>The calculus behind the gradient is on the <a href="mathematics.html#calculus">Mathematics page</a>.</li></ul></div>
+    </section>
+
+    <section class="lesson" id="neural" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">Level 4</span><h2>Neural networks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <p>A neural network stacks layers: each one multiplies by a weight matrix, adds a bias, and applies a nonlinearity. Without the nonlinearity, many layers collapse into one linear map and could never separate a circle from its centre.</p>
+        <div class="eq">a^{(l)}=\phi\!\big(W^{(l)}a^{(l-1)}+b^{(l)}\big) \qquad \hat y=\sigma\!\big(W^{(L)}a^{(L-1)}+b^{(L)}\big)</div>
+        <p>Experiment: on <b>circle</b> or <b>spiral</b>, a network using only <i>x</i> and <i>y</i> needs hidden units; adding features like <i>x²</i> and <i>y²</i> can solve circle with almost none — that is feature engineering. Click the map to trace one point through the network.</p>
+      </div>
+      <div data-lab="nn"></div>
+      <div class="takeaways"><h4>Key takeaways</h4><ul><li>Depth and width add flexibility; good features reduce how much flexibility you need.</li><li>Activation choice changes training speed and the shape of the decision boundary.</li><li>Weights are the model's stored knowledge: line colour = sign, thickness = size.</li></ul></div>
+    </section>
+
+    <section class="lesson" id="evaluation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--pink)">Level 5</span><h2>Evaluation, inference &amp; post-processing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <p>At inference the model outputs a score. <b>Post-processing</b> turns it into a decision, usually with a threshold. Moving the threshold trades false positives against false negatives; the right point depends on what each mistake costs.</p>
+        <div class="eq">\text{precision}=\frac{TP}{TP+FP}\quad \text{recall}=\frac{TP}{TP+FN}\quad F_1=\frac{2\,P\,R}{P+R}</div>
+        <p>Drag the threshold and watch the dot slide along the ROC curve. Increase <i>d′</i> (a better model) and the whole curve bows toward the top-left corner.</p>
+      </div>
+      <div data-lab="threshold"></div>
+      <div class="takeaways"><h4>Key takeaways</h4><ul><li>A good score is not a good decision until the threshold is chosen for the real costs.</li><li>Accuracy hides problems when classes are imbalanced; check precision and recall.</li></ul></div>
+    </section>
+
+    <section class="lesson" id="production" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">Level 6 · Expert</span><h2>Computation &amp; storage</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <p>In production, the questions change from "is it accurate?" to "is it fast, cheap, reproducible and safe over time?"</p>
+        <table class="tbl">
+          <tr><th>Stage</th><th>Computation</th><th>Storage</th><th>Typical trade-off</th></tr>
+          <tr><td>Preprocessing</td><td>CPU, vectorised or distributed</td><td>Parquet, feature store</td><td>Same code for training and serving, or you get train/serve skew</td></tr>
+          <tr><td>Training</td><td>GPU/TPU, large batches, mixed precision</td><td>Checkpoints, experiment tracker, dataset versions</td><td>Bigger batch = faster, but needs tuned learning rate</td></tr>
+          <tr><td>Inference</td><td>Batching, quantization, distillation, edge devices</td><td>Model registry, warm cache</td><td>Latency vs throughput vs accuracy</td></tr>
+          <tr><td>Post-processing</td><td>CPU, trivial</td><td>Versioned rules and thresholds</td><td>Change thresholds without retraining</td></tr>
+          <tr><td>Monitoring</td><td>Stream or batch jobs</td><td>Prediction logs, drift metrics</td><td>Logging volume vs privacy</td></tr>
+        </table>
+        <div class="callout"><b>Drift</b>When live data stops resembling training data (new devices, seasons, behaviours), accuracy decays silently. Compare input distributions against training statistics — the same <code>mean</code> and <code>std</code> you saved during preprocessing.</div>
+      </div>
+    </section>
+
+    <section class="lesson" id="roadmap">
+      <div class="lesson-head"><h2>Coming next in this topic</h2></div>
+      <div class="grid">
+        <div class="card soon"><h3>Trees &amp; ensembles</h3><p>Random forests and gradient boosting, animated splits.</p></div>
+        <div class="card soon"><h3>Overfitting &amp; regularization</h3><p>Bias–variance, weight decay, early stopping.</p></div>
+        <div class="card soon"><h3>Clustering &amp; PCA</h3><p>k-means animation and dimensionality reduction.</p></div>
+        <div class="card soon"><h3>MLOps</h3><p>Pipelines, registries, CI/CD for models.</p></div>
+      </div>
+    </section>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>
