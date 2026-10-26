@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · Probability · Mathematics for AI</title>
+<meta name="description" content="Sample spaces, conditional probability and Bayes, random variables, key distributions, joint distributions and covariance, and the law of large numbers and CLT — built from coins and dice.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-math.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-math.js"></script>
+<script defer src="assets/labs-probability.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="math" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="mathematics.html">Mathematics for AI</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · Probability</h1>
+        <p>The mathematics of not being sure. A classifier never says "this is a cat"; it says "92% cat". A language model never picks "the" word; it spreads probability over 100,000 words. By the end you will read <span class="tex">P(y\mid x)</span> and <span class="tex">\mathbb E[\ell]</span> fluently and know why averaging noisy data works.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: sums, functions (Module 0)</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 3.1 ===================== -->
+    <section class="lesson" id="prob-basics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.1</span><h2>Probability &amp; counting</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You roll two fair dice. Is a total of 7 more likely than a total of 12? How much more likely — and what does "likely" even <i>mean</i> when each single roll is unpredictable?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Start with a coin. Before you flip it you do not know the result, but you do know <i>everything that could happen</i>: heads or tails. That complete list of possible results is the heart of probability. We call it the <b>sample space</b>, written <span class="tex">\Omega</span> (capital omega). For one coin, <span class="tex">\Omega=\{H,T\}</span>. For one die, <span class="tex">\Omega=\{1,2,3,4,5,6\}</span>. Each member of the list is an <b>outcome</b>.</p>
+        <p>An <b>event</b> is any question you can answer "yes" or "no" about the outcome: "the die is even", "the total is at least 10". Mathematically an event is simply a <i>subset</i> of <span class="tex">\Omega</span> — the outcomes for which the answer is yes. "Even" is the subset <span class="tex">\{2,4,6\}</span>.</p>
+        <p>Probability is a number between 0 and 1 attached to each event, measuring how much "weight" the event carries. 0 means impossible, 1 means certain. Where does the number come from? In the simplest and most important case, <b>all outcomes are equally likely</b> (a fair die, a well-shuffled deck). Then the weight of an event is just a <i>fraction of the list</i>:</p>
+        <div class="eq">P(A)=\frac{\text{number of outcomes in }A}{\text{number of outcomes in }\Omega}</div>
+        <p>So the whole problem becomes <b>counting</b>. There is a second, frequency meaning too: if you repeat the experiment many times, the fraction of times A happens settles near <span class="tex">P(A)</span>. Both meanings agree; the lab below shows them meeting.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: combine experiments by counting.</b> Flip a coin twice. Each flip has 2 results, and any result of the first can be followed by any result of the second, so there are <span class="tex">2\times2=4</span> outcomes: HH, HT, TH, TT. Five flips: <span class="tex">2^5=32</span> outcomes. Two dice: <span class="tex">6\times6=36</span> outcomes — that is the 6×6 grid in the lab. This "multiply the choices" rule is the <b>multiplication principle</b>.</p>
+        <div class="worked"><b>Worked example: total of two dice</b>
+          <p>The 36 outcomes (die 1, die 2) are equally likely. Count cells whose sum is 7: (1,6), (2,5), (3,4), (4,3), (5,2), (6,1), six cells. So <span class="tex">P(\text{sum}=7)=6/36=1/6</span>. Sum 12: only (6,6), so <span class="tex">1/36</span>. A 7 is six times as likely as a 12 — not because dice "prefer" 7, but because 7 can be built in six ways.</p>
+          <p>Sum at least 10: sum 10 has 3 cells, sum 11 has 2, sum 12 has 1, so <span class="tex">6/36=1/6</span>.</p></div>
+        <p><b>Step 2: the rules that make it consistent.</b> Any sensible definition of probability must obey three <b>axioms</b>:</p>
+        <ol>
+          <li>Never negative: <span class="tex">P(A)\ge0</span>.</li>
+          <li>Something happens: <span class="tex">P(\Omega)=1</span>.</li>
+          <li>Disjoint events add: if A and B cannot both happen (they share no outcome), <span class="tex">P(A\text{ or }B)=P(A)+P(B)</span>.</li>
+        </ol>
+        <p>Everything else follows. Two useful consequences:</p>
+        <ul>
+          <li><b>Complement:</b> <span class="tex">P(\text{not }A)=1-P(A)</span>. "At least one 6 in two dice" is awkward to count directly, but "no 6 at all" is easy: <span class="tex">5\times5=25</span> cells, so <span class="tex">P(\text{at least one 6})=1-25/36=11/36</span>.</li>
+          <li><b>Overlap correction:</b> if A and B may overlap, adding their probabilities counts the overlap twice, so subtract it once: <span class="tex">P(A\cup B)=P(A)+P(B)-P(A\cap B)</span>. Here <span class="tex">A\cup B</span> means "A or B (or both)" and <span class="tex">A\cap B</span> means "both".</li>
+        </ul>
+        <div class="worked"><b>Worked example: the overlap rule</b>
+          <p>A = "first die is 6" (6 cells), B = "sum is at least 10" (6 cells). Both: (6,4), (6,5), (6,6) = 3 cells. So <span class="tex">P(A\cup B)=6/36+6/36-3/36=9/36=1/4</span>. Check by looking at the grid: the union has 9 cells. ✓</p></div>
+        <p><b>Step 3: counting without listing.</b> Sometimes the list is too long to write. A <b>combination</b> counts the ways to choose <i>k</i> items out of <i>n</i> when order does not matter: <span class="tex">\binom nk=\dfrac{n!}{k!(n-k)!}</span>. Here <span class="tex">n!=n(n-1)\cdots1</span> (the product of the whole numbers up to <i>n</i>; <span class="tex">0!=1</span>). Example: in 5 flips, which 2 of the 5 positions are heads? <span class="tex">\binom52=\frac{5\cdot4}{2\cdot1}=10</span> ways, out of 32 equally likely sequences, so <span class="tex">P(\text{exactly 2 heads})=10/32=5/16=0.3125</span>.</p>
+        <p><b>Step 4: independence.</b> Two events are <b>independent</b> when learning that one happened tells you nothing about the other. The precise test is that probabilities multiply:</p>
+        <div class="eq">A\perp B\iff P(A\cap B)=P(A)\,P(B)</div>
+        <div class="worked"><b>Worked example: independent or not?</b>
+          <p>A = "die 1 shows 6", B = "die 2 shows 6". <span class="tex">P(A)=P(B)=1/6</span> and <span class="tex">P(A\cap B)=1/36=\frac16\cdot\frac16</span>. Independent ✓ (two separate dice do not talk to each other).</p>
+          <p>Now A = "die 1 shows 6", B = "sum at least 10". <span class="tex">P(A)P(B)=\frac16\cdot\frac16=\frac1{36}</span>, but <span class="tex">P(A\cap B)=3/36</span>. Not equal, so they are <i>dependent</i>: a 6 on the first die makes a big total much more likely.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P:\ \text{events}\to[0,1],\quad P(\Omega)=1,\quad P\Big(\bigcup_i A_i\Big)=\sum_i P(A_i)\ \text{ for pairwise disjoint }A_i</div>
+        <table class="sym">
+          <tr><td>Ω</td><td>sample space: the set of all possible outcomes</td></tr>
+          <tr><td>A, B</td><td>events: subsets of Ω</td></tr>
+          <tr><td>P(A)</td><td>probability of A, a number in [0, 1]</td></tr>
+          <tr><td>A ∪ B</td><td>union: A or B or both</td></tr>
+          <tr><td>A ∩ B</td><td>intersection: both A and B</td></tr>
+          <tr><td>Aᶜ (or "not A")</td><td>complement: everything in Ω outside A; P = 1 − P(A)</td></tr>
+          <tr><td>(n choose k)</td><td>number of ways to choose k items from n, order ignored</td></tr>
+          <tr><td>A ⟂ B</td><td>A and B are independent</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the 36 outcomes</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With A = "sum = 7", count the blue cells (6) and read <span class="tex">P(A)=6/36</span>. Let the rolls run: the blue line wanders at first, then settles near the green dashed line. Press "+100 now" a few times to see it tighten.</li>
+        <li>Set B = "sum = 8". The two events share no cell: <i>mutually exclusive</i>, yet the readout says they are not independent. Knowing the sum is 7 makes 8 impossible!</li>
+        <li>Set A = "first die = 6" and B = "sum ≥ 10": the readout reports dependence (3/36 versus 1/36). Now try A = "sum = 7" with B = "first die = 6": independent, even though the events clearly overlap. Which other pairs in the menus are independent?</li>
+        <li>Click cells in the grid to build your own event and read its probability as (cells)/36.</li></ol></div>
+      <div data-lab="probdice"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The gambler's fallacy.</b> After five heads in a row, "tails is due" is false. The coin has no memory: flips are independent, so <span class="tex">P(\text{next}=H)=1/2</span> still. (Five heads in a row <i>was</i> unlikely, 1/32, but that was before you saw them.) The frequency settles down because later flips <i>dilute</i> the early streak, not because they compensate.</li>
+          <li><b>Independent is not the same as mutually exclusive.</b> Mutually exclusive means they cannot both happen (<span class="tex">P(A\cap B)=0</span>). If both have positive probability, then <span class="tex">P(A)P(B)>0\ne0</span>, so they are <i>dependent</i>: if A happens, B is ruled out.</li>
+          <li><b>"Equally likely" must be checked.</b> "Either I win the lottery or I don't, so 50%" is wrong: the two outcomes are not equally likely. The counting formula only works for equally likely outcomes.</li>
+          <li>Adding probabilities of overlapping events double counts the overlap.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>A dataset is a sample.</b> We treat the N training examples as draws from a huge unseen population; "the model generalises" is a statement about events over that population.</li>
+          <li><b>Random splits and shuffling.</b> A train/test split and mini-batch selection rely on every example being equally likely to be picked; the counting formula <span class="tex">\binom Nb</span> counts the possible batches of size <i>b</i>.</li>
+          <li><b>Independence assumptions.</b> Naive Bayes classifiers assume features are independent given the class; "i.i.d. data" (independent, identically distributed) underlies most of learning theory. When it fails (time series, duplicated images), evaluation lies to you.</li>
+          <li><b>Dropout</b> keeps each unit with an independent probability, a product of independent events.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Two dice are rolled. What is the probability that the total is 9 or 10?</summary><div class="ans">Sum 9: (3,6),(4,5),(5,4),(6,3) = 4 cells. Sum 10: (4,6),(5,5),(6,4) = 3 cells. The events are disjoint, so 7/36 ≈ 0.194.</div></details>
+        <details class="check"><summary>2. A fair coin is flipped 3 times. What is P(exactly two heads)?</summary><div class="ans">8 equally likely sequences; those with two heads: HHT, HTH, THH = <span class="tex">\binom32=3</span>. So 3/8 = 0.375.</div></details>
+        <details class="check"><summary>3. Can two events, each with positive probability, be both independent and mutually exclusive?</summary><div class="ans">No. Mutually exclusive gives P(A∩B)=0. Independent requires P(A∩B)=P(A)P(B), which is positive when both are positive. Contradiction.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Sample space = list of outcomes; event = subset; for equally likely outcomes P(A) = count(A)/count(Ω).</li><li>Axioms: non-negative, total 1, disjoint events add. They give complement and the overlap rule.</li><li>Independence means P(A∩B)=P(A)P(B); it is not the same as "cannot both happen".</li><li>Past random outcomes do not change independent future ones (no gambler's fallacy).</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 ===================== -->
+    <section class="lesson" id="conditional-bayes" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.2</span><h2>Conditional probability &amp; Bayes</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A disease affects 1% of people. A test catches 90% of sick people and wrongly flags 10% of healthy ones. You test positive. What is the chance you are actually sick? Most people (including many doctors) guess around 90%. The true answer is under 10%. Why?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Probabilities change when you learn something. The chance that a random card is an ace is 4/52. If I tell you "it is a face card", the chance is now 0. Learning new information means <b>shrinking the sample space</b> to the outcomes consistent with it, then asking what fraction of what is left satisfies your question.</p>
+        <p>Take the two-dice grid. "Sum is 7" has probability 6/36. Now suppose I tell you "at least one die shows 6". Only 11 of the 36 cells remain. Inside those 11, how many have sum 7? Just (1,6) and (6,1): 2 cells. So the new probability is 2/11 ≈ 0.18, a bit above 1/6 ≈ 0.167. We write it <span class="tex">P(\text{sum}=7\mid\text{at least one 6})=2/11</span>. The bar "|" reads "given".</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the definition.</b> Count with probabilities instead of cells: the fraction of B that is also A.</p>
+        <div class="eq">P(A\mid B)=\frac{P(A\cap B)}{P(B)}\qquad(P(B)>0)</div>
+        <p>Check with the dice: <span class="tex">P(A\cap B)=2/36</span>, <span class="tex">P(B)=11/36</span>, ratio <span class="tex">2/11</span>. ✓</p>
+        <p><b>Step 2: rearrange to the chain rule.</b> Multiply both sides by <span class="tex">P(B)</span>: <span class="tex">P(A\cap B)=P(B)\,P(A\mid B)</span>. "Chance of both = chance of the first, times the chance of the second given the first." Draw two cards without replacement: <span class="tex">P(\text{both aces})=\frac4{52}\cdot\frac3{51}=\frac1{221}\approx0.0045</span>. After one ace is gone, only 3 aces remain among 51 cards. For independent events <span class="tex">P(A\mid B)=P(A)</span>, and the rule collapses to the plain product.</p>
+        <p>Applying it repeatedly gives the general <b>chain rule</b>, which language models use to score whole sentences:</p>
+        <div class="eq">P(x_1,x_2,\dots,x_n)=P(x_1)\,P(x_2\mid x_1)\,P(x_3\mid x_1,x_2)\cdots P(x_n\mid x_1,\dots,x_{n-1})</div>
+        <p><b>Step 3: flip the condition (Bayes).</b> The chain rule works in either order: <span class="tex">P(A\cap B)=P(B\mid A)P(A)=P(A\mid B)P(B)</span>. Divide by <span class="tex">P(B)</span>:</p>
+        <div class="eq">P(A\mid B)=\frac{P(B\mid A)\,P(A)}{P(B)}</div>
+        <p>This is <b>Bayes' theorem</b>. Its power: we usually know "how likely is this evidence if the hypothesis is true" (<span class="tex">P(B\mid A)</span>, e.g. the test's accuracy), but we want the reverse, "how likely is the hypothesis given the evidence". The denominator is found by <b>total probability</b>: split B by whether A is true.</p>
+        <div class="eq">P(B)=P(B\mid A)P(A)+P(B\mid A^c)P(A^c)</div>
+
+        <div class="worked"><b>Worked example: the test, as 1000 people</b>
+          <p>Imagine 1000 people. 1% sick: <b>10 sick</b>, 990 healthy. The test catches 90% of the sick: <b>9 true positives</b> (1 missed). It wrongly flags 10% of the healthy: <b>99 false positives</b> (<span class="tex">0.10\times990</span>). Everybody who tests positive: 9 + 99 = 108. Of those, only 9 are sick:</p>
+          <p><span class="tex">P(\text{sick}\mid+)=\frac{9}{108}=\frac1{12}\approx8.3\%</span></p>
+          <p>The same through the formula: <span class="tex">\dfrac{0.90\cdot0.01}{0.90\cdot0.01+0.10\cdot0.99}=\dfrac{0.009}{0.108}=0.0833</span>. The test sounds 90% accurate, but there are 99 healthy false alarms for every 9 real catches, because <b>healthy people vastly outnumber sick people</b>. Ignoring that is the <b>base-rate fallacy</b>.</p></div>
+        <div class="worked"><b>Worked example: a spam filter</b>
+          <p>40% of mail is spam. The word "free" appears in 50% of spam and in 5% of legitimate mail. For an email containing "free": numerator <span class="tex">0.5\times0.4=0.20</span>; denominator <span class="tex">0.20+0.05\times0.6=0.23</span>. So <span class="tex">P(\text{spam}\mid\text{free})=0.20/0.23\approx0.870</span>.</p></div>
+        <p><b>Step 4: Bayes as updating belief.</b> Name the pieces: <span class="tex">P(A)</span> is the <b>prior</b> (belief before evidence), <span class="tex">P(B\mid A)</span> the <b>likelihood</b>, <span class="tex">P(A\mid B)</span> the <b>posterior</b> (belief after). The posterior can serve as the next prior, so evidence accumulates. In odds form (odds = <span class="tex">p/(1-p)</span>) the update is a simple multiplication: <span class="tex">\text{posterior odds}=\text{prior odds}\times\dfrac{P(B\mid A)}{P(B\mid A^c)}</span>. Here the ratio for a positive test is <span class="tex">0.90/0.10=9</span>.</p>
+        <div class="worked"><b>Worked example: a second positive test</b>
+          <p>Prior odds 1/99 (1%). After one positive: <span class="tex">\tfrac1{99}\times9=\tfrac1{11}</span>, which is probability <span class="tex">\tfrac1{12}</span> ✓ (the 9 out of 108 above). After a second independent positive: odds <span class="tex">\tfrac1{99}\times81=0.818</span>, probability <span class="tex">0.818/1.818=0.45</span>. Two positives lift the chance from 1% to 8.3% to 45%.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P(H\mid E)=\frac{P(E\mid H)\,P(H)}{\sum_{h}P(E\mid h)\,P(h)}</div>
+        <table class="sym">
+          <tr><td>H</td><td>hypothesis (e.g. "patient is sick", "email is spam", "class = cat")</td></tr>
+          <tr><td>E</td><td>evidence (e.g. "test is positive", "contains the word free", "these pixels")</td></tr>
+          <tr><td>P(H)</td><td>prior: belief before seeing E</td></tr>
+          <tr><td>P(E | H)</td><td>likelihood: how probable the evidence is if H is true</td></tr>
+          <tr><td>P(H | E)</td><td>posterior: belief after seeing E</td></tr>
+          <tr><td>Σₕ P(E|h)P(h)</td><td>sum over all competing hypotheses: this equals P(E) and just normalises the result to sum to 1</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: 1000 people</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press "Restart" and watch the four stages unfold. In stage ④ count: ringed red dots over all ringed dots is the answer.</li>
+        <li>Use the "rare disease" preset (1%, 90%, 10%), then drag <b>prevalence</b> up to 30%. As more people are sick, the ringed crowd becomes mostly red and P(sick | +) jumps. The test did not change; the <i>base rate</i> did.</li>
+        <li>Keep prevalence at 1% and shrink the false-positive rate to 1% (or use "perfect-ish test"). What matters more here, sensitivity or false-positive rate?</li></ol></div>
+      <div data-lab="bayesdots"></div>
+      <h3 class="sec" style="max-width:780px">Lab 2: updating a belief with a sequence of evidence</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Click "Test +" repeatedly: each positive multiplies the odds by the likelihood ratio (9 for the default settings). Watch the curve climb.</li>
+        <li>Click "Test −" and see the belief drop: a negative multiplies the odds by a number smaller than 1.</li>
+        <li>Choose "patient is healthy", press Auto-test and watch the belief usually settle low but occasionally jump after a false alarm.</li></ol></div>
+      <div data-lab="bayesupdate"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b><span class="tex">P(A\mid B)\ne P(B\mid A)</span>.</b> P(wet grass | rain) is near 1, but P(rain | wet grass) is much lower (sprinklers, dew). In the test: P(+ | sick) = 90%, but P(sick | +) = 8.3%. Confusing them is the "prosecutor's fallacy" when P(evidence | innocent) is mistaken for P(innocent | evidence).</li>
+          <li><b>Base-rate neglect.</b> Always ask "how common is the thing in the first place?" before trusting an accurate-sounding test.</li>
+          <li>Conditioning on a <i>rare</i> event needs care: P(A | B) requires P(B) &gt; 0 and the fraction can be noisy if B is rarely observed.</li>
+          <li>Repeated tests multiply likelihood ratios only if their errors are <i>independent</i>. Re-running the same flawed lab process often repeats the same mistake.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Classifiers output posteriors.</b> A model that returns "92% cat" estimates <span class="tex">P(\text{cat}\mid\text{image})</span>. Generative classifiers (naive Bayes, LDA) compute it literally with Bayes: <span class="tex">P(y\mid x)\propto P(x\mid y)P(y)</span>.</li>
+          <li><b>Spam filters</b> multiply per-word likelihood ratios exactly as in the worked example.</li>
+          <li><b>The chain rule is a language model.</b> GPT-style models factor a sentence as <span class="tex">\prod_t P(x_t\mid x_{&lt;t})</span> and are trained to predict each next token.</li>
+          <li><b>Priors and class imbalance.</b> Fraud detection with 0.1% positives is the 1% disease problem: even a good classifier gives mostly false alarms unless thresholds account for the base rate.</li>
+          <li><b>Bayesian updating</b> underlies Kalman filters, Bayesian optimisation and posterior sampling (Module 4 returns to priors and MAP).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Disease prevalence 10%, sensitivity 80%, false-positive rate 20%. What is P(sick | positive)?</summary><div class="ans">0.8·0.1 = 0.08 true positives per person; 0.2·0.9 = 0.18 false positives. P = 0.08/(0.08+0.18) = 0.08/0.26 = 4/13 ≈ 30.8%.</div></details>
+        <details class="check"><summary>2. Two cards are drawn without replacement. Given the first is an ace, what is P(second is an ace)? What is P(both aces)?</summary><div class="ans">3 aces remain among 51 cards: P(second ace | first ace) = 3/51 = 1/17. P(both) = 4/52 · 3/51 = 1/221 ≈ 0.0045.</div></details>
+        <details class="check"><summary>3. Why can P(B | A) be 99% while P(A | B) is only 2%?</summary><div class="ans">They have different denominators. P(A|B) = P(A∩B)/P(B) compares to how common B is overall. If B is very common (many people test positive for other reasons) or A is rare, then most B cases are not A, even though almost all A cases are B.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>P(A|B) = P(A∩B)/P(B): shrink the sample space to B, then count the fraction in A.</li><li>Chain rule: P(A∩B) = P(B)P(A|B); extended to n variables it is how sequences are scored.</li><li>Bayes: posterior ∝ likelihood × prior; in odds form, odds × likelihood ratio.</li><li>Do not confuse P(A|B) with P(B|A); never ignore the base rate.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 ===================== -->
+    <section class="lesson" id="random-variables" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.3</span><h2>Random variables &amp; expectation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A game costs nothing to enter. With probability 0.3 you win $10; otherwise you lose $4. Should you play it a thousand times? And in machine learning, a model's error on the next example is unpredictable. What single number summarises how well it does <i>on average</i>?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>So far outcomes were things like "(3,5)" or "heads". Often what we care about is a <i>number attached to the outcome</i>: the sum of the dice, the money won, the squared error. A <b>random variable</b> is exactly that: a rule that turns each outcome into a number. Despite the name it is neither random nor a variable in the usual sense; it is a <i>function from outcomes to numbers</i>, and the randomness lives in which outcome occurs. Write it with a capital letter, <span class="tex">X</span>; a specific value is lower case, <span class="tex">x</span>.</p>
+        <p>There are two flavours. A <b>discrete</b> variable takes separate values you can list (the die, the sum, a count). A <b>continuous</b> variable can be any value in an interval (a height, a waiting time). They need different bookkeeping.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Discrete: the PMF.</b> List every value and its probability. This table is the <b>probability mass function</b> (PMF), <span class="tex">p(x)=P(X=x)</span>. For the sum of two dice (from the 36-cell grid) <span class="tex">p(2)=1/36,\ p(3)=2/36,\dots,p(7)=6/36,\dots,p(12)=1/36</span>. The probabilities add to 1.</p>
+        <p><b>The expected value.</b> If you played the game many times, what would be your average result? Weight each value by how often it occurs:</p>
+        <div class="eq">\mathbb E[X]=\sum_x x\,p(x)</div>
+        <div class="worked"><b>Worked example: the game</b>
+          <p>X = +10 with probability 0.3, −4 with probability 0.7. <span class="tex">\mathbb E[X]=10(0.3)+(-4)(0.7)=3-2.8=0.2</span>. On average you win 20 cents per round; over 1000 rounds about $200 (with large swings; see the variance below).</p>
+          <p>A fair die: <span class="tex">\mathbb E[X]=\frac{1+2+3+4+5+6}{6}=3.5</span>. Note you can never <i>roll</i> 3.5; the expectation is the long-run average, not a likely outcome. The lab's red triangle shows it as a <b>balance point</b>: put the bars on a seesaw and 3.5 is where it balances.</p></div>
+        <p><b>Linearity of expectation</b> is the most useful fact in the subject. For any random variables (independent or not!) and constants <i>a</i>, <i>b</i>:</p>
+        <div class="eq">\mathbb E[aX+b]=a\,\mathbb E[X]+b,\qquad \mathbb E[X+Y]=\mathbb E[X]+\mathbb E[Y]</div>
+        <p>The sum of two dice: <span class="tex">\mathbb E[X+Y]=3.5+3.5=7</span>, without listing 36 cells (summing the full PMF gives 252/36 = 7 ✓). Expected heads in 100 fair flips: each flip contributes <span class="tex">0.5</span>, total 50.</p>
+        <p><b>Spread: variance.</b> Two games can have the same average but very different risk. Measure how far values fall from the mean, on average, using squared distances (so negatives do not cancel):</p>
+        <div class="eq">\operatorname{Var}(X)=\mathbb E\big[(X-\mu)^2\big]=\mathbb E[X^2]-\big(\mathbb E[X]\big)^2,\qquad \sigma=\sqrt{\operatorname{Var}(X)}</div>
+        <div class="worked"><b>Worked example: variance of the game and of a die</b>
+          <p>Game: <span class="tex">\mathbb E[X^2]=100(0.3)+16(0.7)=30+11.2=41.2</span>, so <span class="tex">\operatorname{Var}=41.2-0.2^2=41.16</span> and <span class="tex">\sigma\approx6.42</span>. The typical round swings by about $6, much more than the $0.20 average edge: you need many rounds before the average shows.</p>
+          <p>Fair die: <span class="tex">\mathbb E[X^2]=\frac{1+4+9+16+25+36}{6}=\frac{91}6\approx15.167</span>; <span class="tex">\operatorname{Var}=15.167-3.5^2=2.917=\tfrac{35}{12}</span>, <span class="tex">\sigma\approx1.71</span>.</p></div>
+        <p>Scaling and shifting: <span class="tex">\operatorname{Var}(aX+b)=a^2\operatorname{Var}(X)</span> (shifting does not change spread; doubling the values quadruples the variance). For <i>independent</i> X and Y, variances add: <span class="tex">\operatorname{Var}(X+Y)=\operatorname{Var}X+\operatorname{Var}Y</span>; two dice sum has variance <span class="tex">35/6\approx5.83</span>. (Lesson 3.5 shows what happens without independence.)</p>
+        <p><b>Continuous: the PDF and the CDF.</b> Suppose X is a uniformly random number in [0, 1]. What is <span class="tex">P(X=0.5)</span>? There are infinitely many possible values, so each single one has probability 0. Instead we describe <i>density</i>: a function <span class="tex">f(x)</span> whose <b>area</b> over an interval is the probability of landing in it: <span class="tex">P(a\le X\le b)=\int_a^b f(x)\,dx</span>. (An integral is just "area under the curve"; Module 2 builds it fully.) For the uniform on [0, 1], <span class="tex">f(x)=1</span>, so <span class="tex">P(0.2\le X\le0.5)=0.3</span>. A density can exceed 1 (it is not itself a probability); only areas are probabilities, and the total area is 1. The expectation replaces sums by integrals: <span class="tex">\mathbb E[X]=\int x f(x)\,dx</span> (the uniform gives 1/2, with <span class="tex">\operatorname{Var}=1/12</span>).</p>
+        <p>The <b>cumulative distribution function</b> (CDF) works for both flavours: <span class="tex">F(x)=P(X\le x)</span>. It climbs from 0 to 1, and slopes of <i>F</i> are heights of <i>f</i>.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbb E[g(X)]=\sum_x g(x)\,p(x)\quad\text{or}\quad\int g(x)\,f(x)\,dx</div>
+        <table class="sym">
+          <tr><td>X</td><td>random variable (a number determined by the random outcome)</td></tr>
+          <tr><td>p(x) = P(X = x)</td><td>PMF (discrete): probability of exactly x</td></tr>
+          <tr><td>f(x)</td><td>PDF (continuous): density; area over [a, b] is the probability</td></tr>
+          <tr><td>F(x) = P(X ≤ x)</td><td>CDF: probability of being at most x</td></tr>
+          <tr><td>E[X] or μ</td><td>expectation (mean): probability-weighted average; the balance point</td></tr>
+          <tr><td>Var(X), σ</td><td>variance: expected squared distance from μ; σ is its square root, same units as X</td></tr>
+          <tr><td>g(X)</td><td>any function of X, e.g. X² or a loss; its expectation uses the same weights</td></tr>
+        </table>
+        <p>Notice the last row: <span class="tex">\mathbb E[g(X)]</span> uses the distribution of X, no new tools needed. A model's <b>expected loss</b> <span class="tex">\mathbb E_{(x,y)}[\ell(f(x;\theta),y)]</span> is exactly this: the average loss over the data-generating distribution.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: PMF, CDF, balance point and the long-run average</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Fair die: let it run slowly. The orange outlines wobble around the blue bars. Below, the running average meanders and then hugs the red E[X] line.</li>
+        <li>Choose "Loaded die" and raise P(6): the bars shift and the red balance triangle slides right. Is E[X] still 3.5? Compute with the formula.</li>
+        <li>"Sum of two dice" has a triangle PMF; the mean is 7 (check the readout).</li>
+        <li>Switch to "Uniform" and widen it: the density gets lower (area stays 1) and the variance grows like w²/12.</li></ol></div>
+      <div data-lab="randvar"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><span class="tex">\mathbb E[g(X)]\ne g(\mathbb E[X])</span> in general. With a fair die, <span class="tex">\mathbb E[X^2]=15.17</span> but <span class="tex">3.5^2=12.25</span>. The gap is exactly the variance. (Linear <i>g</i> is the exception.)</li>
+          <li><b>The expected value need not be a possible value</b> (3.5 on a die) and a game with positive expectation can still ruin you if variance is large.</li>
+          <li>Variances add only for independent variables; expectations always add.</li>
+          <li>A density value is not a probability: f(x) can be 5 on a narrow interval. Only areas are.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Loss = expectation.</b> The thing we truly want to minimise is the expected loss over the data distribution, <span class="tex">\mathbb E[\ell]</span>. We cannot compute it, so we minimise the <i>average over the N training examples</i>, a sample version. Training on mini-batches estimates it with an even smaller average.</li>
+          <li><b>Variance of gradient estimates.</b> A mini-batch gradient is a random variable whose mean is the true gradient and whose variance shrinks as the batch grows.</li>
+          <li><b>Reinforcement learning</b> maximises <i>expected</i> return; the reward in the game above is a toy version.</li>
+          <li><b>Feature standardisation</b> subtracts the mean and divides by σ so every feature has mean 0 and variance 1; <b>batch/layer norm</b> does the same inside the network.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. X takes values 0, 1, 2 with probabilities 0.5, 0.3, 0.2. Find E[X] and Var(X).</summary><div class="ans">E[X] = 0·0.5 + 1·0.3 + 2·0.2 = 0.7. E[X²] = 0 + 0.3 + 4·0.2 = 1.1. Var = 1.1 − 0.49 = 0.61.</div></details>
+        <details class="check"><summary>2. With E[X] = 0.7 and Var(X) = 0.61 from above, find E[3X+2] and Var(3X+2).</summary><div class="ans">E = 3·0.7 + 2 = 4.1. Var = 3²·0.61 = 5.49 (adding 2 does not change the spread).</div></details>
+        <details class="check"><summary>3. A continuous X is uniform on [0, 1]. Why is P(X = 0.5) = 0 even though 0.5 is possible?</summary><div class="ans">Probability is area under the density; a single point has zero width, so zero area. The probability of landing within a tiny interval around 0.5 is positive; the probability of hitting exactly one of infinitely many values is 0.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A random variable assigns a number to each outcome; PMF (discrete) or PDF (continuous) says how likely each value is; CDF = P(X ≤ x).</li><li>E[X] is the probability-weighted average (balance point), linear always: E[aX+b+Y] = aE[X]+b+E[Y].</li><li>Var(X) = E[X²] − (E[X])²; scaling by a scales Var by a².</li><li>An ML loss is an expectation, approximated by an average over data.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 ===================== -->
+    <section class="lesson" id="distributions" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.4</span><h2>Key distributions</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Heights, coin flips, customer arrivals, the next word in a sentence: wildly different things. Yet a small handful of "shapes" describe almost all of them. Which shape fits which situation, and what do the shape's parameters mean?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>distribution</b> is the full description of a random variable: which values, how likely. Think of a handful of famous recipes, each a family indexed by a few <i>knobs</i> (parameters), like the knobs θ in a model. Choosing a distribution means choosing a story about how the data came to be. We go from the simplest to the richest.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Bernoulli(p): one yes/no trial.</b> Success (1) with probability <i>p</i>, failure (0) with probability <i>1−p</i>. A single coin flip, "click or no click", "spam or not". <span class="tex">\mathbb E[X]=p</span>, <span class="tex">\operatorname{Var}=p(1-p)</span> (largest at p = 1/2, zero when the outcome is certain).</p>
+        <p><b>Binomial(n, p): count the successes in n independent trials.</b> The number of heads in 10 flips. To get exactly <i>k</i> successes, choose which <i>k</i> of the <i>n</i> trials succeed (<span class="tex">\binom nk</span> ways), each way having probability <span class="tex">p^k(1-p)^{n-k}</span>:</p>
+        <div class="eq">P(X=k)=\binom nk p^k(1-p)^{n-k},\quad \mathbb E[X]=np,\quad \operatorname{Var}(X)=np(1-p)</div>
+        <div class="worked"><b>Worked example</b>
+          <p>5 fair flips, exactly 2 heads: <span class="tex">\binom52(0.5)^2(0.5)^3=10/32=0.3125</span>. A biased coin (p = 0.3), 4 flips, exactly 1 success: <span class="tex">\binom41(0.3)(0.7)^3=4\times0.3\times0.343=0.4116</span>. Ten fair flips, exactly 5 heads: <span class="tex">252/1024\approx0.246</span>: even the single most likely outcome happens less than a quarter of the time. The Galton board in the lab (each peg is a Bernoulli trial) pours this pile.</p></div>
+        <p><b>Categorical: one of K classes.</b> Generalise the coin to a K-sided die with probabilities <span class="tex">p_1,\dots,p_K</span> that add up to 1. Each draw is class <i>k</i> with probability <span class="tex">p_k</span>.</p>
+        <p><b>Uniform(a, b): all values in an interval equally likely.</b> Density <span class="tex">1/(b-a)</span> between a and b, mean <span class="tex">(a+b)/2</span>, variance <span class="tex">(b-a)^2/12</span>. The "no information" random number; the base of every random number generator.</p>
+        <p><b>Gaussian (normal) <span class="tex">\mathcal N(\mu,\sigma^2)</span>: the bell curve.</b> Symmetric around the mean μ, with width σ.</p>
+        <div class="eq">f(x)=\frac1{\sigma\sqrt{2\pi}}\exp\!\Big(-\frac{(x-\mu)^2}{2\sigma^2}\Big)</div>
+        <p>The rule of thumb: about <b>68%</b> of the probability lies within one σ of μ, <b>95%</b> within two, <b>99.7%</b> within three (precisely 68.27%, 95.45%, 99.73%). The <i>z-score</i> <span class="tex">z=(x-\mu)/\sigma</span> counts how many σ from the mean. The Gaussian is everywhere because sums of many small independent effects look Gaussian (lesson 3.6).</p>
+        <p><b>Exponential(λ): waiting time.</b> Time until the next event happening at a constant average rate λ (per unit time): <span class="tex">f(x)=\lambda e^{-\lambda x}</span> for <span class="tex">x\ge0</span>. Mean <span class="tex">1/\lambda</span>, and <span class="tex">P(X>t)=e^{-\lambda t}</span>. It is "memoryless": having waited 5 minutes, the remaining wait has the same distribution as at the start. Example: λ = 0.5 per minute (mean wait 2 min): <span class="tex">P(\text{wait}>3)=e^{-1.5}\approx0.223</span>.</p>
+        <p><b>Poisson(λ): the count of events in a window.</b> If events occur independently at an average of λ per window, the number in one window has</p>
+        <div class="eq">P(X=k)=\frac{e^{-\lambda}\lambda^k}{k!},\qquad \mathbb E[X]=\operatorname{Var}(X)=\lambda</div>
+        <p>Example: λ = 2 calls per minute. <span class="tex">P(0)=e^{-2}=0.135</span>, <span class="tex">P(1)=2e^{-2}=0.271</span>, <span class="tex">P(2)=\tfrac{4}{2}e^{-2}=0.271</span>, so <span class="tex">P(3\text{ or more})=1-5e^{-2}\approx0.323</span>. (The exponential and Poisson are two views of the same random-arrivals story: waiting time versus count.)</p>
+        <div class="worked"><b>Which distribution?</b>
+          <p>Will this user click the ad? Bernoulli. Out of 50 users, how many click? Binomial (if independent with the same p). Which of 10 digits is in this image? Categorical. Height of an adult? Roughly Gaussian. Minutes until the next customer? Exponential. Customers per hour? Poisson.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">X\sim\mathcal N(\mu,\sigma^2),\quad X\sim\mathrm{Bernoulli}(p),\quad X\sim\mathrm{Binomial}(n,p),\ \dots</div>
+        <table class="sym">
+          <tr><td>X ∼ D</td><td>"X is distributed as D" (X is drawn from the distribution D)</td></tr>
+          <tr><td>p</td><td>success probability in [0, 1]</td></tr>
+          <tr><td>n</td><td>number of trials (non-negative integer)</td></tr>
+          <tr><td>μ, σ</td><td>Gaussian mean and standard deviation (σ² is the variance)</td></tr>
+          <tr><td>λ</td><td>rate: events per unit (Exponential: per unit time; Poisson: per window)</td></tr>
+          <tr><td>k!</td><td>k factorial = k·(k−1)·…·1</td></tr>
+          <tr><td>(n choose k)</td><td>number of ways to pick k of n; n!/(k!(n−k)!)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the gallery</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick <b>Binomial</b>, n = 10, p = 0.5. Watch the Galton balls: the middle bins fill first because there are more paths to them. Move p to 0.8 and the pile shifts right. Change n to 1: back to Bernoulli.</li>
+        <li><b>Gaussian:</b> drag σ larger: the curve flattens (area stays 1). Check that about 68% of samples land within one σ of the mean.</li>
+        <li><b>Exponential</b> versus <b>Poisson:</b> at the same λ, which is smooth and which is a set of bars? Notice Poisson's mean and variance readouts coincide.</li>
+        <li><b>Categorical:</b> change the four weights; the bar heights are the weights divided by their sum, as a softmax output would be.</li></ol></div>
+      <div data-lab="distgallery"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Not everything is Gaussian.</b> Incomes, word frequencies and waiting times are skewed with long tails; assuming a bell curve there understates extremes.</li>
+          <li>Binomial requires <i>independent</i> trials with the <i>same</i> p. Sampling without replacement from a small population breaks this.</li>
+          <li>Rate versus mean: an exponential with rate λ has mean 1/λ (not λ). Some books use "scale" 1/λ; always check the convention.</li>
+          <li>σ versus σ²: <span class="tex">\mathcal N(\mu,\sigma^2)</span> lists the variance; software (NumPy, PyTorch) takes the standard deviation.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Sigmoid = Bernoulli parameter.</b> A binary classifier's output p is the Bernoulli parameter; its cross-entropy loss is the Bernoulli log-likelihood.</li>
+          <li><b>Softmax = Categorical parameters.</b> A K-class network outputs <span class="tex">p_1..p_K</span>; language models do this over the whole vocabulary at every step, and sampling a token (temperature, top-k) is drawing from this categorical.</li>
+          <li><b>Gaussian noise models.</b> Assuming <span class="tex">y=f(x)+\varepsilon</span> with Gaussian ε gives the squared-error loss (Module 4); weights are initialised from Gaussians or Uniforms (Xavier/He); VAEs and diffusion models sample Gaussian noise.</li>
+          <li><b>Dropout</b> multiplies activations by Bernoulli(1−rate) masks.</li>
+          <li><b>Poisson/Exponential</b> model counts and times: event rates, queue arrivals, count regression, spiking neurons.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A fair coin is flipped 3 times. Using the Binomial formula, what is P(at least 2 heads)?</summary><div class="ans">P(2) = C(3,2)/8 = 3/8; P(3) = 1/8. Total 4/8 = 0.5.</div></details>
+        <details class="check"><summary>2. Adult heights are about Gaussian with mean 170 cm and σ = 10 cm. Roughly what fraction lies between 160 and 190 cm?</summary><div class="ans">160 is −1σ and 190 is +2σ. From −1σ to 0 is 34%, from 0 to +2σ is 47.7%, so about 81.9% (≈ 82%).</div></details>
+        <details class="check"><summary>3. A call centre gets 4 calls per minute on average (Poisson). What is P(no calls in a minute)?</summary><div class="ans">e^(−4) · 4⁰/0! = e^(−4) ≈ 0.0183, about 1.8%.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Bernoulli (one trial) → Binomial (count of successes) and Categorical (K classes); Uniform, Gaussian and Exponential for continuous values; Poisson for counts.</li><li>Gaussian: 68-95-99.7 rule; z-score = (x−μ)/σ.</li><li>Match the distribution to the story; check independence and tails.</li><li>Sigmoid/softmax outputs are Bernoulli/Categorical parameters; MSE comes from Gaussian noise.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 ===================== -->
+    <section class="lesson" id="joint-covariance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.5</span><h2>Joint, marginal &amp; covariance</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Height and weight, pixel A and its neighbour pixel B, today's weather and whether you carry an umbrella: variables almost always come in groups, and they are rarely independent. How do we describe several random variables together, and measure how strongly they move in step?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>One variable gets a list of probabilities. Two variables need a <i>table</i> with one entry for every pair of values: the <b>joint distribution</b> <span class="tex">P(X=x,Y=y)</span>. From the table we can ask three kinds of questions. Ignore Y entirely: the <b>marginal</b> of X (sum a row or column; it lands in the margin of the table). Fix Y to a known value: the <b>conditional</b> of X given Y (lesson 3.2). And ask whether knowing Y teaches anything about X: <b>dependence</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: weather and umbrellas</b>
+          <p>Let X = 1 if it rains (else 0) and Y = 1 if you carry an umbrella (else 0). Joint table:</p>
+          <table class="tbl"><tr><th></th><th>Y = 1 (umbrella)</th><th>Y = 0 (none)</th><th>marginal of X</th></tr>
+            <tr><th>X = 1 (rain)</th><td>0.30</td><td>0.10</td><td>0.40</td></tr>
+            <tr><th>X = 0 (dry)</th><td>0.10</td><td>0.50</td><td>0.60</td></tr>
+            <tr><th>marginal of Y</th><td>0.40</td><td>0.60</td><td>1</td></tr></table>
+          <p><b>Marginals:</b> add along the rows/columns: P(rain) = 0.30 + 0.10 = 0.40; P(umbrella) = 0.30 + 0.10 = 0.40.</p>
+          <p><b>Conditional:</b> <span class="tex">P(Y=1\mid X=1)=0.30/0.40=0.75</span>: when it rains you take an umbrella 75% of the time, versus <span class="tex">P(Y=1\mid X=0)=0.10/0.60\approx0.167</span> when dry.</p>
+          <p><b>Independent?</b> Independence of variables means every cell factors: <span class="tex">P(x,y)=P(x)P(y)</span>. Here <span class="tex">P(1,1)=0.30</span> but <span class="tex">0.4\times0.4=0.16</span>. Dependent: rain and umbrella are linked.</p></div>
+        <p><b>Covariance: measuring "moving together".</b> For numeric variables, multiply each variable's deviation from its mean. If both tend to be above average together (or below together), products are positive; if one is high when the other is low, negative; if unrelated, they cancel on average.</p>
+        <div class="eq">\operatorname{Cov}(X,Y)=\mathbb E\big[(X-\mu_X)(Y-\mu_Y)\big]=\mathbb E[XY]-\mathbb E[X]\mathbb E[Y]</div>
+        <div class="worked"><b>Worked example: covariance of rain and umbrella</b>
+          <p><span class="tex">\mathbb E[XY]=P(X=1,Y=1)=0.30</span> (the product is 1 only when both are 1). <span class="tex">\mathbb E[X]=\mathbb E[Y]=0.4</span>. <span class="tex">\operatorname{Cov}=0.30-0.4\cdot0.4=0.14&gt;0</span>. Each is Bernoulli: <span class="tex">\operatorname{Var}=0.4\times0.6=0.24</span>. Correlation: <span class="tex">0.14/0.24\approx0.583</span>.</p></div>
+        <p>Covariance depends on units (centimetres versus metres). Divide by both standard deviations to get a unit-free number between −1 and +1, the <b>correlation</b>:</p>
+        <div class="eq">\rho_{XY}=\frac{\operatorname{Cov}(X,Y)}{\sigma_X\sigma_Y}\in[-1,1]</div>
+        <p>+1: perfectly on a rising line; −1: perfectly on a falling line; 0: no <i>linear</i> relationship. Covariance also repairs the variance rule: <span class="tex">\operatorname{Var}(X+Y)=\operatorname{Var}X+\operatorname{Var}Y+2\operatorname{Cov}(X,Y)</span>. For independent variables Cov = 0 and variances just add; for Y = X it gives <span class="tex">4\operatorname{Var}X</span>, since <span class="tex">X+X=2X</span>.</p>
+        <p><b>Independent ⟹ uncorrelated, but not the reverse.</b> Take X uniform on {−1, 0, 1} and <span class="tex">Y=X^2</span>. Then Y is fully determined by X (very dependent), yet <span class="tex">\operatorname{Cov}=\mathbb E[X^3]-\mathbb E[X]\mathbb E[X^2]=0-0=0</span>: correlation only sees straight-line relationships.</p>
+        <p><b>Several variables at once: the covariance matrix.</b> With d variables <span class="tex">\mathbf x=(x_1,\dots,x_d)</span>, store every pairwise covariance in a d×d matrix Σ (variances on the diagonal, covariances elsewhere, symmetric). The <b>multivariate Gaussian</b> <span class="tex">\mathcal N(\boldsymbol\mu,\Sigma)</span> is the bell curve in d dimensions: its density is constant on <b>ellipses</b> whose shape and tilt are given by Σ.</p>
+        <div class="eq">f(\mathbf x)=\frac{1}{\sqrt{(2\pi)^d\det\Sigma}}\exp\!\Big(-\tfrac12(\mathbf x-\boldsymbol\mu)^{\!\top}\Sigma^{-1}(\mathbf x-\boldsymbol\mu)\Big)</div>
+        <p>(Requires Σ invertible. The exponent is a squared distance that accounts for the tilt: the Mahalanobis distance.) The ellipse's axes are Σ's eigenvectors, with lengths set by the eigenvalues (Module 1). For two variables with means 0:</p>
+        <div class="eq">\Sigma=\begin{pmatrix}\sigma_x^2&amp;\rho\sigma_x\sigma_y\\\rho\sigma_x\sigma_y&amp;\sigma_y^2\end{pmatrix},\qquad Y\mid X=x\ \sim\ \mathcal N\!\Big(\rho\frac{\sigma_y}{\sigma_x}x,\ \sigma_y^2(1-\rho^2)\Big)</div>
+        <div class="worked"><b>Worked example: the conditional slice</b>
+          <p>σx = 1.2, σy = 0.8, ρ = 0.7. Covariance <span class="tex">=0.7\cdot1.2\cdot0.8=0.672</span>, so <span class="tex">\Sigma=\begin{pmatrix}1.44&amp;0.672\\0.672&amp;0.64\end{pmatrix}</span>. Given X = 1.5: mean of Y <span class="tex">=0.7\cdot\frac{0.8}{1.2}\cdot1.5=0.70</span>; variance <span class="tex">=0.64(1-0.49)=0.3264</span> (σ ≈ 0.57, narrower than Y's overall σ = 0.8). Learning X made Y both more predictable and shifted: the stronger ρ, the more informative.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">p_X(x)=\sum_y p(x,y),\qquad p(y\mid x)=\frac{p(x,y)}{p_X(x)},\qquad \Sigma_{ij}=\operatorname{Cov}(X_i,X_j)</div>
+        <table class="sym">
+          <tr><td>p(x, y)</td><td>joint distribution: probability that X = x and Y = y together</td></tr>
+          <tr><td>p_X(x) = Σᵧ p(x, y)</td><td>marginal: sum out the other variable (an integral for continuous)</td></tr>
+          <tr><td>p(y | x)</td><td>conditional: row of the joint divided by its total</td></tr>
+          <tr><td>Cov(X, Y)</td><td>average product of deviations from the means</td></tr>
+          <tr><td>ρ</td><td>correlation = Cov/(σₓσᵧ), always in [−1, 1]</td></tr>
+          <tr><td>Σ</td><td>covariance matrix; Σᵢⱼ = Cov(Xᵢ, Xⱼ); symmetric, diagonal = variances</td></tr>
+          <tr><td>μ (bold)</td><td>mean vector</td></tr>
+          <tr><td>det Σ, Σ⁻¹</td><td>determinant and inverse of Σ (Module 1)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the 2D Gaussian</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Set ρ = 0: the cloud is an axis-aligned ellipse; both marginals are plain bells. Raise ρ to 0.9: the cloud stretches along the diagonal. The marginals do not change at all! The relationship lives only in the joint.</li>
+        <li>Make σx = σy and ρ = 0: the ellipse becomes a circle, and the principal axes are arbitrary. Now set ρ = −0.8: the tilt flips.</li>
+        <li>Turn on the slice and drag x₀. The orange conditional curve is narrower than the blue marginal (variance σy²(1−ρ²)); watch it slide as x₀ moves.</li>
+        <li>Read the Σ matrix and eigenvalues in the readout: the red dashed principal axes are the directions PCA would find.</li></ol></div>
+      <div data-lab="gauss2d"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Correlation is not causation</b>, and zero correlation is not independence (the Y = X² example). Correlation only measures <i>linear</i> association.</li>
+          <li><b>Marginals do not determine the joint.</b> Two very different joints (ρ = 0 and ρ = 0.9) can have identical marginals.</li>
+          <li>Outliers can create or destroy a correlation; always plot the scatter.</li>
+          <li>Σ must be symmetric and positive semi-definite; if features are perfectly redundant, Σ is singular and has no inverse.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>PCA</b> diagonalises the covariance matrix of the data: the principal components are Σ's eigenvectors, and the eigenvalues give the variance each direction explains.</li>
+          <li><b>Whitening / batch norm</b> rescales features so the covariance becomes the identity matrix, which makes optimisation better conditioned.</li>
+          <li><b>Gaussian processes</b> define a distribution over functions through a covariance (kernel) function; predictions use exactly the conditional-Gaussian formula above.</li>
+          <li><b>Correlated features</b> inflate the variance of linear-model coefficients (multicollinearity); redundant pixels explain why images compress well.</li>
+          <li><b>Kalman filters, VAEs, diffusion models</b> propagate Gaussians and use the conditional formula; the mean-squared-error geometry follows Σ.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. If Y = 2X, what are Corr(X, Y) and Cov(X, Y) in terms of Var(X)?</summary><div class="ans">Cov(X, 2X) = 2 Var(X). σ_Y = 2σ_X, so Corr = 2Var/(σ_X · 2σ_X) = 1.</div></details>
+        <details class="check"><summary>2. X and Y are independent with Var(X) = 4 and Var(Y) = 9. Find Var(X+Y) and Var(X−Y).</summary><div class="ans">Cov = 0, so Var(X+Y) = 4 + 9 = 13, and Var(X−Y) = 4 + 9 − 2·0 = 13. Subtracting does not reduce variance.</div></details>
+        <details class="check"><summary>3. Give an example where Cov(X, Y) = 0 yet X and Y are dependent.</summary><div class="ans">X uniform on {−1, 0, 1} and Y = X². Y is a function of X, but Cov = E[X³] − E[X]E[X²] = 0 − 0 = 0. Correlation misses non-linear dependence.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Joint → marginal (sum out) and conditional (divide by the margin); independent means p(x,y) = p(x)p(y).</li><li>Cov = E[XY] − E[X]E[Y]; ρ = Cov/(σₓσᵧ) ∈ [−1, 1]; Var(X+Y) = VarX + VarY + 2Cov.</li><li>Σ collects all covariances; the Gaussian's contours are ellipses along Σ's eigenvectors.</li><li>Conditioning a Gaussian gives a Gaussian: mean shifts by ρ, variance shrinks by (1−ρ²).</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 ===================== -->
+    <section class="lesson" id="lln-clt" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.6</span><h2>Law of large numbers &amp; CLT</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A single measurement is noisy. Why does averaging many of them give a trustworthy number, how fast does the uncertainty shrink, and why does the bell curve appear almost no matter what you are averaging? And is there ever a case where averaging does <i>not</i> help?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Flip a coin 10 times: you might get 7 heads (70%). Flip it 10,000 times: you will get something very close to 50%. Early flukes matter a lot when there are few flips and almost nothing when there are many, because each new flip is a small share of the total. This is the <b>law of large numbers</b> (LLN): the average of many independent draws settles on the true mean.</p>
+        <p>The <b>central limit theorem</b> (CLT) says <i>how</i> it settles. Repeat the whole experiment many times (each time averaging n draws) and look at the spread of the averages: they form a <b>bell curve</b> centred on the true mean, and the curve narrows as n grows, no matter whether the underlying draws were coin flips, dice or waiting times.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Let <span class="tex">X_1,\dots,X_n</span> be independent draws from the same distribution with mean μ and standard deviation σ. The <b>sample mean</b> is <span class="tex">\bar X_n=\frac1n\sum_{i=1}^nX_i</span>.</p>
+        <p><b>Where the spread comes from.</b> By linearity, <span class="tex">\mathbb E[\bar X_n]=\mu</span>: the average is <i>unbiased</i>. Variances of independent variables add, so <span class="tex">\operatorname{Var}(\sum X_i)=n\sigma^2</span>, and dividing by n scales the variance by <span class="tex">1/n^2</span>:</p>
+        <div class="eq">\operatorname{Var}(\bar X_n)=\frac{n\sigma^2}{n^2}=\frac{\sigma^2}{n},\qquad \text{standard error}=\frac{\sigma}{\sqrt n}</div>
+        <p>This is the whole LLN in one line: the spread of the average goes to 0 as n grows. Notice the <b>square root</b>: to halve the error you need <i>four times</i> the data; to gain one more decimal digit you need 100 times as much. Averaging has diminishing returns.</p>
+        <p><b>The CLT adds the shape.</b> For large n, <span class="tex">\bar X_n</span> is approximately Gaussian: <span class="tex">\bar X_n\approx\mathcal N(\mu,\sigma^2/n)</span>. The right-hand histogram in the lab is the proof by eye.</p>
+        <div class="worked"><b>Worked example: rolling a die 100 times</b>
+          <p>One roll: μ = 3.5, σ² = 35/12, so σ ≈ 1.708. Average of n = 100 rolls: standard error = 1.708/√100 ≈ 0.171. The probability that the average lies in [3.2, 3.8], i.e. within ±0.3 of the mean: 0.3/0.171 ≈ 1.76 standard errors, so about 92% (from the Gaussian table). One roll can be anywhere from 1 to 6; the average of 100 is nearly always between 3.2 and 3.8.</p></div>
+        <div class="worked"><b>Worked example: error bars</b>
+          <p>A model is right on 100 test examples with accuracy 0.8. Each outcome is Bernoulli(p); estimate p by 0.8, so σ ≈ √(0.8·0.2) = 0.4 and standard error = 0.4/10 = 0.04. About 95% of the time the true accuracy is within 2 standard errors, 0.8 ± 0.08 (more exactly 1.96 SE). A model scoring 0.83 on the same 100 examples is <i>not</i> clearly better. With 10,000 examples the error bar shrinks to ±0.008.</p></div>
+        <p><b>When it fails.</b> Both theorems need conditions: independent (or weakly dependent) draws, and a <b>finite mean and variance</b>.</p>
+        <ul>
+          <li><b>Heavy tails:</b> the Cauchy distribution has no mean. The average of n Cauchy draws has the same Cauchy distribution as a single draw, so averaging never helps (try it in the lab). Infinite-variance cases break the √n rule.</li>
+          <li><b>Rare, large payoffs:</b> a lottery paying 100 with probability 0.01 has mean 1, but σ ≈ 9.95. Averages converge, but slowly and very skewed until n is large (the bell curve appears only after thousands of draws).</li>
+          <li><b>Dependent data:</b> 1000 near-duplicate samples carry little more information than a few: the effective sample size is smaller than n.</li>
+        </ul>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\bar X_n\xrightarrow{\;n\to\infty\;}\mu\qquad\text{and}\qquad \sqrt n\,\frac{\bar X_n-\mu}{\sigma}\ \xrightarrow{\;d\;}\ \mathcal N(0,1)</div>
+        <table class="sym">
+          <tr><td>X₁, …, Xₙ</td><td>independent draws from the same distribution (i.i.d.), with mean μ and finite variance σ²</td></tr>
+          <tr><td>X̄ₙ</td><td>sample mean (1/n)·ΣXᵢ</td></tr>
+          <tr><td>→ μ</td><td>LLN: the average converges to μ (with probability 1 for the strong law)</td></tr>
+          <tr><td>σ/√n</td><td>standard error: the typical size of the average's fluctuation</td></tr>
+          <tr><td>√n (X̄ₙ − μ)/σ</td><td>the standardised average; CLT says it approaches a standard normal (convergence "in distribution", d)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: 300 experiments averaged together</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with the fair coin and let n grow slowly. Each coloured path is one experiment's running average; they scatter wildly at first (n = 1 gives 0 or 1) and then funnel inside the green dashed ±2σ/√n envelope toward the red true mean.</li>
+        <li>Look at the right-hand histogram: the averages of all 300 experiments at the current n. Click "jump to n = 100": bell-shaped and narrow. Tick "zoom the histogram" to see the shape in detail.</li>
+        <li>Switch to Exponential(1), a skewed distribution: the n = 1 histogram is lopsided, but by n = 100 the average of it is already near-symmetric. That is the CLT.</li>
+        <li>Choose the lottery: much slower; n ≈ 1000 is still lumpy. Then Cauchy: the paths never settle, and the histogram never narrows.</li></ol></div>
+      <div data-lab="lln"></div>
+      <h3 class="sec" style="max-width:780px">Lab 2: build a distribution from uniform noise</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With "Exponential" selected, set n = 1 and watch the skewed histogram. Raise n to 30: the same sampler, averaged, becomes a bell. Compare the skew readout falling toward 0.</li>
+        <li>Pick "Cauchy (heavy tail)" and raise n: the skew and kurtosis refuse to go to 0.</li></ol></div>
+      <div data-lab="sampling"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The LLN does not "fix" past streaks.</b> It says the average converges, not that the numbers of heads and tails equalise. After 100 heads in a row, in the next 10,000 flips you still expect 5,000 heads; the early surplus becomes negligible only because it is divided by a growing n (gambler's fallacy again).</li>
+          <li><b>"n ≥ 30" is a rule of thumb, not a law.</b> A very skewed or heavy-tailed variable needs far more.</li>
+          <li><b>The CLT is about averages (or sums), not about the data themselves.</b> Raw heights may be Gaussian, raw incomes are not. Averaging many incomes gives a bell (if the variance is finite); the individual incomes remain skewed.</li>
+          <li>Standard error shrinks like 1/√n only for independent samples. Correlated samples shrink more slowly.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Why SGD works.</b> The mini-batch gradient is an average of B per-example gradients: unbiased for the full gradient, with noise of size σ/√B. Quadrupling the batch size halves the noise, which explains the trade-off between batch size, learning rate and compute.</li>
+          <li><b>Monte Carlo estimates:</b> approximating an expectation by an average of samples (reinforcement learning returns, diffusion sampling, dropout at test time) converges at the 1/√n rate.</li>
+          <li><b>Error bars on evaluation.</b> A test set of n examples gives accuracy ± about 2·√(p(1−p)/n); comparing models whose difference is within this band is guessing.</li>
+          <li><b>Large-width networks</b> (sums of many weights) look Gaussian at initialisation, and heavy-tailed gradient noise explains why some training runs behave differently.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Each measurement has σ = 10. What is the standard error of the average of n = 25 independent measurements?</summary><div class="ans">σ/√n = 10/5 = 2.</div></details>
+        <details class="check"><summary>2. By what factor must you increase the sample size to cut the standard error to one third?</summary><div class="ans">The error scales like 1/√n, so to divide it by 3 you need √n to be 3 times larger, i.e. n 9 times larger.</div></details>
+        <details class="check"><summary>3. Why does averaging many Cauchy samples not converge, while averaging die rolls does?</summary><div class="ans">The LLN and CLT need a finite mean (and variance). The Cauchy has heavy tails: occasionally a huge value appears and drags the average. The average of n Cauchy draws is again Cauchy with the same spread, so it does not narrow. A die has bounded values, so a finite mean and variance (3.5 and 35/12).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>The sample mean is unbiased with Var = σ²/n; standard error σ/√n.</li><li>LLN: the average converges to μ. CLT: the average is approximately N(μ, σ²/n), whatever the original shape, if the variance is finite.</li><li>Quadruple the data to halve the error; error bars ≈ ±2σ/√n.</li><li>It needs independence and finite mean/variance; heavy tails (Cauchy) break it. This explains why mini-batch SGD works.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now count outcomes, update beliefs with Bayes, summarise random variables by mean and variance, recognise the standard distributions, handle several variables with covariance, and explain why averaging works. Next, <b>Module 4</b> turns these tools around: given data, how do we estimate the unknown parameters (maximum likelihood, priors) and how sure can we be?</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

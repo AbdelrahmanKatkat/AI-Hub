@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Computer Vision · AI Learning Hub</title>
+<meta name="description" content="A zero-to-hero computer vision curriculum with animated architectures: pixels, filters, CNNs, ResNet, MobileNet, Vision Transformers, detection, segmentation, generative models and deployment.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › Computer Vision</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">👁️</div>
+      <div style="flex:1">
+        <h1>Computer Vision — zero to hero</h1>
+        <p>How machines see: from a single pixel to the architectures behind modern vision systems. Two promises: you will <b>see data move</b> — pixels flowing through kernels, tensors changing shape block by block — and you will be able to <b>draw any major architecture from memory</b> with its shapes, parameters and compute.</p>
+        <div class="chips"><span class="chip">10 modules</span><span class="chip">70 lessons</span><span class="chip">Animated architectures</span><span class="chip">Shapes · params · FLOPs</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="lesson" id="start" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>How to learn from this</h2></div>
+      <div class="prose">
+        <p>Each lesson follows one rhythm: a <b>visual question</b>, <b>intuition in plain words</b>, a <b>worked example with real numbers</b>, the <b>formal definition</b>, an <b>animated lab you can edit</b>, then traps, real-world uses and self-check questions. Architecture lessons end with a <b>"draw it yourself" blueprint</b>: block diagram, tensor shape at each stage, parameter count.</p>
+        <p>Maths prerequisites are light — if sums, vectors, matrices and derivatives feel new, keep the <a href="mathematics.html">Mathematics for AI</a> course open beside this one.</p>
+      </div>
+    </section>
+
+    <section class="lesson" id="pipeline">
+      <div class="lesson-head"><h2>The vision pipeline</h2></div>
+      <div class="prose"><p>Every vision system, from a phone camera filter to a self-driving stack, is this same flow. Click a stage to see what runs there, on which hardware, and what is stored.</p></div>
+      <div data-lab="pipeline" data-id="cv"></div>
+    </section>
+
+    <section class="lesson" id="architectures">
+      <div class="lesson-head"><h2>Preview: an architecture, animated</h2></div>
+      <div class="prose"><p>Boxes are tensors: <b>height ∝ image size</b>, <b>thickness ∝ channels</b>. Watch the white pulse enter a network, see the image shrink while the channels grow, and see skip connections carry information around blocks. Choose another model, change the input resolution, or <b>edit the architecture text</b> and the shapes, parameters and compute update instantly. All numbers match the published models.</p></div>
+      <div data-lab="archviz" data-preset="resnet18" data-presets="small-cnn,lenet5,alexnet,vgg16,resnet18,resnet50,mobilenetv1,mobilenetv2,densenet121,vit-b16,unet-small" data-edit data-resolution data-title="Architecture explorer"></div>
+    </section>
+
+    <section class="lesson" id="map">
+      <div class="lesson-head"><h2>The map</h2></div>
+      <div class="pathbar" id="pathbar"></div>
+      <div class="prose"><p>Modules 0–2 are the classical foundations (pixels, filters, geometry). Module 3 builds the convolutional network from first principles; modules 4–5 are the architecture gallery (CNN blueprints, then transformers); 6–8 apply backbones to detection, segmentation and generation; module 9 turns models into real systems.</p></div>
+    </section>
+
+    <section class="lesson" id="curriculum">
+      <div class="lesson-head"><h2>The curriculum</h2></div>
+      <div class="mods" id="mod-list"></div>
+      <p style="color:var(--muted);font-size:13px">Full lesson specification: <a href="https://github.com/AbdelrahmanKatkat/AI-Hub/blob/main/curriculum/computer-vision.md" target="_blank" rel="noopener">curriculum/computer-vision.md</a>.</p>
+    </section>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

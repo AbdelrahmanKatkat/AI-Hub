@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Calculus · Mathematics for AI</title>
+<meta name="description" content="Slopes, derivative rules, the chain rule, gradients, Jacobians, Hessians, Taylor approximation and integrals — calculus built from intuition and aimed at how AI models learn.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-math.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-math.js"></script>
+<script defer src="assets/labs-calculus.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="math" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="mathematics.html">Mathematics for AI</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Calculus</h1>
+        <p>Calculus is the mathematics of <i>change</i>, and learning in AI is nothing but change: nudge a weight, watch the error move, and nudge again in the direction that helps. By the end you will be able to say exactly what <span class="tex">\nabla_{\theta}L</span> means, compute it by hand for a small network, and explain why a learning rate that is too large makes training explode.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs Module 0 (functions, algebra); Module 1 helps in lessons 2.5–2.6</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="limits-slope" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.1</span><h2>Rate of change &amp; limits</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A car's odometer tells you <i>where</i> the car is (how far it has driven), not <i>how fast</i> it is going. You glance at the odometer at 3:00:00 and again at 3:00:01 and subtract: that gives an average speed over one second. But the speedometer shows the speed <i>right now</i>, at one instant, and in a single instant the car travels zero distance in zero time. How can "distance ÷ time" even make sense — and why does a machine-learning model care about the speed at which its error changes as a knob is turned?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Start with what you can compute: an <b>average rate of change</b>. If the odometer shows 9 m at second 3 and 16 m at second 4, the car covered 7 m in 1 s, an average of 7 m/s. Nothing mysterious: <i>change in position ÷ change in time</i>.</p>
+        <p>The trouble is that the average hides what happened <i>inside</i> that second. The car may have been accelerating, so it was slower at the start and faster at the end. To learn the speed at second 3 we shrink the window: look at second 3 to 3.1 instead, then 3 to 3.01, then 3 to 3.001. Each window gives an average speed, and — this is the key observation — those averages settle toward a single number. We <i>define</i> the instantaneous speed to be the number they settle toward.</p>
+        <p>There is a picture for this. Draw position against time. The average rate over a window is the slope of the straight line joining the two points of the curve at the ends of the window (a <b>secant</b> line, from the Latin "to cut"). As the window shrinks, the second point slides along the curve toward the first, and the secant pivots until it just <i>touches</i> the curve at one place — the <b>tangent</b>. The slope of the tangent is the instantaneous rate of change.</p>
+        <p>A second picture, even more powerful: <b>zoom in</b>. Look at any smooth curve through a microscope. Where it looked bent, it now looks straighter; zoom further and it is indistinguishable from a straight line. That line's slope is the derivative. <i>Calculus is the study of curves by pretending that, up close, they are straight.</i> The lab below lets you do exactly that.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Let a car's distance from the start (in metres) after <i>t</i> seconds be <span class="tex">s(t)=t^2</span>. What is its speed at <span class="tex">t=3</span>? We compute the average speed over a window that starts at 3 and lasts <i>h</i> seconds, for smaller and smaller <i>h</i>.</p>
+        <div class="worked"><b>Worked example: speed at t = 3</b>
+          <p>The distance at <span class="tex">t=3</span> is <span class="tex">s(3)=9</span>. For each <i>h</i>, average speed = <span class="tex">\dfrac{s(3+h)-s(3)}{h}</span>.</p>
+          <table class="tbl"><tr><th>h</th><th>s(3+h)</th><th>distance gained</th><th>average speed</th></tr>
+            <tr><td>1</td><td>16</td><td>7</td><td>7</td></tr>
+            <tr><td>0.1</td><td>9.61</td><td>0.61</td><td>6.1</td></tr>
+            <tr><td>0.01</td><td>9.0601</td><td>0.0601</td><td>6.01</td></tr>
+            <tr><td>0.001</td><td>9.006001</td><td>0.006001</td><td>6.001</td></tr></table>
+          <p>The averages 7, 6.1, 6.01, 6.001 march toward <b>6</b>. We can see <i>why</i> with algebra: <span class="tex">(3+h)^2-9 = 6h+h^2</span>, so the average speed is <span class="tex">\frac{6h+h^2}{h}=6+h</span>. As <i>h</i> becomes tiny, <span class="tex">6+h</span> becomes 6. The speed at <span class="tex">t=3</span> is 6 m/s.</p></div>
+        <p>Notice two things. First, we never set <i>h</i> to 0 — that would give <span class="tex">0/0</span>, which means nothing. Instead we asked what the expression <i>approaches</i>. Second, the algebra simplified the fraction <i>before</i> letting <i>h</i> shrink. That is the standard method: simplify until the "bad" division by <i>h</i> disappears.</p>
+
+        <h3 class="sec">The limit idea</h3>
+        <p>A <b>limit</b> is the number an expression gets closer and closer to as its input gets closer and closer to some value — without necessarily ever reaching it. We write <span class="tex">\lim_{h\to0}(6+h)=6</span>, read "the limit of 6 + h as h approaches 0 is 6". The expression need not even be <i>defined</i> at the target: <span class="tex">(6h+h^2)/h</span> is undefined at <span class="tex">h=0</span>, yet its limit is perfectly fine. Think of walking toward a door: the limit is where the door is, even if you only ever get within a millimetre.</p>
+        <p>We require the approach to work from <i>both sides</i> (positive and negative <i>h</i>), and that is what makes some points special, as we will see shortly.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">f'(a)\;=\;\lim_{h\to 0}\frac{f(a+h)-f(a)}{h}</div>
+        <table class="sym">
+          <tr><td>f(a)</td><td>the value of the function (the position, the loss…) at the input <i>a</i></td></tr>
+          <tr><td>h</td><td>a small step away from <i>a</i>; may be positive or negative</td></tr>
+          <tr><td>f(a+h) − f(a)</td><td>the change in output caused by the step</td></tr>
+          <tr><td>(f(a+h) − f(a)) / h</td><td>the <b>difference quotient</b>: average rate of change = slope of the secant</td></tr>
+          <tr><td>lim<sub>h→0</sub></td><td>"what does it approach as <i>h</i> shrinks to (but is never exactly) zero"</td></tr>
+          <tr><td>f′(a)</td><td>the <b>derivative</b> of <i>f</i> at <i>a</i>: the slope of the tangent. Read "f prime of a". Also written <span class="tex">\frac{df}{dx}(a)</span> (Leibniz notation: "a tiny change in f per tiny change in x").</td></tr>
+        </table>
+        <p><b>Units.</b> The derivative carries units "output per input": metres per second here; "units of loss per unit of weight" in a model. <b>Sign.</b> <span class="tex">f'(a)&gt;0</span>: increasing the input increases the output. <span class="tex">f'(a)&lt;0</span>: it decreases it. <span class="tex">f'(a)=0</span>: flat to first order (a peak, a valley or a pause). A big |<i>f′</i>| means the output is very sensitive to the input.</p>
+
+        <div class="worked"><b>Worked example: slope of a loss</b>
+          <p>A one-weight model has loss <span class="tex">L(w)=(w-2)^2</span> (best weight is 2). At <span class="tex">w=5</span> the loss is 9. The difference quotient is <span class="tex">\frac{(5+h-2)^2-9}{h}=\frac{6h+h^2}{h}=6+h\to6</span>, so <span class="tex">L'(5)=6</span>: raising <i>w</i> by a tiny amount raises the loss six times as fast. To <i>lower</i> the loss we move the other way. With a step size 0.1 we update <span class="tex">w\leftarrow5-0.1\cdot6=4.4</span>, and the loss becomes <span class="tex">(4.4-2)^2=5.76</span>, down from 9. That single idea — read the slope, step against it — is gradient descent.</p></div>
+
+        <h3 class="sec">When there is no derivative</h3>
+        <p>Zooming in only works if the curve <i>does</i> straighten out. A function is <b>differentiable</b> at a point if the difference quotient has a limit there. It fails at a <b>corner</b>: for <span class="tex">f(x)=|x|</span> at 0, secants from the right have slope +1 and from the left −1, so there is no single answer; zoom in as much as you like and the corner stays a corner. It also fails at jumps (no continuous curve at all) and at vertical tangents (the slope is infinite). The ReLU activation <span class="tex">\max(0,x)</span> has exactly such a corner at 0, which we will meet again.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>First lab: drag <i>h</i> from 2 down toward 0.001 and watch the average speed settle on 6. Then try making <i>h</i> negative-sized windows mentally: the algebra says <span class="tex">6+h</span> works for both signs.</li>
+        <li>In <i>Zoom into a curve</i>, press <b>Zoom in</b> and watch the axis numbers: the window shrinks by thousands of times, the blue curve straightens, and the "bend / w" readout falls toward 0. The orange secant slides onto the red tangent.</li>
+        <li>Change f to <code>abs(x)</code>, set x₀ to 0 and zoom: the corner never goes away. Then set x₀ to 1: perfectly straight. Differentiability = "straightens when zoomed".</li>
+        <li>In the last lab (<i>Derivative explorer</i>) shrink <i>h</i> and compare the secant slope with the true slope for different functions.</li></ol></div>
+      <div data-lab="calc" data-title="Average speed of s(t) = t² over a shrinking window" data-sub="start at t = 3 and look h seconds ahead" data-params="h=1:0.001..2:0.001"
+           data-rows="distance s(3) = 9; distance at 3+h s(3+h) = (3+h)^2; distance gained = (3+h)^2 - 9; average speed = ((3+h)^2 - 9)/h; average speed minus 6 = ((3+h)^2 - 9)/h - 6"
+           data-note="The last row equals h exactly: the average speed is 6 + h, which approaches 6."></div>
+      <div data-lab="slopezoom"></div>
+      <div data-lab="derivative"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>"h → 0" does not mean "h = 0".</b> Setting <i>h</i> to zero gives 0/0. The limit asks what the fraction approaches.</li>
+          <li><b>The derivative is a new function, not a number you read off the curve's height.</b> A curve can be high with a slope of 0 (top of a hill) or at zero height with a steep slope.</li>
+          <li><b>Do not take <i>h</i> absurdly small on a computer.</b> With <i>h</i> = 10<sup>−16</sup>, <span class="tex">f(a+h)</span> and <span class="tex">f(a)</span> are equal in floating point and you get 0/h = 0. The best <i>h</i> for a numerical derivative is around 10<sup>−5</sup> (with central differences). This is why we compute derivatives analytically (next lessons) and use numerics only to double-check.</li>
+          <li><b>A function can be continuous without being differentiable</b> (|x| has no gaps, yet a corner at 0).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Training = following a slope.</b> The loss <span class="tex">L(w)</span> measures how wrong the model is; <span class="tex">L'(w)</span> says how the loss changes as weight <i>w</i> changes. Gradient descent repeats <span class="tex">w\leftarrow w-\eta L'(w)</span>.</li>
+          <li><b>Gradient checking.</b> To test that a hand-written backward pass is correct, engineers compare it with the numerical difference quotient <span class="tex">(L(w+h)-L(w-h))/2h</span> — exactly this lesson.</li>
+          <li><b>ReLU's corner.</b> Networks built on <span class="tex">\max(0,x)</span> are not differentiable at 0. Frameworks simply pick a value (0) at that single point, and training works fine because inputs essentially never land there exactly.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For <span class="tex">f(x)=x^2</span>, what is the average rate of change between x = 2 and x = 2.5? What does the derivative at 2 turn out to be?</summary><div class="ans">Average: <span class="tex">(6.25-4)/0.5=4.5</span>. The derivative: <span class="tex">\frac{(2+h)^2-4}{h}=4+h\to4</span>, so <span class="tex">f'(2)=4</span>. (The window of width 0.5 gave 4 + 0.5 = 4.5, as the formula 4 + h predicts.)</div></details>
+        <details class="check"><summary>2. You approximate the slope of <span class="tex">f(x)=x^3</span> at x = 1 with h = 0.01. What number do you get, and is it above or below the true slope 3?</summary><div class="ans"><span class="tex">(1.01^3-1)/0.01=(1.030301-1)/0.01=3.0301</span>, slightly above 3 (the error is about 3h + h² = 0.0301).</div></details>
+        <details class="check"><summary>3. Why is <span class="tex">f(x)=|x|</span> not differentiable at 0 even though its graph has no gaps?</summary><div class="ans">The difference quotient is <span class="tex">|h|/h</span>, which equals +1 for positive <i>h</i> and −1 for negative <i>h</i>. The two sides disagree, so no single limit exists. Geometrically, the corner never straightens however far you zoom.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Average rate = change in output ÷ change in input = slope of a secant.</li>
+          <li>The derivative is the limit of that slope as the window shrinks: the slope of the tangent, the "speed at an instant".</li>
+          <li>Smooth curves look straight when zoomed in; the derivative is the slope of that straight line.</li>
+          <li><span class="tex">f'(a)</span> in "output units per input unit"; its sign says up or down, its size says how sensitive. Training reads this slope of the loss and steps against it.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="derivative-rules" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.2</span><h2>Derivative rules</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Computing a derivative from the limit definition took us a page of algebra for the simple function <span class="tex">t^2</span>. A neural network is a formula with millions of terms. Nobody differentiates it by taking limits. What is the short list of facts and rules from which <i>every</i> derivative can be assembled — the same list a deep-learning library has built in?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of Lego. You do not memorise every possible model; you learn the few kinds of brick (power, exponential, sine…) and a few ways of snapping bricks together (add, scale, multiply, divide, nest). Differentiation works the same way: we derive the derivative of each brick <i>once</i>, and derive the rule for each kind of connection <i>once</i>. After that, any formula built from those pieces can be differentiated mechanically. This lesson gives the bricks, plus the connections "add", "scale", "multiply" and "divide"; the connection "nest one function inside another" gets its own lesson next, because it is the most important one in all of AI.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Constants and lines.</b> A constant never changes, so its slope is 0: <span class="tex">(c)'=0</span>. A line <span class="tex">mx+b</span> has constant slope <i>m</i>, so <span class="tex">(mx+b)'=m</span>.</p>
+        <p><b>The power rule.</b> For <span class="tex">x^n</span>: <span class="tex">(x^n)'=n\,x^{n-1}</span>. Why? Expand <span class="tex">(x+h)^n</span>. The first term is <span class="tex">x^n</span>, the next is <span class="tex">n x^{n-1}h</span>, and every later term contains <span class="tex">h^2</span> or higher. Subtract <span class="tex">x^n</span>, divide by <i>h</i>: you get <span class="tex">nx^{n-1}</span> plus terms that still contain a factor <i>h</i> and vanish in the limit. Check with <i>n</i>=2: <span class="tex">(x+h)^2=x^2+2xh+h^2</span> gives 2<i>x</i> — which matches the 6 we found at x = 3. It also holds for negative and fractional powers: <span class="tex">(1/x)'=-1/x^2</span> and <span class="tex">(\sqrt x)'=\frac1{2\sqrt x}</span>.</p>
+        <p><b>Scaling and adding.</b> Derivatives pass through sums and constant multiples: <span class="tex">(af+bg)'=af'+bg'</span> (the technical word is <i>linearity</i>). If the profit is 3 × (sales) minus 2 × (returns), its rate of change is 3 × (rate of sales) minus 2 × (rate of returns).</p>
+        <p><b>The product rule.</b> Picture a rectangle with width <i>f</i> and height <i>g</i>, both growing. Its area is <span class="tex">fg</span>. When the sides grow by <span class="tex">\Delta f</span> and <span class="tex">\Delta g</span>, the new area gains a strip along the width <span class="tex">(f\,\Delta g)</span>, a strip along the height <span class="tex">(g\,\Delta f)</span>, and a tiny corner <span class="tex">\Delta f\,\Delta g</span> that is negligible. Dividing by the step: <span class="tex">(fg)'=f'g+fg'</span>. "Derivative of first times second, plus first times derivative of second."</p>
+        <p><b>The quotient rule.</b> From the product rule one gets <span class="tex">\left(\frac fg\right)'=\frac{f'g-fg'}{g^2}</span>, valid where <span class="tex">g\ne0</span>.</p>
+        <p><b>The special bricks.</b></p>
+        <ul>
+          <li><span class="tex">e^x</span> is the function whose slope <i>equals its height</i>: <span class="tex">(e^x)'=e^x</span>. (That is why <i>e</i> is special: it is the base where this works with no extra factor.)</li>
+          <li>The natural log undoes <span class="tex">e^x</span>, and <span class="tex">(\ln x)'=1/x</span> for <span class="tex">x&gt;0</span>: the bigger <i>x</i> is, the flatter the log curve.</li>
+          <li><span class="tex">(\sin x)'=\cos x</span> and <span class="tex">(\cos x)'=-\sin x</span>, with <i>x</i> in radians (the slope of the sine wave is the cosine wave, shifted a quarter turn).</li>
+          <li>The <b>sigmoid</b> <span class="tex">\sigma(x)=\frac1{1+e^{-x}}</span>: by the quotient rule, <span class="tex">\sigma'(x)=\frac{e^{-x}}{(1+e^{-x})^2}=\sigma(x)\,(1-\sigma(x))</span>. (We used <span class="tex">(e^{-x})'=-e^{-x}</span>; the minus sign is justified formally in the next lesson.) Its slope is always at most 1/4, reached at <i>x</i> = 0.</li>
+          <li><span class="tex">\tanh</span>: <span class="tex">\tanh'(x)=1-\tanh^2(x)</span>, at most 1.</li>
+          <li><b>ReLU</b>: <span class="tex">\max(0,x)</span> has slope 0 for <i>x</i> &lt; 0 and 1 for <i>x</i> &gt; 0, and no derivative exactly at 0 (software uses 0 there).</li></ul>
+
+        <div class="worked"><b>Worked example: three derivatives, with numbers</b>
+          <p><b>(a) Polynomial.</b> <span class="tex">f(x)=3x^4-2x+5</span>. Term by term, <span class="tex">f'(x)=12x^3-2</span>. At <i>x</i> = 2: <span class="tex">12\cdot8-2=94</span>.</p>
+          <p><b>(b) Product.</b> <span class="tex">f(x)=x^2e^x</span>. With first = <span class="tex">x^2</span> (derivative 2<i>x</i>) and second = <span class="tex">e^x</span> (derivative <span class="tex">e^x</span>): <span class="tex">f'(x)=2xe^x+x^2e^x=(2x+x^2)e^x</span>. At <i>x</i> = 1: <span class="tex">3e\approx8.1548</span>.</p>
+          <p><b>(c) Quotient.</b> <span class="tex">f(x)=\dfrac{x}{1+x^2}</span>. Numerator derivative 1, denominator derivative 2<i>x</i>: <span class="tex">f'(x)=\frac{1\cdot(1+x^2)-x\cdot2x}{(1+x^2)^2}=\frac{1-x^2}{(1+x^2)^2}</span>. At <i>x</i> = 2: <span class="tex">\frac{1-4}{25}=-0.12</span> (the curve is slightly falling there).</p>
+          <p><b>(d) Sigmoid.</b> <span class="tex">\sigma(2)=0.8808</span>, so <span class="tex">\sigma'(2)=0.8808\times0.1192=0.1050</span>; and <span class="tex">\sigma'(0)=0.5\times0.5=0.25</span>, the steepest the sigmoid ever gets.</p></div>
+
+        <h3 class="sec">The formal rules</h3>
+        <div class="eq">\begin{aligned}(x^n)'&amp;=nx^{n-1} &amp;(af+bg)'&amp;=af'+bg' \\ (fg)'&amp;=f'g+fg' &amp;\Big(\tfrac fg\Big)'&amp;=\tfrac{f'g-fg'}{g^2}\\ (e^x)'&amp;=e^x &amp;(\ln x)'&amp;=\tfrac1x\\ (\sin x)'&amp;=\cos x &amp;(\cos x)'&amp;=-\sin x\\ \sigma'&amp;=\sigma(1-\sigma) &amp;\tanh'&amp;=1-\tanh^2\end{aligned}</div>
+        <table class="sym">
+          <tr><td>f, g</td><td>two functions of <i>x</i>; <span class="tex">f'</span>, <span class="tex">g'</span> are their derivatives</td></tr>
+          <tr><td>a, b, n</td><td>constants (numbers that do not depend on <i>x</i>)</td></tr>
+          <tr><td>e</td><td>Euler's number ≈ 2.71828</td></tr>
+          <tr><td>ln</td><td>natural logarithm (log base <i>e</i>; written <code>log</code> in most ML code)</td></tr>
+          <tr><td>σ</td><td>the sigmoid <span class="tex">1/(1+e^{-x})</span>, squashing numbers into (0, 1)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press the preset chips one after another. The top plot is <i>f</i> with its tangent at the dot; the bottom plot is <i>f′</i>. Where <i>f</i> has a peak or valley, <i>f′</i> crosses zero; where <i>f</i> rises steeply, <i>f′</i> is large and positive.</li>
+        <li>Orange dots are the formula you typed. When they sit exactly on the green line, your derivative is right and the readout turns green.</li>
+        <li>Type your own function (try <code>x^3 - 3*x</code>) and attempt the derivative first. Then deliberately make an error — write <code>2*x*cos(x)</code> for <i>x²</i> sin <i>x</i> — and see how the checker catches it.</li>
+        <li>Pick <code>sigmoid(x)</code> and slide <i>x₀</i>: the slope never exceeds 0.25. Pick <code>relu(x)</code>: the derivative jumps from 0 to 1.</li></ol></div>
+      <div data-lab="rules"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>The derivative of a product is not the product of the derivatives.</b> For <span class="tex">x\cdot x</span> the right answer is 2<i>x</i>, not <span class="tex">1\cdot1=1</span>. The same goes for quotients.</li>
+          <li><b>Power rule vs exponential.</b> <span class="tex">x^2</span> (variable base, constant exponent) uses <span class="tex">2x</span>. <span class="tex">2^x</span> (constant base, variable exponent) is a different animal: its derivative is <span class="tex">2^x\ln2</span>, not <span class="tex">x2^{x-1}</span>.</li>
+          <li><b>Sign in the quotient rule.</b> It is <span class="tex">f'g-fg'</span> in that order; swapping them flips the sign.</li>
+          <li>Rules apply to <i>what is inside the pieces as given</i>. <span class="tex">\sin(x^2)</span> is not <span class="tex">\cos(x^2)</span>; the inner function matters (next lesson).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Activation derivatives are the table above.</b> ReLU's derivative is the cheap 0-or-1 mask; sigmoid's is <span class="tex">\sigma(1-\sigma)\le\tfrac14</span>; tanh's is <span class="tex">1-\tanh^2\le1</span>. These numbers decide how strongly error signals survive passing through a layer (see the vanishing-gradient discussion next lesson).</li>
+          <li><b>Automatic differentiation</b> (PyTorch, JAX, TensorFlow) is exactly this: every primitive operation (<code>+</code>, <code>*</code>, <code>exp</code>, <code>log</code>, <code>sin</code>…) ships with its own derivative rule, and the library combines them for you. The lab's green curve is computed by the same engine.</li>
+          <li><b>Loss functions.</b> The derivative of the log-loss <span class="tex">-\ln p</span> is <span class="tex">-1/p</span> (from <span class="tex">(\ln x)'=1/x</span>): confident wrong answers, where <i>p</i> is tiny, have enormous slopes.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Differentiate <span class="tex">5x^3-x</span> and evaluate at x = 1.</summary><div class="ans"><span class="tex">15x^2-1</span>, which is <b>14</b> at <i>x</i> = 1.</div></details>
+        <details class="check"><summary>2. Find the slope of <span class="tex">xe^x</span> at x = 0.</summary><div class="ans">Product rule: <span class="tex">1\cdot e^x+x\cdot e^x=(1+x)e^x</span>. At 0 this is <b>1</b>.</div></details>
+        <details class="check"><summary>3. Find the derivative of <span class="tex">1/x</span> at x = 2 using the quotient rule, and say why the sigmoid's slope can never exceed 1/4.</summary><div class="ans">Quotient rule with numerator 1: <span class="tex">\frac{0\cdot x-1\cdot1}{x^2}=-\frac1{x^2}</span>, which is <b>−1/4</b> at 2. For the sigmoid, <span class="tex">\sigma'=\sigma(1-\sigma)</span> is the product of two numbers in (0, 1) that add to 1; such a product is largest when both equal ½, giving ¼.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Every derivative is built from a handful of bricks (powers, exp, ln, sin/cos, σ, tanh, ReLU) and rules (sum, scale, product, quotient, chain).</li>
+          <li>Power rule <span class="tex">(x^n)'=nx^{n-1}</span>; product <span class="tex">f'g+fg'</span>; quotient <span class="tex">(f'g-fg')/g^2</span>.</li>
+          <li><span class="tex">\sigma'=\sigma(1-\sigma)\le\frac14</span>, <span class="tex">\tanh'=1-\tanh^2</span>, ReLU' is 0 or 1.</li>
+          <li>Autodiff libraries are this table plus the chain rule, applied automatically.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="chain-rule" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.3</span><h2>The chain rule</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A neural network computes <span class="tex">\hat y=f_3(f_2(f_1(x)))</span>: layers nested inside layers. The loss depends on the weights of layer 1 only <i>through</i> everything that happens in layers 2 and 3. How does a tiny change of one weight at the very bottom of this stack change the loss at the very top — and how can a computer work this out for a billion weights without going insane?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Exchange rates. Suppose 1 euro buys 1.1 dollars, and 1 dollar buys 150 yen. How many yen does 1 euro buy? You multiply the rates: <span class="tex">1.1\times150=165</span>. Nobody finds that surprising. <b>The chain rule is the same fact about rates of change:</b> if turning knob <i>x</i> moves the middle quantity <i>u</i> at some rate, and moving <i>u</i> moves the output <i>y</i> at another rate, then the overall rate of <i>y</i> per <i>x</i> is the <i>product</i> of the two rates.</p>
+        <p>Another picture: three gears. Turning the first gear once turns the second 3 times (rate 3) and the second turns the third 2 times per turn (rate 2); so the third spins 3 × 2 = 6 times per turn of the first. The rates multiply along the chain. In the lab below you can <i>see</i> this: a small wiggle goes in at x, is stretched by the first machine, and stretched again by the second.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Name the pieces. An <b>inner</b> machine <span class="tex">u=g(x)</span> feeds an <b>outer</b> machine <span class="tex">y=f(u)</span>; together <span class="tex">y=f(g(x))</span>, a <b>composition</b> (Module 0, Functions). Nudge the input by a small <span class="tex">\Delta x</span>. Close to a point, each machine is almost a straight line (lesson 2.1), so</p>
+        <div class="eq">\Delta u\approx g'(x)\,\Delta x,\qquad \Delta y\approx f'(u)\,\Delta u\;=\;f'(u)\,g'(x)\,\Delta x</div>
+        <p>Divide by <span class="tex">\Delta x</span> and let it shrink: <span class="tex">\frac{dy}{dx}=f'(g(x))\cdot g'(x)</span>. The one subtle point: the outer derivative must be evaluated <b>at the inner value</b> <span class="tex">u=g(x)</span>, because that is where the outer machine actually operates.</p>
+        <div class="worked"><b>Worked example 1: y = sin(x²) at x = 0.8</b>
+          <p>Inner: <span class="tex">u=x^2</span>, so <span class="tex">u=0.64</span> and <span class="tex">g'(x)=2x=1.6</span>. Outer: <span class="tex">y=\sin u</span>, so <span class="tex">y=\sin0.64=0.5972</span> and <span class="tex">f'(u)=\cos u=\cos0.64=0.8021</span>. Chain rule: <span class="tex">dy/dx=0.8021\times1.6=1.2834</span>.</p>
+          <p><b>Check by brute force:</b> at <i>x</i> = 0.81, <span class="tex">y=\sin(0.6561)=0.61003</span>. The difference quotient is <span class="tex">(0.61003-0.59720)/0.01=1.2836</span> — essentially the same number.</p></div>
+        <div class="worked"><b>Worked example 2: three links, y = e^{sin(x²)} at x = 1</b>
+          <p>Break it into <span class="tex">u=x^2</span>, <span class="tex">v=\sin u</span>, <span class="tex">y=e^v</span>. Rates: <span class="tex">du/dx=2x=2</span>; <span class="tex">dv/du=\cos u=\cos1=0.5403</span>; <span class="tex">dy/dv=e^v=e^{\sin1}=2.3198</span>. Multiply: <span class="tex">2\times0.5403\times2.3198=2.5068</span>. A longer chain is just a longer product.</p></div>
+        <div class="worked"><b>Worked example 3: one neuron, by hand (this is backprop)</b>
+          <p>A neuron with input <i>x</i> = 1, weight <i>w</i> = 2, bias <i>b</i> = −1 computes <span class="tex">z=wx+b</span>, then <span class="tex">a=\sigma(z)</span>, and the loss against target <i>t</i> = 1 is <span class="tex">L=(a-t)^2</span>.</p>
+          <p><b>Forward</b> (compute and remember): <span class="tex">z=2\cdot1-1=1</span>; <span class="tex">a=\sigma(1)=0.7311</span>; <span class="tex">L=(0.7311-1)^2=0.0723</span>.</p>
+          <p><b>Backward</b> (multiply local rates, from the loss downward): <span class="tex">\frac{\partial L}{\partial a}=2(a-t)=-0.5379</span>; <span class="tex">\frac{\partial a}{\partial z}=\sigma(1)(1-\sigma(1))=0.1966</span>; <span class="tex">\frac{\partial z}{\partial w}=x=1</span>. So <span class="tex">\frac{\partial L}{\partial w}=-0.5379\times0.1966\times1=-0.1058</span>. The negative sign says: <i>increase</i> the weight to lower the loss. (Likewise <span class="tex">\partial L/\partial b=-0.1058</span>, because <span class="tex">\partial z/\partial b=1</span>.)</p></div>
+        <p>That second calculation <i>is</i> backpropagation. In the forward pass we compute and store every intermediate value. In the backward pass we walk from the output to the input, multiplying each machine's local rate onto the running product. Each local rate is simple (a number from the table in lesson 2.2); the chain rule glues them into the derivative of the whole thing. When the network has billions of weights, the same backward sweep computes <i>all</i> their derivatives, reusing the shared products instead of redoing them.</p>
+        <p><b>Branches add.</b> If <i>x</i> feeds the output through two different paths (as in <span class="tex">y=x\cdot x</span>, where both factors depend on <i>x</i>), the contributions of the paths <i>add</i>: that is the product rule again. Residual connections in modern networks are exactly such a second path.</p>
+        <p><b>Vanishing gradients.</b> A chain of many layers multiplies many local rates. If each is below 1, the product collapses: sigmoid slopes are at most 0.25, so ten sigmoid layers can shrink the signal by <span class="tex">0.25^{10}\approx10^{-6}</span>. If each is above 1, it explodes. Much of the history of deep learning (ReLU, careful initialisation, residual connections, normalisation) is the effort to keep this product near 1.</p>
+
+        <h3 class="sec">The formal statement</h3>
+        <div class="eq">\frac{d}{dx}f\big(g(x)\big)=f'\big(g(x)\big)\cdot g'(x)\qquad\text{or}\qquad\frac{dy}{dx}=\frac{dy}{du}\cdot\frac{du}{dx}</div>
+        <table class="sym">
+          <tr><td>g(x)</td><td>the inner function; its output <i>u</i> is the input of the outer function</td></tr>
+          <tr><td>f′(g(x))</td><td>the derivative of the <i>outer</i> function, evaluated at the inner function's output (not at <i>x</i>!)</td></tr>
+          <tr><td>g′(x)</td><td>the derivative of the inner function</td></tr>
+          <tr><td>dy/du · du/dx</td><td>Leibniz form: the "du" appears to cancel as in fractions. A helpful mnemonic, although the real justification is the linear-approximation argument above.</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the three gauges. The wiggle at <i>x</i> is stretched by machine <i>g</i> (local rate shown in the box) and again by machine <i>f</i>. The caption states the numbers at every moment; press <b>Pause</b> or <b>Step ¼ wiggle</b> to examine one instant.</li>
+        <li>Check the readout: <span class="tex">\Delta u/\Delta x</span> equals <i>g′</i>, <span class="tex">\Delta y/\Delta u</span> equals <i>f′</i>, and their product matches the measured <span class="tex">\Delta y/\Delta x</span>. Shrink the wiggle size to see the match tighten.</li>
+        <li>Change the outer machine to <code>sigmoid(u)</code> and the base point to −2 or 2: the sigmoid is nearly flat there, local rate ≈ 0.1, and the wiggle all but disappears — a vanishing gradient in miniature.</li>
+        <li>Then explore the computational graph (second lab): press forward and backward and compare each local derivative with the numbers you computed by hand.</li></ol></div>
+      <div data-lab="chainwiggle"></div>
+      <div data-lab="backprop"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Forgetting the inner derivative.</b> <span class="tex">\frac{d}{dx}\sin(2x)=2\cos(2x)</span>, not <span class="tex">\cos(2x)</span>.</li>
+          <li><b>Evaluating the outer derivative at <i>x</i></b> instead of at <span class="tex">g(x)</span>. In example 1 you need <span class="tex">\cos(0.64)</span>, not <span class="tex">\cos(0.8)</span>.</li>
+          <li><b>Confusing composition with a product.</b> <span class="tex">\sin(x)\cdot x^2</span> (a product, product rule) is different from <span class="tex">\sin(x^2)</span> (a composition, chain rule).</li>
+          <li><b>Treating "cancelling" literally.</b> <span class="tex">dy/du\cdot du/dx</span> is not an algebra of fractions in general (and in several variables it becomes matrix multiplication).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Backpropagation is the chain rule.</b> It is the reason deep learning is practical: one backward sweep yields every weight's derivative at about the cost of one forward pass.</li>
+          <li><b>Vanishing and exploding gradients</b> are products of many local rates drifting toward 0 or ∞. They motivate ReLU, LSTM/GRU gates, residual connections, batch/layer normalisation and gradient clipping.</li>
+          <li><b>Residual connections</b> <span class="tex">y=x+F(x)</span> add a second path with local rate 1, so the derivative is <span class="tex">1+F'(x)</span> and signals survive through hundreds of layers.</li>
+          <li><b>Autodiff tapes</b> (PyTorch's <code>autograd</code>) record the forward operations and replay the chain rule in reverse.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Differentiate <span class="tex">(3x+1)^5</span> at x = 0.</summary><div class="ans">Outer <span class="tex">u^5</span>: <span class="tex">5u^4</span>; inner <span class="tex">3x+1</span>: 3. At <i>x</i> = 0, <i>u</i> = 1: <span class="tex">5\cdot1\cdot3=15</span>.</div></details>
+        <details class="check"><summary>2. Differentiate <span class="tex">e^{-x^2}</span> and evaluate at x = 1.</summary><div class="ans">Outer <span class="tex">e^u</span> (derivative <span class="tex">e^u</span>), inner <span class="tex">-x^2</span> (derivative <span class="tex">-2x</span>): <span class="tex">-2xe^{-x^2}</span>. At 1: <span class="tex">-2/e=-0.7358</span>.</div></details>
+        <details class="check"><summary>3. A 10-layer sigmoid network: if every local rate were at its maximum 0.25 and the weights contribute a factor of 1, how large is the end-to-end rate? What does that tell you about training the lowest layer?</summary><div class="ans"><span class="tex">0.25^{10}\approx9.5\times10^{-7}</span>. The bottom layer's gradient is about a millionth of the top layer's, so it learns extremely slowly — the vanishing-gradient problem.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Rates of change multiply along a chain: <span class="tex">dy/dx=(dy/du)(du/dx)</span>, with the outer derivative evaluated at the inner value.</li>
+          <li>Backprop = forward pass (store values) + backward pass (multiply local derivatives).</li>
+          <li>Branches add, chains multiply; long chains can vanish or explode.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="partials-gradient" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.4</span><h2>Partial derivatives &amp; the gradient</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model's loss depends not on one knob but on many: the weights <span class="tex">w_1,\dots,w_n</span>. Turning knob 1 alone changes the loss at some rate; turning knob 2 alone, at another. If you may turn <i>all</i> knobs a little at once, in which combination should you turn them to reduce the loss as fast as possible?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>You are standing on a hillside in fog, with a compass. The height of the ground depends on two numbers: how far east (<i>x</i>) and how far north (<i>y</i>) you are. Walk exactly east and measure how steeply the ground rises under your feet: that is the <b>partial derivative with respect to <i>x</i></b>. Walk exactly north and measure again: the partial with respect to <i>y</i>. Each tells you the slope along one compass axis while the other coordinate stays frozen.</p>
+        <p>But you are free to walk northeast, or any direction. It turns out that these <i>two</i> numbers are enough to predict the slope in <i>every</i> direction, and that bundling them into a vector <span class="tex">(f_x,f_y)</span> gives an arrow that points <b>straight uphill, in the direction of steepest climb</b> — the <b>gradient</b>. Its length is how steep that steepest climb is. Walk against it to descend fastest. That arrow is the compass of machine learning.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Partial derivative = ordinary derivative with the other variables frozen.</b> For <span class="tex">f(x,y)=x^2+3y^2</span>, to find the change per unit of <i>x</i>, treat <i>y</i> as a constant: <span class="tex">\frac{\partial f}{\partial x}=2x</span> (the <span class="tex">3y^2</span> is a constant and its derivative is 0). Likewise <span class="tex">\frac{\partial f}{\partial y}=6y</span>. The curly <span class="tex">\partial</span> ("partial", "del") is a reminder that other variables exist and are being held fixed.</p>
+        <p><b>The gradient</b> stacks all the partials into one vector:</p>
+        <div class="eq">\nabla f(\mathbf p)=\begin{pmatrix}\partial f/\partial x_1\\ \vdots\\ \partial f/\partial x_n\end{pmatrix}\Big|_{\mathbf p}</div>
+        <div class="worked"><b>Worked example: the gradient of x² + 3y² at (1, 2)</b>
+          <p>Value: <span class="tex">f=1+12=13</span>. Partials: <span class="tex">f_x=2x=2</span>, <span class="tex">f_y=6y=12</span>. So <span class="tex">\nabla f(1,2)=(2,12)</span>: the surface is rising 2 units per step east and 12 units per step north, so mostly "north". Its length <span class="tex">\|\nabla f\|=\sqrt{2^2+12^2}=12.17</span>: the steepest slope available from this point, in the direction <span class="tex">(0.164,\,0.986)</span>.</p></div>
+        <p><b>Slope in any direction.</b> Walk in the direction of a unit vector <span class="tex">\mathbf u</span> (length 1). Near the point the surface is almost a tilted plane (this is the zoom-in idea of 2.1 in two dimensions): <span class="tex">f(\mathbf p+h\mathbf u)\approx f(\mathbf p)+h\,\nabla f\cdot\mathbf u</span>. So the slope in direction <b>u</b>, the <b>directional derivative</b>, is the dot product <span class="tex">D_{\mathbf u}f=\nabla f\cdot\mathbf u=\|\nabla f\|\cos\theta</span>, where θ is the angle between <b>u</b> and the gradient (the dot-product formula of Module 0/1). Reading the cosine:</p>
+        <ul><li>θ = 0 (walk along ∇f): <span class="tex">\cos=1</span>, the slope is the largest possible, <span class="tex">\|\nabla f\|</span>. <b>Steepest ascent.</b></li>
+          <li>θ = 180° (walk against ∇f): <span class="tex">\cos=-1</span>, the most negative slope. <b>Steepest descent.</b></li>
+          <li>θ = 90° (walk perpendicular): slope 0. You are walking along a <b>contour line</b> (a level curve of constant <i>f</i>). So the gradient is always perpendicular to the contour through the point.</li></ul>
+        <div class="worked"><b>Worked example: directions from (1, 2)</b>
+          <p>Gradient (2, 12). Walk along <span class="tex">\mathbf u=(0.6,0.8)</span> (unit length, since 0.36 + 0.64 = 1): <span class="tex">D_{\mathbf u}f=2(0.6)+12(0.8)=10.8</span>. The maximum possible is 12.17 (direction of ∇f), and a walk perpendicular, <span class="tex">\mathbf u=(12,-2)/12.17</span>, gives <span class="tex">2\cdot12-12\cdot2=0</span>.</p>
+          <p><b>One descent step.</b> Take step size <span class="tex">\eta=0.05</span> against the gradient: <span class="tex">(1,2)-0.05\,(2,12)=(0.9,\,1.4)</span>. Then <span class="tex">f=0.81+3(1.96)=6.69</span>, down from 13. (A tiny step would lower <i>f</i> by about <span class="tex">\eta\|\nabla f\|^2=0.05\times148=7.4</span>; the actual drop is 6.31 because the surface curves, a topic for lesson 2.6.)</p></div>
+        <div class="worked"><b>Worked example: the loss of one data point</b>
+          <p>A line model <span class="tex">\hat y=wx+b</span> with <i>w</i> = 1, <i>b</i> = 0 sees the example <i>x</i> = 2, <i>y</i> = 5. Prediction 2, error −3, loss <span class="tex">L=(wx+b-y)^2=9</span>. By the chain rule: <span class="tex">\partial L/\partial w=2(wx+b-y)\cdot x=2(-3)(2)=-12</span>, <span class="tex">\partial L/\partial b=2(-3)(1)=-6</span>. The gradient <span class="tex">(-12,-6)</span> says: <i>increasing</i> both <i>w</i> and <i>b</i> lowers the loss, and <i>w</i> matters twice as much (its input <i>x</i> is 2).</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\frac{\partial f}{\partial x_i}(\mathbf p)=\lim_{h\to0}\frac{f(\mathbf p+h\,\mathbf e_i)-f(\mathbf p)}{h},\qquad \nabla f=\Big(\frac{\partial f}{\partial x_1},\dots,\frac{\partial f}{\partial x_n}\Big),\qquad D_{\mathbf u}f=\nabla f\cdot\mathbf u</div>
+        <table class="sym">
+          <tr><td>f(x₁,…,xₙ)</td><td>a function of several inputs that returns one number (a height, a loss)</td></tr>
+          <tr><td>p</td><td>the point where we measure, a vector in ℝⁿ</td></tr>
+          <tr><td>e<sub>i</sub></td><td>the unit step along axis <i>i</i> (1 in slot <i>i</i>, 0 elsewhere): nudge only coordinate <i>i</i></td></tr>
+          <tr><td>∂f/∂x<sub>i</sub></td><td>the <b>partial derivative</b>: slope when only <i>x<sub>i</sub></i> changes</td></tr>
+          <tr><td>∇f</td><td>"nabla f" or "grad f": the <b>gradient</b>, the vector of all partials. It lives in the <i>input</i> space (same dimension as <b>p</b>).</td></tr>
+          <tr><td>u</td><td>a unit direction vector (<span class="tex">\|\mathbf u\|=1</span>)</td></tr>
+          <tr><td>D<sub>u</sub>f</td><td>the <b>directional derivative</b>: slope of <i>f</i> when walking along <b>u</b>; equals the dot product ∇f · u (assuming <i>f</i> is differentiable)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the dot around the contour map. The orange arrow is ∂f/∂x (east–west slope) and the blue arrow is ∂f/∂y; the green arrow, their vector sum, is the gradient. Notice it always crosses the dashed contour line at a right angle (the little square marks it) and points toward higher (more orange) ground.</li>
+        <li>Turn on <b>direction</b> and drag the θ slider (or press <b>Sweep θ</b>). The pink arrow rotates and the small plot at the top right shows D<sub>u</sub>f tracing a cosine wave: maximal when the pink arrow lines up with the green one, zero when perpendicular, most negative opposite.</li>
+        <li>Press <b>Walk downhill</b>: the dot follows −∇f in small steps (slow, 3 per second) and spirals into the valley. Try <b>uphill</b>. Then select the Valley preset and see the path zig-zag: a hint about step sizes for lesson 2.6.</li>
+        <li>Choose Saddle and walk from various places: where does the gradient vanish, and is it a minimum?</li></ol></div>
+      <div data-lab="gradmap"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>The gradient points <i>uphill</i>.</b> To minimise a loss you subtract it: <span class="tex">\theta\leftarrow\theta-\eta\nabla L</span>. Adding it makes the loss <i>grow</i>.</li>
+          <li><b>The gradient lives in the input (parameter) space</b>, not on the graph of <i>f</i>. It is a vector with one entry per variable, not a point on the surface.</li>
+          <li><b>Steepest depends on how you measure distance.</b> "Steepest descent" is relative to the ordinary (Euclidean) length of a step. If one weight is measured in thousands and another in thousandths, the gradient's direction is dominated by the awkward scale: this is why feature scaling and adaptive optimisers (Adam) matter.</li>
+          <li><b>Gradient zero does not mean minimum.</b> It can also be a maximum or a saddle (try it in the lab).</li>
+          <li><b>∂ is not d.</b> <span class="tex">\partial f/\partial x</span> freezes the other variables; the total change when everything moves is a sum over all variables.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b><span class="tex">\nabla_\theta L</span> is the thing training computes.</b> With a model's parameters <span class="tex">\theta\in\mathbb R^P</span> (P up to billions), the gradient has one entry per parameter; backprop produces all of them at once. Gradient descent, SGD, momentum and Adam all update <i>θ</i> using it.</li>
+          <li><b>Mini-batches.</b> The true gradient is an average over every training example (an expectation); SGD estimates it from a small batch, which is why it is noisy but cheap.</li>
+          <li><b>Gradients with respect to inputs.</b> Take <span class="tex">\nabla_{\mathbf x}L</span> instead of <span class="tex">\nabla_{\theta}L</span>: it tells you which pixels most affect the prediction (<i>saliency maps</i>), and nudging the image along it is how adversarial examples (FGSM) fool classifiers.</li>
+          <li><b>Contours and conditioning.</b> Narrow valleys, where contours are long thin ellipses, make the gradient point mostly across the valley, not along it; that is the zig-zag you saw.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Find the gradient of <span class="tex">f(x,y)=x^2y</span> at (1, 2).</summary><div class="ans"><span class="tex">f_x=2xy=4</span>, <span class="tex">f_y=x^2=1</span>. So <span class="tex">\nabla f=(4,1)</span>.</div></details>
+        <details class="check"><summary>2. For <span class="tex">f=x^2+y^2</span> at (3, 4): what are the gradient, its length, and the direction of steepest descent?</summary><div class="ans">Gradient <span class="tex">(6,8)</span>, length <span class="tex">\sqrt{36+64}=10</span>. Steepest descent is the opposite unit vector <span class="tex">(-0.6,-0.8)</span> (straight toward the origin, the minimum).</div></details>
+        <details class="check"><summary>3. With ∇f = (4, 1), what is the slope when walking in the direction (0, 1)? And what direction gives slope 0?</summary><div class="ans">Dot product with (0, 1): <b>1</b> (just <span class="tex">f_y</span>). Slope 0 occurs for directions perpendicular to (4, 1), such as <span class="tex">(1,-4)/\sqrt{17}</span>: that is along the contour.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A partial derivative is a one-variable derivative with the other variables held fixed.</li>
+          <li>The gradient ∇f stacks all partials; it points to steepest ascent, its length is the steepest slope, and it is perpendicular to contours.</li>
+          <li>Slope along a unit direction <b>u</b> is ∇f · <b>u</b> = ‖∇f‖ cos θ.</li>
+          <li>Training updates <span class="tex">\theta\leftarrow\theta-\eta\nabla_\theta L</span>.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="jacobian-hessian" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.5</span><h2>Jacobian &amp; Hessian</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two things the gradient cannot yet describe. (1) A network layer takes a <i>vector</i> in and gives a <i>vector</i> out; how do we take the derivative of that? (2) The gradient is only a slope. It does not say how quickly the slope itself changes — whether the landscape is a gentle bowl or a knife-edge canyon — and that decides how bold a step we can take. What objects capture each?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Jacobian: the derivative of a map.</b> Imagine a rubber map of a city being stretched and twisted onto a table. Draw a tiny circle on the original. After the deformation, close to that spot, the circle becomes a tiny <i>ellipse</i> — the deformation is nearly linear when you zoom in (the same zoom trick as lesson 2.1, now with inputs and outputs that are both 2D). A linear map is a <i>matrix</i>. The matrix that best describes the stretching at that spot is the <b>Jacobian</b>. In the lab, you can see the circle turn into an ellipse and the Jacobian's columns showing where the two input directions go.</p>
+        <p><b>Hessian: the derivative of the slope.</b> On a road, the first derivative tells how steeply it climbs and the second derivative tells how it <i>curves</i>: curving up like a bowl, curving down like a hilltop. With two or more input variables, curvature depends on the direction you look, so we need a whole matrix of second derivatives: the <b>Hessian</b>. Its eigenvectors (Module 1) are the directions of strongest and weakest curvature; its eigenvalues are the curvatures there.</p>
+
+        <h3 class="sec">Build it up: the Jacobian</h3>
+        <p>Take a map with two inputs and two outputs, <span class="tex">F(x,y)=(u(x,y),\,v(x,y))</span>. Each output has its own gradient. Stack those gradients as the <i>rows</i> of a matrix:</p>
+        <div class="eq">J=\begin{pmatrix}\partial u/\partial x&amp;\partial u/\partial y\\ \partial v/\partial x&amp;\partial v/\partial y\end{pmatrix}</div>
+        <p>Column 1 says "if I nudge <i>x</i> by one unit, the output moves by this vector"; column 2 says the same for <i>y</i>. A small step <span class="tex">\mathbf d</span> in the input produces an output change <span class="tex">F(\mathbf p+\mathbf d)-F(\mathbf p)\approx J\,\mathbf d</span>: the linear approximation of 2.1 and 2.4, with the number <span class="tex">f'(a)</span> replaced by a matrix.</p>
+        <div class="worked"><b>Worked example: polar to Cartesian</b>
+          <p>The map <span class="tex">F(r,\theta)=(r\cos\theta,\;r\sin\theta)</span> turns a radius and angle into a point. The partials: <span class="tex">J=\begin{pmatrix}\cos\theta&amp;-r\sin\theta\\ \sin\theta&amp;r\cos\theta\end{pmatrix}</span>. At <span class="tex">r=2,\theta=\pi/2</span> (the point (0, 2)): <span class="tex">J=\begin{pmatrix}0&amp;-2\\1&amp;0\end{pmatrix}</span>. Reading columns: increasing <i>r</i> by δ moves the point by (0, δ) — straight up, away from the origin; increasing θ by δ moves it by (−2δ, 0) — sideways along the circle, with a speed of 2 because the radius is 2. The determinant is <span class="tex">0\cdot0-(-2)(1)=2</span>, equal to <i>r</i>: tiny patches of area get scaled by a factor of <i>r</i> (the familiar "area element" <span class="tex">r\,dr\,d\theta</span>).</p></div>
+        <p><b>Special cases you will see constantly.</b> A linear layer <span class="tex">\mathbf y=W\mathbf x</span> has Jacobian <i>W</i> itself. An element-wise activation <span class="tex">\mathbf a=\sigma(\mathbf z)</span> has a <i>diagonal</i> Jacobian with <span class="tex">\sigma'(z_i)</span> on the diagonal (each output depends only on its own input). A function with one output has a Jacobian with a single row — which is the gradient (as a row).</p>
+        <p><b>The chain rule for vectors.</b> For a composition <span class="tex">F=G\circ H</span>, the Jacobians <i>multiply</i> as matrices: <span class="tex">J_F=J_G\,J_H</span> (the same "multiply the local rates" as lesson 2.3, with matrices now). Backprop multiplies these from the loss end backward; because the loss is a single number, the leftmost factor is a row vector, so each step is a cheap vector-matrix product (a <i>vector–Jacobian product</i>) and the full Jacobians are never formed.</p>
+
+        <h3 class="sec">Build it up: the Hessian</h3>
+        <p>Differentiate the gradient once more. For <span class="tex">f(x,y)</span> the second partials form the <b>Hessian</b>:</p>
+        <div class="eq">H=\begin{pmatrix}\partial^2f/\partial x^2&amp;\partial^2f/\partial x\partial y\\ \partial^2f/\partial y\partial x&amp;\partial^2f/\partial y^2\end{pmatrix}</div>
+        <p>For nice (continuously differentiable) functions the order of differentiation does not matter, so <i>H</i> is <b>symmetric</b>. Its meaning: if you walk in direction <b>u</b> (unit), the curvature of the path (second derivative along it) is <span class="tex">\kappa=\mathbf u^{\!\top}H\,\mathbf u</span>. This quantity is always between the smallest and largest eigenvalues of <i>H</i>, and it equals them along the eigenvectors.</p>
+        <div class="worked"><b>Worked example: a saddle, f = x²y at (1, 2)</b>
+          <p>First partials <span class="tex">f_x=2xy,\;f_y=x^2</span>. Second: <span class="tex">f_{xx}=2y=4,\;f_{xy}=2x=2,\;f_{yy}=0</span>. So <span class="tex">H=\begin{pmatrix}4&amp;2\\2&amp;0\end{pmatrix}</span>. Trace 4, determinant <span class="tex">0-4=-4</span>, so <span class="tex">\lambda=2\pm\sqrt{4+4}=4.83,\;-0.83</span>. One positive, one negative: the surface curves up in one direction and down in another there — a <b>saddle</b> shape (like a mountain pass).</p></div>
+        <div class="worked"><b>Worked example: a bowl and a Newton step</b>
+          <p>For <span class="tex">f=x^2+3y^2</span> the Hessian is <span class="tex">H=\mathrm{diag}(2,6)</span> everywhere: curvature 2 along <i>x</i> and 6 along <i>y</i>; the ratio 6/2 = 3 is the <b>condition number</b> (how elongated the bowl is). <b>Newton's method</b> uses curvature to choose the step: <span class="tex">\mathbf p\leftarrow\mathbf p-H^{-1}\nabla f</span>. From (1, 2): <span class="tex">\nabla f=(2,12)</span>, <span class="tex">H^{-1}\nabla f=(2/2,\,12/6)=(1,2)</span>, so the new point is (0, 0) — the exact minimum in one step, because a quadratic is exactly its own second-order model (next lesson).</p></div>
+        <p><b>Classifying a flat spot.</b> Where <span class="tex">\nabla f=0</span>: both eigenvalues positive → minimum (bowl); both negative → maximum (hilltop); mixed signs → saddle; a zero eigenvalue → flat in some direction (the test is inconclusive without higher derivatives).</p>
+
+        <h3 class="sec">The formal definitions</h3>
+        <div class="eq">J_F(\mathbf p)_{ij}=\frac{\partial F_i}{\partial x_j}(\mathbf p),\qquad H_f(\mathbf p)_{ij}=\frac{\partial^2f}{\partial x_i\,\partial x_j}(\mathbf p),\qquad \kappa(\mathbf u)=\mathbf u^{\!\top}H\mathbf u</div>
+        <table class="sym">
+          <tr><td>F : ℝⁿ → ℝᵐ</td><td>a vector function with <i>n</i> inputs and <i>m</i> outputs</td></tr>
+          <tr><td>J<sub>F</sub></td><td>the <b>Jacobian</b>, an <i>m × n</i> matrix: row <i>i</i> is the gradient of output <i>F<sub>i</sub></i>; column <i>j</i> is the sensitivity to input <i>x<sub>j</sub></i>. (Some books use the transpose.)</td></tr>
+          <tr><td>det J</td><td>local volume (area) scaling factor when <i>m</i> = <i>n</i>; its sign tells whether orientation flips</td></tr>
+          <tr><td>H<sub>f</sub></td><td>the <b>Hessian</b>, an <i>n × n</i> symmetric matrix of second partials of a <i>scalar</i> function <i>f</i></td></tr>
+          <tr><td>λ</td><td>eigenvalues of <i>H</i>: the principal curvatures</td></tr>
+          <tr><td>uᵀHu</td><td>the curvature of <i>f</i> along the unit direction <b>u</b></td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li><b>Jacobian lab.</b> Start with the circle radius at its default (fairly big): the image dots form a curved blob, not the dashed ellipse. Press <b>Shrink circle</b> and watch: the auto-zoomed right panel shows the blob becoming <i>exactly</i> the dashed ellipse predicted by J. The readout's "gap" falls in proportion to the radius.</li>
+        <li>Drag the centre on the left to other places: the ellipse changes (the Jacobian depends on where you stand). With the "singular (det 0)" preset the ellipse collapses to a line: the map throws information away.</li>
+        <li>Compare det J with the "measured area ratio": they agree for small circles.</li>
+        <li><b>Hessian lab.</b> Drag the dot, then press <b>Rotate slice</b>. The blue curve is f along the pink direction; the orange dashed parabola is the best quadratic match, with opening set by κ = uᵀHu. Rotate until κ is largest: that is along the blue eigen-axis.</li>
+        <li>Choose "bowl: stiff &amp; flat": curvature 6 in one direction and 0.6 in another, so progress is quick across the valley and slow along it. Switch to "saddle": the two eigenvalues have opposite sign.</li></ol></div>
+      <div data-lab="jacmap"></div>
+      <div data-lab="hessian"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Shape conventions.</b> A Jacobian of <span class="tex">\mathbb R^n\to\mathbb R^m</span> is <i>m × n</i> in this course (the "numerator layout"). Many libraries and papers use the transpose; always check shapes.</li>
+          <li><b>The Jacobian is only a local picture.</b> It is the best linear approximation near one point; far from it (see the big circle) the true map bends.</li>
+          <li><b>The full Hessian is enormous.</b> A model with <i>P</i> = 10⁹ parameters has a Hessian with 10¹⁸ entries — impossible to store. Methods use Hessian–<i>vector</i> products or diagonal / low-rank approximations.</li>
+          <li><b>Zero gradient + positive eigenvalues = minimum, but one negative eigenvalue = saddle.</b> In high dimensions saddles are far more common than true minima.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Layer derivatives.</b> Every layer's Jacobian (<i>W</i>, or <span class="tex">\mathrm{diag}(\sigma')</span>) is what backprop multiplies together; frameworks implement "vector–Jacobian products".</li>
+          <li><b>Change of variables in generative models.</b> Normalising flows transform a simple distribution through an invertible map, and the density gets multiplied by <span class="tex">|\det J|</span> — the area-scaling factor you saw here.</li>
+          <li><b>Second-order optimisation.</b> Newton's method, L-BFGS and natural-gradient methods use curvature to set step sizes per direction; Adam's per-weight scaling is a crude diagonal curvature stand-in.</li>
+          <li><b>Sharp vs flat minima.</b> The largest Hessian eigenvalue of the loss measures how sharp a minimum is; flatter minima tend to generalise better, an idea behind sharpness-aware minimisation. The largest eigenvalue also limits the usable learning rate (next lesson).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A layer maps ℝ³ → ℝ². What shape is its Jacobian, and what is the Jacobian of <span class="tex">F(x,y)=(x+y,\;xy)</span> at (1, 2)?</summary><div class="ans">2 × 3 (outputs × inputs). For the second part: <span class="tex">u=x+y</span> has gradient (1, 1); <span class="tex">v=xy</span> has gradient <span class="tex">(y,x)=(2,1)</span>. So <span class="tex">J=\begin{pmatrix}1&amp;1\\2&amp;1\end{pmatrix}</span>, determinant <span class="tex">1-2=-1</span> (areas keep their size but orientation flips).</div></details>
+        <details class="check"><summary>2. What is the Hessian of <span class="tex">f=x^2+y^2</span>, and is the origin a minimum, a maximum or a saddle?</summary><div class="ans"><span class="tex">H=\begin{pmatrix}2&amp;0\\0&amp;2\end{pmatrix}</span>, eigenvalues 2, 2 (both positive): a <b>minimum</b>; the bowl is equally curved in every direction.</div></details>
+        <details class="check"><summary>3. Why is it a problem to compute the full Hessian of a neural network?</summary><div class="ans">It has <i>P</i> × <i>P</i> entries, where <i>P</i> is the number of parameters (millions to billions), so storing or inverting it is impossible. In practice one uses Hessian–vector products, diagonal or low-rank approximations, or avoids second derivatives entirely.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Jacobian = matrix of first partials of a vector map: the best local linear approximation (a circle becomes an ellipse); det J is the area scaling.</li>
+          <li>Hessian = symmetric matrix of second partials of a scalar function: curvature in every direction (<span class="tex">\mathbf u^{\!\top}H\mathbf u</span>); eigenvalues are principal curvatures.</li>
+          <li>Backprop multiplies Jacobians; Newton-type methods use the Hessian; its biggest eigenvalue sets how sharp a minimum is and how large a step is safe.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.6 ===================== -->
+    <section class="lesson" id="taylor" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.6</span><h2>Linear &amp; quadratic approximation (Taylor)</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>When training a model we only ever know the loss landscape <i>at the point where we stand</i>: its height, its slope, its curvature. Yet we must decide on a step. How good a prediction of the landscape can we build from just those local facts — and how large a step can we take before the prediction becomes untrustworthy and training explodes?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>You want to draw a map of a mountain, but you may only stand in one spot and take measurements. What would you record? First, your <b>height</b>: the crudest map is "the ground is flat at this height everywhere". Next, the <b>slope</b>: now the map is a tilted plane, much better close by. Then the <b>curvature</b>: a gentle bowl or dome, better still. Each extra measurement lets you draw a more faithful map, but only <i>near</i> where you stand; far away, any such map can mislead.</p>
+        <p>That is a <b>Taylor approximation</b>: replace a complicated function by a simple polynomial built from its derivatives at one point. Order 0 is a constant, order 1 a line, order 2 a parabola (which is all we need for optimisation), and so on. Use the lab to build the stack up one order at a time.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Pick an expansion point <i>a</i>. A polynomial <span class="tex">c_0+c_1(x-a)+c_2(x-a)^2+\cdots</span> that matches <i>f</i> at <i>a</i> in value and in its first <i>n</i> derivatives is a good local copy. Matching the value forces <span class="tex">c_0=f(a)</span>. Matching the slope forces <span class="tex">c_1=f'(a)</span>. Matching the second derivative: the polynomial's second derivative at <i>a</i> is <span class="tex">2c_2</span>, so <span class="tex">c_2=f''(a)/2</span>. In general the <i>k</i>-th derivative of <span class="tex">(x-a)^k</span> is <span class="tex">k!</span> (that is 1·2·3···<i>k</i>), so <span class="tex">c_k=f^{(k)}(a)/k!</span>.</p>
+        <div class="eq">f(x)\approx\underbrace{f(a)}_{\text{height}}+\underbrace{f'(a)(x-a)}_{\text{slope}}+\underbrace{\tfrac12f''(a)(x-a)^2}_{\text{curvature}}+\cdots+\frac{f^{(n)}(a)}{n!}(x-a)^n</div>
+        <div class="worked"><b>Worked example 1: sin x around 0</b>
+          <p>Derivatives at 0: sin → 0, cos → 1, −sin → 0, −cos → −1, then repeating. So <span class="tex">\sin x\approx x-\frac{x^3}{6}+\frac{x^5}{120}</span>. Test at <i>x</i> = 0.5 (true <span class="tex">\sin0.5=0.479426</span>):</p>
+          <table class="tbl"><tr><th>order</th><th>value</th><th>error</th></tr>
+            <tr><td>1 (line) 0.5</td><td>0.500000</td><td>0.0206</td></tr>
+            <tr><td>3: 0.5 − 0.125/6</td><td>0.479167</td><td>0.00026</td></tr>
+            <tr><td>5: + 0.03125/120</td><td>0.479427</td><td>0.0000015</td></tr></table>
+          <p>Each new term shrinks the error roughly a hundredfold, because the error is about the size of the first neglected term.</p></div>
+        <div class="worked"><b>Worked example 2: e^x at 0, evaluated at x = 1</b>
+          <p>Every derivative of <span class="tex">e^x</span> at 0 is 1, so <span class="tex">T_n(x)=1+x+\frac{x^2}{2}+\cdots+\frac{x^n}{n!}</span>. At <i>x</i> = 1: orders 0 through 6 give 1, 2, 2.5, 2.6667, 2.7083, 2.7167, 2.7181 against the true <i>e</i> = 2.71828. A formula for <i>e</i> from nothing but derivatives at one point!</p></div>
+        <p><b>Not forever.</b> A Taylor series may only work inside a limited distance from <i>a</i>. The function <span class="tex">1/(1-x)</span> equals <span class="tex">1+x+x^2+\cdots</span>, but only for |<i>x</i>| &lt; 1: outside that radius, adding more terms makes things <i>worse</i>. Try it in the lab with the preset <code>1/(1-x)</code>. Functions with corners (<code>abs(x)</code>) are approximated badly at the corner at every order.</p>
+
+        <h3 class="sec">Several variables: the model every optimiser uses</h3>
+        <p>For a loss <span class="tex">L(\boldsymbol\theta)</span> and a small step <span class="tex">\mathbf d</span>, the same construction gives</p>
+        <div class="eq">L(\boldsymbol\theta+\mathbf d)\approx L(\boldsymbol\theta)+\nabla L\cdot\mathbf d+\tfrac12\,\mathbf d^{\!\top}H\,\mathbf d</div>
+        <p>The first-order part says what gradient descent assumes: the landscape is a tilted plane, so go downhill. The second-order part says how the landscape curves. <b>Gradient descent</b> picks <span class="tex">\mathbf d=-\eta\nabla L</span>. Substituting, with <span class="tex">\mathbf g=\nabla L</span>:</p>
+        <div class="eq">L(\boldsymbol\theta-\eta\mathbf g)\approx L(\boldsymbol\theta)-\eta\|\mathbf g\|^2+\tfrac12\eta^2\,\mathbf g^{\!\top}H\mathbf g</div>
+        <p>The middle term is the gain, shrinking the loss in proportion to <i>η</i>. The last is the <i>price of curvature</i>, growing with <i>η</i><sup>2</sup>. For small η the gain wins; for large η the price wins and the loss goes <i>up</i>. Minimising this expression over η gives the best step <span class="tex">\eta^*=\frac{\|\mathbf g\|^2}{\mathbf g^{\!\top}H\mathbf g}</span>, which is simply <span class="tex">1/\lambda</span> if the gradient points along an eigenvector with curvature λ. Going further, any η above about <span class="tex">2/\lambda</span> makes the loss grow along that direction, which is the origin of the rule <b>"learning rate must be below 2 / (largest curvature)"</b>.</p>
+        <div class="worked"><b>Worked example: how big a step? f(w) = 3w²</b>
+          <p>One weight, starting at <i>w</i> = 1. Gradient <span class="tex">6w</span>, curvature <span class="tex">\lambda=f''=6</span>. The update <span class="tex">w\leftarrow w-\eta\cdot6w=(1-6\eta)\,w</span> multiplies <i>w</i> by <span class="tex">1-6\eta</span> each step:</p>
+          <table class="tbl"><tr><th>η</th><th>factor 1 − 6η</th><th>behaviour</th></tr>
+            <tr><td>0.1</td><td>0.4</td><td>smooth decay: 1 → 0.4 → 0.16 → …</td></tr>
+            <tr><td>1/6 = 0.167 (= 1/λ)</td><td>0</td><td>lands exactly on the minimum in one step</td></tr>
+            <tr><td>0.2</td><td>−0.2</td><td>overshoots but still shrinks (oscillating decay)</td></tr>
+            <tr><td>1/3 (= 2/λ)</td><td>−1</td><td>bounces between +1 and −1 forever</td></tr>
+            <tr><td>0.5</td><td>−2</td><td>diverges: 1 → −2 → 4 → −8 …</td></tr></table>
+          <p>The safe window is <span class="tex">0&lt;\eta&lt;2/\lambda=1/3</span>. For a multi-weight bowl, the <i>stiffest</i> direction (the largest eigenvalue) sets the limit, while the <i>flattest</i> direction then moves slowly: the zig-zag from lesson 2.4.</p></div>
+        <p><b>Newton's method</b> goes one step further: it minimises the second-order model exactly, jumping to <span class="tex">\boldsymbol\theta-H^{-1}\nabla L</span> (lesson 2.5's example). It needs <i>H</i>, which is why it is expensive for big networks.</p>
+
+        <h3 class="sec">The formal statement</h3>
+        <div class="eq">T_n(x)=\sum_{k=0}^{n}\frac{f^{(k)}(a)}{k!}(x-a)^k,\qquad f(x)-T_n(x)\approx\frac{f^{(n+1)}(a)}{(n+1)!}(x-a)^{n+1}</div>
+        <table class="sym">
+          <tr><td>T<sub>n</sub></td><td>the Taylor polynomial of order (degree) <i>n</i> around <i>a</i></td></tr>
+          <tr><td>a</td><td>the expansion point, where we know the derivatives</td></tr>
+          <tr><td>f<sup>(k)</sup>(a)</td><td>the <i>k</i>-th derivative at <i>a</i> (<i>k</i> = 0 means <i>f</i> itself)</td></tr>
+          <tr><td>k!</td><td>factorial: 1·2·…·<i>k</i> (and 0! = 1)</td></tr>
+          <tr><td>(x − a)</td><td>the distance from the expansion point; higher orders matter less when it is small</td></tr>
+          <tr><td>error</td><td>roughly the first term you left out; shrinks fast near <i>a</i></td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Build up 0 → 6</b> and watch each order appear, 2.5 seconds apart. The red shaded region is the error between the blue function and the orange polynomial; it shrinks near <i>a</i> first and the good zone widens.</li>
+        <li>Drag the test point <i>x</i> (white dots on the curve and polynomial): the readout lists the exact error. Compare orders 1, 2 and 3 for sin x at x = 1.5.</li>
+        <li>Move the expansion point <i>a</i>. The polynomial always glues itself to the curve at <i>a</i>. At <i>a</i> = π/2 (about 1.57) for sin, the slope term vanishes and the order-2 parabola is the dome.</li>
+        <li>Select <code>1/(1-x)</code> with <i>a</i> = 0 and order 6: it fits well for |x| &lt; 1 and fails beyond.</li>
+        <li>In the step-size lab, set η = 0.1, 0.2, 0.33, 0.5 and read the "factor" row: it is the 1 − 6η from the table. Which settings converge?</li></ol></div>
+      <div data-lab="taylor"></div>
+      <div data-lab="calc" data-title="Gradient descent on f(w) = 3w² (curvature 6)" data-sub="each step multiplies w by (1 − 6η)" data-params="eta=0.1:0.01..0.6:0.01"
+           data-rows="factor per step = 1 - 6*eta; w after 1 step = 1 - 6*eta; w after 5 steps = (1 - 6*eta)^5; w after 10 steps = (1 - 6*eta)^10; safe limit 2 over curvature = 2/6"
+           data-note="The factor must lie between −1 and 1 for the weight to shrink. Past η = 1/3 each step overshoots farther than it started: training diverges."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Taylor approximations are local.</b> A higher order is not always better far from <i>a</i> (see <code>1/(1-x)</code>). The "trust region" is limited by the nearest singularity or non-smooth point.</li>
+          <li><b>Real losses are not exact quadratics.</b> The rule η &lt; 2/λ is a local guide; curvature changes as you move, so the safe rate changes through training.</li>
+          <li><b>Order vs. number of terms.</b> The sin series has only odd powers; its "order-2" approximation equals the order-1 one.</li>
+          <li><b>Factorial matters.</b> The coefficient is <span class="tex">f^{(k)}(a)/k!</span>, not just <span class="tex">f^{(k)}(a)</span>. Forgetting <span class="tex">k!</span> gives wildly wrong polynomials.</li>
+          <li>Piecewise-linear networks (ReLU) have a <i>zero</i> Hessian almost everywhere; curvature there lives in the kinks, so second-order reasoning must be applied with care.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Why gradient descent works at all.</b> It is the first-order Taylor model: for a small enough step, <span class="tex">L(\theta-\eta g)\approx L-\eta\|g\|^2&lt;L</span>.</li>
+          <li><b>Learning-rate limits.</b> Stability needs <span class="tex">\eta&lt;2/\lambda_{\max}(H)</span>. Empirically, training often hovers at this "edge of stability", and learning-rate warm-up is partly a response to curvature early in training.</li>
+          <li><b>Newton, L-BFGS, natural gradient, trust-region methods</b> are all built on the second-order model.</li>
+          <li><b>Linearisation arguments</b> (adversarial examples via a first-order step, neural-tangent-kernel analysis, influence functions) assume the network is locally a tilted plane.</li>
+          <li><b>Numerics.</b> Functions like <code>log1p(x)</code> and <code>expm1(x)</code> use Taylor-style expansions to stay accurate for tiny <i>x</i> where <code>log(1+x)</code> loses digits.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Write the order-2 Taylor polynomial of cos x around 0 and use it for x = 0.2.</summary><div class="ans"><span class="tex">\cos x\approx1-\frac{x^2}{2}</span>. At 0.2: <span class="tex">1-0.02=0.98</span>. The true value is 0.980067, so the error is about 0.00007.</div></details>
+        <details class="check"><summary>2. For <span class="tex">f(w)=5w^2</span>, what learning rate reaches the minimum in one step, and what happens with η = 0.25?</summary><div class="ans">Curvature <span class="tex">f''=10</span>. The update factor is <span class="tex">1-10\eta</span>: η = 0.1 gives 0 (one step). With η = 0.25 the factor is −1.5, so |<i>w</i>| grows by 1.5× each step and flips sign: it diverges (and 0.25 &gt; 2/10 = 0.2 as predicted).</div></details>
+        <details class="check"><summary>3. Why does the quadratic term of the multivariable Taylor expansion make the loss <i>increase</i> for large step sizes, even when the gradient points downhill?</summary><div class="ans">The gradient only guarantees that a <i>tiny</i> step goes downhill (gain <span class="tex">\eta\|g\|^2</span>, linear in η). The curvature cost <span class="tex">\tfrac12\eta^2g^{\top}Hg</span> grows with η<sup>2</sup>, so for large enough η it exceeds the gain: you overshoot the valley and land higher on the opposite slope.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Taylor polynomial: match height, slope, curvature… at one point: <span class="tex">T_n=\sum f^{(k)}(a)(x-a)^k/k!</span>. Good near <i>a</i>, not forever.</li>
+          <li>Gradient descent = first-order model; Newton = second-order model.</li>
+          <li>Step size: gain linear in η, curvature cost quadratic; stability needs <span class="tex">\eta&lt;2/\lambda_{\max}</span>, and η = 1/λ is ideal along a single direction.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.7 ===================== -->
+    <section class="lesson" id="integrals" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.7</span><h2>Integrals</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You know the car's speed at every moment (a speedometer log). How far did it drive? Equivalently: a probability <i>density</i> tells you how concentrated probability is near each value, yet the chance of landing in a range must be a total. How do you add up infinitely many infinitesimal pieces?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>If a car drives at a constant 20 m/s for 5 s, the distance is 20 × 5 = 100 m, which is also the <i>area of a rectangle</i> of height 20 and width 5 on a speed-versus-time graph. If the speed changes, the area under the curve is still the distance: cut the time into many short slices, treat the speed in each slice as roughly constant, and add up (speed × slice width). The thinner the slices, the more exact the total. The <b>integral</b> is what this sum becomes when the slices are infinitely thin.</p>
+        <p>The idea is the mirror image of lesson 2.1. A derivative takes <i>position</i> and extracts <i>speed</i>; an integral takes <i>speed</i> and rebuilds <i>position</i> by accumulating. They are opposites, and the <b>fundamental theorem of calculus</b> makes that precise.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Riemann sums.</b> To estimate the area under <i>f</i> between <i>a</i> and <i>b</i>: split <span class="tex">[a,b]</span> into <i>n</i> slices of width <span class="tex">\Delta x=(b-a)/n</span>, pick a sample point <span class="tex">x_i</span> in each slice (left end, right end or middle), and add the rectangle areas <span class="tex">f(x_i)\Delta x</span>.</p>
+        <div class="worked"><b>Worked example: the area under x² from 0 to 2</b>
+          <p>Use <i>n</i> = 4, so <span class="tex">\Delta x=0.5</span> and the slices start at 0, 0.5, 1, 1.5.</p>
+          <p><b>Left endpoints:</b> heights 0, 0.25, 1, 2.25 → sum 3.5 → area <span class="tex">3.5\times0.5=1.75</span> (too low: the curve rises, so each rectangle lies under it).</p>
+          <p><b>Right endpoints:</b> heights 0.25, 1, 2.25, 4 → sum 7.5 → <span class="tex">3.75</span> (too high).</p>
+          <p><b>Midpoints:</b> at 0.25, 0.75, 1.25, 1.75 → heights 0.0625, 0.5625, 1.5625, 3.0625 → sum 5.25 → <span class="tex">2.625</span> (very close).</p>
+          <p>With <i>n</i> = 100, the left sum is 2.6268 and the midpoint sum is 2.6666. They squeeze in on <span class="tex">8/3=2.6667</span>.</p></div>
+        <p>The limit of these sums as <span class="tex">n\to\infty</span> is the <b>definite integral</b>. In the notation, the sum symbol Σ has become a stretched S, <span class="tex">\int</span>, and the slice width Δ<i>x</i> has become the infinitesimal <i>dx</i>: "a continuous Σ". Areas below the axis count <b>negatively</b>, so the integral is a <i>signed</i> area, a net total of accumulation (distance driven forward minus backward).</p>
+        <p><b>The fundamental theorem.</b> Define the <i>area function</i> <span class="tex">A(t)=\int_a^t f(x)\,dx</span>: the area collected from <i>a</i> up to <i>t</i>. How quickly does <i>A</i> grow as <i>t</i> increases a tiny bit? The new sliver has width Δ<i>t</i> and height about <span class="tex">f(t)</span>, so <span class="tex">\Delta A\approx f(t)\Delta t</span>, i.e. <span class="tex">A'(t)=f(t)</span>. <b>The rate at which the area grows equals the height of the curve.</b> Reading it backwards: if you can find any function <i>F</i> whose derivative is <i>f</i> (an <b>antiderivative</b>), then <span class="tex">\int_a^bf=F(b)-F(a)</span>, with no sums at all.</p>
+        <div class="worked"><b>Worked example: using the theorem</b>
+          <p>An antiderivative of <span class="tex">x^2</span> is <span class="tex">F(x)=x^3/3</span> (its derivative is <span class="tex">x^2</span>). So <span class="tex">\int_0^2x^2dx=F(2)-F(0)=\tfrac83-0=2.6667</span> — exactly what the rectangles were approaching. Also: <span class="tex">\int_0^3(2x+1)dx=[x^2+x]_0^3=12</span>.</p></div>
+        <div class="worked"><b>Worked example: a probability density</b>
+          <p>A random variable <i>X</i> in [0, 1] has density <span class="tex">p(x)=2x</span> (larger values more likely). Check it is a valid density: <span class="tex">\int_0^12x\,dx=[x^2]_0^1=1</span> ✓. The probability that <i>X</i> &lt; 0.5 is <span class="tex">\int_0^{0.5}2x\,dx=0.25</span>. The <b>expected value</b> (mean), a probability-weighted average, is <span class="tex">E[X]=\int_0^1x\cdot2x\,dx=\big[\tfrac23x^3\big]_0^1=\tfrac23</span>, above the midpoint 0.5 as expected. The expectation is exactly "Σ value × probability" with Σ turned into ∫ (Module 3).</p></div>
+        <p><b>Handy facts.</b> Linearity: <span class="tex">\int(af+bg)=a\!\int\!f+b\!\int\!g</span>. Splitting: <span class="tex">\int_a^b=\int_a^c+\int_c^b</span>. Reversing the limits flips the sign. <b>Substitution</b> is the chain rule backwards. Many natural integrals have no formula (the bell curve <span class="tex">e^{-x^2}</span> has no elementary antiderivative, although its total area <span class="tex">\int_{-\infty}^{\infty}e^{-x^2}dx=\sqrt\pi</span> is known by a clever trick); then we integrate <i>numerically</i> with the very sums above, or by Monte Carlo (random sampling).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\int_a^bf(x)\,dx=\lim_{n\to\infty}\sum_{i=1}^{n}f(x_i)\,\Delta x,\qquad \frac{d}{dt}\int_a^tf(x)\,dx=f(t),\qquad \int_a^bf(x)\,dx=F(b)-F(a)\;\;(F'=f)</div>
+        <table class="sym">
+          <tr><td>∫ₐᵇ</td><td>the definite integral from <i>a</i> to <i>b</i>: the signed area under <i>f</i></td></tr>
+          <tr><td>f(x)</td><td>the function being accumulated (a speed, a density…)</td></tr>
+          <tr><td>dx</td><td>an infinitesimal slice of width; says which variable you integrate over, and carries its units</td></tr>
+          <tr><td>Δx = (b − a)/n</td><td>the width of one rectangle in the finite approximation</td></tr>
+          <tr><td>x<sub>i</sub></td><td>the sample point inside slice <i>i</i></td></tr>
+          <tr><td>F</td><td>an antiderivative of <i>f</i> (<span class="tex">F'=f</span>); unique up to adding a constant, which cancels in <i>F</i>(<i>b</i>) − <i>F</i>(<i>a</i>)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With 4 rectangles and "left endpoints", the sum is below the exact area. Switch to "right endpoints" (too high), then "midpoints" and "trapezoids" (much closer). Drag <i>n</i> up to 50 and watch the error shrink.</li>
+        <li>Press <b>Refine automatically</b>: for each <i>n</i> = 1, 2, 4, 8, … the rectangles sweep across from left to right, the running total grows in the readout, and then the count doubles. Use the speed slider to slow it down.</li>
+        <li>Choose <code>cos(2*x)</code> or <code>sin(x) + 1.5</code> and place the interval so part of the curve dips below the axis: those rectangles turn orange and subtract.</li>
+        <li><b>Fundamental theorem lab.</b> Press <b>Sweep t</b>. The top plot shades the area collected so far; the bottom plot is that total A(t). Where <i>f</i> is tall, A climbs steeply; where <i>f</i> crosses zero, A has a peak or a valley. The red dashed tangent to A has slope equal to f(t) — the readout confirms it.</li></ol></div>
+      <div data-lab="riemann"></div>
+      <div data-lab="ftc"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Integral = signed area.</b> The total distance driven versus the net displacement differ if the speed goes negative; the "area" below the axis subtracts.</li>
+          <li><b>Forgetting the constant</b> in an indefinite integral: <span class="tex">\int2x\,dx=x^2+C</span>. In definite integrals it cancels.</li>
+          <li><b>A density is not a probability.</b> <i>p(x)</i> can exceed 1 (a narrow spike); only <span class="tex">\int p\,dx</span> over a range is a probability, and it is at most 1.</li>
+          <li><b>Not every function has a neat antiderivative.</b> That does not mean the integral does not exist; it just needs numerics.</li>
+          <li><b>The dx matters.</b> Changing variables (e.g. from metres to kilometres) rescales both <i>f</i> and <i>dx</i>; forgetting the factor gives a wrong total.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Probability densities.</b> Every continuous distribution (Gaussian, exponential…) lives through integrals: probabilities are areas, the CDF is the area function <i>A</i>(<i>t</i>) from the lab, the PDF is its derivative.</li>
+          <li><b>Expectations and the loss.</b> "Expected loss" <span class="tex">E[\ell]=\int\ell(x)p(x)\,dx</span> is a continuous Σ. Training estimates it with an average over a batch, i.e. <i>Monte Carlo integration</i>: sample points, average the heights.</li>
+          <li><b>Normalising constants.</b> Many models define an unnormalised density and must divide by <span class="tex">Z=\int\tilde p(x)\,dx</span> (the partition function); that intractable integral is the central difficulty of energy-based models and Bayesian posteriors.</li>
+          <li><b>Variational inference, KL divergence, entropy</b> are integrals of log-densities (Modules 3–5); <b>AUC</b> of an ROC curve is an integral; <b>diffusion models and neural ODEs</b> integrate differential equations over time with exactly the numerical sums of this lesson.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute <span class="tex">\int_0^3(2x+1)\,dx</span> by finding an antiderivative.</summary><div class="ans"><span class="tex">F(x)=x^2+x</span>, so <span class="tex">F(3)-F(0)=12-0=12</span>. (Check with geometry: a trapezoid under the line from height 1 to 7 over a width of 3: <span class="tex">\tfrac{1+7}{2}\cdot3=12</span>.)</div></details>
+        <details class="check"><summary>2. Let <span class="tex">A(x)=\int_0^xt^2\,dt</span>. What is <i>A</i>′(x), and what is <i>A</i>(3)?</summary><div class="ans">By the fundamental theorem <span class="tex">A'(x)=x^2</span> (no integration needed). Also <span class="tex">A(x)=x^3/3</span>, so <span class="tex">A(3)=9</span>.</div></details>
+        <details class="check"><summary>3. With four left-endpoint rectangles for <span class="tex">\int_0^2x^2dx</span> you get 1.75. Is the exact value larger or smaller, and why?</summary><div class="ans">Larger: the exact value is 8/3 ≈ 2.667. Because <i>x</i>² is increasing, the left-endpoint rectangle in each slice sits below the curve and misses area. Right endpoints (3.75) overshoot; midpoints (2.625) nearly cancel the two errors.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An integral is a continuous sum: area under a curve = limit of Σ f(x<sub>i</sub>)Δx; below-axis area counts negatively.</li>
+          <li>Fundamental theorem: the area function has derivative f, and <span class="tex">\int_a^bf=F(b)-F(a)</span>. Integration and differentiation undo each other.</li>
+          <li>Probabilities, expectations and normalising constants are integrals; machine learning approximates them by sampling averages.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now measure how a function changes (derivatives), follow that change through layers (the chain rule), choose the best direction in many dimensions (the gradient), understand curvature and step-size limits (Jacobian, Hessian, Taylor) and add up continuous quantities (integrals). Next, <b>Module 3</b> turns uncertainty into mathematics: probability, where the integrals of lesson 2.7 reappear as expectations.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

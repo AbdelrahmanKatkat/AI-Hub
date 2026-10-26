@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · Images as numbers · Computer Vision</title>
+<meta name="description" content="Pixels, channels and colour spaces, tensors and memory layout, histograms, and how cameras and JPEG store images — built from intuition with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-images.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">0</div>
+      <div style="flex:1">
+        <h1>Module 0 · Images as numbers</h1>
+        <p>Before a network can "see", a photograph must become numbers. Here you will zoom from a photo down to its pixels, watch colour split into channels, see how a tensor lies in memory, read a histogram, and follow a picture from the camera sensor to a JPEG file. Everything is computed by hand once, then explored in a lab.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">No prerequisites</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="what-is-an-image" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.1</span><h2>What is an image? Pixels &amp; grids</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A photograph is a smooth, continuous scene: light of every brightness arriving from every direction. A computer can only store a finite list of numbers. How do we turn the scene into that list — and how many numbers do we need before the picture looks right?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine laying a sheet of graph paper over a painting. In every little square you write down one number: how bright the painting is there (0 = black, 255 = white). Hand someone only that sheet of numbers, and they can colour the squares back in and recover a picture. Each square is a <b>pixel</b> (picture element) and the whole sheet is the <b>image</b>.</p>
+        <p>Two decisions are hidden in that story, and they are the two ideas of this lesson:</p>
+        <ul>
+          <li><b>Sampling</b> — how <i>fine</i> is the graph paper? Fewer, bigger squares lose small details. This is the <b>resolution</b>.</li>
+          <li><b>Quantisation</b> — how many different numbers may we write? If we only allow 0 or 1 the picture is pure black and white; if we allow 0…255 it looks smooth. The number of bits per value is the <b>bit depth</b>.</li>
+        </ul>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Write the brightness at position (x, y) as <span class="tex">I(x,y)</span>. Think of <span class="tex">I</span> as a function: you give it a place, it returns a brightness. The real world is a <i>continuous</i> function (x and y can be any real numbers, so can the brightness). A camera produces a <i>discrete</i> one: x and y are whole numbers (column and row), and brightness is a whole number too.</p>
+        <p><b>Coordinates.</b> In images, row 0 is at the <i>top</i> and y grows <i>downwards</i> — the opposite of a maths graph. An image with H rows and W columns is therefore stored as an H×W grid. People say "1920×1080" meaning width × height, but arrays say (H, W) = (1080, 1920). This mismatch trips up almost everyone once.</p>
+        <p><b>Colour.</b> A grey pixel needs one number. A colour pixel needs three (red, green, blue amounts) — more in lesson 0.2. So a colour image holds H×W×3 numbers.</p>
+        <div class="worked"><b>Worked example — how big is a frame?</b>
+          <p>A Full-HD frame is 1920 columns × 1080 rows.</p>
+          <p>Pixels: 1920 × 1080 = 2,073,600 (about 2 megapixels).</p>
+          <p>Numbers: × 3 colour values = 6,220,800.</p>
+          <p>Each value is 8 bits = 1 byte, so the frame is 6,220,800 bytes = 6,220,800 / 1,048,576 ≈ <b>5.93 MiB</b>.</p>
+          <p>A video at 30 frames per second, uncompressed, needs 6,220,800 × 30 ≈ <b>186.6 MB every second</b>. That is why compression (lesson 0.5) exists.</p>
+          <p>Bit depth: 8 bits give 2⁸ = 256 levels. With 3 bits there are only 2³ = 8 levels, so a smooth sky breaks into visible bands.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">I:\{0,\dots,H-1\}\times\{0,\dots,W-1\}\to\{0,1,\dots,2^{b}-1\}^{C},\qquad \text{bytes}=\frac{H\cdot W\cdot C\cdot b}{8}</div>
+        <table class="sym">
+          <tr><td>I(x, y)</td><td>the pixel at column x, row y (a number, or C numbers)</td></tr>
+          <tr><td>H, W</td><td>height (rows) and width (columns) in pixels</td></tr>
+          <tr><td>C</td><td>channels per pixel: 1 for grey, 3 for RGB, 4 with transparency</td></tr>
+          <tr><td>b</td><td>bit depth: bits per value; each value is one of 2<sup>b</sup> levels</td></tr>
+          <tr><td>bytes</td><td>raw storage, before any compression</td></tr>
+        </table>
+        <p>A <b>sample</b> is a measurement at one place (sampling = choosing the places); <b>quantisation</b> is rounding that measurement to one of 2<sup>b</sup> levels. Both lose information; both are controlled by choice.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: zoom into the numbers</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Animate: photo → pixels</b> and watch the picture shrink to a blocky grid; the numbers appear in the magnifier on the right.</li>
+        <li>Choose the <i>checkerboard</i> and lower the resolution below 8: the pattern is gone — fine detail needs enough samples.</li>
+        <li>Drag the bit-depth slider to 2 bits: only 4 grey levels remain and smooth gradients turn into bands.</li>
+        <li>Switch Show to <i>RGB</i> and read three numbers per pixel.</li></ol></div>
+      <div data-lab="pixels"></div>
+      <div class="try"><b>Try this</b><ol>
+        <li>Leave the defaults: that is the 1920×1080 frame from the worked example (≈ 5.93 MiB).</li>
+        <li>Set channels = 1: a grey frame is a third of the size.</li>
+        <li>Set 4096×4096 and 16 bits: some scientific cameras do this — see the bytes explode.</li></ol></div>
+      <div data-lab="calc" data-title="How big is an image?" data-sub="raw, uncompressed size" data-params="w=1920:16..4096:16; h=1080:16..4096:16; ch=3:1..4:1; bits=8:1..16:1"
+           data-rows="pixels = w*h; numbers stored = w*h*ch; bytes = w*h*ch*bits/8; MiB = w*h*ch*bits/8/1048576; levels per value = 2^bits"
+           data-note="MiB = bytes / 1,048,576 (2²⁰)."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>(W, H) versus (H, W).</b> Cameras and image viewers say width × height; NumPy and PyTorch store (height, width). Mixing them rotates or crashes your code.</li>
+          <li><b>y points down.</b> Row 0 is the top. Formulas copied from maths graphs may flip upside-down.</li>
+          <li><b>"More pixels" is not "more detail".</b> A blurry photo enlarged to 4K has more pixels but the same information.</li>
+          <li><b>Values are not always 0…255.</b> They can be 0…1 floats, 0…65535, or negative after normalisation (lesson 0.3).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every vision model takes a fixed-size grid: ImageNet classifiers expect 224×224, MNIST digits are 28×28 = 784 numbers.</li>
+          <li>Resolution is a cost knob: compute in a CNN grows with H·W, so halving the side length is ≈ 4× cheaper — but small objects may vanish (sampling!).</li>
+          <li>Bit depth matters for medical images (12–16 bit CT/X-ray) and for HDR; most photo models quietly assume 8 bit.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many bytes is a 640×480 RGB image at 8 bits per value?</summary><div class="ans">640·480·3 = 921,600 bytes ≈ 0.88 MiB.</div></details>
+        <details class="check"><summary>2. A greyscale image uses 4 bits per pixel. How many grey levels are there?</summary><div class="ans">2⁴ = 16 levels (0…15).</div></details>
+        <details class="check"><summary>3. An array has shape (480, 640, 3). How wide is the picture?</summary><div class="ans">640 pixels wide, 480 tall: arrays are (H, W, C).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>An image is a grid of numbers: I(x, y), sampled in space and quantised in value.</li><li>Resolution = how many samples; bit depth = how many levels.</li><li>Raw size = H·W·C·b/8 bytes; a 1080p RGB frame is ≈ 5.93 MiB.</li><li>Arrays are (H, W), row 0 is the top.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="channels-color" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.2</span><h2>Channels &amp; colour spaces</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A colour photo must become a grey one for a simple algorithm. The easy idea is "average the three numbers". But a pure green and a pure blue of the same strength do not look equally bright to us. What is the right formula — and why does the same colour sometimes get described by completely different numbers?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Your eye has three kinds of colour-sensitive cells, roughly tuned to red, green and blue light. Screens copy this: each pixel has a tiny red, green and blue lamp and mixing their light recreates almost any colour. So a colour pixel is <b>three numbers</b>, one per <b>channel</b>, and a colour image is <b>three grey images stacked</b> — a red plane, a green plane, a blue plane.</p>
+        <p>Light <i>adds</i>: red + green = yellow, red + green + blue = white, nothing = black. (Paint subtracts; screens add.)</p>
+        <p>But "(R, G, B)" is only one way to name a colour — like giving a place as street+number or as latitude+longitude. A <b>colour space</b> is a choice of coordinates. Different tasks prefer different ones:</p>
+        <ul>
+          <li><b>RGB</b> — matches sensors and screens.</li>
+          <li><b>HSV</b> (hue, saturation, value) — matches how people describe colour: <i>which</i> colour (hue, an angle on a wheel), <i>how vivid</i> (saturation), <i>how bright</i> (value). Ideal for "make it a bit more orange".</li>
+          <li><b>YCbCr / YUV</b> — one brightness channel Y (luma) plus two colour-difference channels. Our eyes are far more sensitive to brightness than to colour, so video and JPEG keep Y sharp and shrink the colour channels.</li>
+          <li><b>Lab</b> — built so that equal numerical distances look like equal colour differences.</li></ul>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Grey from colour.</b> We want a number that matches perceived brightness. The eye is most sensitive to green, then red, least to blue, so we weight them:</p>
+        <div class="eq">Y=0.299\,R+0.587\,G+0.114\,B</div>
+        <div class="worked"><b>Worked example — one pixel</b>
+          <p>Pixel (R, G, B) = (200, 100, 50), a burnt orange.</p>
+          <p>Luma: 0.299·200 + 0.587·100 + 0.114·50 = 59.8 + 58.7 + 5.7 = <b>124.2</b>.</p>
+          <p>Plain mean: (200+100+50)/3 = 116.7. Not the same; for pure green (0,255,0) luma is 149.7 but pure blue (0,0,255) gives only 29.1, while the plain mean calls both 85.</p>
+          <p><b>HSV of the same pixel.</b> max = 200, min = 50, range Δ = 150. Value V = 200/255 = 0.784. Saturation S = Δ/max = 150/200 = 0.75. Hue: the maximum is R, so H = 60° × ((G − B)/Δ) = 60° × (50/150) = <b>20°</b> (0° = red, 120° = green, 240° = blue). So: "an orange (20°), fairly vivid (75%), fairly bright (78%)".</p></div>
+        <p><b>YCbCr</b> (the JPEG/video version) is a linear change of coordinates: Y as above, <span class="tex">C_b=128+0.5(B-Y)/0.886\approx128-0.1687R-0.3313G+0.5B</span> and <span class="tex">C_r=128+0.5R-0.4187G-0.0813B</span>. Grey pixels have C<sub>b</sub> = C<sub>r</sub> = 128: all colour information lives in the two small differences.</p>
+        <p><b>Why separate brightness from colour?</b> Because we can then store the two colour channels at half the resolution in each direction ("4:2:0 subsampling") and nobody notices — saving half the bytes (1 + ¼ + ¼ = 1.5 planes instead of 3).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\begin{pmatrix}Y\\C_b\\C_r\end{pmatrix}=\begin{pmatrix}0.299&amp;0.587&amp;0.114\\-0.1687&amp;-0.3313&amp;0.5\\0.5&amp;-0.4187&amp;-0.0813\end{pmatrix}\begin{pmatrix}R\\G\\B\end{pmatrix}+\begin{pmatrix}0\\128\\128\end{pmatrix}</div>
+        <table class="sym">
+          <tr><td>R, G, B</td><td>red, green, blue intensities, 0…255</td></tr>
+          <tr><td>Y</td><td>luma: weighted brightness (the 0.299 / 0.587 / 0.114 weights, ITU-R BT.601)</td></tr>
+          <tr><td>C<sub>b</sub>, C<sub>r</sub></td><td>blue-difference and red-difference chroma; 128 means "no colour"</td></tr>
+          <tr><td>H, S, V</td><td>hue angle 0–360°, saturation 0–1, value (max channel) 0–1</td></tr>
+        </table>
+        <p>Converting between RGB and YCbCr is just a 3×3 matrix multiplication — one linear map. HSV and Lab are <i>non-linear</i> (they contain max/min or cube roots).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: split and recombine the channels</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Let the animation run: the three planes slide apart, rest, then merge back to the colour image.</li>
+        <li>Pause on the separated planes. Click the red plane over the sky, then over the red circle: the R number changes while it stays 0–50 in the sky of the blue plane.</li>
+        <li>Switch off B only: the picture turns yellowish — red + green light.</li>
+        <li>Set "grey values" display: the three planes are three ordinary grey photos. The apple-red object is bright in R and dark in G, B.</li></ol></div>
+      <div data-lab="cvchannels"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: the colour-space explorer</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Type the worked pixel: set R=200, G=100, B=50. Check that H=20°, S=75%, V=78% and luma = 124.2.</li>
+        <li>Drag only the Hue slider (or press <b>Sweep the hue</b>): R, G, B change in a repeating pattern but luma changes too — yellow is brighter than blue.</li>
+        <li>Pick pure green then pure blue (both V=100%): the luma-grey swatch for green is much lighter than for blue, the mean-grey swatches are identical.</li>
+        <li>Pull Saturation to 0: R=G=B, Cb=Cr=128 and the colour is a grey.</li></ol></div>
+      <div data-lab="cvcolor"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Grey ≠ mean.</b> Use the luma weights (OpenCV and PIL do). The mean makes blues too bright and greens too dark.</li>
+          <li><b>BGR vs RGB.</b> OpenCV loads images as B, G, R; PIL, matplotlib and PyTorch use R, G, B. Swapping turns skin blue and models degrade silently.</li>
+          <li><b>Hue is an angle.</b> 359° and 1° are neighbours. Averaging hues arithmetically is wrong near red; and hue is meaningless when saturation is 0.</li>
+          <li><b>Lab and HSV need floats.</b> 8-bit storage rounds them heavily; OpenCV scales H to 0…179 for uint8.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Colour-jitter augmentation</b> (brightness, saturation, hue shifts) is done in HSV so a model learns that a red car is still a car in dusk light.</li>
+          <li><b>Image signal processors</b> in phones convert RAW → RGB → YCbCr as part of making a JPEG.</li>
+          <li><b>Video codecs</b> (H.264, AV1) and JPEG use YCbCr with chroma subsampling; many models can run directly on the Y channel (e.g. super-resolution is often trained on Y only).</li>
+          <li>A first convolution layer on RGB has 3 input channels; some pipelines instead feed it Lab or add edge maps as extra channels.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the luma of (R, G, B) = (100, 200, 100).</summary><div class="ans">0.299·100 + 0.587·200 + 0.114·100 = 29.9 + 117.4 + 11.4 = 158.7.</div></details>
+        <details class="check"><summary>2. What are the HSV values of pure red (255, 0, 0)?</summary><div class="ans">V = 1, S = (255−0)/255 = 1, H = 60·((0−0)/255) = 0°. Pure red: hue 0°, fully saturated, full value.</div></details>
+        <details class="check"><summary>3. Why can JPEG store colour at lower resolution than brightness?</summary><div class="ans">The eye resolves fine detail mainly in brightness. In YCbCr the colour lives in two separate channels (Cb, Cr) that can be shrunk 2× in each direction with hardly any visible loss.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A colour image = stacked channel planes; screens add light.</li><li>Grey = 0.299R + 0.587G + 0.114B, not the plain mean.</li><li>Colour spaces are different coordinates for the same colour: RGB (devices), HSV (human editing), YCbCr (compression), Lab (perceptual distance).</li><li>RGB ↔ YCbCr is a 3×3 matrix; HSV and Lab are non-linear.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="tensors-layout" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.3</span><h2>Images as tensors</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You want to train a network on 32 photos at once, each 224×224 in colour. What single object do you hand to the GPU, what is its shape, how much memory does it take — and why do PyTorch and TensorFlow disagree about the order of its dimensions?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>tensor</b> is just a box of numbers with a number of directions ("axes"). A list of numbers is a 1-axis tensor, a grey image is a 2-axis tensor (rows, columns), a colour image has 3 axes (rows, columns, channels), and a <b>batch</b> of colour images has 4 (which image, plus the three). The <b>shape</b> lists how long each axis is.</p>
+        <p>Why a batch? GPUs are fast when they do the same thing to many items at once, and training uses the average over many images for a steadier signal. So models always want an extra leading axis, <b>N</b> (the batch size), even if N = 1.</p>
+        <p>The memory of a computer is not a box, it is one long line of cells. The tensor must be <i>flattened</i> into that line, and there is more than one way: either write out all of the red plane, then all of the green plane, then all of the blue plane (<b>channels first</b>, C×H×W), or go pixel by pixel writing R, G, B for each (<b>channels last</b>, H×W×C). Same numbers, different order — the lab shows it.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Shape conventions.</b> Image libraries (PIL, OpenCV, NumPy, matplotlib) give H×W×C. PyTorch models expect <b>N×C×H×W</b> ("NCHW"); TensorFlow/Keras default to <b>N×H×W×C</b> ("NHWC"). Converting is a <i>permutation of axes</i>: from HWC to CHW you move axis 2 to the front.</p>
+        <p><b>Strides.</b> To find an element in memory we need its <i>offset</i>: how many cells from the start. Each axis has a <b>stride</b>, the jump in memory for one step along that axis. The offset is the sum of index × stride over the axes.</p>
+        <div class="worked"><b>Worked example — a tiny tensor</b>
+          <p>Shape (N, C, H, W) = (2, 3, 4, 5): 2·3·4·5 = 120 elements. In NCHW the strides are: n → 3·4·5 = 60, c → 4·5 = 20, h → 5, w → 1. Element (n, c, h, w) = (1, 2, 3, 4) sits at offset 1·60 + 2·20 + 3·5 + 4·1 = 60 + 40 + 15 + 4 = <b>119</b> — the very last cell, as it should.</p>
+          <p>Same data in NHWC, shape (2, 4, 5, 3): strides n → 60, h → 15, w → 3, c → 1. The same pixel is (n, h, w, c) = (1, 3, 4, 2): 60 + 45 + 12 + 2 = 119. Check: the three channels of one pixel sit at 117, 118, 119 — neighbours. In NCHW they sit at 99, 119 … 20 cells apart.</p></div>
+        <div class="worked"><b>Worked example — memory of a batch</b>
+          <p>A batch of N = 32 RGB images 224×224 as float32 (4 bytes per number):</p>
+          <p>Elements per image: 3 · 224 · 224 = 150,528. For the batch: 32 · 150,528 = 4,816,896 numbers.</p>
+          <p>Bytes: 4,816,896 × 4 = <b>19,267,584 B ≈ 18.4 MiB</b>. As uint8 it would be only 4,816,896 B ≈ 4.6 MiB — a factor 4 saved, which is why datasets are stored as uint8 and converted to float32 only when fed to the model.</p>
+          <p>Note that this is only the <i>input</i>. Activations inside a deep network are far larger: the first ResNet layer alone outputs 64×112×112 numbers per image.</p></div>
+        <p><b>dtypes and ranges.</b> <code>uint8</code> holds 0…255 (storage). <code>float32</code> is what networks compute with, usually after <i>scaling</i> to 0…1 (divide by 255) and then <i>normalising</i> each channel: <span class="tex">x'=(x-\mu_c)/\sigma_c</span> with dataset statistics (lesson 0.4). Typical ImageNet values: μ = (0.485, 0.456, 0.406), σ = (0.229, 0.224, 0.225). For a red value of 200: 200/255 = 0.784, then (0.784 − 0.485)/0.229 = <b>1.31</b>. After normalising, values are negative and positive, roughly in −2…+2.5. float16 / bfloat16 halve the memory again (training on modern GPUs).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{offset}(n,c,h,w)=n\,s_n+c\,s_c+h\,s_h+w\,s_w,\qquad \text{NCHW: }(s_n,s_c,s_h,s_w)=(CHW,\;HW,\;W,\;1)</div>
+        <div class="eq">\text{NHWC: }(s_n,s_h,s_w,s_c)=(HWC,\;WC,\;C,\;1),\qquad \text{bytes}=N\cdot C\cdot H\cdot W\cdot\text{(bytes per element)}</div>
+        <table class="sym">
+          <tr><td>N, C, H, W</td><td>batch size, channels, height, width</td></tr>
+          <tr><td>s<sub>n</sub>, s<sub>c</sub>, s<sub>h</sub>, s<sub>w</sub></td><td>strides: memory jump (in elements) for one step along that axis</td></tr>
+          <tr><td>offset</td><td>position of the element in the flat memory, counted from 0</td></tr>
+          <tr><td>bytes per element</td><td>1 (uint8), 2 (float16), 4 (float32), 8 (float64)</td></tr>
+        </table>
+        <p>A <i>transpose/permute</i> in PyTorch does not move memory: it only swaps strides (a "view"). Some operations then need <code>.contiguous()</code> to copy the data into the new order.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: the tensor in memory</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the orange cursor walk through memory in NCHW: it first visits all red cells of the image, then all green, then all blue. Switch to NHWC and restart: now it visits R, G, B of each pixel in turn.</li>
+        <li>Set the shape to N=2, C=3, H=4, W=5 (the worked example) and query n=1, c=2, h=3, w=4: the offset shows 119.</li>
+        <li>The yellow ticks mark the channels of your queried pixel: adjacent in NHWC, spread apart in NCHW.</li>
+        <li>Raise N: the batch axis is the slowest axis — whole images follow each other.</li></ol></div>
+      <div data-lab="cvlayout"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: how much memory?</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Defaults are the worked example: N=32, 3×224×224, 4 bytes → 19,267,584 bytes (18.4 MiB).</li>
+        <li>Set bytes per number to 1 (uint8) or 2 (float16) and see the saving.</li>
+        <li>Increase resolution to 1024×1024 with N=32: the batch needs about 384 MiB before a single layer has run.</li></ol></div>
+      <div data-lab="calc" data-title="Memory of a batch" data-sub="N × C × H × W × bytes" data-params="N=32:1..256:1; C=3:1..4:1; H=224:32..1024:32; W=224:32..1024:32; B=4:1..8:1"
+           data-rows="elements = N*C*H*W; bytes = N*C*H*W*B; MiB = N*C*H*W*B/1048576"
+           data-note="B is bytes per number: 1 = uint8, 2 = float16, 4 = float32."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Forgetting to permute.</b> Feeding an HWC array to a model that wants CHW does not crash if H=W…C — it just computes nonsense. Always print <code>x.shape</code>.</li>
+          <li><b>Scaling twice (or never).</b> uint8 0…255 fed to a model trained on 0…1 floats gives wildly wrong results; dividing twice squeezes everything to ~0.</li>
+          <li><b>uint8 overflow.</b> <code>np.uint8(200) + np.uint8(100)</code> wraps to 44. Convert to float (or int16) before arithmetic.</li>
+          <li><b>Mixing up the batch axis</b> when N=1: a single image still needs shape (1, C, H, W).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>PyTorch convolutions use NCHW by default; TensorFlow historically NHWC. On NVIDIA tensor cores NHWC ("channels_last") is often faster, so frameworks offer both.</li>
+          <li>GPU memory budgeting: batch size × activations determines whether training fits — the 18.4 MiB input is small, the activations are not.</li>
+          <li>Data loading: datasets live on disk as uint8 (or JPEG); a <code>DataLoader</code> converts to float32 tensors, normalises and stacks N samples into one batch tensor.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many bytes is a float32 batch of shape (16, 3, 128, 128)?</summary><div class="ans">16·3·128·128 = 786,432 numbers × 4 = 3,145,728 bytes = 3 MiB.</div></details>
+        <details class="check"><summary>2. In NCHW with shape (1, 3, 2, 2), at which offset is the blue value of the pixel (h=1, w=0)?</summary><div class="ans">Strides (12, 4, 2, 1). Offset = 0 + 2·4 + 1·2 + 0 = 10.</div></details>
+        <details class="check"><summary>3. You load a photo with PIL and get shape (480, 640, 3). What do you do to feed it to a PyTorch model?</summary><div class="ans">Convert to float, scale to 0…1, normalise per channel, permute to (3, 480, 640) and add a batch axis → (1, 3, 480, 640).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A batch of images is a 4-axis tensor: N×C×H×W (PyTorch) or N×H×W×C (TensorFlow).</li><li>Memory is one line; strides turn indices into offsets.</li><li>Bytes = number of elements × bytes per element; a 32×3×224×224 float32 batch is 19,267,584 B.</li><li>Store as uint8, compute in float, normalise per channel.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="histograms" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.4</span><h2>Intensity histograms &amp; statistics</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two photos of the same street: one looks dark and muddy, the other washed out. Can we <i>measure</i> that, with a few numbers or one picture, without looking at the image? And how should we adjust the pixel values so that a network (or a person) sees the scene properly?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Throw all pixels of an image into 256 bins labelled 0…255 according to their brightness and count how many land in each bin. Plot the counts as a bar chart: that is the <b>histogram</b>. It forgets <i>where</i> pixels are and keeps only <i>how many of each brightness</i>.</p>
+        <p>Reading a histogram: bars crowded to the left = dark image; crowded to the right = bright; a narrow hump in the middle = low contrast (foggy); bars spread from end to end = full contrast; tall spikes at 0 or 255 = <b>clipping</b> (information lost to pure black/white).</p>
+        <p>Two summary numbers capture most of this: the <b>mean</b> (where is the centre — overall brightness) and the <b>standard deviation</b> (how wide is the spread — contrast).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — eight pixels</b>
+          <p>Values: 20, 20, 40, 40, 40, 60, 60, 80.</p>
+          <p>Histogram: 20 → 2, 40 → 3, 60 → 2, 80 → 1.</p>
+          <p>Mean = 360 / 8 = <b>45</b>. Deviations from the mean: −25, −25, −5, −5, −5, 15, 15, 35. Squares: 625, 625, 25, 25, 25, 225, 225, 1225, sum = 2975. Variance = 2975/8 = 371.9, std = <b>19.3</b>.</p>
+          <p><b>Brightness +30</b> (add 30 to every value): mean 75, std still 19.3 — the whole histogram just slides.</p>
+          <p><b>Contrast ×2 around the mean</b> (v′ = 2(v − 45) + 45): values become −5, −5, 35, 35, 35, 75, 75, 115; mean still 45, std doubles to 38.6 — the histogram stretches. (The −5 would be clipped to 0 in a real image.)</p>
+          <p><b>Standardise</b> (v − 45)/19.3 gives mean 0 and std 1: the original 20 becomes −1.30 and 80 becomes +1.81.</p></div>
+        <p><b>Point operations.</b> Brightness, contrast and gamma are all of the form out = f(in), applied to every pixel independently — a <b>look-up table</b> of 256 entries. With <span class="tex">v\in[0,1]</span>:</p>
+        <ul><li>brightness: <span class="tex">v+b</span></li><li>contrast: <span class="tex">c\,(v-0.5)+0.5</span></li><li>gamma: <span class="tex">v^{g}</span> — keeps 0 and 1 fixed, bends the middle: g &lt; 1 brightens shadows, g &gt; 1 darkens them.</li></ul>
+        <p>Always clamp the result to [0, 1]. This is why the three operations are really one idea: pick a <i>curve</i> that maps old values to new ones.</p>
+        <p><b>Per-channel statistics and datasets.</b> Compute the mean and std separately for R, G and B, <i>over the whole training set</i> (all pixels of all images). Those μ<sub>c</sub>, σ<sub>c</sub> are the numbers used for normalising in lesson 0.3: after subtracting μ<sub>c</sub> and dividing by σ<sub>c</sub> every channel has mean 0 and std 1 across the dataset, which makes optimisation much better conditioned.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">h(k)=\#\{(x,y):I(x,y)=k\},\qquad \mu=\frac1{HW}\sum_{x,y}I(x,y),\qquad \sigma=\sqrt{\frac1{HW}\sum_{x,y}\big(I(x,y)-\mu\big)^2}</div>
+        <table class="sym">
+          <tr><td>h(k)</td><td>histogram: number of pixels with intensity exactly k (k = 0…255)</td></tr>
+          <tr><td># { … }</td><td>"the number of elements in the set"</td></tr>
+          <tr><td>μ</td><td>mean intensity: overall brightness</td></tr>
+          <tr><td>σ</td><td>standard deviation: spread, a measure of contrast</td></tr>
+          <tr><td>HW</td><td>number of pixels; Σ<sub>h(k)</sub> = HW</td></tr>
+        </table>
+        <div class="eq">v'=\operatorname{clip}\big(f(v),\,0,\,1\big),\qquad f(v)=\big[c\,(v-0.5)+0.5+b\big]^{g}</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: histogram and per-pixel formula</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose <i>under-exposed</i>: the histogram is squeezed at the left. Raise brightness or lower gamma and watch it slide and bend into the middle; the mean (blue line) follows.</li>
+        <li>Choose <i>low contrast</i>, then raise contrast c to 2.5: the hump widens and std grows. Push too far and clipped% turns red.</li>
+        <li>Edit the formula to <code>v</code> (identity), then to <code>1-v</code> (negative): the histogram mirrors. Try <code>v&lt;0.5</code>-like tricks with <code>max(min(v*3-1,1),0)</code> to stretch a mid-range.</li>
+        <li>Press <b>Auto-sweep</b> and read the captions: brightness slides, contrast stretches, gamma bends.</li></ol></div>
+      <div data-lab="cvhist"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The histogram hides layout.</b> Two very different images can share a histogram (shuffle the pixels!). It cannot tell you <i>what</i> is in the picture.</li>
+          <li><b>Statistics of the right set.</b> Normalise with the <i>training</i> set's μ and σ — not each test image's own, and not ImageNet's if your data is very different (X-rays, satellites).</li>
+          <li><b>Clipping is irreversible.</b> Once highlights are at 255, no later operation brings the detail back.</li>
+          <li><b>Bins matter.</b> Histograms of 8-bit data need 256 bins; floats need an explicit binning choice.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Input normalisation:</b> every ImageNet-style pipeline subtracts channel means and divides by channel stds.</li>
+          <li><b>Exposure and quality analysis:</b> checking a dataset for too-dark or clipped images; automatic exposure in cameras uses the histogram.</li>
+          <li><b>Augmentation:</b> random brightness/contrast/gamma are exactly the point operations above, with random b, c, g.</li>
+          <li><b>Batch normalisation</b> inside networks is the same idea as standardising: subtract mean, divide by std, but on feature maps.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Image values 10, 10, 30, 50. Compute mean and standard deviation.</summary><div class="ans">Mean = 100/4 = 25. Deviations −15, −15, 5, 25 → squares 225, 225, 25, 625 = 1100; variance 275; std ≈ 16.6.</div></details>
+        <details class="check"><summary>2. Adding 20 to every pixel: what happens to mean and std (ignoring clipping)?</summary><div class="ans">Mean rises by 20; std is unchanged — the histogram only slides.</div></details>
+        <details class="check"><summary>3. Gamma 0.5 on v = 0.25: what is the output, and is the image brighter or darker?</summary><div class="ans">0.25^0.5 = 0.5: brighter. Gamma below 1 lifts the mid-tones and shadows; 0 and 1 stay fixed.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A histogram counts pixels per intensity: position is forgotten, distribution is kept.</li><li>Mean = brightness, std = contrast; brightness slides the histogram, contrast stretches it, gamma bends it.</li><li>Point operations are look-up tables out = f(in) with clipping.</li><li>Per-channel dataset mean/std drive input normalisation for networks.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="cameras-formats" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.5</span><h2>Capture &amp; storage</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your phone's sensor has 12 million light-sensitive spots, yet each spot can only tell "how much light", not "what colour". Where do the three colour numbers per pixel come from? And how can a 6 MB frame shrink to 300 KB in a JPEG while still looking the same?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>The sensor.</b> A camera sensor is a grid of tiny buckets (photosites). Light is made of photons; during the exposure each bucket collects some and converts them to a voltage, then a number. A bucket cannot tell colours apart, so a mosaic of tiny coloured filters sits on top: this <b>Bayer pattern</b> puts a red, green or blue filter over each bucket in a repeating 2×2 tile — one red, <i>two</i> green (our eyes like green), one blue. So each pixel records <b>one</b> colour and the other two must be <b>guessed from neighbours</b>: <i>demosaicing</i>. Two thirds of all colour numbers in a normal photo are interpolated!</p>
+        <p><b>Noise.</b> Photons arrive randomly. If a bucket expects N photons it actually gets N ± √N (shot noise). Signal-to-noise ratio is N/√N = √N: 10,000 photons → SNR 100, but in a dark scene with 100 photons the SNR is only 10 — grainy. Higher ISO simply amplifies the signal <i>and</i> its noise.</p>
+        <p><b>Gamma.</b> The sensor is linear (twice the light = twice the number) but our eyes are not: we notice differences in shadows far more than in highlights. If we stored linear values in 8 bits, the dark region would get too few levels and the bright region wasteful ones. So the image is stored <b>gamma encoded</b>: <span class="tex">v_{\text{stored}}=v_{\text{linear}}^{1/2.2}</span> (approximately; sRGB uses a close variant). This spends more of the 256 levels on shadows.</p>
+        <p><b>Compression.</b> <b>Lossless</b> formats (PNG, RAW, TIFF) rebuild every number exactly; they exploit repetition but rarely beat 2:1 on photos. <b>Lossy</b> formats (JPEG, WebP, AVIF) throw away information the eye barely notices, reaching 10:1 or more.</p>
+
+        <h3 class="sec">Build it up: the JPEG pipeline</h3>
+        <ol>
+          <li><b>Colour transform.</b> RGB → YCbCr, then shrink Cb, Cr by 2× in each direction (4:2:0). Already 50% smaller.</li>
+          <li><b>Blocks.</b> Cut each channel into 8×8 blocks and process them independently.</li>
+          <li><b>Shift.</b> Subtract 128 so values are centred on 0.</li>
+          <li><b>DCT.</b> The discrete cosine transform rewrites the 64 pixel values as 64 weights of fixed wave patterns of increasing frequency. The top-left coefficient is the block's average brightness ("DC"); far from it are fine details ("AC"). Natural blocks are smooth, so most high-frequency weights are small.</li>
+          <li><b>Quantise.</b> Divide each coefficient by an entry of a table Q (large entries for high frequencies) and round to an integer. <i>This is the only lossy step.</i> Many coefficients become 0.</li>
+          <li><b>Entropy-code.</b> Scan in zig-zag order (zeros cluster at the end), run-length and Huffman-code the result: long runs of zeros cost almost nothing.</li></ol>
+        <p>Decoding runs backwards: multiply by Q, inverse DCT, add 128, upsample chroma, convert to RGB.</p>
+        <div class="worked"><b>Worked example — one block at quality 50</b>
+          <p>Take this 8×8 luma block (every row is one image row):</p>
+          <pre><code>52 55 61  66  70  61 64 73
+63 59 55  90 109  85 69 72
+62 59 68 113 144 104 66 73
+63 58 71 122 154 106 70 69
+67 61 68 104 126  88 68 70
+79 65 60  70  77  68 58 75
+85 71 64  59  55  61 65 83
+87 79 69  68  65  76 78 94</code></pre>
+          <p>Subtract 128 and apply the 2-D DCT. The largest coefficients (rounded) are: DC = <b>−415.4</b>, then −30.2, −61.2, 27.2, 56.1 across the first row, 4.5, −21.9, −60.8 in the second, and −46.8, 7.4, 77.1 in the third; the lower-right ones are tiny, e.g. 1.7 or −0.7.</p>
+          <p>The standard luminance table Q (quality 50) starts 16 11 10 16 24 40 51 61 and ends 99 in the lower-right. Divide and round, e.g. DC: −415.4/16 = −25.96 → <b>−26</b>; the entry −30.2/11 = −2.7 → −3; and the tiny −0.7/101 → 0. The quantised block is:</p>
+          <pre><code>-26 -3 -6  2  2 -1 0 0
+  0 -2 -4  1  1  0 0 0
+ -3  1  5 -1 -1  0 0 0
+ -3  1  2 -1  0  0 0 0
+  1  0  0  0  0  0 0 0
+  0  0  0  0  0  0 0 0   (and two more all-zero rows)</code></pre>
+          <p>Only <b>20 of 64</b> numbers are non-zero; the other 44 cost almost nothing. Decoding: multiply back (−26·16 = −416 instead of −415.4, etc.), inverse DCT, add 128: the first row comes back as 62 65 57 60 72 63 60 82 versus the original 52 55 61 66 70 61 64 73 — off by up to ≈ 10 grey levels at a few pixels (mean absolute error ≈ 5), which the eye barely notices on a textured picture.</p></div>
+        <p>The <b>quality</b> setting just scales Q: for q &lt; 50 the table is multiplied by 50/q (bigger divisors, more zeros, smaller file, worse artefacts); for q &gt; 50 by (200 − 2q)/100.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">F(u,v)=\tfrac14\,C(u)C(v)\sum_{x=0}^{7}\sum_{y=0}^{7}\big(f(x,y)-128\big)\cos\frac{(2x+1)u\pi}{16}\cos\frac{(2y+1)v\pi}{16}</div>
+        <div class="eq">C(k)=\begin{cases}1/\sqrt2&amp;k=0\\1&amp;k&gt;0\end{cases}\qquad F_Q(u,v)=\operatorname{round}\!\Big(\frac{F(u,v)}{Q(u,v)}\Big),\qquad \hat F(u,v)=F_Q(u,v)\,Q(u,v)</div>
+        <table class="sym">
+          <tr><td>f(x, y)</td><td>pixel value (0…255) at column x, row y of the 8×8 block</td></tr>
+          <tr><td>u, v</td><td>horizontal and vertical <i>frequency</i> index, 0…7 (0 = average, 7 = fastest alternation)</td></tr>
+          <tr><td>F(u, v)</td><td>DCT coefficient: how strongly that wave pattern is present</td></tr>
+          <tr><td>C(k)</td><td>normalisation factor that makes the transform orthonormal (so it is exactly invertible)</td></tr>
+          <tr><td>Q(u, v)</td><td>quantisation table: step size per frequency (small for low, large for high frequencies)</td></tr>
+          <tr><td>F<sub>Q</sub>, F̂</td><td>quantised integers (stored) and de-quantised coefficients (decoded)</td></tr>
+        </table>
+        <p>Without rounding, the DCT is perfectly reversible; all loss is in the rounding. (A fast version, and the connection to the Fourier transform, comes back in Module 1.)</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: why gamma encoding?</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The blue curve is the encoding v<sup>1/2.2</sup>. At linear 0.5 it gives 0.73 (≈ 186/255): half the light is stored as a fairly bright value.</li>
+        <li>Notice the slope near 0: tiny linear steps in the shadows are stretched into big encoded steps — shadows get more of the 256 levels.</li>
+        <li>Move g to 1: no encoding, a straight line. Move it to 2.2: that is what the display does to decode.</li></ol></div>
+      <div data-lab="fplot" data-title="Gamma encoding" data-names="encoded = v^(1/g);identity" data-f="x^(1/g); x" data-params="g=2.2:1..3:0.05" data-view="0,1,0,1" data-readout="encode(0.5) = 0.5^(1/g); levels used by darkest 10% of light = 255*(0.1^(1/g))"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: Bayer mosaic and demosaicing</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Compare ① and ②: the sensor image looks like a pale mosaic — each pixel only has one of R, G, B (green twice as often).</li>
+        <li>Watch the yellow 3×3 window. At a red pixel the green is the average of its 4 side neighbours, the blue of its 4 diagonal neighbours; read the numbers in the readout.</li>
+        <li>Pick the <i>checkerboard</i> or <i>edges</i> scene and look at the finished ③: along sharp edges the guessed colours are wrong (colour fringes, "zipper" artefacts). The error value shows how far off it is.</li></ol></div>
+      <div data-lab="cvbayer"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 3: the JPEG pipeline</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The textbook block from the worked example is loaded. Let the stages play: ① pixels → ② −128 → ③ DCT (note the big DC value, top-left) → ④ divide and round (count the zeros) → ⑤ multiply back → ⑥ reconstruct.</li>
+        <li>Slide quality down to 10: stage ④ becomes almost all zeros, the reconstructed block flattens, and the image on the left shows 8×8 blocky artefacts.</li>
+        <li>Click any place on the image to process that block instead. A smooth sky block gives very few non-zero coefficients; a block with an edge gives many.</li>
+        <li>In stage ① click a pixel cell to change it (+32), then watch every later stage react.</li></ol></div>
+      <div data-lab="cvjpeg"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>JPEG is lossy every time you re-save.</b> Re-encoding accumulates artefacts; keep an original (PNG/RAW) and export once.</li>
+          <li><b>Training data compressed differently from deployment data.</b> A model trained on pristine PNG may fail on heavily compressed web JPEGs (blocking, ringing) — and the other way round.</li>
+          <li><b>Do not use JPEG for labels.</b> Segmentation masks must be PNG (lossless): JPEG would invent new class ids at the edges.</li>
+          <li><b>Gamma/linear mix-ups.</b> Resizing or blending gamma-encoded values as if they were linear light darkens edges; physically-based work happens in linear space.</li>
+          <li><b>EXIF rotation.</b> Phones store an orientation tag instead of rotating pixels; libraries that ignore it show sideways images.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Data quality:</b> blur, noise, compression level and exposure of the capture device define the domain gap between training and deployment images.</li>
+          <li><b>Augmentation:</b> adding noise, blur and random JPEG compression makes models robust; robustness benchmarks (ImageNet-C) test exactly these corruptions.</li>
+          <li><b>RAW pipelines</b> and learned ISPs feed the Bayer mosaic straight to a network that replaces demosaicing, denoising and tone mapping.</li>
+          <li><b>Neural codecs</b> and generative models compress in a learned latent space; JPEG's idea — transform, quantise, entropy-code — is their ancestor. Vision Transformers also cut images into small fixed-size blocks (16×16 patches), like JPEG's 8×8.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 12-megapixel sensor with a Bayer filter: how many of its photosites measure green, red, blue?</summary><div class="ans">Half are green (6 M), a quarter each red and blue (3 M each). Every output pixel gets its two missing colours by interpolation.</div></details>
+        <details class="check"><summary>2. Which JPEG step loses information, and why can the loss be mostly invisible?</summary><div class="ans">Quantisation (the rounding after dividing by Q). Q is large for high-frequency coefficients, which describe fine detail the eye barely notices, and those coefficients are small anyway, so they round to 0.</div></details>
+        <details class="check"><summary>3. A dark scene yields on average 100 photons per photosite. What is the shot-noise SNR, and what would 10,000 photons give?</summary><div class="ans">SNR = √N: √100 = 10 and √10,000 = 100. Ten times more light gives ten times better SNR in relative terms.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A sensor measures one colour per pixel (Bayer RGGB); demosaicing interpolates the rest.</li><li>Noise ~ √photons; stored values are gamma encoded (≈ v^(1/2.2)) to spend levels where the eye is sensitive.</li><li>JPEG: YCbCr → 8×8 blocks → DCT → quantise (the lossy step) → entropy coding.</li><li>Lossless = exact numbers, lossy = smaller but with artefacts that models can learn to be sensitive to.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Module complete.</b> You now know that an image is a tensor of numbers and how it is captured, laid out in memory, summarised and stored. Next: <a href="cv-processing.html">Module 1 · Classical image processing</a> — sliding kernels over those numbers, finding edges, resizing and warping.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

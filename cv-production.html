@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 · Training, deployment &amp; the full pipeline · Computer Vision</title>
+<meta name="description" content="Data and augmentation, transfer learning, training recipes, the end-to-end vision pipeline, compression, deployment hardware, monitoring, bias, privacy and adversarial examples, with exact numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-production.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="9">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 9</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">9</div>
+      <div style="flex:1">
+        <h1>Module 9 · Training, deployment &amp; the full pipeline</h1>
+        <p>A model in a notebook is not a product. This module follows a vision system from the first labelled image to the camera in the field: how to build and augment the data, how to reuse a pretrained backbone, how to train it, how the whole pipeline fits in a latency budget, how to shrink the model, where it runs, and how to notice when it goes wrong.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">9 new animated labs</span><span class="chip">Real shapes · real timings · real memory</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 9.1 ===================== -->
+    <section class="lesson" id="data-labeling-augmentation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.1</span><h2>Data, labelling &amp; augmentation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 1,000 photos of production-line parts, and only 50 show a defect. You cannot afford 10,000 more. How do you make a model that finds defects reliably — and how do you know your labels are even right?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A model learns whatever regularities its data contains, including accidental ones. If every defect photo was taken in the afternoon, the model may learn "afternoon light = defect". So the first job is the <b>dataset design</b>: it must look like the world the model will meet, be split so that test images are truly unseen (split by <i>part</i> or <i>session</i>, not by random frame, or near-duplicates leak across the split), and be labelled consistently.</p>
+        <p>Labels come in several types, each costing more per image: a <b>class tag</b> (seconds), a <b>bounding box</b> (≈10–30 s), a <b>polygon / pixel mask</b> (minutes), <b>keypoints</b>. Pick the cheapest label that answers the product question.</p>
+        <p><b>Augmentation</b> is a cheap trick with a precise idea: apply a change that you <i>know</i> does not alter the label (a flipped cat is still a cat, a slightly darker part is still defective) and train on the changed image. The model sees a new picture every epoch, which teaches it the invariances you chose.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Augmentation policies.</b> A policy is a list of random operations with ranges: flip with probability 0.5; rotate by a random angle in ±15°; random crop keeping at least 70% of the side; brightness ×(1±0.3); Gaussian noise σ. Each epoch every image gets fresh random draws. Crucially, a policy must respect the task: flipping left/right is wrong for reading text or telling a left shoe from a right one; heavy rotation is wrong for "which way is up" tasks.</p>
+        <div class="worked"><b>Worked example — how many different images does a policy make?</b>
+          <p>Take a 224×224 image, a crop with side ≥ 70% (≥ 157 px), flip on, rotation ±15° in whole degrees. Square crop windows of side <span class="tex">s</span> can sit in <span class="tex">(225-s)^2</span> positions, so the count is <span class="tex">\sum_{s=157}^{224}(225-s)^2=\sum_{k=1}^{68}k^2=\frac{68\cdot69\cdot137}{6}=107{,}134</span>. Multiply by 2 (flip) and by 31 (rotations −15…15): <b>6,642,308</b> geometric variants of one photo, before brightness and noise (continuous). 1,000 images → billions of possible inputs. They are strongly correlated (neighbours look alike), so this is not "billions of independent images", but it is why augmentation fights overfitting so well.</p></div>
+        <p><b>Class imbalance.</b> With 950 normal and 50 defective images, a model that says "normal" always scores 95% accuracy and is useless. Three fixes, usually combined: (1) <b>resample</b> (show defects more often, augmented differently each time); (2) <b>weight the loss</b>; (3) change the loss itself (<b>focal loss</b>).</p>
+        <p><b>Weighted loss.</b> Give class <span class="tex">c</span> the weight <span class="tex">w_c=\dfrac{N}{K\,n_c}</span> (N images, K classes, <span class="tex">n_c</span> images in class c).</p>
+        <div class="worked"><b>Worked example — weights</b>
+          <p>N=1000, K=2: <span class="tex">w_{\text{normal}}=\frac{1000}{2\cdot950}=0.526</span>, <span class="tex">w_{\text{defect}}=\frac{1000}{2\cdot50}=10</span>. One missed defect now costs 19× as much as one false alarm, so total "importance" of both classes is equal: 950·0.526 = 50·10 = 500. A softer alternative uses the <i>effective number</i> of samples <span class="tex">E_n=\frac{1-\beta^n}{1-\beta}</span>: with β=0.999, n=50 gives 48.8 (almost all 50 count) while n=950 gives 613 (redundancy is discounted).</p></div>
+        <p><b>Focal loss.</b> Cross-entropy for the true class with predicted probability <span class="tex">p_t</span> is <span class="tex">-\ln p_t</span>. In a dataset dominated by easy examples, thousands of easy cases each contribute a tiny loss but together swamp the few hard ones. Focal loss multiplies by <span class="tex">(1-p_t)^\gamma</span> to switch easy examples off.</p>
+        <div class="worked"><b>Worked example — focal loss, γ = 2</b>
+          <p>Easy example, <span class="tex">p_t=0.9</span>: CE = −ln 0.9 = 0.1054; factor (0.1)² = 0.01 → FL = 0.00105 (100× smaller). Medium, <span class="tex">p_t=0.5</span>: CE = 0.6931, factor 0.25 → 0.1733 (4× smaller). Hard, <span class="tex">p_t=0.1</span>: CE = 2.3026, factor 0.81 → 1.8651 (barely changed). Now a thousand easy examples contribute 1.05 in total — comparable to ONE hard example (1.87) instead of 105 vs 2.3. With the usual α_t = 0.25 everything is scaled again (hard case: 0.466).</p></div>
+        <p><b>Label noise.</b> Real labels are wrong some of the time (tired annotators, ambiguous cases). If a fraction η of labels are flipped at random, a model with true accuracy <span class="tex">a</span> on a 2-class problem appears to have accuracy <span class="tex">a(1-\eta)+(1-a)\eta</span>. With a=0.95 and η=0.10 you will <i>measure</i> only 0.86. So a noisy test set puts a ceiling on what you can see. Defences: measure inter-annotator agreement, relabel the examples where the model confidently disagrees with the label, and use label smoothing or robust losses.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L_{\text{focal}}(p_t)=-\alpha_t\,(1-p_t)^{\gamma}\,\ln p_t\qquad w_c=\frac{N}{K\,n_c}\qquad x'=T_{\theta}(x),\ \theta\sim\mathcal P</div>
+        <table class="sym">
+          <tr><td>p<sub>t</sub></td><td>probability the model assigns to the <i>true</i> class</td></tr>
+          <tr><td>γ ≥ 0</td><td>focusing strength; γ=0 gives ordinary cross-entropy</td></tr>
+          <tr><td>α<sub>t</sub></td><td>fixed weight for the class of the example (often 0.25 for the rare class)</td></tr>
+          <tr><td>N, K, n<sub>c</sub></td><td>number of images, classes, and images in class c</td></tr>
+          <tr><td>T<sub>θ</sub>, 𝒫</td><td>a label-preserving transformation with random parameters θ drawn from the policy distribution 𝒫</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: augmentation playground</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch one sample being built: original, then geometry (the flip squeezes through zero width), then brightness/noise, then it flies into the batch. The caption states the exact random values drawn.</li>
+        <li>Set flip probability to 0 and rotation to 0: the batch becomes nearly identical crops. Now raise rotation to 45° — corners fill with black and the object leaves the frame; that is "too strong".</li>
+        <li>Use the "handwritten 7" scene and flip it: is a mirrored 7 still a 7? Decide whether flipping suits your task.</li>
+        <li>Change N and the crop minimum: read how many variants of one image exist.</li></ol></div>
+      <div data-lab="augment"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>Drag <b>g</b> (γ) from 0 to 2: the green focal curve flattens near p=1 (easy examples) while staying almost equal to cross-entropy near p=0.</li>
+        <li>Read the readouts at p = 0.9: the ratio focal/CE equals (1−p)^γ.</li></ol></div>
+      <div data-lab="fplot" data-title="Cross-entropy vs focal loss" data-names="CE = -ln p;focal" data-f="-log(x); (1-x)^g*(-log(x))" data-params="g=2:0..5:0.1" data-view="0,1,0,4" data-readout="CE at p 0.9 = -log(0.9); focal at p 0.9 = (0.1)^g*(-log(0.9)); CE at p 0.1 = -log(0.1); focal at p 0.1 = (0.9)^g*(-log(0.1))"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Leakage.</b> Augmenting before splitting, or splitting frames of one video into train and test, makes test accuracy fiction. Split first, augment only the training set.</li>
+          <li><b>Augmenting the test set.</b> Evaluate on clean images (or a fixed set of test-time transforms), never on random ones.</li>
+          <li><b>Label-breaking transforms.</b> Flipping digits, cropping away the only defect, or colour-jitter on a task where colour is the label.</li>
+          <li><b>Fixing imbalance by oversampling exact duplicates</b> invites memorisation; oversample <i>with</i> augmentation.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>RandAugment, AutoAugment, MixUp, CutMix, Mosaic</b> are learned or randomised policies; Mosaic (YOLO) pastes four images into one to expose small objects at many scales.</li>
+          <li><b>RetinaNet's focal loss</b> (γ=2, α=0.25) is what made one-stage detectors accurate: a detector sees ~100,000 background boxes for a handful of objects.</li>
+          <li><b>Self-supervised vision</b> (SimCLR, DINO) treats augmentation as the <i>definition</i> of similarity: two crops of one image must map to similar embeddings.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the class weights for 9,000 normal and 1,000 defective images (K=2).</summary><div class="ans">N=10,000. w_normal = 10000/(2·9000)=0.556; w_defect = 10000/(2·1000)=5. A defect is worth 9× a normal image.</div></details>
+        <details class="check"><summary>2. For p_t=0.95 and γ=2, by what factor does focal loss shrink the cross-entropy?</summary><div class="ans">(1−0.95)² = 0.0025, i.e. 400× smaller. CE = 0.0513, FL = 0.000128.</div></details>
+        <details class="check"><summary>3. Your annotators flip 5% of labels at random and your model is truly 90% accurate (2 classes). What accuracy will you measure?</summary><div class="ans">0.90·0.95 + 0.10·0.05 = 0.855 + 0.005 = 0.86.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Design the dataset and the split before the model; leakage ruins evaluation.</li><li>Augmentation applies label-preserving random transforms; choose ones that match the task's invariances.</li><li>Imbalance: resample, weight the loss (w = N/(K·n<sub>c</sub>)), or use focal loss to silence easy examples.</li><li>Label noise caps measurable accuracy; audit labels.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.2 ===================== -->
+    <section class="lesson" id="transfer-finetuning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.2</span><h2>Transfer learning &amp; fine-tuning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 1,500 labelled photos of 10 kinds of leaf disease. Training ResNet-50 (25.6 million parameters) from random weights would memorise them. How can a network learn from so few images — and which parts of it should you change?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A network trained on ImageNet's 1.28 million images has already learned a hierarchy: early layers detect edges and colours, middle layers textures and parts, late layers object-specific shapes. Edges and textures are useful for leaves too. <b>Transfer learning</b> keeps that knowledge: start from the pretrained weights and adapt them. Imagine hiring an experienced photographer for a new job: you do not teach them what a lens is; you show them the new subject.</p>
+        <p>Two regimes. <b>Feature extraction</b>: freeze the whole backbone, replace the final classifier with a new one and train only that. <b>Fine-tuning</b>: also unfreeze the last blocks (or everything) with a <i>small</i> learning rate, so the useful features bend toward the new task without being destroyed. The less data and the more similar the domain, the more you should freeze.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Look at what you would be training. The ResNet-50 blueprint (computed with the architecture engine, so exactly the published 25,557,032 parameters):</p>
+        <div data-lab="archviz" data-preset="resnet50" data-title="ResNet-50: where are the parameters?" data-height="300"></div>
+        <table class="tbl"><tr><th>block group</th><th>output at 224×224</th><th>parameters</th><th>share</th></tr>
+          <tr><td>stem (7×7 conv)</td><td>64×112×112</td><td>9,536</td><td>0.04%</td></tr>
+          <tr><td>layer1 (3 bottlenecks)</td><td>256×56×56</td><td>215,808</td><td>0.84%</td></tr>
+          <tr><td>layer2 (4)</td><td>512×28×28</td><td>1,219,584</td><td>4.8%</td></tr>
+          <tr><td>layer3 (6)</td><td>1024×14×14</td><td>7,098,368</td><td>27.8%</td></tr>
+          <tr><td>layer4 (3)</td><td>2048×7×7</td><td>14,964,736</td><td>58.6%</td></tr>
+          <tr><td>FC 2048→1000</td><td>1000</td><td>2,049,000</td><td>8.0%</td></tr>
+          <tr><td><b>total</b></td><td></td><td><b>25,557,032</b></td><td>100%</td></tr></table>
+        <p>The parameters sit mostly in the <i>last</i> stages (wide channels), while early stages are cheap in parameters but expensive in compute (large feature maps).</p>
+        <div class="worked"><b>Worked example — trainable parameters for 10 leaf diseases</b>
+          <p>Throw away the 1000-class FC and add a new one: 2048·10 + 10 = <b>20,490</b> parameters. The backbone has 25,557,032 − 2,049,000 = 23,508,032, so the new network has 23,528,522 parameters.</p>
+          <p><b>Head only:</b> 20,490 trainable = 0.087% of the network. <b>Head + layer4:</b> 14,964,736 + 20,490 = 14,985,226 = <b>63.7%</b>. <b>Everything:</b> 100%. Adam keeps 8 bytes of state per trainable parameter, so head-only needs 164 KB of optimizer state while full fine-tuning needs 188 MB.</p></div>
+        <p><b>Layer-wise (discriminative) learning rates.</b> Early layers hold general features, so change them gently; later layers and the new head can move faster. With head rate <span class="tex">\eta</span> and decay <span class="tex">\gamma</span> per block group, group at distance <span class="tex">j</span> from the head uses <span class="tex">\eta\gamma^{j}</span>. Example: η=0.01, γ=0.5: layer4 0.005, layer3 0.0025, layer2 0.00125, layer1 0.000625, stem 0.0003125.</p>
+        <p><b>LoRA and adapters.</b> For huge models even storing a full fine-tuned copy is wasteful. LoRA freezes a weight matrix <span class="tex">W\in\mathbb R^{d\times d}</span> and learns a low-rank update <span class="tex">\Delta W=BA</span>, with <span class="tex">B\in\mathbb R^{d\times r}</span>, <span class="tex">A\in\mathbb R^{r\times d}</span>, <span class="tex">r\ll d</span>. Parameters: <span class="tex">2dr</span> instead of <span class="tex">d^2</span>. For d=2048, r=8: 32,768 vs 4,194,304 = <b>0.78%</b> (the ratio is 2r/d). For a non-square matrix, r(d<sub>in</sub>+d<sub>out</sub>): a 512→2048 layer at r=8 needs 8·2560 = 20,480 instead of 1,048,576. B is initialised to zero, so training starts exactly at the pretrained model. Adapters are a related idea: tiny bottleneck layers inserted between frozen blocks. Both are standard for Vision Transformers.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\theta_{\text{new}}=\theta_{\text{pre}}+\Delta\theta,\qquad \eta_j=\eta\,\gamma^{\,j},\qquad W'=W+\tfrac{\alpha}{r}BA</div>
+        <table class="sym">
+          <tr><td>θ<sub>pre</sub></td><td>pretrained weights (frozen ones receive no update, Δθ=0)</td></tr>
+          <tr><td>η, γ, j</td><td>head learning rate, decay factor (0&lt;γ≤1), distance of a block group from the head</td></tr>
+          <tr><td>B, A, r</td><td>LoRA factors and rank; α/r is a fixed scaling</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: fine-tune ResNet-50</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press the "head only" chip. Watch the backward pulse stop at the head: frozen blocks are used in the forward pass but get no gradient, which also saves compute.</li>
+        <li>Click blocks to unfreeze them one at a time. The trainable-parameter count jumps most when layer3 or layer4 flips — that is where the parameters are.</li>
+        <li>Lower the dataset size to 100 images: the full-fine-tuning curve plateaus higher (overfitting). Raise the domain shift to 1 (X-rays instead of photos): head-only plateaus higher (frozen features do not fit).</li>
+        <li>Drag the LoRA rank r and the size d: compare 2dr with d².</li></ol></div>
+      <div data-lab="finetune"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Learning rate too high</b> on pretrained layers wipes out what they know ("catastrophic forgetting"). Fine-tune with 10–100× smaller rates than from-scratch training.</li>
+          <li><b>Different preprocessing.</b> Pretrained models expect their own input size and mean/std normalisation; changing it silently hurts.</li>
+          <li><b>BatchNorm with tiny batches.</b> Statistics from a batch of 2 are noisy; freeze BN layers (use running statistics) when fine-tuning with small batches.</li>
+          <li>The chart of loss above is an illustration of typical behaviour; always validate on your own data.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Almost every detector and segmenter (Module 6–7) starts from an ImageNet or self-supervised backbone.</li>
+          <li><b>CLIP / DINOv2 / SAM</b> are used as frozen feature extractors with a small head ("linear probe").</li>
+          <li><b>LoRA</b> adapts large ViTs and diffusion models with a few megabytes per task.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters does a new 5-class head on ResNet-50 have?</summary><div class="ans">2048·5 + 5 = 10,245.</div></details>
+        <details class="check"><summary>2. LoRA with r=16 on a 1024×1024 matrix: parameters and fraction?</summary><div class="ans">2·1024·16 = 32,768 vs 1,048,576 = 3.125% (2r/d = 32/1024).</div></details>
+        <details class="check"><summary>3. You have 200 images of a domain very different from ImageNet (satellite). Freeze everything, or fine-tune? Why?</summary><div class="ans">Neither extreme: a frozen backbone cannot adapt to the shift, but full fine-tuning on 200 images overfits. Unfreeze the last stage(s) with small, layer-wise learning rates, or use LoRA, and watch validation loss.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Reuse a pretrained backbone; replace the head; unfreeze progressively.</li><li>ResNet-50 holds 58.6% of its weights in layer4 and 8% in the FC head.</li><li>Use smaller learning rates for earlier layers; LoRA trains 2dr instead of d² parameters.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.3 ===================== -->
+    <section class="lesson" id="cv-losses-training" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.3</span><h2>Losses &amp; training recipes</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your training run needs a 24 GB GPU you do not have. Halving the batch size fixes memory — but does it change the right learning rate? And how much does mixed precision really save?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>loss</b> turns "how wrong is this prediction" into one number that gradient descent can reduce. Every vision task has its natural loss: <b>classification</b> — cross-entropy <span class="tex">-\ln p_{\text{true}}</span>; <b>box regression</b> — smooth-L1 or IoU-based losses (<span class="tex">1-\text{IoU}</span>, and GIoU/CIoU which still give a gradient when boxes do not overlap); <b>segmentation</b> — per-pixel cross-entropy plus <b>Dice</b> loss <span class="tex">1-\frac{2|P\cap G|}{|P|+|G|}</span> which copes with tiny foreground regions; <b>detection</b> — a sum of classification, box and "objectness" terms; <b>generation</b> — adversarial or noise-prediction losses (Module 8).</p>
+        <p>A <b>training recipe</b> is everything around the loss that decides whether training works: the optimiser (SGD with momentum 0.9 for CNNs, AdamW for transformers), the learning-rate schedule (warm-up then cosine decay), weight decay, batch size, augmentation, number of epochs, and numerical precision.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Batch size and learning rate.</b> A bigger batch averages more examples, so the gradient is less noisy and you can take a bigger step. The <b>linear scaling rule</b> (Goyal et al., ResNet-50 on ImageNet): <span class="tex">\eta=0.1\cdot B/256</span>. B=32 → 0.0125, B=256 → 0.1, B=1024 → 0.4. Large rates are unstable at the start, so ramp up over the first ~5 epochs (<b>warm-up</b>) and then decay (cosine or step). One epoch of ImageNet (1,281,167 images) is ⌈1,281,167/B⌉ steps: 40,037 at B=32, 5,005 at B=256, 1,252 at B=1024.</p>
+        <div data-lab="fplot" data-title="Warm-up + cosine learning-rate schedule" data-names="lr(t)" data-f="min(x/w,1)*lr0*0.5*(1+cos(pi*min(x,T)/T))" data-params="lr0=0.1:0.01..0.5:0.01; w=5:1..10:1; T=90:30..200:5" data-view="0,200,0,0.55" data-readout="peak lr = lr0; lr at epoch 45 = min(45/w,1)*lr0*0.5*(1+cos(pi*min(45,T)/T))"></div>
+        <p><b>Mixed precision.</b> Store and compute activations in 16-bit floats (half the memory, and tensor cores run 8–16× faster than FP32 units on modern GPUs) while keeping a 32-bit "master" copy of the weights and scaling the loss so tiny gradients do not underflow to zero.</p>
+        <div class="worked"><b>Worked example — memory of training ResNet-50 (P = 25,557,032)</b>
+          <p><b>Plain fp32 + Adam:</b> weights 4 B + gradients 4 B + Adam moments 8 B = 16 B per parameter → 409 MB.</p>
+          <p><b>Classic mixed precision + Adam:</b> fp32 master 4 B + fp16 weights 2 B + fp16 gradients 2 B + Adam 8 B = 16 B → also 409 MB. So mixed precision does <i>not</i> shrink the model state; it shrinks the <b>activations</b>.</p>
+          <p>Activations: the sum of block outputs in ResNet-50 is 6,676,456 values per image (the engine's figure). Backprop must keep several tensors per block (conv, norm and ReLU outputs); assume k = 4 such tensors per block output → 26.7 M values ≈ 107 MB per image in fp32, 53 MB in fp16. At batch 32: 3.4 GB fp32 → 1.7 GB fp16. (k is an approximation; real frameworks vary, so measure.)</p>
+          <p><b>Compute:</b> forward = 4.09 GMACs = 8.18 GFLOPs per image; training ≈ 3× (forward + two backward products) = 24.5 GFLOPs. An A100 peaks at 312 TFLOPs fp16 and 19.5 TFLOPs fp32; a reported ≈2,600 img/s with mixed precision = 64 TFLOPs, about 20% of peak — memory traffic and small layers keep real utilisation far below the datasheet.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L=\lambda_{\text{cls}}\mathcal L_{\text{cls}}+\lambda_{\text{box}}\mathcal L_{\text{box}}+\lambda_{\text{obj}}\mathcal L_{\text{obj}},\qquad \eta(t)=\eta_0\,\min\!\Big(\tfrac{t}{t_w},1\Big)\,\tfrac12\Big(1+\cos\tfrac{\pi t}{T}\Big)</div>
+        <table class="sym">
+          <tr><td>λ<sub>·</sub></td><td>weights balancing the loss terms</td></tr>
+          <tr><td>η<sub>0</sub>, t<sub>w</sub>, T</td><td>peak learning rate, warm-up length, total training length (epochs or steps)</td></tr>
+          <tr><td>IoU</td><td>intersection area / union area of predicted and true box</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: training memory</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Keep ResNet-50, Adam, fp32, batch 32; note the total. Tick "mixed precision": weights/optimizer stay at 409 MB, activations halve.</li>
+        <li>Raise the batch to 128, 256: activations dominate and the bar crosses the GPU line.</li>
+        <li>Switch to SGD+momentum and compare with Adam; switch the model to VGG-16 (138 M parameters) and see state memory explode.</li></ol></div>
+      <div data-lab="memcalc" data-mode="train"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Changing the batch size without touching the learning rate (or the reverse).</li>
+          <li>Weight decay applied to BatchNorm and bias parameters; usually exclude them.</li>
+          <li>Comparing training loss across different loss weightings; compare validation <i>metrics</i> instead.</li>
+          <li>fp16 without loss scaling: gradients underflow to 0 and the model silently stops learning.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>YOLO training mixes box (CIoU), objectness and class losses with fixed λ's.</li>
+          <li>U-Net segmentation of medical scans uses cross-entropy + Dice because lesions are a few pixels.</li>
+          <li>Foundation-model vision training uses AdamW, warm-up + cosine, bf16, and batch sizes in the thousands.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The linear scaling rule gives what learning rate for batch 512, starting from 0.1 at 256?</summary><div class="ans">0.1·512/256 = 0.2.</div></details>
+        <details class="check"><summary>2. Memory for weights + gradients + Adam moments (fp32) of a 10 M-parameter model?</summary><div class="ans">10 M · (4+4+8) B = 160 MB.</div></details>
+        <details class="check"><summary>3. Why is Dice loss better than per-pixel accuracy for a tumour covering 0.5% of the pixels?</summary><div class="ans">Predicting "no tumour" everywhere gives 99.5% pixel accuracy but Dice = 0; Dice measures overlap of the small region itself.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Choose the loss that matches the task; combine terms with weights.</li><li>Scale learning rate with batch size (η=0.1·B/256), warm up, then decay.</li><li>Mixed precision saves activation memory and time, not model-state memory.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.4 ===================== -->
+    <section class="lesson" id="cv-pipeline" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.4</span><h2>The end-to-end vision pipeline</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A camera sends 100 frames per second. Your detector takes 8 ms per frame. Is that fast enough — and what actually limits the system: the model, or everything around it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A deployed vision system is a <b>factory line</b>. A frame enters, passes through stations, and leaves as a result. Each station takes time. Two numbers matter and they are different: <b>latency</b> (how long one frame takes from camera to answer) and <b>throughput</b> (how many frames per second the line finishes). A line of six 5-minute stations has a 30-minute latency but, if every station works at once on different items, outputs one every 5 minutes. The slowest station — the <b>bottleneck</b> — sets the throughput.</p>
+        <div data-lab="pipeline" data-id="cv"></div>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Real shapes along the way</b> (a 1080p camera, a 224×224 classifier):</p>
+        <table class="tbl"><tr><th>step</th><th>what happens</th><th>tensor</th><th>size</th></tr>
+          <tr><td>capture</td><td>compressed JPEG/H.264 frame arrives</td><td>bytes</td><td>≈ 200 KB</td></tr>
+          <tr><td>decode (CPU)</td><td>entropy decoding, inverse DCT</td><td>1080×1920×3 uint8</td><td>6,220,800 B</td></tr>
+          <tr><td>resize</td><td>to the model input</td><td>224×224×3 uint8</td><td>150,528 B</td></tr>
+          <tr><td>normalise</td><td>(x/255 − mean)/std, reorder to channels-first, float32</td><td>3×224×224 float32</td><td>602,112 B</td></tr>
+          <tr><td>copy to GPU</td><td>PCIe ≈ 16 GB/s</td><td>same</td><td>≈ 0.04 ms</td></tr>
+          <tr><td>inference</td><td>the network</td><td>→ logits 1000 (or, for YOLO-style at 640², 25,200 candidate boxes × 85 numbers)</td><td>4 KB / 2.1 M floats</td></tr>
+          <tr><td>post-process</td><td>softmax / NMS: 25,200 → a few boxes</td><td>N×6</td><td>bytes</td></tr>
+          <tr><td>store / act</td><td>log, database, alarm</td><td></td><td></td></tr></table>
+        <div class="worked"><b>Worked example — the latency budget</b>
+          <p>Per frame, one at a time: decode 4 ms + resize 1 + normalise 0.5 + inference 8 + NMS 1 + store 1 = <b>15.5 ms</b>. If a single thread does all stations in turn: 1000/15.5 = <b>64.5 frames/s</b>. The camera sends 100/s, so this design drops frames.</p>
+          <p><b>Pipeline it</b>: each station is its own worker, so a new frame can be decoded while the previous one is in inference. Now the throughput is limited by the slowest stage only: 1000/8 = <b>125 frames/s</b> ≥ 100. The latency of each frame is still ≈ 15.5 ms (plus queueing) — parallelism raised throughput, not speed.</p></div>
+        <p><b>Batching.</b> A GPU is inefficient on one small image; running B images together amortises fixed costs. Model: inference time <span class="tex">t(B)=t_0+t_1B</span> with t₀=6 ms fixed, t₁=0.5 ms per image.</p>
+        <table class="tbl"><tr><th>B</th><th>t(B)</th><th>throughput 1000·B/t(B)</th><th>latency if frames arrive at 100/s (wait to fill + t)</th></tr>
+          <tr><td>1</td><td>6.5 ms</td><td>154 /s</td><td>6.5 ms</td></tr>
+          <tr><td>4</td><td>8 ms</td><td>500 /s</td><td>38 ms</td></tr>
+          <tr><td>8</td><td>10 ms</td><td>800 /s</td><td>80 ms</td></tr>
+          <tr><td>16</td><td>14 ms</td><td>1,143 /s</td><td>164 ms</td></tr>
+          <tr><td>32</td><td>22 ms</td><td>1,455 /s</td><td>332 ms</td></tr></table>
+        <p>Throughput climbs, but a frame at the head of the batch waits <span class="tex">(B-1)/\lambda</span> for the batch to fill. Real servers cap this with a <b>maximum wait</b> (e.g. 10 ms): "batch up to 8 but never hold a frame longer than 10 ms".</p>
+        <div data-lab="fplot" data-title="Batching: throughput and latency" data-names="throughput /s;latency ms" data-f="1000*x/(t0+t1*x); (x-1)/lam*1000+t0+t1*x" data-params="t0=6:0..20:0.5; t1=0.5:0.1..3:0.1; lam=100:20..400:10" data-view="1,32,0,1500" data-readout="throughput at B 8 = 1000*8/(t0+t1*8); latency at B 8 = (8-1)/lam*1000+t0+t1*8"></div>
+        <p><b>Little's law.</b> In any stable system, the average number of items inside equals the arrival rate times the average time each spends there: <span class="tex">L=\lambda W</span>. At 100 frames/s and W = 30 ms: L = 100·0.030 = <b>3 frames in flight</b>. It sizes your buffers (and tells you a queue that keeps growing means λ exceeds capacity).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">X_{\max}=\min_i\frac{m_i\,b_i}{s_i+p_i\,b_i}\qquad W=\sum_i (w_i+S_i)\qquad L=\lambda W</div>
+        <table class="sym">
+          <tr><td>X<sub>max</sub></td><td>maximum sustainable throughput (items per unit time)</td></tr>
+          <tr><td>m<sub>i</sub>, b<sub>i</sub></td><td>workers and batch size of stage i</td></tr>
+          <tr><td>s<sub>i</sub>, p<sub>i</sub></td><td>fixed and per-item time of stage i, so service time of a batch is s<sub>i</sub>+p<sub>i</sub>b<sub>i</sub></td></tr>
+          <tr><td>w<sub>i</sub>, S<sub>i</sub></td><td>waiting time and service time at stage i; W is the total latency</td></tr>
+          <tr><td>λ, L</td><td>arrival rate; average items in the system</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the pipeline simulator</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with the baseline at 110 frames/s: inference can only do 125/s, utilisation near 90%, the red outline marks the bottleneck. Watch coloured frames queue in front of it.</li>
+        <li>Raise the camera rate to 140: the queue never drains, latency grows and frames are dropped. Read Little's check (X·W ≈ L).</li>
+        <li>Press "batch 8, wait 10 ms": inference capacity jumps to 363/s, but each frame waits for its batch, so latency rises.</li>
+        <li>Press "slow decode (12 ms)": the bottleneck moves to decode; fix it with "3 decode workers". Making the model faster would not have helped.</li></ol></div>
+      <div data-lab="pipesim"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Benchmarking only the model: decode and resize on the CPU often take as long as the network.</li>
+          <li>Quoting throughput as if it were latency (and vice versa). A video-analytics product needs throughput; a robot needs latency.</li>
+          <li>Mismatched preprocessing between training and serving (BGR vs RGB, different resize interpolation) — a classic silent accuracy loss.</li>
+          <li>Unbounded queues: they hide overload until memory runs out. Bound them and drop or degrade gracefully.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>NVIDIA DeepStream / Triton</b> implement exactly this: GPU decode, dynamic batching with a max-wait, TensorRT inference, GPU NMS.</li>
+          <li><b>Autonomous driving</b> runs several camera pipelines and fuses results under a hard end-to-end deadline (tens of milliseconds).</li>
+          <li><b>Mobile apps</b> run the same stages on one chip, so decode, resize and NPU inference compete for memory bandwidth.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Stages take 3, 7, 2 ms and run as a parallel pipeline. Throughput and latency?</summary><div class="ans">Throughput = 1000/7 = 143 frames/s (slowest stage). Latency ≈ 3+7+2 = 12 ms when nothing waits.</div></details>
+        <details class="check"><summary>2. A service handles 250 requests/s and each stays 40 ms in the system on average. How many are in flight?</summary><div class="ans">L = λW = 250·0.040 = 10.</div></details>
+        <details class="check"><summary>3. With t(B)=6+0.5B ms, what is the throughput at B=20?</summary><div class="ans">t = 16 ms; 1000·20/16 = 1,250 images/s.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Latency is the sum along the line; throughput is set by the slowest stage.</li><li>Batching trades latency for throughput; cap the wait.</li><li>L = λW sizes queues; a growing queue means overload.</li><li>Profile the whole pipeline, not only the network.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.5 ===================== -->
+    <section class="lesson" id="model-compression" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.5</span><h2>Making models small &amp; fast</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your ResNet-50 is 102 MB and needs 8 GFLOPs per image. The target phone has little memory and no big GPU. Can you shrink it 4× or more and lose almost no accuracy?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Trained networks are over-built: many weights are tiny, many are stored with far more precision than needed, and a big model's knowledge can be copied into a small one. Three standard tools: <b>quantization</b> (store numbers with fewer bits), <b>pruning</b> (delete weights or neurons that matter little), <b>distillation</b> (train a small student to imitate a big teacher). Architecture choice (MobileNet, EfficientNet) is a fourth, covered in Module 4.</p>
+
+        <h3 class="sec">Build it up: quantization</h3>
+        <p>Float32 uses 32 bits per weight. <b>Int8</b> uses 8: only 256 possible values, so we choose a linear grid over the weights' range. For weights between <span class="tex">w_{\min}</span> and <span class="tex">w_{\max}</span>, the <b>scale</b> is the grid spacing <span class="tex">s=\frac{w_{\max}-w_{\min}}{255}</span> and the <b>zero point</b> <span class="tex">z=\operatorname{round}(-w_{\min}/s)</span> is the integer that represents the real number 0 (so zero is exact). Quantize: <span class="tex">q=\operatorname{clip}(\operatorname{round}(w/s)+z,\,0,\,255)</span>. Dequantize: <span class="tex">\hat w=(q-z)\,s</span>.</p>
+        <div class="worked"><b>Worked example — int8 on a few weights</b>
+          <p>Range [−1.0, 1.5]: s = 2.5/255 = 0.009804, z = round(1.0/0.009804) = 102.</p>
+          <table class="tbl"><tr><th>w</th><th>w/s</th><th>q = round(w/s)+102</th><th>ŵ=(q−102)s</th><th>error</th></tr>
+            <tr><td>−1.00</td><td>−102.0</td><td>0</td><td>−1.0000</td><td>0</td></tr>
+            <tr><td>−0.62</td><td>−63.2</td><td>39</td><td>−0.6176</td><td>+0.0024</td></tr>
+            <tr><td>−0.05</td><td>−5.1</td><td>97</td><td>−0.0490</td><td>+0.0010</td></tr>
+            <tr><td>0.00</td><td>0</td><td>102</td><td>0.0000</td><td>0 (exact)</td></tr>
+            <tr><td>0.30</td><td>30.6</td><td>133</td><td>0.3039</td><td>+0.0039</td></tr>
+            <tr><td>0.77</td><td>78.5</td><td>181</td><td>0.7745</td><td>+0.0045</td></tr>
+            <tr><td>1.50</td><td>153</td><td>255</td><td>1.5000</td><td>0</td></tr></table>
+          <p>Rounding never moves a weight by more than half a grid step: |error| ≤ s/2 = 0.0049. <b>Size:</b> ResNet-50 25,557,032 weights × 4 B = 102.2 MB → × 1 B = <b>25.6 MB</b>, exactly 4× smaller (plus a few scales). Int8 arithmetic is also faster and uses less energy.</p></div>
+        <p>Two ways to get there: <b>post-training quantization</b> (calibrate ranges on a few hundred images, no retraining; usually loses 0.1–1% on ResNet-50) and <b>quantization-aware training</b> (simulate rounding during fine-tuning, recovers most loss, needed for 4-bit). Important detail: the range is set by the <i>largest</i> weight, so one outlier wastes the whole grid; use per-channel scales and clipping.</p>
+        <div data-lab="quant"></div>
+
+        <h3 class="sec">Build it up: pruning</h3>
+        <p><b>Magnitude pruning</b>: set the smallest-|w| weights to zero, then fine-tune to recover. <b>Unstructured</b> pruning removes individual weights (high sparsity possible, but the matrix keeps its shape, so speed-ups need sparse hardware: Ampere GPUs support 2:4 — two zeros in every four weights — for 2×). <b>Structured</b> pruning removes whole filters/channels, giving a genuinely smaller dense network that is faster everywhere but costs more accuracy per removed parameter.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Weights w = (0.8, −0.05, 0.3, −0.6, 0.02, 0.45, −0.1, 0.9), threshold 0.25. Kept: 0.8, 0.3, −0.6, 0.45, 0.9 (5 of 8); pruned 3 → sparsity 37.5%. For input x = all ones: dense output 1.72; pruned output 0.8+0.3−0.6+0.45+0.9 = 1.85. The error 0.13 is exactly the sum of the removed weights (−0.05+0.02−0.10 = −0.13) — which is why removing many tiny weights of both signs hurts so little.</p></div>
+        <div data-lab="prune"></div>
+
+        <h3 class="sec">Build it up: distillation</h3>
+        <p>A trained teacher's probabilities contain more than the label: for a picture of a cat it may say cat 0.95, dog 0.047, fox 0.002 — a dog is more cat-like than a fox. The student is trained on these <b>soft targets</b> as well as the hard label. A <b>temperature</b> <span class="tex">T&gt;1</span> softens the distribution so the small probabilities become visible: <span class="tex">p_i^{(T)}=\frac{e^{z_i/T}}{\sum_j e^{z_j/T}}</span>.</p>
+        <div class="worked"><b>Worked example — 3 classes (cat, dog, fox)</b>
+          <p>Teacher logits (5, 2, −1); student logits (3, 2.5, −0.5).</p>
+          <p>T=1: teacher (0.950, 0.047, 0.002), student (0.611, 0.371, 0.018). KL(teacher‖student) = 0.3176.</p>
+          <p>T=4: teacher (0.590, 0.279, 0.132), student (0.435, 0.384, 0.181). KL = 0.0483, and the factor T² = 16 restores its size: 0.7725. (Gradients of soft terms shrink like 1/T², hence the T².)</p>
+          <p>Hard cross-entropy of the student on the label "cat" (T=1): −ln 0.611 = 0.4927. With α = 0.5: <span class="tex">L=0.5\cdot0.7725+0.5\cdot0.4927=0.6326</span>.</p></div>
+        <div data-lab="distill"></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">s=\frac{w_{\max}-w_{\min}}{2^b-1},\quad q=\operatorname{clip}\!\big(\operatorname{round}(w/s)+z\big),\quad \hat w=(q-z)s\qquad \mathcal L_{KD}=\alpha\,T^2\,\mathrm{KL}\big(p^{(T)}_{\text{teacher}}\,\|\,p^{(T)}_{\text{student}}\big)+(1-\alpha)\,\mathrm{CE}(y,p_{\text{student}})</div>
+        <table class="sym">
+          <tr><td>b</td><td>bit width (8 → 256 levels)</td></tr>
+          <tr><td>s, z</td><td>scale (grid spacing) and zero point (integer for real 0)</td></tr>
+          <tr><td>T</td><td>temperature; T=1 is the ordinary softmax</td></tr>
+          <tr><td>α</td><td>mix between imitating the teacher and fitting the hard label</td></tr>
+          <tr><td>KL</td><td><span class="tex">\sum_i p_i\ln(p_i/q_i)</span>, zero only when the two distributions match</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Labs recap</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li><b>Quantization:</b> set 8 bits and watch weights barely move; drop to 3 and 2 bits and see the error histogram widen and the accuracy trend collapse. Tick the outlier box: the same number of levels now spreads over a wider range, so every ordinary weight gets coarser.</li>
+        <li><b>Pruning:</b> compare the unstructured and structured error curves at 50% sparsity; press "Prune gradually" and watch the smallest cells fade first.</li>
+        <li><b>Distillation:</b> raise T from 1 to 8, then press "Train student" and watch the orange bars converge to the teal bars while the soft loss falls.</li></ol></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Judging compression by parameter count alone: unstructured sparsity may not speed anything up; measure latency on the target device.</li>
+          <li>Calibrating quantization on unrepresentative images; ranges then clip real data.</li>
+          <li>Pruning without fine-tuning; accuracy drops far more than needed.</li>
+          <li>Forgetting that the speed/accuracy trade-off is a curve: pick the point your product needs, not the smallest model.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>TensorFlow Lite / Core ML / TensorRT int8</b> run quantized MobileNets and detectors on phones and cameras.</li>
+          <li><b>DistilBERT-style distillation</b> also applies to vision: DeiT distils a CNN teacher into a ViT with a "distillation token".</li>
+          <li><b>NVIDIA 2:4 sparsity</b> and channel pruning (network slimming) are used in production edge models.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Range [−2, 2], int8 asymmetric: scale, zero point, and the largest rounding error?</summary><div class="ans">s = 4/255 = 0.01569; z = round(2/0.01569) = 127.5 → 128 (round half up; either 127 or 128 is a valid convention); max error s/2 = 0.0078.</div></details>
+        <details class="check"><summary>2. MobileNet-v2 has 3.50 M parameters. Its int8 weight size?</summary><div class="ans">3.50 MB (1 byte each), versus 14.0 MB in float32.</div></details>
+        <details class="check"><summary>3. Why multiply the soft loss by T²?</summary><div class="ans">Soft-target gradients scale as 1/T²; multiplying by T² keeps the soft and hard terms comparable when T changes.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Int8 quantization: s=(max−min)/255, zero point z, error ≤ s/2, 4× smaller.</li><li>Pruning removes small weights; only structured pruning (or 2:4 sparsity) gives real speed-ups.</li><li>Distillation transfers a teacher's soft probabilities; temperature exposes them.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.6 ===================== -->
+    <section class="lesson" id="deployment-edge" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.6</span><h2>Deployment &amp; hardware</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The model works in PyTorch on your workstation. How do you get it onto a server GPU, a phone, and a 5 W camera, and how do you know it will fit and run fast enough?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Training frameworks are flexible but heavy. Deployment wants the opposite: a fixed, optimised program for specific hardware. The workflow: <b>export</b> the trained network to a neutral graph format (<b>ONNX</b> — a list of operators and tensors, readable by many runtimes), then let a hardware-specific <b>compiler</b> optimise it (<b>TensorRT</b> for NVIDIA GPUs, <b>OpenVINO</b> for Intel CPUs, <b>Core ML</b> for Apple, <b>TFLite</b> for Android/NPUs).</p>
+        <p>What compilers do: <b>fuse</b> layers (a conv, BatchNorm and ReLU become one kernel, saving memory trips), choose the fastest kernel per layer, use lower precision, and plan memory so tensors reuse buffers.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — folding BatchNorm into a convolution</b>
+          <p>At inference BN is a fixed affine map <span class="tex">y=\gamma\frac{x-\mu}{\sqrt{\sigma^2+\epsilon}}+\beta</span>, so it can be merged into the previous conv: <span class="tex">w'=w\,\frac{\gamma}{\sqrt{\sigma^2+\epsilon}}</span>, <span class="tex">b'=\beta+(b-\mu)\frac{\gamma}{\sqrt{\sigma^2+\epsilon}}</span>. Take w=0.5, b=0, γ=2, β=0.1, μ=0.2, σ²+ε=0.25. Factor = 2/0.5 = 4, so w' = 2.0 and b' = 0.1 + (0−0.2)·4 = −0.7. Check with input 1: conv → 0.5, BN → 4(0.5−0.2)+0.1 = 1.3; fused: 2·1 − 0.7 = 1.3. Identical, one operation instead of two.</p></div>
+        <p><b>Hardware.</b> A <b>CPU</b> has few powerful cores, flexible, good for small models and pre/post-processing, slow for big convs. A <b>GPU</b> has thousands of simple cores and very high memory bandwidth: ideal for big batched convs and transformers. An <b>NPU</b> (neural processing unit, in phones, cameras, Edge-TPUs) is fixed-function silicon for int8 matrix/conv work: far better performance per watt, but only supports certain operators and precisions. Example peaks (datasheet-style, assumed for this arithmetic): CPU 200 GFLOPs, a 19.5 TFLOP fp32 GPU, an NPU 4 TOPs int8 at 2 W. ResNet-50 needs 8.18 GFLOPs/image: ideal time CPU 41 ms, GPU 0.42 ms, NPU 2 ms. Real numbers are 2–5× worse (memory bound, partial utilisation).</p>
+        <p><b>Throughput versus latency (again).</b> The GPU reaches full speed only at larger batches; at batch 1 it is under-used. For a robot choose batch 1 and latency; for a server farm choose big batches and images/second/dollar.</p>
+        <div class="worked"><b>Worked example — memory for ResNet-50, batch 32, inference</b>
+          <p><b>Weights:</b> 25,557,032 × 4 B = 102.2 MB (fp32), 51.1 MB (fp16), 25.6 MB (int8).</p>
+          <p><b>Activations:</b> at inference a tensor can be freed once its consumer has run, so you keep only the live ones. The largest tensor in ResNet-50 is 802,816 values (64×112×112 after the stem, also 256×56×56). Two live buffers (input and output of a layer): 2 × 802,816 × 4 B = 6.4 MB per image; batch 32 → <b>205.5 MB</b>. (The input batch itself: 32·3·224·224·4 = 19.3 MB.)</p>
+          <p><b>Workspace:</b> scratch for algorithms such as FFT/Winograd convolutions, typically a few hundred MB (assume 256 MB; the runtime lets you cap it).</p>
+          <p><b>Total ≈ 102 + 206 + 256 = 564 MB</b> in fp32; in int8 ≈ 26 + 51 + 256 ≈ 333 MB. It fits an 8 GB edge GPU with room for several models. A training run of the same batch would need gigabytes (Lesson 9.3): inference is cheap because nothing is saved for backprop.</p></div>
+        <div data-lab="memcalc" data-mode="infer"></div>
+        <p><b>Serving.</b> A service wraps the model with an HTTP/gRPC endpoint, a request queue, <b>dynamic batching</b> and autoscaling; the edge version is a loop reading a camera. Always measure on the target: end-to-end p50/p95 latency, throughput and power.</p>
+        <p>Compare an edge-friendly model with the heavy baseline:</p>
+        <div data-lab="archviz" data-preset="mobilenetv2" data-presets="resnet50,mobilenetv2,mobilenetv1,vgg16" data-title="Pick the model for the device" data-height="280"></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">M_{\text{infer}}\approx P\,b_w+2\,A_{\max}\,B\,b_a+M_{\text{ws}}\qquad t\ge\max\!\Big(\tfrac{\text{FLOPs}}{\text{peak FLOPs/s}},\ \tfrac{\text{bytes moved}}{\text{bandwidth}}\Big)</div>
+        <table class="sym">
+          <tr><td>P, b<sub>w</sub></td><td>parameter count, bytes per weight (4, 2 or 1)</td></tr>
+          <tr><td>A<sub>max</sub>, B, b<sub>a</sub></td><td>largest tensor (values per image), batch size, bytes per activation</td></tr>
+          <tr><td>M<sub>ws</sub></td><td>runtime workspace</td></tr>
+          <tr><td>t</td><td>time is at least the larger of compute time and memory-traffic time (the roofline idea)</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab recap</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the calculator choose ResNet-50, batch 32, float32 and read the 564 MB total; switch precision to int8 and watch weights and activations shrink.</li>
+        <li>Increase the batch to 256 and see which GPU lines the bar crosses.</li>
+        <li>In the architecture viewer compare ResNet-50 (4.09 GMACs) with MobileNet-v2 (≈0.3 GMACs, 3.5 M parameters).</li></ol></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Unsupported operators: the NPU compiler silently falls back to the CPU for one layer, destroying speed. Check the op list.</li>
+          <li>Comparing numbers from different batch sizes or precisions.</li>
+          <li>Ignoring thermal throttling: a phone sustains a fraction of its peak after a minute.</li>
+          <li>Exporting with dynamic shapes you never tested.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Phone cameras run segmentation and face detection on the NPU every frame.</li>
+          <li>Cloud vision APIs run TensorRT-optimised models with dynamic batching on GPU fleets.</li>
+          <li>Drones and smart cameras run int8 MobileNet/YOLO variants within a few watts.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Weight memory of VGG-16 (138.36 M parameters) in fp16?</summary><div class="ans">138.36 M × 2 B = 276.7 MB.</div></details>
+        <details class="check"><summary>2. Fold BN with γ=1, β=0, μ=0.5, σ²+ε=1 into w=2, b=1. New w' and b'?</summary><div class="ans">Factor = 1/1 = 1; w' = 2; b' = 0 + (1−0.5)·1 = 0.5.</div></details>
+        <details class="check"><summary>3. A GPU is idle 70% of the time at batch 1. Two ways to improve utilisation?</summary><div class="ans">Increase the batch (dynamic batching), or run several streams/models concurrently; also fuse layers and use lower precision.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Export to ONNX, then compile for the target (TensorRT, OpenVINO, Core ML, TFLite).</li><li>Memory = weights + live activations + workspace; inference is far cheaper than training.</li><li>CPU = flexible, GPU = throughput, NPU = efficiency; always benchmark on the real device.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.7 ===================== -->
+    <section class="lesson" id="monitoring-ethics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.7</span><h2>Monitoring, bias &amp; failure modes</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your model scored 94% in the lab and has been live for three months. How would you know if it silently got worse, whether it works equally well for everyone, and whether someone could fool it on purpose?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A model is a snapshot of the world at training time. The world moves: seasons, new camera firmware, a new product design. That is <b>drift</b>. Ground-truth labels in production arrive late or never, so you watch the <i>inputs</i> and the <i>outputs</i> for change instead. Separately, a model can be accurate on average and unfair to a subgroup, can leak private data, and can be fooled by inputs crafted to exploit it. Responsible deployment means measuring all of these.</p>
+
+        <h3 class="sec">Build it up: drift</h3>
+        <p><b>Covariate drift</b>: the inputs change (images get darker) though the right answers for a given image do not. <b>Concept drift</b>: the meaning changes (a new defect type). Detect drift by comparing a feature's live distribution with its training distribution. The <b>Population Stability Index</b> splits the feature into bins (usually training deciles, so each holds 10% in training) and sums <span class="tex">\sum_i(a_i-e_i)\ln(a_i/e_i)</span>, where <span class="tex">e_i</span> is the expected (training) share and <span class="tex">a_i</span> the live share. Rule of thumb: &lt;0.1 stable, 0.1–0.25 investigate, &gt;0.25 act. The Kolmogorov–Smirnov statistic is the largest gap between the two cumulative distributions.</p>
+        <div class="worked"><b>Worked example — PSI with 3 bins</b>
+          <p>Training shares (0.25, 0.50, 0.25); live shares (0.10, 0.45, 0.45).</p>
+          <p>(0.10−0.25)·ln(0.10/0.25) = (−0.15)(−0.9163) = 0.1374; (0.45−0.50)·ln(0.9) = (−0.05)(−0.1054) = 0.0053; (0.45−0.25)·ln(1.8) = 0.2·0.5878 = 0.1176. <b>PSI = 0.260 &gt; 0.25: alert.</b></p></div>
+        <div data-lab="drift"></div>
+
+        <h3 class="sec">Build it up: bias and fairness</h3>
+        <p>Overall accuracy hides group differences. Compute the confusion matrix <i>per group</i> and compare: <b>demographic parity</b> (equal rate of positive predictions), <b>equal opportunity</b> (equal true-positive rate), <b>equalized odds</b> (equal TPR and FPR). Bias usually comes from the data: under-represented groups, labels reflecting human prejudice, or a proxy (background, camera, lighting) that correlates with the group.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Group A (200 people): TP 80, FN 20, FP 10, TN 90. Group B (200): TP 45, FN 30, FP 5, TN 120.</p>
+          <p>Accuracy A = 170/200 = 0.85; B = 165/200 = 0.825 — nearly equal. But TPR A = 80/100 = 0.80, TPR B = 45/75 = 0.60: <b>equal-opportunity gap 0.20</b>. Positive rate A = 90/200 = 0.45, B = 50/200 = 0.25: demographic-parity gap 0.20. A single accuracy number hid that group B's true cases are missed twice as often (FN rate 40% vs 20%).</p></div>
+        <div data-lab="calc" data-title="Per-group metrics" data-params="tpa=80:0..200:1; fna=20:0..200:1; fpa=10:0..200:1; tna=90:0..200:1; tpb=45:0..200:1; fnb=30:0..200:1; fpb=5:0..200:1; tnb=120:0..200:1" data-rows="accuracy A = (tpa+tna)/(tpa+fna+fpa+tna); accuracy B = (tpb+tnb)/(tpb+fnb+fpb+tnb); TPR A = tpa/(tpa+fna); TPR B = tpb/(tpb+fnb); equal-opportunity gap = abs(tpa/(tpa+fna)-tpb/(tpb+fnb)); positive rate A = (tpa+fpa)/(tpa+fna+fpa+tna); positive rate B = (tpb+fpb)/(tpb+fnb+fpb+tnb); parity gap = abs((tpa+fpa)/(tpa+fna+fpa+tna)-(tpb+fpb)/(tpb+fnb+fpb+tnb))" data-note="Change the counts: can you make accuracy equal while the TPR gap stays large?"></div>
+        <p><b>Privacy.</b> Images contain faces, plates, documents. Good practice: collect only what you need, blur or discard faces on the device, store features not frames, set retention limits, and get consent. Models can <i>memorise</i>: <b>membership-inference</b> attacks guess whether a given photo was in the training set, and generative models can regurgitate training images. <b>Differential privacy</b> (clipping and noising gradients) bounds this, at some accuracy cost; <b>federated learning</b> trains without centralising images.</p>
+
+        <h3 class="sec">Build it up: adversarial examples</h3>
+        <p>A tiny, deliberately chosen perturbation can flip a prediction. The <b>Fast Gradient Sign Method</b> moves every input value by ε in the direction that increases the loss: <span class="tex">x'=x+\varepsilon\,\operatorname{sign}(\nabla_x\mathcal L)</span>. For a linear classifier with score <span class="tex">s=w\cdot x+b</span>, the gradient of the score is just <span class="tex">w</span>, so the attack on a positive example is <span class="tex">x'=x-\varepsilon\,\operatorname{sign}(w)</span> and the score changes by exactly <span class="tex">-\varepsilon\lVert w\rVert_1</span>.</p>
+        <div class="worked"><b>Worked example — FGSM by hand</b>
+          <p>w = (2, −1, 3), b = −1, x = (0.5, 0.2, 0.4). Score s = 1.0 − 0.2 + 1.2 − 1 = <b>1.0</b>, probability σ(1) = 0.731: confidently positive.</p>
+          <p>‖w‖₁ = 2+1+3 = 6. Attack direction: −sign(w) = (−1, +1, −1). With ε = 0.1: x' = (0.4, 0.3, 0.3), s' = 0.8 − 0.3 + 0.9 − 1 = 0.4 (= 1 − 0.1·6), probability 0.599. With ε = 0.2: x' = (0.3, 0.4, 0.2), s' = 0.6 − 0.4 + 0.6 − 1 = <b>−0.2</b>: decision flipped, probability of the true class 0.450. The smallest flipping budget is ε* = |s|/‖w‖₁ = 1/6 = 0.167.</p>
+          <p><b>Why images are fragile:</b> the shift is ε‖w‖₁ — it grows with the number of inputs. With d = 150,528 pixels and typical |wᵢ| = 0.01, even ε = 1/255 (one grey level, invisible) shifts the score by (1/255)·150,528·0.01 = <b>5.9</b>. Many tiny nudges add up.</p></div>
+        <div data-lab="fgsm"></div>
+        <p>Defences: <b>adversarial training</b> (include attacked examples in training), input preprocessing, ensembles, certified bounds — none is complete. Physical attacks (stickers on stop signs) and <b>out-of-distribution</b> inputs also cause failures. <b>Safe deployment</b>: a human fallback for low-confidence outputs, uncertainty estimates, monitoring dashboards, staged roll-out (shadow mode, then a small share of traffic), a rollback plan, and documentation (model cards, datasheets) stating intended use and known failure modes.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{PSI}=\sum_{i}(a_i-e_i)\ln\frac{a_i}{e_i}\qquad \Delta_{\mathrm{EO}}=\big|\mathrm{TPR}_A-\mathrm{TPR}_B\big|\qquad x'=x+\varepsilon\,\operatorname{sign}\big(\nabla_x\mathcal L(x,y)\big)</div>
+        <table class="sym">
+          <tr><td>a<sub>i</sub>, e<sub>i</sub></td><td>live and expected (training) fraction in bin i</td></tr>
+          <tr><td>TPR<sub>g</sub></td><td>true-positive rate of group g: TP/(TP+FN)</td></tr>
+          <tr><td>ε</td><td>maximum change allowed per input value (L∞ budget)</td></tr>
+          <tr><td>∇<sub>x</sub>ℒ</td><td>gradient of the loss with respect to the input pixels</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Labs recap</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li><b>Drift:</b> with 1.2 grey levels per day, watch the orange histogram slide away from the blue curve and PSI cross 0.2 around day 9. Set drift to 0: PSI stays at its noise floor. Lower the window to 50 images: noise rises (false alarms).</li>
+        <li><b>FGSM:</b> drag the point near the boundary and increase ε until the point crosses it; the right plot shows the true-class probability falling through 0.5 at ε*. Change w₁ and w₂: a larger ‖w‖₁ means a smaller ε*.</li>
+        <li>Move the "image pixels" slider to 10^5.2: the same ε=1/255 now moves the score by several units.</li></ol></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Alerting on every statistically significant shift: with large windows tiny, harmless drifts are "significant". Use effect-size thresholds like PSI.</li>
+          <li>Reporting only overall accuracy; always slice by group, lighting, camera and region.</li>
+          <li>"Fairness through unawareness": dropping the sensitive attribute does not remove proxies.</li>
+          <li>Believing adversarial robustness is solved by obscurity; assume the attacker may know the model.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Gender Shades</b> (2018) found commercial face analysis error rates of up to ~35% for darker-skinned women versus under 1% for lighter-skinned men: the canonical bias audit.</li>
+          <li><b>Evidently, WhyLabs, Arize</b> and similar tools compute PSI/KS dashboards for production ML.</li>
+          <li><b>Adversarial patches</b> and stop-sign stickers drove research on robust perception for autonomous driving.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. FGSM on w=(1,−2), b=0, x=(1,0), positive class. Score, ε*, and x' at ε=0.4?</summary><div class="ans">s = 1. ‖w‖₁ = 3, ε* = 1/3. x' = x − ε·sign(w) = (1−0.4, 0+0.4) = (0.6, 0.4); s' = 0.6 − 0.8 = −0.2: flipped.</div></details>
+        <details class="check"><summary>2. Group A has TPR 0.9, group B 0.7, equal overall accuracy. Which fairness criterion fails?</summary><div class="ans">Equal opportunity (TPR gap 0.20); equalized odds also fails unless FPRs compensate.</div></details>
+        <details class="check"><summary>3. Why watch input drift rather than accuracy in production?</summary><div class="ans">Labels arrive late or never; input and prediction statistics are available immediately and warn before the damage shows up in metrics.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Monitor input distributions (PSI/KS) and outputs; alert and retrain before accuracy collapses.</li><li>Evaluate per group; equal accuracy can hide unequal error types.</li><li>FGSM shifts the score by ε‖w‖₁, which grows with dimension: images are fragile.</li><li>Deploy with fallbacks, staged roll-out and documentation.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Course complete.</b> You have followed vision from a single pixel to a monitored production system. Revisit <a href="computer-vision.html">the Computer Vision hub</a> to pick any module again, or continue with another topic from the <a href="index.html">AI Learning Hub</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

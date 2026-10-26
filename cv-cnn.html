@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · Convolutional networks from first principles · Computer Vision</title>
+<meta name="description" content="Why CNNs exist, the convolutional layer, stride and padding, pooling, receptive fields, activations and normalisation, building and training a CNN, and looking inside it — with animated, editable labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-cnn.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · Convolutional networks from first principles</h1>
+        <p>Everything in modern vision architecture is built from the pieces in this module: a learned filter sliding over a volume of channels, shape arithmetic, pooling, receptive fields, non-linearities and normalisation. By the end you can compute the shape, parameters and compute of any CNN layer by hand, build and train a small CNN, and look inside it to see what it learned.</p>
+        <div class="chips"><span class="chip">8 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: pixels, convolution (Modules 0–1), derivatives</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 3.1 ===================== -->
+    <section class="lesson" id="why-not-mlp" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.1</span><h2>Why not just an MLP?</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A colour photo of 224×224 pixels has 224·224·3 = 150,528 numbers. Suppose we flatten them into one long vector and feed it to an ordinary fully connected network (an MLP) to recognise a cat. What goes wrong — and what property of images should we exploit instead?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine reading a page of text. You do not keep a separate "letter A detector" for line 3 column 5, another for line 3 column 6, and so on. You own <i>one</i> detector for A and you move your eyes. A fully connected network is the opposite: it would learn a private detector for every position.</p>
+        <p>Images have three regularities we can exploit:</p>
+        <ul>
+          <li><b>Locality.</b> The meaning of a pixel depends mostly on its close neighbours (an edge, a corner, a texture). Far-away pixels matter only after several stages of combination.</li>
+          <li><b>Translation equivariance (stationarity).</b> A cat ear is a cat ear wherever it is. If the object moves one pixel to the right, the detector's answer should simply move one pixel to the right.</li>
+          <li><b>Composition.</b> Edges combine into corners, corners into parts, parts into objects — a hierarchy we get by stacking layers.</li>
+        </ul>
+        <p>A convolutional layer builds the first two directly into the wiring: each output looks only at a small patch (locality) and the <i>same</i> weights are reused at every position (weight sharing). Depth supplies the third.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1 — count the weights of an MLP.</b> A fully connected layer with <span class="tex">n_{in}</span> inputs and <span class="tex">n_{out}</span> outputs has <span class="tex">n_{in}n_{out}+n_{out}</span> parameters (one weight per connection plus one bias per output). With 150,528 inputs and only 1000 hidden units:</p>
+        <div class="eq">150{,}528\times1000+1000=150{,}529{,}000</div>
+        <p>That is 150.5 million numbers, about 602 MB in float32, for <i>one</i> layer that has seen the image only once. Such a model memorises training images instead of learning "cat".</p>
+        <p><b>Step 2 — the position problem.</b> Suppose one hidden unit has learned a cat ear at pixel position (40, 60). Its weights at (41, 60) are untouched, so a cat shifted by one pixel looks like a different input. To handle every position the MLP must see the ear at every position in training. Try the first lab below: the MLP unit responds only near the position it was trained on, whereas a single shared kernel finds the pattern anywhere.</p>
+        <p><b>Step 3 — restrict and share.</b> Let every output look at only a <span class="tex">3\times3\times3</span> patch (locality) and reuse the same 27 weights at every location (sharing). Compare three ways of producing 64 feature maps of size 224×224 from the colour image:</p>
+        <table class="tbl"><tr><th>wiring</th><th>weights</th></tr>
+          <tr><td>dense (every input → every output)</td><td>150,528 × 3,211,264 = 483,385,147,392</td></tr>
+          <tr><td>local, not shared (each output has its own 27 weights)</td><td>27 × 3,211,264 = 86,704,128</td></tr>
+          <tr><td>local <b>and</b> shared (conv 3×3, 3→64)</td><td>27·64 + 64 = <b>1,792</b></td></tr></table>
+        <p>The shared version is about 2.7·10⁸ times smaller than the dense one, and its size does not depend on the image size at all.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>A 32×32 RGB image into an MLP with 100 hidden units: 3072·100 + 100 = 307,300 parameters. The same image into a conv layer with 16 filters of 3×3: 3·3·3·16 + 16 = 448 parameters. Make the image 224×224 and the MLP grows to 15.05 M weights while the conv layer is still 448.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Write a 1-D signal as <span class="tex">x_i</span>. A local, shared layer computes <span class="tex">y_i=\sum_{t=0}^{k-1}w_t\,x_{i+t}</span>. Let <span class="tex">(T_s x)_i=x_{i-s}</span> be "shift right by s". Then</p>
+        <div class="eq">f(T_s x)=T_s f(x)\qquad\text{(equivariance)}\qquad f(T_s x)=f(x)\qquad\text{(invariance)}</div>
+        <p>Convolution is equivariant (away from the borders): shifting the input shifts the output by the same amount. Invariance — "the answer does not change when the object moves" — is what a classifier eventually needs, and we obtain it by throwing away position later (pooling, lesson 3.4).</p>
+        <table class="sym">
+          <tr><td>x<sub>i</sub></td><td>the i-th input value (pixel)</td></tr>
+          <tr><td>w<sub>t</sub>, k</td><td>kernel weights and their number: the same w<sub>t</sub> is used for every i (sharing)</td></tr>
+          <tr><td>T<sub>s</sub></td><td>operator that shifts a signal by s positions</td></tr>
+          <tr><td>f</td><td>the layer (or network) as a function of the input</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In <i>Why sharing matters</i>, drag the pattern position. The MLP unit (orange curve) answers only where it was trained; move its "trained at" slider and the peak moves with it.</li>
+        <li>Watch the conv map: its peak follows the pattern (equivariance), and the max of the map is the same everywhere (invariance after a "max").</li>
+        <li>In the parameter calculator choose 224 × 3 channels, 1000 hidden units versus 64 filters of 3×3, then switch to <i>dense layer producing the same maps</i> and note the bar lengths (log scale: each tick is ×100).</li></ol></div>
+      <div data-lab="shiftdemo"></div>
+      <div data-lab="paramcount"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"CNNs are translation invariant."</b> Convolution layers are <i>equivariant</i>; invariance is approximate and comes from pooling or global pooling. Strides also break exact equivariance.</li>
+          <li><b>Sharing saves parameters, not compute.</b> The local-not-shared and shared layers above both do 86.7 M multiply-adds; sharing only shrinks memory and the number of things to learn.</li>
+          <li><b>Locality is an assumption, not a law.</b> Face-aligned photos or text position can carry meaning; networks then add coordinates or positional embeddings.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every vision backbone from LeNet to ResNet and ConvNeXt is built on this local + shared wiring.</li>
+          <li>The same idea in 1-D powers audio models, text CNNs and time-series nets; in 3-D, video models.</li>
+          <li>Vision Transformers (Module 5) drop the built-in locality bias, which is why they typically need more data or pre-training.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters does a layer mapping a 28×28 grey image to 128 hidden units have as an MLP? And a conv layer of 8 filters 3×3?</summary><div class="ans">MLP: 784·128 + 128 = 100,480. Conv: 1·3·3·8 + 8 = 80, regardless of image size.</div></details>
+        <details class="check"><summary>2. A cat moves 5 pixels right. What should a conv feature map do, and what should the final class score do?</summary><div class="ans">The feature map pattern moves 5 pixels right (equivariance); the final "cat" score should stay (invariance), which pooling later provides approximately.</div></details>
+        <details class="check"><summary>3. Why do local-but-unshared and shared layers cost the same number of multiply-adds?</summary><div class="ans">Each output still computes a dot product with its own patch of 27 values; sharing only reuses the same weights, it does not remove any multiplication.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Flattening an image into an MLP costs hundreds of millions of weights and learns every position separately.</li><li>Locality + weight sharing give a layer whose parameter count is independent of image size.</li><li>Convolution is translation-equivariant; invariance is added later.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 ===================== -->
+    <section class="lesson" id="conv-layer" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.2</span><h2>The convolutional layer</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>In Module 1 a filter was a hand-designed 3×3 grid (Sobel, blur) sliding over a grey image. A colour image has three channels, and a CNN wants <i>dozens of different</i> filters that it learns itself. How does one filter handle many input channels, how do many filters become the next layer's input, and how many numbers must be learned?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A filter is a small <b>pattern detector</b>. At each location it measures "how much does the patch under me look like my pattern?" with a dot product: multiply patch and filter element by element and add. High value = strong match.</p>
+        <p>A colour image is a stack of three grids (R, G, B). To detect "a red-to-blue vertical edge" the detector must look at all three at once, so the filter is a small <b>cube</b>: depth equals the number of input channels, <span class="tex">C_{in}\times k\times k</span>. Sliding the cube produces <b>one number per position</b>, and those numbers form <b>one feature map</b>.</p>
+        <p>Use many cubes (<span class="tex">C_{out}</span> of them) and you get many feature maps stacked into a new volume. The next layer treats this volume as <i>its</i> input image whose "colours" are now feature channels ("vertical edge", "green blob", …). That is how layers build on each other. The weights are not designed: they start random and training turns them into useful detectors.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>One output value.</b> Take a 3×3 patch from each of three channels and one 3×3×3 filter. Do three ordinary dot products (one per channel), add the three results and add the filter's bias:</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Patch R = [[1,2,0],[0,1,3],[2,1,0]], filter R = [[1,0,−1],[1,0,−1],[1,0,−1]]. Dot product: 1·1 + 2·0 + 0·(−1) + 0·1 + 1·0 + 3·(−1) + 2·1 + 1·0 + 0·(−1) = 1 − 3 + 2 = <b>0</b>.</p>
+          <p>Patch G = [[0,1,1],[2,0,1],[1,3,0]], filter G = [[0,1,0],[1,−1,1],[0,1,0]]: 1 + 2 + 0 + 1 + 3 − 0 = <b>7</b> (centre 0·(−1) = 0; neighbours 1+2+1+3).</p>
+          <p>Patch B = [[2,0,1],[1,1,0],[0,2,2]], filter B = [[1,1,1],[0,0,0],[−1,−1,−1]]: (2+0+1) − (0+2+2) = 3 − 4 = <b>−1</b>.</p>
+          <p>Sum over channels: 0 + 7 − 1 = 6, plus bias b = 1 gives the output <b>7</b>. Slide to the next position and repeat; all positions give one 2-D feature map.</p></div>
+        <p><b>Counting parameters.</b> One filter has <span class="tex">C_{in}\cdot k\cdot k</span> weights plus 1 bias. We have <span class="tex">C_{out}</span> filters. Nothing in this count involves the image height or width:</p>
+        <div class="eq">\text{params}=C_{in}\,k^2\,C_{out}+C_{out}</div>
+        <table class="tbl"><tr><th>layer</th><th>calculation</th><th>params</th></tr>
+          <tr><td>3→64, 3×3</td><td>3·9·64 + 64</td><td>1,792</td></tr>
+          <tr><td>64→128, 3×3</td><td>64·9·128 + 128</td><td>73,856</td></tr>
+          <tr><td>256→256, 3×3</td><td>256·9·256 + 256</td><td>590,080</td></tr>
+          <tr><td>256→64, 1×1</td><td>256·64 + 64</td><td>16,448</td></tr>
+          <tr><td>3→64, 11×11 (AlexNet conv1)</td><td>3·121·64 + 64</td><td>23,296</td></tr></table>
+        <p><b>Counting compute.</b> Each output value needs <span class="tex">C_{in}k^2</span> multiply-adds (MACs); there are <span class="tex">C_{out}H'W'</span> output values:</p>
+        <div class="eq">\text{MACs}=C_{in}\,k^2\,C_{out}\,H'\,W'\qquad(\text{FLOPs}\approx2\times\text{MACs})</div>
+        <p>AlexNet's conv1 on 224×224 gives 55×55 output (next lesson): 3·121·64·55·55 = 70,276,800 MACs. A 3→64 3×3 conv with "same" padding at 224×224: 27·64·224·224 = 86,704,128 MACs.</p>
+        <p><b>1×1 convolution.</b> With k = 1 the filter looks at one pixel only, across all channels: it is a small fully connected layer applied independently at every pixel, mixing channels. It is the standard way to change the channel count cheaply (ResNet bottlenecks, Inception).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y[o,i,j]=b_o+\sum_{c=0}^{C_{in}-1}\sum_{u=0}^{k-1}\sum_{v=0}^{k-1}W[o,c,u,v]\;x[c,\;i s+u-p,\;j s+v-p]</div>
+        <table class="sym">
+          <tr><td>x</td><td>input volume, shape C<sub>in</sub>×H×W (a batch adds a leading dimension N)</td></tr>
+          <tr><td>W</td><td>weights, shape C<sub>out</sub>×C<sub>in</sub>×k×k (PyTorch layout)</td></tr>
+          <tr><td>b<sub>o</sub></td><td>one bias per output channel (not per position)</td></tr>
+          <tr><td>o, c</td><td>output channel (filter index) and input channel index</td></tr>
+          <tr><td>i, j</td><td>output row and column</td></tr>
+          <tr><td>s, p</td><td>stride and zero padding (next lesson); with s = 1, p = 0 the index is just x[c, i+u, j+v]</td></tr>
+          <tr><td>y</td><td>output volume, shape C<sub>out</sub>×H′×W′</td></tr>
+        </table>
+        <p>Strictly this is <i>cross-correlation</i> (the kernel is not flipped, as noted in Module 1); deep learning libraries call it convolution, and since the kernel is learned the flip is irrelevant.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>First, the single-channel animation: pick <i>sobel x</i> and watch each output pixel being built from nine products.</li>
+        <li>Then the multi-channel lab: follow the window across all channels at once. Under each filter slice you see its partial sum; the partial sums plus the bias form the one output number.</li>
+        <li>Increase C<sub>out</sub> to 3: each filter builds its own feature map. Check the params formula in the readout against your own calculation.</li>
+        <li>Click a filter weight or an input cell to change it (the cell cycles through values) and see the output change.</li></ol></div>
+      <div data-lab="convolve" data-kernel="sobel x"></div>
+      <div data-lab="mcconv"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>A "3×3 filter" has 3·3·<b>C<sub>in</sub></b> weights, not 9 (except on grey images).</li>
+          <li>The number of output channels equals the number of filters, not the number of input channels.</li>
+          <li>The bias is one number per filter and is shared by every position.</li>
+          <li>Two stacked convs without a non-linearity between them are just one conv (lesson 3.6).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>AlexNet's first layer: 64 learned 11×11×3 filters that look like oriented edges and colour blobs.</li>
+          <li>VGG uses nothing but 3×3 convs; ResNet-50 bottlenecks use 1×1 → 3×3 → 1×1; the ViT patch embedding is a convolution with k = stride = 16.</li>
+          <li>U-Net, YOLO, diffusion U-Nets: all are stacks of this layer with different shapes.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Parameters of a conv layer 16→32 channels, 5×5?</summary><div class="ans">16·25·32 + 32 = 12,832.</div></details>
+        <details class="check"><summary>2. How many MACs does a 3×3 conv 64→64 need on a 56×56 output?</summary><div class="ans">64·9·64·56·56 = 36,864·3,136 = 115,605,504.</div></details>
+        <details class="check"><summary>3. What does a 1×1 convolution do, and what is its parameter count for 256→64?</summary><div class="ans">Mixes channels at each pixel independently (a per-pixel linear layer). 256·64 + 64 = 16,448.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A filter is a C<sub>in</sub>×k×k cube; each position yields one number summed over all channels plus a bias.</li><li>C<sub>out</sub> filters give C<sub>out</sub> feature maps: the next layer's input channels.</li><li>params = C<sub>in</sub>k²C<sub>out</sub> + C<sub>out</sub>; MACs = C<sub>in</sub>k²C<sub>out</sub>H′W′.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 ===================== -->
+    <section class="lesson" id="stride-padding" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.3</span><h2>Stride, padding, dilation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>ResNet feeds a 224×224 image into a 7×7 convolution and gets 112×112 out. Where did the other half go? More generally, how can you predict the shape of every layer of a network on paper before running any code?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Stride</b> is how far the window hops. Stride 1 visits every position; stride 2 visits every other one in each direction, so the output has about half the height and width (a quarter of the values) — a cheap way to look at the image more coarsely.</p>
+        <p><b>Padding</b> adds a frame of zeros around the input. Two reasons: pixels at the border would otherwise be covered by fewer windows than central pixels, and without padding each 3×3 layer would shave 2 pixels off the size, so a deep network would run out of image. With padding <span class="tex">p=(k-1)/2</span> and stride 1 the output has the same size ("same" padding).</p>
+        <p><b>Dilation</b> spreads the kernel taps apart with gaps between them: a 3-tap kernel with dilation 2 covers 5 pixels but still has only 3 weights, a cheap way to look wider.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Counting window positions (1-D).</b> The input has n cells, plus p zeros on each side: n + 2p cells. A window of width k can start at positions 0, 1, …, n+2p−k: that is n+2p−k+1 positions at stride 1. At stride s we take every s-th start: positions 0, s, 2s, … up to n+2p−k. The number of them is</p>
+        <div class="eq">O=\left\lfloor\frac{n+2p-k}{s}\right\rfloor+1</div>
+        <p>The floor appears because the last window must fit entirely. If (n+2p−k) is not divisible by s, a few trailing cells are never covered.</p>
+        <div class="worked"><b>Worked examples</b>
+          <p>• n = 32, k = 5, s = 1, p = 0: ⌊27/1⌋ + 1 = <b>28</b> (LeNet's first conv).</p>
+          <p>• n = 224, k = 7, s = 2, p = 3: ⌊(224+6−7)/2⌋ + 1 = ⌊223/2⌋ + 1 = 111 + 1 = <b>112</b> (ResNet stem).</p>
+          <p>• then max-pool k = 3, s = 2, p = 1 on 112: ⌊(112+2−3)/2⌋ + 1 = 55 + 1 = <b>56</b>.</p>
+          <p>• n = 224, k = 11, s = 4, p = 2: ⌊217/4⌋ + 1 = 54 + 1 = <b>55</b> (AlexNet conv1).</p>
+          <p>• n = 8, k = 3, s = 2, p = 0: ⌊5/2⌋ + 1 = 3 outputs; windows start at 0, 2, 4 and cover cells 0–6, so cell 7 is <b>never seen</b>.</p></div>
+        <p><b>With dilation d.</b> Taps are d cells apart, so the kernel spans an <i>effective size</i> <span class="tex">k_{eff}=d(k-1)+1</span>. Replace k by k<sub>eff</sub> in the formula. Example: k = 3, d = 2 gives k<sub>eff</sub> = 5; n = 10, p = 0, s = 1: ⌊(10−5)/1⌋ + 1 = 6.</p>
+        <p><b>"Valid" and "same".</b> <i>Valid</i> means p = 0 (no padding; output shrinks by k−1). <i>Same</i> means the output size equals the input size, which for s = 1 needs <span class="tex">p=\lfloor k_{eff}/2\rfloor</span> when k<sub>eff</sub> is odd (3×3 → p = 1, 5×5 → p = 2, 7×7 → p = 3). For s &gt; 1 "same" means ⌈n/s⌉ and libraries pad asymmetrically if needed; in PyTorch give the padding explicitly (default is 0).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">H'=\left\lfloor\frac{H+2p-d(k-1)-1}{s}\right\rfloor+1,\qquad W'=\left\lfloor\frac{W+2p-d(k-1)-1}{s}\right\rfloor+1</div>
+        <table class="sym">
+          <tr><td>H, W</td><td>input height and width</td></tr>
+          <tr><td>k</td><td>kernel size</td></tr>
+          <tr><td>p</td><td>zero padding added on each side</td></tr>
+          <tr><td>s</td><td>stride: hop between window positions</td></tr>
+          <tr><td>d</td><td>dilation: gap between taps (d = 1 is an ordinary kernel)</td></tr>
+          <tr><td>H′, W′</td><td>output height and width; the channel count is C<sub>out</sub> and does not depend on any of these</td></tr>
+        </table>
+        <p>The same formula applies to pooling layers. Each layer therefore turns shape (C, H, W) into (C′, H′, W′), and the MAC count uses H′·W′.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the visualiser start with n = 9, k = 3, s = 1, p = 0 (O = 7), then press <i>same</i>: p becomes 1 and O = 9.</li>
+        <li>Set stride 2: outputs spread out (each one sits over its window). Find an n for which cells are marked <b>ignored</b> (red).</li>
+        <li>Set dilation 2 and watch the taps spread; the "effective kernel" bracket grows while the tap count stays 3.</li>
+        <li>Switch to 2-D and click an output cell to pin which input cells it reads.</li>
+        <li>Then edit the architecture text below: change the first conv's stride and read the new shapes.</li></ol></div>
+      <div data-lab="outsize"></div>
+      <div data-lab="archviz" data-title="ResNet stem — edit me" data-height="300" data-edit data-resolution><script type="text/plain">input 3 224 224
+conv 64 k7 s2 p3
+bn
+relu
+maxpool k3 s2 p1
+conv 64 k3
+bn
+relu</script></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Forgetting the <b>2p</b>, or forgetting the floor. Always compute n+2p−k first.</li>
+          <li>"Same" padding is only simple for stride 1 and odd k.</li>
+          <li>Stride is not free: it throws away spatial detail and breaks exact shift equivariance.</li>
+          <li>Padding with zeros is a choice; reflection or replication padding avoid a hard black frame.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>ResNet and most modern nets downsample with stride-2 convs (and one early max-pool).</li>
+          <li>ConvNeXt's stem is a "patchify" conv k = 4, s = 4: 224 → 56. ViT's patch embedding is k = s = 16: 224 → 14.</li>
+          <li>Dilated convolutions enlarge context without losing resolution in DeepLab; WaveNet stacks them in 1-D.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. n = 64, k = 5, s = 2, p = 2: output size?</summary><div class="ans">⌊(64+4−5)/2⌋ + 1 = ⌊63/2⌋ + 1 = 32.</div></details>
+        <details class="check"><summary>2. Which padding keeps a 7×7 conv with stride 1 the same size?</summary><div class="ans">p = 3, since (7−1)/2 = 3.</div></details>
+        <details class="check"><summary>3. k = 3, d = 4, n = 20, p = 0, s = 1: output size?</summary><div class="ans">k<sub>eff</sub> = 4·2 + 1 = 9; ⌊(20−9)/1⌋ + 1 = 12.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>O = ⌊(n + 2p − d(k−1) − 1)/s⌋ + 1 for every conv and pooling layer.</li><li>Stride downsamples; padding preserves size and border information; dilation widens the view for free.</li><li>You can compute every shape in a network by hand with this one formula.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 ===================== -->
+    <section class="lesson" id="pooling-downsampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.4</span><h2>Pooling &amp; downsampling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>After a few convolutions we hold dozens of feature maps of the full image size, but the final answer is one label ("cat"). How do we shrink the spatial grid step by step, keep the evidence that a feature was <i>present</i>, tolerate small shifts, and save compute and parameters?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Pooling <b>summarises a neighbourhood into one number</b>. <b>Max pooling</b> asks "did my feature fire anywhere in this little region?" — like an alarm that triggers if any sensor in the room trips. <b>Average pooling</b> asks "how much, on average?". Think of zooming out on a map: each step you remember the most prominent landmark in each area but forget its exact street.</p>
+        <p>The network trades <i>where</i> for <i>what</i>: deeper layers have smaller grids but more channels.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Take a 4×4 feature map and a 2×2 window with stride 2 (non-overlapping):</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Map = [[1,3,2,4],[5,6,1,2],[7,2,9,1],[3,4,6,8]].</p>
+          <p>Max pool: top-left window {1,3,5,6} → 6; top-right {2,4,1,2} → 4; bottom-left {7,2,3,4} → 7; bottom-right {9,1,6,8} → 9. Result [[6,4],[7,9]].</p>
+          <p>Average pool: (1+3+5+6)/4 = 3.75, (2+4+1+2)/4 = 2.25, (7+2+3+4)/4 = 4, (9+1+6+8)/4 = 6. Result [[3.75,2.25],[4,6]].</p>
+          <p><b>Shift test.</b> Move the map one column right (zero fill): max pool gives [[5,6],[7,9]]. Two of four outputs are unchanged, although <i>none</i> of the 16 raw pixels stayed in place. Pooling is partly shift tolerant, not fully.</p></div>
+        <p><b>Global average pooling (GAP)</b> is the extreme: one window covering the entire map, giving one number per channel. A 7×7×512 map becomes a 512-vector. Compare classifier heads for 1000 classes: flattening (25,088 values) into VGG's first FC layer of 4096 costs 25,088·4096 + 4096 = 102,764,544 parameters; GAP then one FC to 1000 classes costs 512·1000 + 1000 = 513,000.</p>
+        <p><b>Strided convolution</b> is a learned downsampler: a conv with s = 2 both filters and shrinks. Pooling has no parameters and a fixed rule; strided conv can learn what to keep. ResNet and later nets use stride-2 convs for most downsampling.</p>
+        <p><b>Backward.</b> Max pooling passes the gradient only to the winner (the argmax cell) and zero to the others. Average pooling splits the gradient equally, 1/k² each.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y_{c,i,j}^{\max}=\max_{0\le u,v&lt;k}x_{c,\,is+u-p,\,js+v-p},\qquad y_{c,i,j}^{\mathrm{avg}}=\frac1{k^2}\sum_{u,v}x_{c,\,is+u-p,\,js+v-p}</div>
+        <table class="sym">
+          <tr><td>c</td><td>channel: pooling acts on every channel separately and never mixes them</td></tr>
+          <tr><td>k, s, p</td><td>window size, stride (usually s = k), padding; output size from the formula of lesson 3.3</td></tr>
+          <tr><td>parameters</td><td>none; channels unchanged</td></tr>
+          <tr><td>GAP</td><td>k = H = W: <span class="tex">y_c=\frac1{HW}\sum_{i,j}x_{c,i,j}</span></td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Run the animation with <i>max</i>: each window's winner is outlined in orange and copied to the output. Switch to <i>avg</i> and compare.</li>
+        <li>Move the shift sliders by one pixel and read the similarity numbers: raw pixels versus pooled outputs.</li>
+        <li>Choose <i>global average</i>: the whole map collapses into a single value.</li>
+        <li>Click an input cell to edit its value and predict the output before it appears.</li></ol></div>
+      <div data-lab="pooling"></div>
+      <div data-lab="archviz" data-title="Small CNN — where pooling shrinks the grid" data-height="300" data-edit><script type="text/plain">input 3 32 32
+conv 16 k3
+relu
+maxpool k2
+conv 32 k3
+relu
+maxpool k2
+conv 64 k3
+relu
+gap
+fc 10</script></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Pooling is not exactly shift invariant: it tolerates shifts inside a window and can alias.</li>
+          <li>Pooling does not mix channels and has no weights to learn.</li>
+          <li>Information thrown away cannot be recovered; segmentation nets therefore keep skip connections (Module 7).</li>
+          <li>GAP discards spatial layout entirely: right for "is there a cat?", wrong for "where?".</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>ResNet: one 3×3 stride-2 max-pool in the stem, GAP before the classifier. GoogLeNet and MobileNet also end with GAP.</li>
+          <li>Squeeze-and-excitation blocks use GAP to summarise each channel; RoI pooling (Module 6) pools regions of a feature map.</li>
+          <li>Anti-aliased "blur pooling" improves shift consistency of strided layers.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Max-pool 2×2 stride 2 on a 6×6×16 map: output shape and parameters?</summary><div class="ans">16×3×3, zero parameters.</div></details>
+        <details class="check"><summary>2. Which receives gradient in max pooling over a window?</summary><div class="ans">Only the cell holding the maximum (the argmax); the others get zero.</div></details>
+        <details class="check"><summary>3. Parameter saving of GAP + FC(512→1000) over flatten (7×7×512) + FC(→4096)?</summary><div class="ans">513,000 versus 102,764,544 for the first FC alone: about 200× fewer.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Pooling summarises windows: max = "present?", average = "how much?".</li><li>It shrinks the grid with no parameters and gives partial shift tolerance.</li><li>GAP replaces huge flatten+FC heads; strided convs are the learnable alternative.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 ===================== -->
+    <section class="lesson" id="receptive-field" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.5</span><h2>Receptive fields</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A 3×3 filter looks at only nine pixels. How can a network recognise a cat that fills the picture? Which input pixels can influence a given neuron deep in the network, and how do we compute that region?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a rumour chain. Each person (neuron) only hears from the three neighbours behind them, but those neighbours heard from three others each. Following the chain back, the group that can influence you grows with every step. That group in the input image is the neuron's <b>receptive field</b> (RF).</p>
+        <p>Stride makes the chain grow faster: if neurons in a layer are 2 input pixels apart, then "three neighbours" span twice the distance.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Work in 1-D (an image row; 2-D is the same on each axis). Stack two kernels of width 3 with stride 1: the top neuron sees 3 middle neurons, which see 5 input pixels: RF = 5. Three layers: 7. Each extra 3-wide layer adds 2.</p>
+        <p>To handle strides, track two numbers per layer: the receptive field <b>r</b> and the <b>jump j</b> (input pixels between neighbouring neurons of that layer). The input has r = 1, j = 1. A layer with kernel k and stride s gives</p>
+        <div class="eq">r_{out}=r_{in}+(k-1)\,j_{in},\qquad j_{out}=j_{in}\,s</div>
+        <p>Why: the new neuron combines k neighbours spaced j<sub>in</sub> apart, so it spans (k−1)·j<sub>in</sub> more input pixels than a single neighbour. With dilation d replace (k−1) by d(k−1).</p>
+        <div class="worked"><b>Worked example</b>
+          <table class="tbl"><tr><th>layer</th><th>k</th><th>s</th><th>j</th><th>r</th></tr>
+            <tr><td>input</td><td></td><td></td><td>1</td><td>1</td></tr>
+            <tr><td>conv</td><td>3</td><td>1</td><td>1</td><td>1 + 2·1 = 3</td></tr>
+            <tr><td>pool</td><td>2</td><td>2</td><td>2</td><td>3 + 1·1 = 4</td></tr>
+            <tr><td>conv</td><td>3</td><td>1</td><td>2</td><td>4 + 2·2 = 8</td></tr>
+            <tr><td>pool</td><td>2</td><td>2</td><td>4</td><td>8 + 1·2 = 10</td></tr>
+            <tr><td>conv</td><td>3</td><td>1</td><td>4</td><td>10 + 2·4 = 18</td></tr></table>
+          <p>LeNet-style: conv 5 (r = 5, j = 1), pool 2 (r = 6, j = 2), conv 5 (r = 6 + 4·2 = 14, j = 2), pool 2 (r = 16, j = 4). VGG-16's last conv layer reaches RF = 212 pixels and ResNet-50 (as counted by the visualiser) 427.</p>
+          <p>Dilated stack k = 3 with d = 1, 2, 4: r = 3, 7, 15, exponential growth with depth.</p></div>
+        <p><b>Why stacking small kernels is attractive.</b> Three 3×3 convs have the same RF (7) as one 7×7 but, with C channels in and out, 3·9·C² = 27C² weights instead of 49C² (C = 64: 110,592 vs 200,704) and two extra non-linearities in between.</p>
+        <p><b>Effective receptive field.</b> Not all pixels inside the RF matter equally: central pixels reach the neuron through many more paths than border pixels, so the influence has a bell shape and occupies only part of the theoretical RF. The lab computes this exactly for uniform kernels (all weights 1/k).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">r_0=1,\; j_0=1;\qquad r_\ell=r_{\ell-1}+d_\ell(k_\ell-1)\,j_{\ell-1},\qquad j_\ell=j_{\ell-1}\,s_\ell</div>
+        <table class="sym">
+          <tr><td>ℓ</td><td>layer index (conv or pool)</td></tr>
+          <tr><td>r<sub>ℓ</sub></td><td>receptive field of a neuron after layer ℓ, in input pixels</td></tr>
+          <tr><td>j<sub>ℓ</sub></td><td>jump: input-pixel distance between adjacent neurons of layer ℓ</td></tr>
+          <tr><td>k<sub>ℓ</sub>, s<sub>ℓ</sub>, d<sub>ℓ</sub></td><td>kernel, stride, dilation of layer ℓ</td></tr>
+        </table>
+        <p>Padding does not change r (it only adds zeros), but near borders part of the field falls outside the image. A fully connected layer has a receptive field of the whole input.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press a preset, then watch the dependency cone reveal layer by layer from the chosen neuron back to the input.</li>
+        <li>Click a neuron in any layer to see its field; verify r against the recursion table.</li>
+        <li>Insert stride-2 layers: j doubles and the field jumps.</li>
+        <li>Compare the blue bars (effective contribution) with the full width.</li></ol></div>
+      <div data-lab="rfield"></div>
+      <div data-lab="archviz" data-preset="vgg16" data-title="VGG-16 — click a block and read the RF column" data-height="300"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Theoretical RF ≠ effective RF; the useful part is much smaller.</li>
+          <li>Pooling and strides multiply the jump, so later layers add far more than (k−1).</li>
+          <li>RF must be at least the size of the object you want to recognise, otherwise the neuron sees only a fragment.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Detection heads sit on feature maps whose RF matches the object scale (FPN levels, Module 6).</li>
+          <li>DeepLab uses dilation to enlarge RF without downsampling; ConvNeXt uses 7×7 depthwise kernels for a wider view.</li>
+          <li>Vision Transformers have a global RF from the first block.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. RF after conv3 s1, conv3 s1, conv3 s1?</summary><div class="ans">1 → 3 → 5 → 7.</div></details>
+        <details class="check"><summary>2. conv 5 s1 then pool 2 s2 then conv 3 s1: r?</summary><div class="ans">5; 5 + 1·1 = 6 (j = 2); 6 + 2·2 = 10.</div></details>
+        <details class="check"><summary>3. Why does one 7×7 conv cost more than three 3×3 convs with the same RF?</summary><div class="ans">49C² versus 27C² weights, and the stack also inserts non-linearities.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>r<sub>out</sub> = r<sub>in</sub> + (k−1)j<sub>in</sub>, j<sub>out</sub> = j<sub>in</sub>·s.</li><li>Depth and stride grow the RF; dilation grows it without extra weights.</li><li>The effective RF is a smaller, bell-shaped core of the theoretical one.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 ===================== -->
+    <section class="lesson" id="activations-norm" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.6</span><h2>Activations &amp; normalisation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two problems. First: if every layer is a weighted sum, stacking 50 of them is no more powerful than one. Second: in a deep net the scale of the numbers drifts from layer to layer, making training unstable. What do we insert between convolutions to fix each?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Non-linearity.</b> A weighted sum of weighted sums is just another weighted sum: two convolutions in a row equal one convolution with a wider kernel. To get something richer than a single filter bank we put a simple bent function after each layer. <b>ReLU</b> keeps positive values and zeroes negative ones: "report the feature only if it is present". Its slope is 1 for positive inputs, so gradients do not shrink (unlike sigmoid's flat tails).</p>
+        <p><b>Normalisation.</b> It is grading on a curve. Take the numbers a layer produced, subtract their average and divide by their spread, so the next layer always sees values around 0 with spread 1, then let the network re-scale and re-shift with two learned numbers if it wants.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The activation family.</b> ReLU(x) = max(0, x). Leaky ReLU: x for x &gt; 0, αx (e.g. 0.01x) otherwise, to avoid "dead" units. ReLU6 = min(max(0,x), 6) (MobileNet). GELU(x) = xΦ(x) and SiLU/Swish x·σ(x) are smooth versions used by ConvNeXt, EfficientNet and transformers: GELU(1) = 0.841, GELU(−1) = −0.159.</p>
+        <p><b>Batch normalisation, one channel, one mini-batch.</b> For a conv layer BN keeps one mean and variance per <i>channel</i>, computed over all N·H·W values of that channel in the batch. A toy batch of four values of one channel:</p>
+        <div class="worked"><b>Worked example</b>
+          <p>x = [2, 4, 6, 8]. Mean μ = 20/4 = 5. Variance σ² = ((−3)² + (−1)² + 1² + 3²)/4 = 20/4 = 5 (divide by N). With ε = 10⁻⁵: √(5.00001) ≈ 2.2361.</p>
+          <p>Normalised x̂ = (x − 5)/2.2361 = [−1.342, −0.447, 0.447, 1.342] (mean 0, variance 1).</p>
+          <p>With learned γ = 2, β = 1: y = 2x̂ + 1 = [−1.683, 0.106, 1.894, 3.683], mean 1 (= β), std 2 (= γ).</p>
+          <p>For the running statistics (used at inference) PyTorch updates with momentum 0.1: running_mean ← 0.9·old + 0.1·5; running_var uses the unbiased value 20/3 = 6.667.</p></div>
+        <p><b>Why it helps.</b> Layers see inputs of stable scale, so larger learning rates work and initialisation matters less; batch noise acts as mild regularisation. (The original "internal covariate shift" explanation is debated; a smoother loss surface is the better-supported reason.) BN adds 2C learnable parameters (γ, β) per BN layer and 2C non-learnable running statistics. The conv bias before BN is redundant (BN subtracts the mean), so it is dropped; the visualiser follows this rule.</p>
+        <p><b>Other normalisers differ only in which values share statistics.</b> BatchNorm: per channel across batch and space. LayerNorm: per sample across all channels and space (used in transformers and ConvNeXt). InstanceNorm: per sample and channel. GroupNorm: per sample over groups of channels; independent of batch size, so good for detection with tiny batches.</p>
+        <p><b>Dropout.</b> During training zero each activation with probability p and multiply survivors by 1/(1−p) so the expected value is unchanged; at test time do nothing. It stops units from relying on specific partners. Mostly used in FC heads (AlexNet, VGG); BN-based conv nets use it little.</p>
+        <p><b>Where they go in a block.</b> The classic ResNet unit is conv → BN → ReLU. Pre-activation (ResNet v2) is BN → ReLU → conv. ConvNeXt: depthwise conv → LayerNorm → 1×1 → GELU → 1×1.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mu_B=\frac1m\sum_{i=1}^m x_i,\quad\sigma_B^2=\frac1m\sum_{i=1}^m(x_i-\mu_B)^2,\quad\hat x_i=\frac{x_i-\mu_B}{\sqrt{\sigma_B^2+\varepsilon}},\quad y_i=\gamma\hat x_i+\beta</div>
+        <table class="sym">
+          <tr><td>m</td><td>number of values sharing statistics (N·H·W for BN of one channel)</td></tr>
+          <tr><td>μ<sub>B</sub>, σ²<sub>B</sub></td><td>mean and (biased) variance of those values</td></tr>
+          <tr><td>ε</td><td>tiny constant (10⁻⁵) preventing division by zero</td></tr>
+          <tr><td>γ, β</td><td>learned scale and shift, one pair per channel</td></tr>
+          <tr><td>dropout</td><td><span class="tex">\tilde a=\dfrac{m\odot a}{1-p}</span>, m<sub>i</sub> ~ Bernoulli(1−p), only in training</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Plot the activations: ReLU is flat then linear; compare leaky and GELU near zero.</li>
+        <li>In the tensor lab switch BatchNorm / LayerNorm / InstanceNorm / GroupNorm and see which cells share statistics.</li>
+        <li>In the BN lab, move the input mean and std far from 0 and 1: the animation subtracts the mean, divides by σ, then applies γ and β. Check the toy batch rows against the worked example.</li>
+        <li>Turn on <i>then ReLU</i> and set β negative: how many units die?</li>
+        <li>In the dropout lab, compare the running mean of the masked sum with the original.</li></ol></div>
+      <div data-lab="fplot" data-title="Activation functions" data-names="ReLU;Leaky 0.1;GELU (approx)" data-f="relu(x); max(x,0.1*x); x*sigmoid(1.702*x)" data-view="-4,4,-1.5,4"></div>
+      <div data-lab="normaxes"></div>
+      <div data-lab="normlab"></div>
+      <div data-lab="dropoutdemo"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Forgetting <code>model.eval()</code>: BN then uses batch statistics and dropout stays on at test time.</li>
+          <li>BN with batch size 1–2 gives noisy statistics; use GroupNorm/LayerNorm.</li>
+          <li>Freezing weights during fine-tuning but leaving BN statistics updating (or vice versa).</li>
+          <li>Dead ReLUs: a unit that is negative for every input outputs zero and receives no gradient.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>ResNet: BN after every conv; EfficientNet: SiLU; MobileNet-v2: ReLU6.</li>
+          <li>Mask R-CNN variants use GroupNorm; ViT and ConvNeXt use LayerNorm with GELU.</li>
+          <li>He initialisation (std = √(2/fan_in)) is designed for ReLU layers.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Normalise [1, 3] with BN (γ = 1, β = 0, ε ≈ 0).</summary><div class="ans">μ = 2, σ² = 1, so x̂ = [−1, 1].</div></details>
+        <details class="check"><summary>2. How many learnable BN parameters follow a conv with 64 channels?</summary><div class="ans">128 (γ and β per channel); plus 128 running-statistic buffers that are not learned.</div></details>
+        <details class="check"><summary>3. Why drop the conv bias before BN?</summary><div class="ans">BN subtracts the per-channel mean, which cancels any constant added by the bias; β takes over that role.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Non-linearities (ReLU, GELU, …) stop layers collapsing into one.</li><li>BN: subtract mean, divide by std over N·H·W per channel, then γ, β; train and eval behave differently.</li><li>LN/GN/IN change only the axes that share statistics; dropout is training-only noise.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.7 ===================== -->
+    <section class="lesson" id="building-a-cnn" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.7</span><h2>Building a CNN end to end</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Take 32×32 greyscale digit images and predict 0–9. What is the full recipe: which layers in which order, what is the shape and cost at every stage, how is the loss computed, how do gradients flow back through conv and pooling, and what does the training loop look like?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A classic CNN has two halves. The <b>feature extractor</b> alternates conv + non-linearity with pooling: the grid shrinks while the channel count grows — "where" is traded for "what". The <b>classifier head</b> flattens the final small volume and uses fully connected layers to produce one score per class. Training shows the net labelled images, measures the error, and nudges every weight a little in the direction that reduces it.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The shape table</b> of a LeNet-style net (ReLU used after each conv and FC; average pooling as in LeNet), computed layer by layer with the formulas of lessons 3.2–3.5:</p>
+        <table class="tbl"><tr><th>layer</th><th>output</th><th>params</th><th>MACs</th><th>RF</th></tr>
+          <tr><td>input</td><td>1×32×32</td><td>0</td><td>0</td><td>1</td></tr>
+          <tr><td>conv 5×5, 1→6</td><td>6×28×28</td><td>1·25·6+6 = 156</td><td>150·784 = 117,600</td><td>5</td></tr>
+          <tr><td>avg pool 2×2 /2</td><td>6×14×14</td><td>0</td><td>0</td><td>6</td></tr>
+          <tr><td>conv 5×5, 6→16</td><td>16×10×10</td><td>6·25·16+16 = 2,416</td><td>2,400·100 = 240,000</td><td>14</td></tr>
+          <tr><td>avg pool 2×2 /2</td><td>16×5×5</td><td>0</td><td>0</td><td>16</td></tr>
+          <tr><td>flatten</td><td>400</td><td>0</td><td>0</td><td></td></tr>
+          <tr><td>FC 400→120</td><td>120</td><td>48,120</td><td>48,000</td><td>all</td></tr>
+          <tr><td>FC 120→84</td><td>84</td><td>10,164</td><td>10,080</td><td>all</td></tr>
+          <tr><td>FC 84→10</td><td>10</td><td>850</td><td>840</td><td>all</td></tr>
+          <tr><td><b>total</b></td><td></td><td><b>61,706</b></td><td><b>416,520</b></td><td></td></tr></table>
+        <p>Observe: the FC layers hold 59,134 of the 61,706 parameters (96%), but the two convs account for 357,600 of the 416,520 MACs (86%). Convs are compute-heavy and parameter-light; FC layers are the reverse. (The 1998 original used a sparse connection table in C3 and has slightly fewer parameters; the figure above is for full connectivity.)</p>
+        <p><b>Loss.</b> The last layer outputs logits z (10 numbers). Softmax turns them into probabilities <span class="tex">p_c=e^{z_c}/\sum_j e^{z_j}</span>; cross-entropy loss for true class y is <span class="tex">L=-\log p_y</span>. Its gradient with respect to the logits is wonderfully simple: <span class="tex">\partial L/\partial z_c=p_c-\mathbb 1[c=y]</span>.</p>
+        <p><b>Backward, layer by layer.</b> FC: <span class="tex">\partial L/\partial W=\delta\,x^\top</span>. ReLU: pass the gradient where the input was positive, block it elsewhere. Max-pool: route to the argmax only. Conv: because the weights are shared, the gradient of a weight is the <i>sum over all positions</i> of (upstream gradient × input patch); the gradient to the input is a convolution of the upstream gradient with the flipped kernel.</p>
+        <div class="worked"><b>Worked example — backward of a 1-D conv</b>
+          <p>x = [1,2,3,4], w = [1,−1], so y<sub>i</sub> = x<sub>i</sub> − x<sub>i+1</sub> = [−1,−1,−1]. Suppose the upstream gradient is δ = ∂L/∂y = [1, 0, 2].</p>
+          <p>∂L/∂w<sub>0</sub> = Σ δ<sub>i</sub>x<sub>i</sub> = 1·1 + 0·2 + 2·3 = 7. ∂L/∂w<sub>1</sub> = Σ δ<sub>i</sub>x<sub>i+1</sub> = 1·2 + 0·3 + 2·4 = 10. Bias gradient = Σ δ = 3.</p>
+          <p>Input gradient: x<sub>0</sub> feeds only y<sub>0</sub> (weight 1): 1·1 = 1. x<sub>1</sub> feeds y<sub>0</sub> (weight −1) and y<sub>1</sub> (weight 1): −1 + 0 = −1. x<sub>2</sub>: y<sub>1</sub> (−1)·0 + y<sub>2</sub> (1)·2 = 2. x<sub>3</sub>: y<sub>2</sub> (−1)·2 = −2. So ∂L/∂x = [1, −1, 2, −2].</p></div>
+        <p><b>The training loop.</b> Repeat: (1) draw a mini-batch; (2) forward pass; (3) compute the loss; (4) backward pass; (5) update <span class="tex">w\leftarrow w-\eta\,\partial L/\partial w</span> with learning rate η. Track the loss on the training set and the accuracy on a held-out validation set; if training accuracy keeps rising while validation stalls, you are overfitting. Initialise conv weights with He initialisation (std = √(2/(C<sub>in</sub>k²))).</p>
+        <p><b>Augmentation.</b> Create new training images by label-preserving changes: small shifts, crops, flips, rotations, colour jitter. It teaches the invariances you want (and flipping is wrong for digits: 6 vs 9 can be confused under rotation, text under mirroring).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat y=\mathrm{softmax}\big(f_\theta(x)\big),\quad L(\theta)=-\frac1N\sum_{n}\log \hat y_{n,y_n},\quad\theta\leftarrow\theta-\eta\nabla_\theta L</div>
+        <table class="sym">
+          <tr><td>f<sub>θ</sub></td><td>the CNN: conv/ReLU/pool blocks then FC layers, parameters θ</td></tr>
+          <tr><td>ŷ<sub>n,c</sub></td><td>predicted probability that image n has class c</td></tr>
+          <tr><td>y<sub>n</sub></td><td>the true class of image n</td></tr>
+          <tr><td>η</td><td>learning rate (step size)</td></tr>
+          <tr><td>∇<sub>θ</sub>L</td><td>gradient computed by backpropagation; weight-sharing sums contributions from every position</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pause the architecture animation on each block and match its row with the shape table. Change <code>fc 120</code> to <code>fc 256</code> and see which total moves most.</li>
+        <li>In the trainer press play. Watch the loss fall and the four 3×3 filters change from random noise into line detectors; the classifier weights (right) light up where each class needs evidence.</li>
+        <li>Raise the learning rate to the maximum: does training become unstable?</li>
+        <li>Click a different test image to see its feature maps.</li></ol></div>
+      <div data-lab="archviz" data-preset="lenet5" data-presets="lenet5,small-cnn,alexnet" data-edit data-resolution data-title="Build and modify a CNN"></div>
+      <div data-lab="cnntrain"></div>
+
+      <div class="prose">
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Blueprint of the LeNet-style net. Reproduce it from memory, then check it in the editor below:</p>
+<pre><code>1×32×32 ─ conv5×5(6) ─▶ 6×28×28 ─ pool2 ─▶ 6×14×14 ─ conv5×5(16) ─▶ 16×10×10 ─ pool2 ─▶ 16×5×5
+        ─ flatten ─▶ 400 ─ FC120 ─▶ 120 ─ FC84 ─▶ 84 ─ FC10 ─▶ 10  (softmax)</code></pre>
+        <p>Counts to do by hand: conv 5×5, 6→16: 6·25·16 + 16 = 2,416 weights; FC 400→120: 400·120 + 120 = 48,120; MACs of the second conv: 2,400 per output × 100 outputs = 240,000. Now design your own for 3×32×32 colour images with three conv stages (channels 16, 32, 64) and GAP:</p>
+      </div>
+      <div data-lab="archviz" data-title="Draw it yourself — edit the spec" data-height="300" data-edit><script type="text/plain">input 3 32 32
+conv 16 k3
+bn
+relu
+maxpool k2
+conv 32 k3
+bn
+relu
+maxpool k2
+conv 64 k3
+bn
+relu
+gap
+fc 10</script></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Changing the input size without updating the flatten → FC size (use GAP or let the tool compute it).</li>
+          <li>Applying softmax twice: most losses (<code>CrossEntropyLoss</code>) expect raw logits.</li>
+          <li>Not shuffling data, or evaluating on training images, gives misleading accuracy.</li>
+          <li>A learning rate that is too large makes the loss explode or oscillate.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>LeNet-5 (LeCun et al., 1998) read handwritten digits on bank cheques; the same loop, with deeper blocks, trains AlexNet, ResNet and every detector backbone.</li>
+          <li>Small CNNs like this reach about 99% on MNIST; CIFAR-10 nets with BN reach 90%+.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Input 3×32×32, conv 5×5 → 8 channels, no padding. Output shape and parameters?</summary><div class="ans">8×28×28; 3·25·8 + 8 = 608.</div></details>
+        <details class="check"><summary>2. For softmax + cross-entropy, what is ∂L/∂z for p = (0.7, 0.2, 0.1) and true class 1?</summary><div class="ans">p minus one-hot: (0.7, 0.2−1, 0.1) = (0.7, −0.8, 0.1).</div></details>
+        <details class="check"><summary>3. Why do the conv weights receive gradient from every position?</summary><div class="ans">The same weights are used at every position, so the total gradient is the sum of the contributions of all positions.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Extractor (conv + ReLU + pool: shrink grid, grow channels) then head (flatten + FC + softmax).</li><li>Compute shapes, params and MACs per layer: FC holds parameters, convs hold compute.</li><li>Training: forward, cross-entropy, backward (gradients summed over positions), update.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.8 ===================== -->
+    <section class="lesson" id="visualizing-cnns" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.8</span><h2>Looking inside a CNN</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The network says "cat, 97%". Is it looking at the cat — or at the sofa the cat usually sits on? Its weights are just numbers; how can we see what it learned and why it decided?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Three different questions, three tools: <b>What does each filter detect?</b> (look at the filters), <b>What did each layer respond to on <i>this</i> image?</b> (activation maps), and <b>Which pixels drove this decision?</b> (attribution: occlusion, saliency, Grad-CAM). Think of a doctor: check the instrument (filters), look at the readings (maps), then ask which readings explain the diagnosis (attribution).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Filters.</b> First-layer filters can be shown directly as tiny images: in AlexNet they look like oriented edges and colour blobs. Deeper filters have too many input channels to view; we instead show the image patches that maximally excite them, or synthesise images that do.</p>
+        <p><b>Activation maps.</b> Show the feature maps for one image: early maps highlight edges and textures at high resolution; deep maps are coarse and respond to object parts.</p>
+        <p><b>Occlusion.</b> Slide a blank patch over the image; where the class score drops most, the covered region mattered. It needs one forward pass per position, but is intuitive and faithful.</p>
+        <p><b>Saliency.</b> The gradient <span class="tex">\partial y_c/\partial x</span> answers "which pixels, if nudged, change the class score most?". It costs one backward pass but is noisy.</p>
+        <p><b>Grad-CAM — derivation in four moves.</b> (1) Use the last conv layer: it still has spatial layout but already holds high-level features, maps <span class="tex">A^k</span> of size u×v. (2) For class c, take the score <span class="tex">y^c</span> before softmax. (3) How important is map k? The gradient <span class="tex">\partial y^c/\partial A^k_{ij}</span> says how much the score grows if one cell of that map grows; average it over all cells to get one weight per map: <span class="tex">\alpha_k^c=\frac1Z\sum_{i,j}\partial y^c/\partial A^k_{ij}</span> (Z = u·v). (4) Combine the maps with those weights and keep only positive evidence: <span class="tex">L^c=\mathrm{ReLU}\big(\sum_k\alpha_k^cA^k\big)</span>, then upsample to image size and overlay.</p>
+        <p><b>Link to CAM.</b> If the network ends with GAP followed by a linear layer, <span class="tex">y^c=\sum_k w^c_k\frac1Z\sum_{ij}A^k_{ij}</span>, so <span class="tex">\partial y^c/\partial A^k_{ij}=w_k^c/Z</span> and α is just the classifier weight (up to the constant 1/Z): Grad-CAM generalises CAM to any architecture.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Two 2×2 maps: A¹ = [[1,0],[0,2]], A² = [[0,3],[1,0]]. Suppose ∂y/∂A¹ = 0.5 everywhere and ∂y/∂A² = −0.2 everywhere. Then α₁ = 0.5 and α₂ = −0.2.</p>
+          <p>Σ α<sub>k</sub>A<sup>k</sup> = 0.5·A¹ − 0.2·A² = [[0.5, −0.6],[−0.2, 1.0]]. After ReLU: [[0.5, 0],[0, 1.0]]. The bottom-right cell, where the positively weighted map fires strongly, is the highlighted region; the cell where only the negatively weighted map fired is suppressed.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">S_c(x)=\left|\frac{\partial y^c}{\partial x}\right|,\qquad \alpha_k^c=\frac1Z\sum_{i,j}\frac{\partial y^c}{\partial A^k_{ij}},\qquad L^c_{\text{Grad-CAM}}=\mathrm{ReLU}\Big(\sum_k\alpha_k^cA^k\Big)</div>
+        <table class="sym">
+          <tr><td>y<sup>c</sup></td><td>pre-softmax score (logit) of class c</td></tr>
+          <tr><td>A<sup>k</sup><sub>ij</sub></td><td>activation of feature map k at cell (i, j) of the chosen conv layer</td></tr>
+          <tr><td>Z</td><td>number of cells u·v of one map</td></tr>
+          <tr><td>α<sup>c</sup><sub>k</sub></td><td>importance weight of map k for class c</td></tr>
+          <tr><td>S<sub>c</sub></td><td>saliency map: absolute gradient of the score per pixel</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The tiny CNN of the previous lesson is pre-trained. Choose <i>Grad-CAM</i> and watch α<sub>k</sub> and each weighted map being added, then the ReLU.</li>
+        <li>Paint your own picture on the grid (click and drag; erase mode removes pixels). Draw a cross plus an extra stray dot: does the heatmap follow the evidence?</li>
+        <li>Switch the target class: the same image gets a different heatmap.</li>
+        <li>Compare occlusion (slow, faithful), saliency (fast, noisy) and Grad-CAM (coarse but class-specific).</li></ol></div>
+      <div data-lab="cnnviz"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>A heatmap shows what the method highlights, not proof of the model's reasoning; verify with occlusion or counter-factual images.</li>
+          <li>Grad-CAM is coarse (resolution of the last conv map) and depends on the chosen class and layer.</li>
+          <li>Some attribution methods barely change when the weights are randomised (sanity checks, Adebayo et al. 2018): always check.</li>
+          <li>Saliency maps of raw gradients are noisy and may highlight edges regardless of the class.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Debugging data bias: classifiers that learn the background (husky versus snow) or a scanner tag on X-rays reveal themselves in Grad-CAM.</li>
+          <li>Medical imaging explainability and model audits; libraries such as pytorch-grad-cam.</li>
+          <li>Vision Transformers use attention maps for the same purpose (Module 5).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why does Grad-CAM use the last conv layer rather than the input?</summary><div class="ans">It still has spatial layout but already encodes high-level, class-relevant features; input-level gradients are noisy.</div></details>
+        <details class="check"><summary>2. With GAP + linear head, what is α<sub>k</sub><sup>c</sup>?</summary><div class="ans">w<sub>k</sub><sup>c</sup>/Z: the classifier weight for class c on map k, divided by the number of map cells.</div></details>
+        <details class="check"><summary>3. Why ReLU in the final combination?</summary><div class="ans">We want only regions that increase the class score; negative values mean evidence for other classes.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Inspect filters, activation maps and attributions: three different views.</li><li>Grad-CAM = ReLU(Σ α<sub>k</sub> A<sup>k</sup>) with α the average gradient of the class score over each map.</li><li>Heatmaps guide debugging; they do not prove causal reasoning.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Module complete.</b> You can now compute shapes, parameters and MACs of any conv, pooling and FC layer, trace a receptive field, place BN and ReLU in a block, train a small CNN and inspect it. Next: <a href="cv-architectures.html">Module 4 · CNN architectures — the blueprints</a>, where these pieces become LeNet, VGG, ResNet and MobileNet.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 · Segmentation &amp; dense prediction · Computer Vision</title>
+<meta name="description" content="Per-pixel prediction: FCN, upsampling, U-Net, dilated convolutions and DeepLab, Mask R-CNN, panoptic segmentation, SAM, depth and keypoints — as architecture blueprints with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-segmentation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="7">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 7</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">7</div>
+      <div style="flex:1">
+        <h1>Module 7 · Segmentation &amp; dense prediction</h1>
+        <p>Classification gives one label per image; detection gives a few boxes. Here the network must answer for <b>every pixel</b>. You will see an encoder shrink the image, a decoder grow it back, and skip connections carry the fine detail across — and you will be able to draw FCN, U-Net, DeepLab, Mask R-CNN's mask head and SAM with their shapes and parameter counts.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: CNN basics (Module 3), ResNet (Module 4)</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ============ 7.1 ============ -->
+    <section class="lesson" id="semantic-fcn" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.1</span><h2>Semantic segmentation &amp; FCN</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A self-driving car needs to know, for every pixel of the camera image, whether it is road, pavement, car, pedestrian or sky. A VGG-16 classifier ends in fully connected layers that squash the whole image into 1000 numbers and throw the "where" away. How do we turn a classifier into something that answers <i>per pixel</i> — and how do we even score such an answer?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Semantic segmentation</b> means giving every pixel a class label. Imagine colouring a photo with a set of crayons, one crayon per class: all road pixels grey, all sky pixels blue. It does not separate two different cars (that is lesson 7.5) — both are simply "car".</p>
+        <p>Two ideas make it possible. First, a convolutional layer already works at every position, so it can keep the "where". Second, the only layers that destroy position are the <b>fully connected</b> ones — and a fully connected layer is just a convolution in disguise. If the last feature map is 512×7×7, a layer <span class="tex">512\cdot7\cdot7\to4096</span> is exactly a convolution with 4096 filters of size 7×7. Re-read it as a convolution and it can slide over a larger image, producing a <i>grid</i> of class scores instead of one vector. A network with no fully connected layers is a <b>fully convolutional network (FCN)</b>.</p>
+
+        <h3 class="sec">Build it up: the FCN recipe</h3>
+        <ol>
+          <li>Take a classification backbone (VGG-16). Keep the convolutional part: 224×224 → 5 poolings → 512×7×7.</li>
+          <li>Replace <code>fc6</code> by a 7×7 convolution with 4096 filters, <code>fc7</code> by a 1×1 convolution with 4096 filters, and the classifier by a 1×1 convolution with <i>K</i> filters (K = number of classes, say 21 for PASCAL VOC).</li>
+          <li>The result is a <i>score map</i> of size K×7×7: each cell scores a 32×32 patch of the input. It is coarse (stride 32).</li>
+          <li><b>Upsample</b> the score map back to 224×224 (lesson 7.2), then take the arg-max over classes per pixel.</li>
+          <li>Coarse-to-fine: FCN-16s adds a 1×1 score map from pool4 (14×14) to the 2× upsampled score, FCN-8s adds pool3 (28×28) as well. Early layers know where, late layers know what; adding them gives both.</li>
+        </ol>
+        <div class="worked"><b>Worked example — shapes and parameters</b>
+          <p>Input 3×224×224. Pools give 112, 56, 28, 14, 7 pixels per side. VGG-16 convolutions: 14,714,688 parameters (computed from the model). Then:</p>
+          <p>fc6 as conv 7×7: <span class="tex">512\cdot7\cdot7\cdot4096=102{,}760{,}448</span> weights (+4096 biases). fc7 as conv 1×1: <span class="tex">4096\cdot4096=16{,}777{,}216</span>. Score layer: <span class="tex">4096\cdot21=86{,}016</span> (+21).</p>
+          <p>Total ≈ <b>134.4 M</b> parameters, 21×7×7 scores. Note that 76% of the weights sit in fc6 alone — the part we converted. Upsampling the 7×7 map by 32 gives 21×224×224. The blueprint below chains five ×2 up-convolutions as a stand-in for FCN's single 32× upsampling layer.</p></div>
+
+        <h3 class="sec">Scoring a segmentation</h3>
+        <p><b>Training loss:</b> a cross-entropy per pixel, averaged: if the network gives probability <span class="tex">p_{i,c}</span> to class <i>c</i> at pixel <i>i</i> and the truth is class <span class="tex">y_i</span>,</p>
+        <div class="eq">\mathcal L_{CE}=-\frac1{HW}\sum_{i=1}^{HW}\log p_{i,y_i}</div>
+        <p>Worked: three pixels whose true class received probabilities 0.7, 0.2 and 0.9 cost <span class="tex">-\ln0.7=0.357</span>, <span class="tex">-\ln0.2=1.609</span>, <span class="tex">-\ln0.9=0.105</span>; the mean is <b>0.690</b>. The badly classified pixel dominates.</p>
+        <p><b>Evaluation metrics</b> count, per class, true positives TP (predicted and true), false positives FP (predicted only), false negatives FN (true only):</p>
+        <div class="eq">\mathrm{IoU}_c=\frac{TP}{TP+FP+FN},\qquad \mathrm{Dice}_c=\frac{2TP}{2TP+FP+FN},\qquad \mathrm{mIoU}=\frac1K\sum_c\mathrm{IoU}_c</div>
+        <table class="sym">
+          <tr><td>TP, FP, FN</td><td>pixel counts for one class, summed over the image (or dataset)</td></tr>
+          <tr><td>IoU</td><td>intersection over union = overlap area ÷ combined area; 1 = perfect, 0 = disjoint</td></tr>
+          <tr><td>Dice</td><td>2·overlap ÷ (size of prediction + size of truth); relates to IoU by <span class="tex">\mathrm{Dice}=2\mathrm{IoU}/(1+\mathrm{IoU})</span></td></tr>
+          <tr><td>mIoU</td><td>mean of the per-class IoUs — the standard benchmark number</td></tr>
+          <tr><td><span class="tex">p_{i,c}</span>, <span class="tex">y_i</span></td><td>predicted probability of class <i>c</i> at pixel <i>i</i>; true class at pixel <i>i</i></td></tr>
+        </table>
+        <div class="worked"><b>Worked example — IoU, Dice, mIoU</b>
+          <p>Prediction covers 6 pixels, truth covers 6, and 4 are shared: TP = 4, FP = 2, FN = 2. IoU = 4/8 = <b>0.5</b>. Dice = 8/12 = <b>0.667</b> (check: 2·0.5/1.5 = 0.667). If the background class has IoU 0.8, then mIoU = (0.5+0.8)/2 = <b>0.65</b>.</p>
+          <p>Soft Dice for probabilities p = (0.9, 0.8, 0.2, 0.1) against truth y = (1, 1, 0, 0): overlap <span class="tex">\sum p\,y=1.7</span>, <span class="tex">\sum p=2.0</span>, <span class="tex">\sum y=2</span>, so Dice = 3.4/4 = 0.85 and the Dice loss is 0.15. It is differentiable, and it does not drown when the object is tiny.</p></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Blueprint: FCN as a shape table</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Click the <code>conv 4096 k7</code> block: its parameter count dwarfs every other layer — the former fully connected layer.</li>
+        <li>Follow the heights: the image shrinks to 7×7, then the five green up-convolutions grow it back to 224×224. Which stage has the largest tensor? (The final 21×224×224.)</li>
+        <li>Edit the text: change <code>conv 4096 k7</code> to <code>conv 1024 k7</code> and see the parameters fall to ≈ 44.7 M.</li></ol></div>
+      <div data-lab="archviz" data-title="FCN-style (VGG-16 convs + score map + upsampling)" data-edit data-resolution data-height="360"><script type="text/plain">input 3 224 224
+conv 64 k3 x2
+maxpool k2
+conv 128 k3 x2
+maxpool k2
+conv 256 k3 x3
+maxpool k2
+conv 512 k3 x3
+maxpool k2
+conv 512 k3 x3
+maxpool k2
+conv 4096 k7
+relu
+conv 4096 k1
+relu
+conv 21 k1
+up 21
+up 21
+up 21
+up 21
+up 21</script></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: per-pixel classification</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: a scanning window scores every pixel, and the label map fills in. Watch the probability bars of the white pixel.</li>
+        <li>Pixels on object borders mix two colours and have lower confidence. Raise the confidence threshold: they become "?".</li>
+        <li>Add noise, then compensate with a higher temperature T: the model becomes less sure everywhere.</li></ol></div>
+      <div data-lab="segpixel"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: IoU, Dice and accuracy</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Load "empty pred": pixel accuracy is ≈ 97% yet IoU and Dice are 0.</li>
+        <li>Load "shifted": the shapes are identical but one column off — see TP, FP, FN, IoU 0.667, Dice 0.8.</li>
+        <li>Increase the softness slider: cross-entropy rises even though the hard masks are unchanged — it punishes lack of confidence.</li></ol></div>
+      <div data-lab="diceiou"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Pixel accuracy lies</b> when classes are imbalanced: calling everything background scores 97% on a 3%-object image.</li>
+          <li>FCN output is stride-32 coarse; without the skip fusion (16s/8s) boundaries are blobby.</li>
+          <li>Averaging IoU over images is not the same as computing IoU over the whole dataset; benchmarks use dataset-wide TP/FP/FN per class.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Scene parsing / driving:</b> Cityscapes, ADE20K labels for road, lane, building; FCN-style heads still sit on top of ResNet and ViT backbones.</li>
+          <li><b>Every dense task</b> (segmentation, depth, optical flow) reuses "backbone + 1×1 conv head + upsampling".</li>
+          <li><b>Medical and satellite imaging:</b> Dice loss is the default for small structures.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Block diagram: image → [conv blocks + pools ×5] → 512×7×7 → conv7×7(4096) → conv1×1(4096) → conv1×1(K) → upsample ×32 → K×224×224 → arg-max. Shape table: 64×224², 128×112², 256×56², 512×28², 512×14², 512×7², 4096×7², 4096×7², K×7², K×224². Main-block count: <span class="tex">3\cdot3\cdot512\cdot512=2{,}359{,}296</span> weights per 512→512 conv; fc6-as-conv 102.76 M.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 512×7×7 map feeds fc6 with 4096 outputs. What convolution is this, and how many weights?</summary><div class="ans">A 7×7 convolution with 512 input channels and 4096 filters: 512·49·4096 = 102,760,448 weights.</div></details>
+        <details class="check"><summary>2. TP = 30, FP = 10, FN = 20 for one class. IoU and Dice?</summary><div class="ans">IoU = 30/60 = 0.5; Dice = 60/(60+10+20) = 0.667.</div></details>
+        <details class="check"><summary>3. Why does FCN-8s beat FCN-32s at boundaries?</summary><div class="ans">pool3 and pool4 feature maps have strides 8 and 16, so they keep finer location information; adding their scores to the coarse deep scores gives sharper edges.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Segmentation = classification at every pixel; fully connected layers become convolutions.</li><li>The deep map is coarse (stride 32); upsampling and skip fusion restore resolution.</li><li>Train with per-pixel cross-entropy (± Dice); report mIoU, not pixel accuracy.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ============ 7.2 ============ -->
+    <section class="lesson" id="upsampling-decoders" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.2</span><h2>Upsampling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Pooling and strided convolutions throw away resolution. A decoder has to produce a 128×128 mask from a 16×16 feature map. What operation grows a map — without inventing grid-shaped ugly patterns?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Growing an image is guessing the pixels in between. There are two families. <b>Fixed interpolation</b> guesses with a rule: <i>nearest</i> copies the closest pixel (blocky), <i>bilinear</i> blends the four closest pixels by distance (smooth). It has no parameters, so you follow it with an ordinary convolution that learns what to do with the smooth result. <b>Learned upsampling</b> — the <i>transposed convolution</i> — lets the network learn the kernel that fills in the gaps.</p>
+        <p>Picture a transposed convolution as <b>stamping</b>: every input pixel is a rubber stamp, whose ink amount is the pixel value and whose shape is the kernel. You stamp each input pixel onto a larger sheet, moving <i>S</i> cells (the stride) between stamps, and ink adds up where stamps overlap. It is the ordinary convolution run backwards (hence also called a "deconvolution", although it does not invert it).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — 1-D transposed convolution</b>
+          <p>Input <span class="tex">[1,2,3]</span>, kernel <span class="tex">[1,1,1]</span>, stride 2. Stamp 1 at positions 0–2, stamp 2 at 2–4, stamp 3 at 4–6:</p>
+          <p>positions 0..6 → <b>[1, 1, 3, 2, 5, 3, 3]</b>. Output length = (3−1)·2 + 3 = 7.</p>
+          <p>Now feed all ones: output <b>[1, 1, 2, 1, 2, 1, 1]</b>. A constant image becomes striped: cells 2 and 4 receive two stamps, the others one. In 2-D this is the <b>checkerboard artefact</b>. The cause: the kernel size 3 is not divisible by the stride 2, so overlap is uneven. With kernel 4 and stride 2, interior counts are all 2 (1,1,2,2,2,2,1,1) — even.</p></div>
+        <p>The output size comes from reversing the convolution formula <span class="tex">O_{conv}=\lfloor (I+2P-K)/S\rfloor+1</span>:</p>
+        <div class="eq">O=(I-1)\,S-2P+K\;(+\text{output padding})</div>
+        <table class="sym">
+          <tr><td>I, O</td><td>input and output side length</td></tr>
+          <tr><td>K</td><td>kernel size</td></tr>
+          <tr><td>S</td><td>stride: distance between consecutive stamps</td></tr>
+          <tr><td>P</td><td>padding: this many border cells are cropped from the output</td></tr>
+        </table>
+        <p>Common choices: K=2, S=2, P=0 doubles the size with no overlap (U-Net's up-convolution: <span class="tex">O=2I</span>). K=4, S=2, P=1 also doubles (<span class="tex">(I-1)2-2+4=2I</span>) with even overlap (pose estimation, GANs).</p>
+        <p><b>Pixel shuffle</b> (sub-pixel convolution) avoids overlap entirely: a convolution produces <span class="tex">C\,r^2</span> channels at low resolution and the tensor <span class="tex">(Cr^2,H,W)</span> is rearranged into <span class="tex">(C,rH,rW)</span>: channel <i>(a,b)</i> becomes the sub-position <i>(a,b)</i> of every r×r output block. No multiplication, every output cell written exactly once, so no checkerboard. It is the workhorse of super-resolution (lesson 8.4).</p>
+        <p><b>The recommended recipe</b> (Odena et al.): resize with nearest or bilinear, <i>then</i> a 3×3 convolution. Bilinear worked: input 2×2 = [[0,10],[20,30]], upsample ×2; output cell (1,1) sits at input coordinate (0.25,0.25), so it blends 9/16·0 + 3/16·10 + 3/16·20 + 1/16·30 = <b>7.5</b>.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: four ways to grow a map</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose "transposed convolution", kernel 3, stride 2, and the preset "all ones". Press play, then tick "colour output by overlap count": stripes of ×1 and ×2 are the checkerboard.</li>
+        <li>Switch kernel to 4 (stride 2): the interior is uniformly ×2 and the stripes vanish. Switch the stride to 1: smooth overlap.</li>
+        <li>Edit kernel weights (e.g. the centre to 4, others to 0) — the output becomes a scaled copy with gaps: what the net must learn to avoid.</li>
+        <li>Pixel shuffle: edit the four channel weights; every output cell is written once.</li></ol></div>
+      <div data-lab="upsample"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>"Deconvolution" does not undo a convolution; it only restores the shape, not the values.</li>
+          <li>K=3, S=2 is the classic checkerboard configuration. Prefer K=4 or K=2 with S=2, or resize + conv.</li>
+          <li>Parameters: a transposed conv has K·K·C_in·C_out weights — for 1024→512 with K=2 that is 2,097,152, more than many whole layers.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>U-Net and DeepLab decoders</b> (2×2 up-conv, bilinear + conv), <b>GAN generators</b> (DCGAN transposed convolutions), <b>super-resolution</b> (ESPCN pixel shuffle), <b>diffusion U-Nets</b> (nearest ×2 + conv), <b>pose heads</b> (three 4×4 deconvs).</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Block: C×H×W → [up-conv 2×2, stride 2] → C/2×2H×2W; concat with encoder map; conv 3×3 twice. Worked count: up-conv 256→128, K=2: <span class="tex">256\cdot4\cdot128+128=131{,}200</span> parameters (matches the 131,200 in the U-Net blueprint of lesson 7.3).</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. I = 16, K = 4, S = 2, P = 1. Output size?</summary><div class="ans">(16−1)·2 − 2 + 4 = 32.</div></details>
+        <details class="check"><summary>2. Why does K=3, S=2 cause checkerboards but K=4, S=2 not?</summary><div class="ans">With K=3 stamps overlap on every second cell only (counts 1,2,1,2…); K=4 gives uniform overlap of 2 in the interior because K is divisible by S.</div></details>
+        <details class="check"><summary>3. A pixel shuffle with r = 2 turns a 64×32×32 tensor into what shape?</summary><div class="ans">16×64×64 (channels divide by r² = 4, sides multiply by 2).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Nearest/bilinear are fixed; transposed conv and pixel shuffle are learned.</li><li><span class="tex">O=(I-1)S-2P+K</span>; K divisible by S avoids checkerboards.</li><li>Resize-then-conv is the safest default.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ============ 7.3 ============ -->
+    <section class="lesson" id="unet" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.3</span><h2>U-Net</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The deep layers know <i>what</i> is in the image but not exactly <i>where</i>; the early layers know the exact edges but not what they belong to. A biomedical lab has only 30 annotated microscope images. How do we combine both kinds of knowledge and still train from so little data?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of an architect sketching a building (the contracting <b>encoder</b>: the more she zooms out the more she understands the whole). Then she must draw the detailed plans (the expanding <b>decoder</b>). She would be foolish to draw the plans only from memory of the coarse sketch — she keeps the original photos on the desk. The <b>skip connections</b> are those photos: at every scale, the decoder receives a copy of the encoder's feature map of the same size, <i>concatenated</i> channel-wise to its own upsampled map. The network is shaped like a "U": down one side, up the other, with horizontal bridges.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <ol>
+          <li><b>Encoder:</b> repeat [two 3×3 convs + ReLU → 2×2 max-pool]. Each step halves the resolution and doubles the channels (64 → 128 → 256 → 512 → 1024 in the original).</li>
+          <li><b>Bottleneck:</b> the smallest map; the largest receptive field.</li>
+          <li><b>Decoder:</b> repeat [2×2 up-convolution (halves channels, doubles size) → <b>concatenate</b> the encoder map → two 3×3 convs].</li>
+          <li><b>Head:</b> 1×1 conv to K class channels; per-pixel softmax.</li>
+        </ol>
+        <p>Why concatenation rather than addition? Concatenation keeps both sources separate and lets the next convolution decide how to mix them; the doubling of channels at the merge (e.g. 256 + 256 = 512) is visible in the shape table. Why does it work with little data? The loss is per-pixel (a 512×512 image gives 262,144 training signals), the architecture is a strong locality prior, and the original paper added heavy elastic-deformation augmentation and a weighted loss that forces the network to separate touching cells.</p>
+        <div class="worked"><b>Worked example — the shape table (128×128 preset)</b>
+          <table class="tbl"><tr><th>stage</th><th>operation</th><th>output</th><th>params</th></tr>
+          <tr><td>enc 1</td><td>conv3×3 1→64, conv3×3 64→64</td><td>64×128×128</td><td>704 + 36,992</td></tr>
+          <tr><td></td><td>max-pool 2×2</td><td>64×64×64</td><td>0</td></tr>
+          <tr><td>enc 2</td><td>conv 64→128, 128→128</td><td>128×64×64</td><td>73,984 + 147,712</td></tr>
+          <tr><td></td><td>max-pool</td><td>128×32×32</td><td>0</td></tr>
+          <tr><td>enc 3</td><td>conv 128→256, 256→256</td><td>256×32×32</td><td>295,424 + 590,336</td></tr>
+          <tr><td></td><td>max-pool</td><td>256×16×16</td><td>0</td></tr>
+          <tr><td>bottleneck</td><td>conv 256→512, 512→512</td><td>512×16×16</td><td>1,180,672 + 2,360,320</td></tr>
+          <tr><td>dec 3</td><td>up-conv 512→256; concat enc 3 (256+256); conv 512→256</td><td>256×32×32</td><td>524,544 + 1,180,160</td></tr>
+          <tr><td>dec 2</td><td>up-conv 256→128; concat (128+128); conv 256→128</td><td>128×64×64</td><td>131,200 + 295,168</td></tr>
+          <tr><td>dec 1</td><td>up-conv 128→64; concat (64+64); conv 128→64</td><td>64×128×128</td><td>32,832 + 73,856</td></tr>
+          <tr><td>head</td><td>conv 1×1 64→2</td><td>2×128×128</td><td>130</td></tr></table>
+          <p>Checking one conv by hand: 3×3, 128→256: <span class="tex">128\cdot9\cdot256=294{,}912</span> weights; a plain conv adds 256 biases (295,168), but here batch norm follows, so the blueprint drops the bias and adds BN's 2·256 = 512: <b>295,424</b>. The blueprint totals <b>6,924,034</b> parameters and 7.36 GMACs (with batch norm, "same" padding and a 512-channel bottleneck — a small U-Net).</p>
+          <p><b>The original (2015)</b> has 5 levels (up to 1024 channels), unpadded 3×3 convs and no batch norm: input 572×572 → 570 → 568 → pool 284 → 282 → 280 → pool 140 → 138 → 136 → pool 68 → 66 → 64 → pool 32 → 30 → 28 (bottleneck 1024×28×28); decoder 56 → crop skip → 54 → 52 → 104 → 102 → 100 → 200 → 198 → 196 → 392 → 390 → 388; the output is <b>2×388×388</b>. Skip maps are centre-cropped (e.g. 64→56) because valid convolutions shrank the encoder map. Parameter count (computed layer by layer): encoder 18,842,048 + decoder 12,188,610 = <b>31,030,658 ≈ 31 M</b>.</p></div>
+        <p>The receptive field grows with depth: in the blueprint it is 82 pixels at the end (the bottleneck alone sees 68). Each decoder step keeps the receptive field but restores the sampling density (jump 8 → 4 → 2 → 1).</p>
+        <div class="eq">\mathrm{out}=\mathrm{conv}\big([\,\mathrm{up}(x_{l+1})\;;\;e_l\,]\big)</div>
+        <table class="sym">
+          <tr><td><span class="tex">x_{l+1}</span></td><td>decoder feature map from the level below (coarser)</td></tr>
+          <tr><td>up(·)</td><td>2×2 transposed convolution, ×2 resolution, half the channels</td></tr>
+          <tr><td><span class="tex">e_l</span></td><td>encoder feature map at the same resolution (the skip)</td></tr>
+          <tr><td>[ · ; · ]</td><td>concatenation along channels</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Blueprint: U-Net, tensors in motion</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the pulse go down the left side (boxes get narrower in height, thicker in channels) and up the right side. The arcs are the skips. Click a <code>concat</code> block: the channels double.</li>
+        <li>Change the input resolution with the slider: parameters stay the same (convolutions do not depend on image size) while MACs scale with the pixel count.</li>
+        <li>Edit the text: delete the line <code>concat @e1</code> and check the error message (the following conv now sees 64 channels; parameters drop).</li></ol></div>
+      <div data-lab="archviz" data-preset="unet-small" data-edit data-resolution data-res="128" data-title="U-Net (128×128 preset) — edit me"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: shrink, grow, skip — and cut the skips</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Play slowly: encoder tiles shrink 40 → 20 → 10 → 5, the 5×5 classification is blocky, then the decoder grows it back.</li>
+        <li>Restart with "cut all skips": the final map has blurry blobs, and boundary-pixel accuracy drops. Then restore the skips.</li>
+        <li>Cut only the finest skip (40×40): the result is still blocky at the edges although the deeper skips are present. Detail lives in the finest skip.</li></ol></div>
+      <div data-lab="unetanim"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: a smaller U-Net to modify</h3>
+      <div data-lab="archviz" data-title="Mini U-Net (64×64, 1 channel) — try adding a level" data-edit data-height="320"><script type="text/plain">input 1 64 64
+conv 16 k3 @e1
+relu
+maxpool k2
+conv 32 k3 @e2
+relu
+maxpool k2
+conv 64 k3
+relu
+up 32
+concat @e2
+conv 32 k3
+relu
+up 16
+concat @e1
+conv 16 k3
+relu
+conv 1 k1</script></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Input sizes must be divisible by 2^(levels) or the decoder maps will not match the skips (the original needed special tile sizes).</li>
+          <li>Concatenate before the convolution, not after; the 3×3 conv that follows is where the mixing happens.</li>
+          <li>Parameter count is not compute: the 1024-channel level holds most weights, but the full-resolution level holds most MACs.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Medical imaging</b> (nnU-Net, tumour and organ masks), <b>satellite</b> building/crop maps, <b>Stable Diffusion's noise predictor</b> (a U-Net with attention), image-to-image translation (pix2pix), matting and inpainting.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: a U with L levels; channels c·2^l; skip arrows at each level. Shape table as above; checks: channels at the concat = 2× the up-conv output; final head has K channels. Count: up-conv 512→256, 2×2: <span class="tex">512\cdot4\cdot256+256=524{,}544</span>. Conv after concat 512→256, 3×3: <span class="tex">512\cdot9\cdot256=1{,}179{,}648</span> weights + 512 (BN) = 1,180,160, as in the table.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the original U-Net, why is the skip cropped?</summary><div class="ans">Unpadded convs shrink each map, so the encoder map (e.g. 64×64) is larger than the upsampled decoder map (56×56). It is centre-cropped to match.</div></details>
+        <details class="check"><summary>2. Which skip would you remove first to save memory and lose the least accuracy?</summary><div class="ans">Skips cost activation memory proportional to resolution, so the finest one is the most expensive — but it also carries the most boundary detail. In practice you keep it; if forced, cut the coarsest skip (its information is already in the decoder).</div></details>
+        <details class="check"><summary>3. After concatenating 128 decoder channels with 128 skip channels, what is the next 3×3 conv's weight count if it outputs 128 channels?</summary><div class="ans">256·9·128 = 294,912 weights.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>U-Net = encoder + decoder + same-scale skips by concatenation.</li><li>Original ≈ 31.03 M parameters, 572×572 → 388×388; the 128×128 preset has 6.92 M.</li><li>Skips return the fine detail; cutting them blurs boundaries.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ============ 7.4 ============ -->
+    <section class="lesson" id="atrous-context" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.4</span><h2>Dilated convolutions &amp; context</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>To label a pixel as "road" or "sidewalk" the network needs to see far beyond that pixel. Pooling enlarges the field of view but costs resolution; the decoder then has to rebuild it. Can we enlarge the receptive field <i>without</i> shrinking the map and <i>without</i> adding parameters?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A normal 3×3 kernel reads nine neighbouring pixels. A <b>dilated</b> (atrous, "with holes") kernel keeps the same nine weights but spreads the taps apart: with <b>rate</b> <i>r</i> the taps are <i>r</i> pixels apart. It is like reading a page through a grid with holes: the same nine numbers cover a bigger area. The map size does not change, and the parameter count does not change.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>A 3×3 kernel with rate <i>r</i> behaves like a kernel of effective size <span class="tex">k_{\mathrm{eff}}=k+(k-1)(r-1)</span>: rates 1, 2, 4, 8 give 3, 5, 9, 17. Stacking layers adds the effective widths: the receptive field after layers with rates <span class="tex">r_1..r_L</span> (3×3 each) is</p>
+        <div class="eq">\mathrm{RF}=1+2\sum_{l=1}^{L}r_l</div>
+        <table class="sym"><tr><td>RF</td><td>side of the input square that influences one output pixel</td></tr><tr><td><span class="tex">r_l</span></td><td>dilation rate of layer <i>l</i>; 1 = ordinary convolution</td></tr><tr><td>2</td><td>each 3×3 layer reaches <i>r</i> pixels left and <i>r</i> right of the centre</td></tr></table>
+        <div class="worked"><b>Worked example</b>
+          <p>Four layers, rate 1 each: RF = 1 + 2·4 = <b>9</b>. Rates 1, 2, 4, 8: RF = 1 + 2·15 = <b>31</b>. Growing layer by layer: 3, 7, 15, 31 — it doubles each time (exponential), while the parameter count stays 4·9·C² and the resolution is unchanged. Rates 2, 2, 2 leave holes: only every second pixel of the 13×13 field is reached by some path (a <b>gridding</b> artefact). Fix: mix rates (1, 2, 5) so the taps cover the field.</p></div>
+        <h3 class="sec">ASPP and DeepLab</h3>
+        <p>Objects have many sizes; one rate sees only one scale. <b>Atrous spatial pyramid pooling (ASPP)</b> looks at the same feature map with several rates in parallel and concatenates the answers. DeepLabv3's ASPP (output stride 16) has five branches over the 2048-channel backbone output: a 1×1 conv, three 3×3 convs with rates 6, 12, 18, and an image-level pooling branch (global average → 1×1 conv → broadcast), each producing 256 channels. They are concatenated (5·256 = 1280) and projected by a 1×1 conv to 256.</p>
+        <div class="worked"><b>ASPP parameter count</b>
+          <p>1×1 branch: 2048·256 = 524,288. Each 3×3 branch: 2048·9·256 = 4,718,592; three of them 14,155,776. Pooling branch: 524,288. Projection: 1280·256 = 327,680. Total <b>15,532,032</b> weights (≈ 15.5 M, before batch-norm). Rates do not change this number — only where the taps look.</p></div>
+        <p><b>Context vs resolution.</b> A classification ResNet reduces the map by 32. DeepLab removes the last strides (output stride 8 or 16) and replaces them by dilation 2 and 4 in later stages: the field of view is preserved while the map stays 4× (or 2×) larger. The cost: later stages operate on bigger maps, so compute rises. DeepLabv3+ adds a light decoder that merges a low-level (stride-4) feature map — the same idea as the U-Net skip.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Blueprint: DeepLab-style backbone + head</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Follow the heights: the map stays 28×28 through the last two stages (the strides were replaced by dilation).</li>
+        <li>Note that archviz has no dilation token, so its receptive-field column <em>understates</em> the real DeepLab (the real dilated stages add much more). Parameters and MACs are exact because dilation is free.</li>
+        <li>Edit: set the last bottleneck stage to <code>s2</code> and see the map halve — what dilation replaced.</li></ol></div>
+      <div data-lab="archviz" data-title="DeepLab-style (ResNet-50 stages, output stride 8, 1×1 head)" data-edit data-height="340"><script type="text/plain">input 3 224 224
+conv 64 k7 s2 p3
+bn
+relu
+maxpool k3 s2 p1
+bottleneck 256 mid64 x3
+bottleneck 512 mid128 s2
+bottleneck 512 mid128 x3
+bottleneck 1024 mid256 x6
+bottleneck 2048 mid512 x3
+conv 256 k1
+bn
+relu
+conv 21 k1</script></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: dilation and the receptive-field map</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press the "1,1,1,1" preset and play: the field reaches 9×9. Then "1,2,4,8": 31×31 with the same weights.</li>
+        <li>Try "2,2,2,2": red blind spots appear inside the field (gridding). "1,2,5,1" fills most holes.</li>
+        <li>Brighter cells are reached by more paths: the centre matters most (an effective receptive field that looks Gaussian).</li></ol></div>
+      <div data-lab="dilated"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Using the same rate in every layer causes gridding. Vary the rates, ideally without a common factor.</li>
+          <li>A huge rate on a small map: the taps fall into the padding and the kernel degenerates to a 1×1 (why ASPP adds the image-pooling branch).</li>
+          <li>Dilation keeps parameters but not FLOPs: more pixels are processed at high resolution.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>DeepLab v1–v3+ (semantic segmentation), WaveNet (1-D dilated convs for audio with rates 1…512), dilated temporal convolutions (TCN) for sequences, context modules in dense prediction.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: backbone (stride 4 → 8 → 8 → 8), ASPP box with five parallel branches, concat, 1×1 to 256, 1×1 to K, bilinear ×8 (or ×16). Count a branch: 3×3, 2048→256: <span class="tex">2048\cdot9\cdot256=4{,}718{,}592</span> regardless of the rate.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Rates 1, 3, 9 on three 3×3 layers. Receptive field?</summary><div class="ans">1 + 2·(1+3+9) = 27.</div></details>
+        <details class="check"><summary>2. Effective kernel size of a 3×3 conv with rate 6?</summary><div class="ans">3 + 2·5 = 13.</div></details>
+        <details class="check"><summary>3. Why not simply use 13×13 kernels?</summary><div class="ans">169 weights per input-output channel pair instead of 9 (≈ 19× more parameters and compute); dilation obtains the field with 9.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Dilation spreads the taps: bigger context, same parameters, same resolution.</li><li>RF = 1 + 2Σr; rates 1,2,4,8 give 31.</li><li>ASPP samples several scales in parallel; vary rates to avoid gridding.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ============ 7.5 ============ -->
+    <section class="lesson" id="instance-panoptic" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.5</span><h2>Instance &amp; panoptic segmentation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two cars are parked side by side. Semantic segmentation paints both pixels "car" — it cannot say how many cars there are, or where one ends and the next begins. How do we separate individual objects, and how do we also label the "stuff" such as road and sky that has no countable instances?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Things</b> are countable objects (car, person); <b>stuff</b> is amorphous regions (road, sky, grass). Semantic segmentation labels both but cannot count things. <b>Instance segmentation</b> finds each thing and gives it its own mask. <b>Panoptic segmentation</b> unifies them: every pixel gets a class, and thing pixels also get an instance id.</p>
+        <p><b>Mask R-CNN</b> does instance segmentation in two stages: detect first, then segment inside each box. It extends Faster R-CNN with a third branch next to the box classifier and the box regressor: a small fully convolutional <b>mask head</b> that predicts a binary mask for the region.</p>
+
+        <h3 class="sec">Build it up: the mask head</h3>
+        <ol>
+          <li>A region proposal (a box) is resampled by <b>RoIAlign</b> to a fixed 256×14×14 feature patch (bilinear sampling without rounding, so mask pixels stay aligned to the image).</li>
+          <li>Four 3×3 convolutions, 256 channels each (keeping 14×14).</li>
+          <li>One 2×2 transposed convolution, stride 2, 256 channels: 14×14 → <b>28×28</b>.</li>
+          <li>A 1×1 convolution to K channels: one 28×28 mask <i>per class</i> (K = 80 for COCO), with a per-pixel sigmoid. Only the mask of the predicted class is used and trained, so classes do not compete.</li>
+          <li>The 28×28 mask is resized into the box in the image.</li>
+        </ol>
+        <div class="worked"><b>Worked example — mask head count</b>
+          <p>3×3, 256→256: <span class="tex">256\cdot9\cdot256+256=590{,}080</span>; four of them 2,360,320. Up-conv 2×2: <span class="tex">256\cdot4\cdot256+256=262{,}400</span>. Class layer 1×1: <span class="tex">256\cdot80+80=20{,}560</span>. Total = <b>2,643,280</b> parameters (the blueprint computes the same). Each 28×28 mask has 784 pixels; a 280×280 car in the image gets its mask upsampled 10×, which is why Mask R-CNN edges look smooth but slightly rounded.</p></div>
+        <p><b>Panoptic quality.</b> For each class, ground-truth segments and predicted segments are matched when their IoU exceeds 0.5 (this makes the match unique). Matched pairs are true positives; unmatched predictions are false positives; unmatched truth are false negatives:</p>
+        <div class="eq">\mathrm{PQ}=\underbrace{\frac{\sum_{(p,g)\in TP}\mathrm{IoU}(p,g)}{|TP|}}_{\mathrm{SQ}}\times\underbrace{\frac{|TP|}{|TP|+\tfrac12|FP|+\tfrac12|FN|}}_{\mathrm{RQ}}</div>
+        <table class="sym"><tr><td>SQ</td><td>segmentation quality: how well matched segments overlap</td></tr><tr><td>RQ</td><td>recognition quality: an F1-style term for finding the right segments</td></tr><tr><td>TP/FP/FN</td><td>matched pairs / unmatched predictions / unmatched truths (counted per class)</td></tr></table>
+        <div class="worked"><b>Worked example</b><p>TP = 3 with IoUs 0.9, 0.8, 0.7 (sum 2.4); FP = 1; FN = 2. SQ = 2.4/3 = 0.800. RQ = 3/(3+0.5+1) = 0.667. PQ = 0.8·0.667 = <b>0.533</b> (= 2.4/4.5).</p></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Blueprint: Mask R-CNN's mask head</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the 14×14 patch grow to 28×28 at the green up-conv, then shrink to 80 class channels.</li>
+        <li>Click the conv block to see four repeated layers; change <code>x4</code> to <code>x2</code> and see the parameter saving (1.18 M).</li></ol></div>
+      <div data-lab="archviz" data-title="Mask head (per region of interest)" data-edit data-height="300"><script type="text/plain">input 256 14 14
+conv 256 k3 x4
+up 256
+relu
+conv 80 k1</script></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: matching and panoptic quality</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Play: each ground-truth segment is matched to the best same-class prediction; IoU above 0.5 = TP.</li>
+        <li>Drag P2 onto car B (or press the chip): it turns from FP+FN into a TP and PQ jumps.</li>
+        <li>Resize P1 until its IoU falls below 0.5 — a single bad overlap costs both a TP and adds FP and FN.</li></ol></div>
+      <div data-lab="panoptic"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Rectangles in the lab stand in for masks; real IoU is computed on pixel masks.</li>
+          <li>Mask R-CNN's mask is class-specific but decoupled from classification: a wrong class gives the wrong mask.</li>
+          <li>Panoptic output must not overlap: each pixel gets exactly one segment.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Autonomous driving (separate vehicles, lanes, drivable area), robotics grasping, video editing; Mask2Former, OneFormer and transformer-based panoptic models predict a set of masks directly.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: backbone + FPN → RPN → RoIAlign (7×7 for boxes, 14×14 for masks) → [box head: class + box] and [mask head: 4×conv, up-conv, 1×1]. Shapes: 256×14×14 → 256×14×14 → 256×28×28 → 80×28×28. Count: the mask head 2,643,280 as above.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Things vs stuff?</summary><div class="ans">Things are countable objects with instances (car, person); stuff is uncountable regions (sky, road).</div></details>
+        <details class="check"><summary>2. TP=2 (IoU 0.6, 0.9), FP=0, FN=2. PQ?</summary><div class="ans">SQ = 0.75; RQ = 2/(2+0+1) = 0.667; PQ = 0.5.</div></details>
+        <details class="check"><summary>3. Why 2×2 transposed conv in the mask head?</summary><div class="ans">K=2 with stride 2 doubles the resolution with no overlap, so no checkerboard.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Instance = separate masks per thing; panoptic = instances plus stuff.</li><li>Mask head: 14×14 → 28×28 → K masks; 2.64 M parameters.</li><li>PQ = SQ × RQ.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ============ 7.6 ============ -->
+    <section class="lesson" id="sam-foundation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.6</span><h2>Promptable segmentation (SAM)</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Every segmentation model so far has a fixed list of classes. What if you could simply <i>point</i> at anything — a window, a shadow, a screw — and get its mask, even for objects the model was never labelled on? And what should the model do when "a click on the window" could mean the window, the wall or the whole house?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The <b>Segment Anything Model (SAM)</b> splits the job in two. A very heavy <b>image encoder</b> turns the picture into an embedding <i>once</i> (seconds). Then a tiny <b>mask decoder</b> turns that embedding plus a <b>prompt</b> into masks in milliseconds. You can therefore click around interactively while the heavy part is cached — like indexing a book once and then searching it instantly.</p>
+
+        <h3 class="sec">Build it up: the three parts</h3>
+        <ul>
+          <li><b>Image encoder:</b> a ViT (the ViT-H version has 32 layers, 16 heads, width 1280), pre-trained with masked autoencoding. Input 1024×1024, patches 16×16, so 64×64 = 4096 tokens; most blocks use windowed (14×14) attention and four use global attention. A small neck gives a 256×64×64 embedding. ViT-H ≈ 632 M parameters (ViT-L 308 M, ViT-B 91 M).</li>
+          <li><b>Prompt encoder:</b> points and box corners become positional encodings of (x, y) plus a learned embedding saying "foreground", "background" or "top-left/bottom-right corner". Text uses CLIP; a mask prompt is encoded by a few convolutions.</li>
+          <li><b>Mask decoder:</b> two "two-way" transformer blocks (≈ 4 M parameters): prompt tokens attend to the image embedding, and the image embedding attends back to the tokens. Then the embedding is upsampled 4× to a 256×256 mask and a dot product with the output tokens gives mask logits, plus a predicted <b>IoU score</b> for each mask.</li>
+        </ul>
+        <p><b>Ambiguity.</b> A single point is ambiguous (window? wall? house?). A model forced to give one answer averages the possibilities into a bad mask. SAM instead outputs <b>three masks</b> (whole, part, sub-part) for one prompt, each with a predicted IoU; training uses only the <i>best</i> of the three in the loss (minimum over masks), so the heads specialise. With more prompts (a second point, a box) the ambiguity vanishes and a single mask is usually enough.</p>
+        <div class="worked"><b>Worked example — token and parameter budget</b>
+          <p>1024/16 = 64, so 64² = <b>4096</b> tokens of width 1280. One ViT block: attention 4·1280² + 4·1280 = 6,558,720; MLP (hidden 5120) 2·1280·5120 + 5120 + 1280 = 13,112,320; two layer norms 5,120 → 19,676,160 per block; ×32 = 629.6 M. Add patch embedding 984,320 and a position table 4096·1280 = 5.2 M: the blueprint total is 635.9 M, within 1% of the published ≈ 632 M for the encoder (SAM uses a neck and relative positions instead of this simple table). Global attention over 4096 tokens costs 4096²·1280 ≈ 21 G multiply-adds <i>per layer</i> for the score matrix alone — which is why windowed attention is used in 28 of the 32 blocks. The archviz MAC count (3.96 T) therefore overstates SAM's real compute.</p></div>
+        <p>SAM was trained on SA-1B: 11 million images with 1.1 billion masks, created in a loop where the model itself helped annotators (assisted → semi-automatic → fully automatic), and the training loss is a mix of focal and Dice loss on masks plus an IoU-prediction regression.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Blueprint: SAM's image encoder (ViT-H)</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Click the transformer block: all 32 layers are one box; see the attention and MLP parameter split.</li>
+        <li>Edit <code>x32</code> to <code>x12</code> and <code>16 5120</code> to <code>12 3072</code> and <code>1280</code> to <code>768</code>: you get a ViT-B-sized encoder (≈ 89 M here, as the position table for 4096 tokens is large).</li></ol></div>
+      <div data-lab="archviz" data-title="SAM image encoder (ViT-H/16, simplified: global attention counted)" data-edit data-height="300"><script type="text/plain">input 3 1024 1024
+patch 16 1280
+pos
+tblock 16 5120 x32
+norm</script></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: prompt, then watch masks grow</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press "Demo: click a window": the captions walk through image embedding → prompt encoder → decoder → masks. The three candidates differ in size: window, house facade, whole house.</li>
+        <li>Click the roof, the sky, the sun: when granularities coincide the three masks are identical (no ambiguity).</li>
+        <li>Add a "−" point on the door to carve it out; draw a "box" around the whole house: the box picks the granularity.</li></ol></div>
+      <div data-lab="samprompt"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>The lab's growth is a teaching stand-in (region growing on a synthetic scene); the real decoder predicts the mask in one pass.</li>
+          <li>SAM gives masks, not class names; it does not know "what" it segmented.</li>
+          <li>Re-running the image encoder for every click would be very slow; the cache is the design.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Annotation tools (click-to-label), photo editing cut-outs, video object tracking (SAM 2 adds memory), robotics, as the "mask generator" feeding open-vocabulary pipelines such as Grounded-SAM.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: image → ViT-H → 256×64×64 embedding (cached); prompt (points, box, mask, text) → prompt encoder → tokens; [tokens ⇄ embedding] ×2 → upsample ×4 → 3 masks (256×256) + 3 IoU scores. Counts: patch embedding 16·16·3·1280 + 1280 = 984,320; one 1280-wide block 19,676,160.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why is SAM interactive although ViT-H is huge?</summary><div class="ans">The image encoder runs once per image; the prompt encoder and mask decoder are tiny, so each new prompt costs milliseconds.</div></details>
+        <details class="check"><summary>2. Why three output masks?</summary><div class="ans">One point is ambiguous (part/whole); three masks avoid averaging them, and the loss uses only the best match.</div></details>
+        <details class="check"><summary>3. Tokens for a 1024×1024 image with 16×16 patches?</summary><div class="ans">64·64 = 4096.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Heavy encoder once, light decoder per prompt.</li><li>Prompts: points, boxes, masks, text; output: 3 masks + IoU scores for ambiguity.</li><li>Trained on 1.1 B masks; ViT-H ≈ 632 M parameters.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ============ 7.7 ============ -->
+    <section class="lesson" id="depth-pose" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.7</span><h2>Depth, keypoints &amp; pose</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A phone has one camera. How can it tell how far things are (for AR placement) or where a person's elbow is (for a fitness app)? Both are dense predictions — one number per pixel, or one location per joint — but the targets are numbers, not classes.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Stereo depth</b> uses two cameras: an object appears shifted between the images by the <i>disparity</i> <i>d</i> (pixels); near objects shift more. Geometry gives <span class="tex">Z=fB/d</span>. <b>Monocular depth</b> uses one image: the network learns the cues humans use (size, perspective, occlusion) and regresses a depth value for every pixel with an encoder-decoder, often a U-Net or a ViT with a dense head. The catch is <b>scale ambiguity</b>: a small house close up and a big house far away look alike, so many models predict depth only up to an unknown scale.</p>
+        <div class="worked"><b>Worked example — stereo</b><p>Focal length f = 700 px, baseline B = 0.12 m, disparity d = 21 px: <span class="tex">Z=700\cdot0.12/21=4.0</span> m. At d = 10.5 px the object is 8 m away: depth is inversely proportional to disparity, so far objects have tiny disparity and large depth errors.</p></div>
+        <p><b>Scale-invariant loss</b> (Eigen et al.): with <span class="tex">d_i=\log\hat y_i-\log y_i</span>,</p>
+        <div class="eq">\mathcal L=\frac1n\sum_i d_i^2-\frac{\lambda}{n^2}\Big(\sum_i d_i\Big)^2,\quad\lambda\in[0,1]</div>
+        <table class="sym"><tr><td><span class="tex">\hat y_i, y_i</span></td><td>predicted and true depth at pixel <i>i</i></td></tr><tr><td><span class="tex">d_i</span></td><td>log-depth error (a multiplicative error becomes additive)</td></tr><tr><td>λ</td><td>how much of a global scale error is forgiven (λ = 1: fully)</td></tr></table>
+        <p>Worked: errors d = (0.2, 0.2, 0.2) — the prediction is exactly 22% too large everywhere. With λ = 1: mean of squares 0.04 minus (0.6/3)² = 0.04 → loss <b>0</b>. A pure global scale mistake costs nothing; only the <i>relative</i> structure is penalised.</p>
+
+        <h3 class="sec">Build it up: heatmap keypoints</h3>
+        <p>To find the elbow, one might regress its (x, y) directly — but a single fully connected output is fragile and discards spatial structure. The dense way: the network outputs one <b>heatmap</b> per joint, a map that is high where the joint probably is. Training targets are Gaussian blobs centred on the true joint (σ about 2 pixels in heatmap units); the loss is the mean squared error between predicted and target heatmaps. At inference, find the <b>arg-max</b> of each heatmap, multiply by the stride to return to image coordinates, and refine by shifting a quarter pixel towards the larger neighbour.</p>
+        <div class="worked"><b>Worked example</b><p>Image 256×192, stride 4, heatmap 64×48 for each of 17 joints (COCO). Joint peak at cell (x=20, y=30). Image coordinates: ((20+½)·4, (30+½)·4) = (82, 122). Quantisation error is at most stride/2 = 2 px; the quarter-pixel shift (±1 px) reduces it. Multi-person pose adds either top-down (detect people, then run this per crop) or bottom-up grouping.</p></div>
+        <p><b>SimpleBaseline</b> shows how small the head is: ResNet-50 without its classifier (23.51 M parameters) → three deconvolution layers (4×4 kernels, stride 2, 256 channels: 2048·256·16 = 8,388,608 for the first, 256·256·16 = 1,048,576 for each of the other two) → a 1×1 conv to 17 channels. Feature map 2048×8×6 → 256×16×12 → 256×32×24 → 256×64×48 → 17×64×48. Total ≈ <b>34.0 M</b> parameters. (The blueprint below uses 2×2 up-convs, so it counts 26.1 M — the 4×4 kernels cost 4× more per layer.)</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Blueprint: a pose network</h3>
+      <div data-lab="archviz" data-title="Pose estimator (ResNet-50 + 3 deconvs + 17 heatmaps, 2×2 up-convs)" data-edit data-height="320"><script type="text/plain">input 3 256 192
+conv 64 k7 s2 p3
+bn
+relu
+maxpool k3 s2 p1
+bottleneck 256 mid64 x3
+bottleneck 512 mid128 s2
+bottleneck 512 mid128 x3
+bottleneck 1024 mid256 s2
+bottleneck 1024 mid256 x5
+bottleneck 2048 mid512 s2
+bottleneck 2048 mid512 x2
+up 256
+up 256
+up 256
+conv 17 k1</script></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: decode heatmaps by arg-max</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Play: for each joint the scan keeps the largest cell, then refines, scales by the stride, and adds the point to the blue skeleton.</li>
+        <li>Switch the stride to 8: heatmaps shrink to 16×16 and the error grows to up to 4 px; untick sub-pixel refinement to see the effect.</li>
+        <li>Raise noise and σ with "left/right confusion" on: the wrong peak sometimes wins (a swapped hand), the typical pose-estimation failure.</li>
+        <li>Drag an orange joint to a new pose: the heatmaps follow.</li></ol></div>
+      <div data-lab="heatpose"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: how disparity becomes depth</h3>
+      <div data-lab="fplot" data-title="Stereo depth Z = f·B / d" data-f="f*B/x" data-params="f=700:200..1500:10; B=0.12:0.05..0.5:0.01" data-view="1,60,0,30" data-names="Z (m)" data-readout="Z at d=21 px = f*B/21; Z at d=5 px = f*B/5"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Monocular depth is relative unless calibrated; "metric" depth models need extra information (known sizes, camera intrinsics).</li>
+          <li>Taking the arg-max at a coarse stride caps accuracy at stride/2 pixels.</li>
+          <li>Stereo fails on textureless or repeated regions where matching is ambiguous.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>AR/VR</b> object placement (depth), <b>robotics</b> grasping and navigation, <b>sports analytics</b> and fitness apps (pose), <b>driving</b> (stereo + monocular depth), portrait-mode blur, 3-D reconstruction (lesson 8.5), animation capture.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Pose: image → backbone (stride 32) → 3 deconvs (×8 in total) → 17×H/4×W/4 heatmaps → arg-max → coordinates. Depth: image → encoder-decoder (U-Net/DPT) → 1×H×W depth. Count: a 4×4 deconv 256→256 = 1,048,576 weights; head 1×1 256→17 = 4,369.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. f = 500 px, B = 0.2 m, d = 25 px. Depth?</summary><div class="ans">Z = 500·0.2/25 = 4 m.</div></details>
+        <details class="check"><summary>2. Heatmap 48×64 from a 192×256 image; peak at (x=10, y=40). Image coordinates?</summary><div class="ans">Stride 4: ((10+0.5)·4, (40+0.5)·4) = (42, 162).</div></details>
+        <details class="check"><summary>3. Why is the scale-invariant loss useful?</summary><div class="ans">A single image cannot fix absolute scale; the loss forgives a global multiplicative error and penalises only relative depth structure.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Depth: per-pixel regression (log, scale-invariant loss) or stereo geometry Z = fB/d.</li><li>Pose: one heatmap per joint, arg-max decode, scale by stride, sub-pixel refinement.</li><li>All dense tasks = backbone + decoder + a small per-pixel head.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete.</b> You can now draw FCN, U-Net, DeepLab, Mask R-CNN's mask head, SAM and a pose network, and score them with IoU, Dice, PQ and the scale-invariant depth loss. Next: <a href="cv-generative.html">Module 8 · Generative &amp; video vision</a> — where the U-Net you just learned becomes the noise predictor of diffusion models.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

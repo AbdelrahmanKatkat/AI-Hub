@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 · Vision Transformers &amp; modern backbones · Computer Vision</title>
+<meta name="description" content="Patch embedding, the Vision Transformer, attention maps, Swin, CNN vs ViT, self-supervised learning (MAE, DINO, SimCLR) and CLIP, taught as architecture blueprints with shapes, parameters and compute.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-transformers.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="5">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 5</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">5</div>
+      <div style="flex:1">
+        <h1>Module 5 · Vision Transformers &amp; modern backbones</h1>
+        <p>Convolutions look at small neighbourhoods; a transformer lets every piece of the image talk to every other piece. In this module you will watch an image being cut into patches, turned into tokens and mixed by attention, and you will be able to draw ViT-B/16, Swin and CLIP as blueprints with exact shapes, parameters and compute.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Prerequisite: Module 3–4 (CNNs)</span><span class="chip">Background: <a href="math-neural.html#attention-math">attention maths</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 5.1 ===================== -->
+    <section class="lesson" id="patch-embedding" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.1</span><h2>From pixels to tokens</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A transformer reads a <i>sequence</i> of vectors. A 224×224 colour photo is a grid of 150,528 numbers. If we treat every pixel as a token, attention must compare every pixel with every other: 50,176² ≈ 2.5 billion pairs, per head, per layer. How do we turn an image into a short, sensible sequence without throwing the picture away?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a jigsaw puzzle. You do not reason about each grain of colour on a piece; you reason about <b>pieces</b>. A piece is big enough to carry a little meaning (an eye corner, a bit of sky, a stripe of fur) but small enough that you need many of them for a scene. The Vision Transformer does exactly that: cut the image into a grid of square <b>patches</b>, turn each patch into one vector (a <b>token</b>), and line the tokens up as a sequence — a "sentence" whose "words" are pieces of picture.</p>
+        <p>Words come from a dictionary, but there is no dictionary of patches, so each patch is turned into a vector by a learned <b>linear projection</b>: a single matrix multiplication shared by every patch. That is all "patch embedding" is.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, patchify.</b> Choose a patch side <i>P</i>. An image of height <i>H</i> and width <i>W</i> is cut into <span class="tex">H/P</span> rows and <span class="tex">W/P</span> columns of patches, so there are <span class="tex">N=\frac{HW}{P^2}</span> patches (assume <i>P</i> divides <i>H</i> and <i>W</i>; otherwise crop or pad).</p>
+        <p><b>Step 2, flatten.</b> Each patch holds <span class="tex">P\times P\times C</span> numbers (C = 3 colour channels). Unroll them into one vector of length <span class="tex">P^2C</span>.</p>
+        <p><b>Step 3, project.</b> Multiply by a learned matrix <span class="tex">E\in\mathbb R^{(P^2C)\times D}</span> and add a bias: the result is a <i>D</i>-dimensional token. <i>D</i> is the model width (768 for ViT-Base).</p>
+        <div class="worked"><b>Worked example: ViT-B/16 on a 224×224 image</b>
+          <p>P = 16, C = 3, D = 768. Patches per side: 224/16 = 14, so <span class="tex">N=14^2=196</span> tokens. Each patch has 16·16·3 = <b>768</b> numbers. The projection matrix is 768×768 = 589,824 weights plus 768 biases = <b>590,592 parameters</b>. It is applied 196 times: 196·768·768 = <b>115,605,504 MACs</b> (multiply-accumulates).</p>
+          <p>Sanity check against a CNN: this is exactly a convolution with a 16×16 kernel, stride 16, 768 output channels (weights 3·16·16·768 = 589,824). The image became 196×768 numbers instead of 150,528: a small <i>reshaping</i>, not a compression: 196·768 = 150,528. The count is identical; the numbers are simply re-arranged and mixed.</p>
+          <p>Changing the patch size: P = 32 gives (224/32)² = 49 tokens (ViT-B/32); P = 8 gives 28² = 784 tokens (16 times more than P = 32). Halving the patch side quadruples the token count.</p></div>
+        <p><b>Why sequence length is the real cost.</b> Attention compares every token with every token, so its work grows with <i>N²</i>. Double the image side and <i>N</i> quadruples, so the attention matrix grows 16×. Patches keep <i>N</i> small enough to be affordable: that is the entire reason ViT cuts the image rather than using pixels.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">x_p^{(i)}=\mathrm{vec}\big(\text{patch}_i\big)\in\mathbb R^{P^2C},\qquad z_i=x_p^{(i)}E+b\in\mathbb R^{D},\qquad N=\frac{H}{P}\cdot\frac{W}{P}</div>
+        <table class="sym">
+          <tr><td>H, W, C</td><td>image height, width, channels</td></tr>
+          <tr><td>P</td><td>patch side in pixels (16 and 14 are common; 32 for fast models)</td></tr>
+          <tr><td>N</td><td>number of patches = number of tokens (before adding a class token)</td></tr>
+          <tr><td>vec(·)</td><td>unroll a P×P×C block into one vector of length P²C</td></tr>
+          <tr><td>E, b</td><td>the learned projection matrix and bias, shared by all patches</td></tr>
+          <tr><td>D</td><td>embedding width, the size of every token</td></tr>
+        </table>
+        <p>The output is a matrix <span class="tex">Z\in\mathbb R^{N\times D}</span>: one row per patch.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: cutting an image into tokens</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with P = 32 and watch one patch: it flies out of the image, is flattened into a strip of numbers, passes through <i>E</i> and joins the sequence. Count tokens: (224/32)² = 49.</li>
+        <li>Slide the patch size to 16, then 8. The token count in the readout follows (H/P)². Notice that the projection matrix is the same size when P is 16 (768 inputs): the work per patch is small, the <i>number</i> of patches explodes.</li>
+        <li>Slow the speed slider down and use Step to follow one patch through the four phases.</li></ol></div>
+      <div data-lab="patchify"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: what resolution does to attention</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Set resolution 224, patch 16: attention is a small slice of the cost (linear layers dominate).</li>
+        <li>Press <b>sweep</b>. As the image grows the red N² curve overtakes the blue linear one at <i>N</i> = 6D = 4,608 tokens (for D = 768), about 1,088 pixels wide at P = 16.</li>
+        <li>Tick a window size: attention becomes linear in <i>N</i> again. That is the idea behind Swin (lesson 5.4).</li></ol></div>
+      <div data-lab="attncost"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Patchify is not pooling.</b> No information is discarded: 16·16·3 = 768 numbers in, 768 numbers per token out (for D = 768). A smaller D <i>would</i> compress.</li>
+          <li><b>Patches ignore their neighbours.</b> A pure ViT patch embedding never looks across a patch border; pixels on either side of a border only meet later, in attention. (CNN stems do overlap.)</li>
+          <li><b>Resolution changes the token count.</b> A model trained at 224 with learned position embeddings of length 197 cannot simply be fed 384×384 images; the position table must be interpolated (lesson 5.2).</li>
+          <li><b>The class token is not a patch.</b> It is added <i>after</i> embedding (next lesson) so the sequence has N+1 tokens.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>ViT / DeiT / Swin</b> all begin with a patch embedding (Swin uses 4×4 patches, giving 56×56 = 3,136 tokens).</li>
+          <li><b>Masked autoencoders</b> mask patches, not pixels, because the patch is the token (lesson 5.6).</li>
+          <li><b>Video and diffusion transformers</b> cut space-time or latent grids into patches in the same way (Modules 8–9); <b>CLIP</b>'s image tower is a ViT.</li></ul></div>
+
+        <h3 class="sec">Draw it yourself</h3>
+        <table class="sym">
+          <tr><td>stage</td><td>shape</td><td>params</td></tr>
+          <tr><td>image</td><td>3×224×224</td><td>0</td></tr>
+          <tr><td>patchify (16×16, stride 16)</td><td>196 patches × 768 values</td><td>0</td></tr>
+          <tr><td>linear projection 768→768</td><td>196×768</td><td>590,592</td></tr>
+        </table>
+        <p>Worked count: 3·16·16 = 768 inputs; 768·768 = 589,824 weights + 768 bias = 590,592.</p>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many tokens does a 384×384 image give with P = 16? With P = 14?</summary><div class="ans">384/16 = 24, so 24² = 576 tokens. 384/14 is not an integer (27.43), so you would crop or pad to 378 (27² = 729 tokens) or 392 (28² = 784).</div></details>
+        <details class="check"><summary>2. By what factor does the number of attention-matrix entries grow if you double the image side at fixed P?</summary><div class="ans">Tokens grow 4×, the N×N matrix grows 4² = 16×.</div></details>
+        <details class="check"><summary>3. Parameters of the projection for P = 14, C = 3, D = 1024?</summary><div class="ans">Inputs 14·14·3 = 588. Weights 588·1024 = 602,112, plus 1,024 biases = 603,136.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Patchify, flatten, project: one shared linear layer turns each P×P×3 patch into a D-dimensional token.</li><li>N = (H/P)·(W/P); halving P quadruples N.</li><li>Attention cost scales with N², which is why tokens are patches and not pixels.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.2 ===================== -->
+    <section class="lesson" id="vit" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.2</span><h2>The Vision Transformer</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We now have 196 tokens, each a 768-vector. What must happen to them so that, at the end, one vector can say "this is a golden retriever"? Tokens must exchange information (which patches belong together?), be transformed individually (what does this combination mean?), know where they came from, and finally be summarised in one place.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture 196 people in a room, each holding a card describing one patch of a photo. Nobody sees the whole picture. Each round has two stages. In <b>attention</b> every person looks at all the others, decides whom to listen to, and updates their card with a weighted mix of what they heard. In the <b>MLP</b> every person privately thinks about their updated card. After twelve rounds, an extra person, the <b>class token</b>, who has been listening to everyone all along, announces the answer.</p>
+        <p>Because the people stand in a circle with no seat numbers, the model would not know which patch is top-left. So each card also gets a <b>position embedding</b>: a code for "where I come from".</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>1. Class token.</b> Prepend one extra learned vector <span class="tex">x_{cls}\in\mathbb R^{D}</span>. The sequence is now <i>N</i>+1 = 197 tokens. It starts with no image information; through attention it gathers what it needs, and only its final state is sent to the classifier.</p>
+        <p><b>2. Position embeddings.</b> Add a learned table <span class="tex">E_{pos}\in\mathbb R^{197\times 768}</span> element-wise (151,296 parameters). Without it, attention is blind to order: shuffle the patches and every token's output is unchanged (try the lab below). Learned tables start random and become structured: nearby positions end up with similar codes. Fixed 2-D sinusoidal codes also work. For a new resolution, the 14×14 table is resized by bicubic interpolation.</p>
+        <p><b>3. Encoder block</b> (repeated 12 times in ViT-B). With pre-norm layout:</p>
+        <div class="eq">z'_\ell=z_{\ell-1}+\mathrm{MSA}\big(\mathrm{LN}(z_{\ell-1})\big),\qquad z_\ell=z'_\ell+\mathrm{MLP}\big(\mathrm{LN}(z'_\ell)\big)</div>
+        <p><b>Multi-head self-attention (MSA)</b> splits the 768 dimensions into 12 heads of 64. Each head has its own queries, keys and values, looks at the tokens in its own way, and the 12 results are concatenated and mixed by an output matrix. The <b>MLP</b> is two linear layers with a GELU between: 768 → 3072 → 768 (a 4× expansion). The <b>residual</b> additions keep the signal flowing through 12 blocks.</p>
+        <p><b>4. Head.</b> A final LayerNorm, then the class-token vector (768) goes through a linear layer to the 1000 class scores.</p>
+
+        <div class="worked"><b>Worked example: attention by hand on three tokens</b>
+          <p>Use head size d = 2. Suppose after the projections the three tokens have queries = keys <span class="tex">Q=K=\begin{bmatrix}1&amp;0\\0&amp;1\\1&amp;1\end{bmatrix}</span> and values <span class="tex">V=\begin{bmatrix}1&amp;2\\3&amp;0\\0&amp;4\end{bmatrix}</span>.</p>
+          <p>Token 1 (query (1,0)): scores <span class="tex">q\cdot k_j/\sqrt d</span> with <span class="tex">\sqrt2=1.414</span>: (1·1+0·0)/1.414 = 0.707; (1·0+0·1)/1.414 = 0; (1+0)/1.414 = 0.707. Softmax: e^0.707 = 2.028, e^0 = 1, sum = 5.056, so weights = (0.401, 0.198, 0.401). Output = 0.401·(1,2) + 0.198·(3,0) + 0.401·(0,4) = (0.401+0.593, 0.802+1.604) = <b>(0.994, 2.407)</b>.</p>
+          <p>Token 3 (query (1,1)): scores 0.707, 0.707, 1.414. e^ = 2.028, 2.028, 4.113, sum 8.169, weights (0.248, 0.248, 0.503). Output = (0.248+0.745, 0.496+2.014) = <b>(0.993, 2.510)</b>. The token that matches itself most strongly (score 1.414) gives itself half the weight.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{Attn}(Q,K,V)=\mathrm{softmax}\!\Big(\frac{QK^{\top}}{\sqrt{d}}\Big)V,\qquad Q=ZW_Q,\;K=ZW_K,\;V=ZW_V</div>
+        <table class="sym">
+          <tr><td>Z</td><td>the (N+1)×D token matrix entering the block</td></tr>
+          <tr><td>W_Q, W_K, W_V</td><td>learned D×D matrices (D×64 per head, 12 heads side by side)</td></tr>
+          <tr><td>QKᵀ</td><td>(N+1)×(N+1) table of scores: how strongly token i asks for token j</td></tr>
+          <tr><td>√d</td><td>keeps scores from growing with head size (d = 64 in ViT-B), so softmax does not saturate</td></tr>
+          <tr><td>softmax</td><td>turns each row of scores into weights that are positive and sum to 1</td></tr>
+        </table>
+        <p>For the full maths of attention, including why the scaling is √d, see <a href="math-neural.html#attention-math">the attention-maths lesson</a>; this page is self-contained.</p>
+
+        <h3 class="sec">Shape table and parameter counts, ViT-B/16</h3>
+        <table class="sym">
+          <tr><td>stage</td><td>output shape</td><td>params</td><td>MACs</td></tr>
+          <tr><td>input</td><td>3×224×224</td><td>0</td><td>0</td></tr>
+          <tr><td>patch embedding 16×16 → 768</td><td>196×768</td><td>590,592</td><td>115,605,504</td></tr>
+          <tr><td>+ class token</td><td>197×768</td><td>768</td><td>0</td></tr>
+          <tr><td>+ position embedding</td><td>197×768</td><td>151,296</td><td>0</td></tr>
+          <tr><td>block: MSA (12 heads × 64)</td><td>197×768</td><td>2,362,368</td><td>524,391,936</td></tr>
+          <tr><td>block: MLP 768→3072→768</td><td>197×768</td><td>4,722,432</td><td>929,562,624</td></tr>
+          <tr><td>block: 2 LayerNorms</td><td>197×768</td><td>3,072</td><td>0</td></tr>
+          <tr><td><b>one block</b></td><td>197×768</td><td>7,087,872</td><td>1,453,954,560</td></tr>
+          <tr><td><b>12 blocks</b></td><td>197×768</td><td>85,054,464</td><td>17,447,454,720</td></tr>
+          <tr><td>final LayerNorm</td><td>197×768</td><td>1,536</td><td>0</td></tr>
+          <tr><td>head on class token 768→1000</td><td>1000</td><td>769,000</td><td>768,000</td></tr>
+          <tr><td><b>total</b></td><td></td><td><b>86,567,656 (86.57 M)</b></td><td><b>17.56 G</b></td></tr>
+        </table>
+        <p>Where do the block numbers come from? MSA: four 768×768 matrices (Q, K, V, output) = 4·589,824 = 2,359,296, plus 4·768 biases = 2,362,368. MACs per block, with N = 197 tokens: QKV projections 197·3·768² = 348,585,984; output projection 197·768² = 116,195,328; the two attention products QKᵀ and (weights)·V cost 2·197²·768 = 59,610,624; sum 524,391,936. MLP: 768·3072·2 = 4,718,592 weights + 3,072 + 768 biases = 4,722,432 parameters; MACs 197·4,718,592 = 929,562,624. Note the MLP holds <b>two thirds</b> of every block's parameters and most of its compute at this resolution.</p>
+
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Block diagram, top to bottom: image → patchify+linear → [cls | patches] + position → <b>×12</b> {LN → MSA → add; LN → MLP → add} → LN → class token → linear → logits. Use the visualiser below: click the transformer box to see its sub-layers, change the resolution slider and watch the token count and MACs change, choose other sizes, or edit the text.</p>
+      </div>
+      <div data-lab="archviz" data-preset="vit-b16" data-presets="vit-ti16,vit-s16,vit-b32,vit-b16,vit-l16,hybrid-r50-vit" data-edit data-resolution data-title="ViT blueprint explorer"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: why position embeddings matter</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose <b>none</b> and press Step (or wait): the patches shuffle. The attention output of the selected patch does not change (Δ = 0.000): attention treats tokens as an unordered set.</li>
+        <li>Switch to <b>2-D sinusoidal</b>: now the same shuffle changes the output (Δ &gt; 0): the model can tell where each patch sits. Click a patch to see its code's similarity to every other position: a bump centred on it.</li>
+        <li>Try <b>random</b> (what a learned table looks like before training) and <b>1-D sinusoidal</b>: patches directly above or below each other are far apart in raster order, which is why 2-D codes are preferred.</li></ol></div>
+      <div data-lab="posembed"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>MSA parameter count does not depend on the number of heads</b> (still 4D²): heads split the 768 dimensions, they do not multiply them.</li>
+          <li><b>Position embeddings are added, not concatenated.</b> The sequence width stays 768.</li>
+          <li><b>Attention FLOPs are not the whole cost.</b> At 224×224, the MLP and projections cost about 24 times more than the QKᵀ and ·V products (1.39 G vs 0.059 G per block).</li>
+          <li><b>The class token is optional.</b> Averaging all patch tokens (global average pooling) works as well and many models use it.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Image classification</b>: ViT-B/16 (86.6 M parameters, 17.6 G MACs), ViT-L/16 (304.3 M, 61.6 G), ViT-H/14 (632 M, 167 G). DeiT-S: 22.1 M, 4.6 G; DeiT-Ti: 5.7 M, 1.3 G.</li>
+          <li><b>Backbones of foundation models</b>: CLIP, DINOv2, SAM's image encoder (Module 7), segmentation and depth models all use ViT blocks.</li>
+          <li><b>The same block</b> (attention + MLP + residual + norm) is the block of GPT and BERT; only the tokenizer differs.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why are there 197 tokens in ViT-B/16 at 224×224, and what is the shape of the position table?</summary><div class="ans">196 patches + 1 class token = 197. The table is 197×768 = 151,296 parameters.</div></details>
+        <details class="check"><summary>2. Compute the parameters of one MLP with D = 1024 and hidden size 4096 (ViT-L).</summary><div class="ans">1024·4096·2 = 8,388,608 weights + 4,096 + 1,024 biases = 8,393,728.</div></details>
+        <details class="check"><summary>3. Why divide scores by √d?</summary><div class="ans">A dot product of two d-dimensional vectors with unit-variance entries has variance d. Dividing by √d restores variance 1, so softmax inputs stay in a range where gradients are not vanishing (a saturated softmax is nearly one-hot).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>ViT = patch embedding + class token + position embedding + L × (MSA + MLP with residuals) + head.</li><li>ViT-B/16: 197×768 tokens, 12 blocks, 12 heads × 64, MLP 3072; 86.57 M parameters, 17.56 GMACs.</li><li>Position embeddings are essential: without them attention is permutation-invariant.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.3 ===================== -->
+    <section class="lesson" id="attention-maps" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.3</span><h2>What attention looks at</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A ViT says "dog". Which patches did it use? A CNN can answer with Grad-CAM maps; a transformer carries its own built-in answer, the attention weights. Can we simply plot them, and are they telling the truth?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every token produces one row of attention weights: a distribution over all tokens saying "how much I listened to each". For a chosen patch, colour every patch by that weight and you get a heatmap showing where this patch "looked". Because there are 12 layers × 12 heads = 144 such maps, different heads can specialise: some look at close neighbours (like a small convolution), some look along a row, some look at one salient object wherever the query is.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>One head, one query.</b> Take query patch <i>i</i>. For each key patch <i>j</i> the score is <span class="tex">s_{ij}=q_i\cdot k_j/\sqrt d</span>; the weights are <span class="tex">a_{ij}=\mathrm{softmax}_j(s_{ij})</span>. The weights sum to 1 over the 196 (or 197) keys.</p>
+        <p><b>Temperature.</b> Dividing scores by a temperature τ before softmax controls sharpness: τ small gives almost one-hot (attend to the best match), τ large gives uniform (average everything). The model's scale 1/√d is a fixed τ; the lab lets you change it to see the effect.</p>
+        <div class="worked"><b>Worked example: temperature</b>
+          <p>Scores (2, 1, 0). With τ = 1: e² = 7.389, e¹ = 2.718, e⁰ = 1, sum 11.107 → weights (0.665, 0.245, 0.090). With τ = 0.5 the scores become (4, 2, 0): 54.6, 7.389, 1 → sum 62.99 → (0.867, 0.117, 0.016). With τ = 4: scores (0.5, 0.25, 0): 1.649, 1.284, 1 → sum 3.933 → (0.419, 0.326, 0.254), nearly uniform.</p></div>
+        <p><b>Global vs local.</b> Global attention allows every key. <b>Local</b> attention restricts the keys with a <i>mask</i> (set masked scores to −∞ before softmax, which gives weight 0): a window of M×M tokens, or a radius around the query. Local attention is what Swin uses (next lesson) and it is also a useful way to see how masks change who can talk to whom.</p>
+        <p><b>Attention rollout.</b> One layer's map shows only one step of mixing. Information passes through residual connections too, so a token at layer 3 contains its own earlier state plus attention-mixed information. Rollout models this: replace each layer's attention <i>A</i> by <span class="tex">\hat A=\tfrac12(A+I)</span> (the identity is the residual), and multiply the layers: <span class="tex">R=\hat A_L\cdots\hat A_2\hat A_1</span>. Row <i>i</i> of <i>R</i> estimates how much input patch <i>j</i> contributed to token <i>i</i> at the top.</p>
+        <div class="worked"><b>Worked example: rollout on two tokens, two layers</b>
+          <p>Layer 1: <span class="tex">A_1=\begin{bmatrix}0.6&amp;0.4\\0.2&amp;0.8\end{bmatrix}</span>, layer 2: <span class="tex">A_2=\begin{bmatrix}0.5&amp;0.5\\0.1&amp;0.9\end{bmatrix}</span>. Add residual and renormalise: <span class="tex">\hat A_1=\begin{bmatrix}0.8&amp;0.2\\0.1&amp;0.9\end{bmatrix}</span>, <span class="tex">\hat A_2=\begin{bmatrix}0.75&amp;0.25\\0.05&amp;0.95\end{bmatrix}</span>. Then <span class="tex">R=\hat A_2\hat A_1</span>: row 1 = 0.75·(0.8, 0.2) + 0.25·(0.1, 0.9) = (0.625, 0.375); row 2 = 0.05·(0.8, 0.2) + 0.95·(0.1, 0.9) = (0.135, 0.865). Token 2 at the top is made mostly (86.5%) of input 2 itself: the residual path keeps tokens close to their origin.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">a_{ij}=\frac{\exp(s_{ij}/\tau)\,m_{ij}}{\sum_{k}\exp(s_{ik}/\tau)\,m_{ik}},\qquad \hat A_\ell=\tfrac12(A_\ell+I),\qquad R=\hat A_L\cdots\hat A_1</div>
+        <table class="sym">
+          <tr><td>s_ij</td><td>score between query token i and key token j</td></tr>
+          <tr><td>τ</td><td>temperature (1 in the plain model, the √d is already inside s)</td></tr>
+          <tr><td>m_ij</td><td>mask: 1 if token i may attend to j, else 0 (all ones for global attention)</td></tr>
+          <tr><td>A_ℓ</td><td>attention matrix of layer ℓ averaged over heads</td></tr>
+          <tr><td>R</td><td>rollout matrix; row i = contribution of each input patch to token i</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: click a patch, see where it looks</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Click a patch. Follow the four phases: query, scores, softmax weights, weighted sum (the new colour swatch).</li>
+        <li>Lower the temperature to 0.3: the map collapses onto one or two patches; raise to 3: it spreads out. Weights always sum to 100%.</li>
+        <li>Switch to <b>4 heads side by side</b>: content head (similar colours), local head, row head, saliency head (edges): same query, different behaviour. (These four heads are synthetic stand-ins with hand-set scores, not weights of a trained model.)</li>
+        <li>Set the mask to <b>window 4×4</b>: patches outside the query's window drop to zero. Then pick <b>rollout</b> and raise the layers.</li></ol></div>
+      <div data-lab="attnlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Attention is not explanation.</b> A high weight says the value of that token was mixed in strongly, not that it caused the prediction. Rollout and gradient-based methods (Grad-CAM adapted to ViT, attribution) are less misleading but not exact.</li>
+          <li><b>Raw last-layer attention can look blob-like or focus on background "register" tokens</b>; large ViTs sometimes store global information in a few low-information patches (the motivation of "registers").</li>
+          <li><b>Averaging heads hides specialisation.</b> Look at heads individually.</li>
+          <li><b>Class-token attention</b> (row of the CLS token) is the usual saliency map; patch-to-patch maps answer a different question.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>DINO</b>: the last-layer class-token attention of a self-supervised ViT segments objects without any labels (lesson 5.6).</li>
+          <li><b>Interpretability tools</b>: attention rollout, Attention Flow, Transformer-LRP; debugging shortcut learning (e.g. a model attending to a watermark).</li>
+          <li><b>Efficiency</b>: pruning or merging tokens that receive little attention (token pruning, ToMe).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Scores (3, 1, 1): compute the softmax weights.</summary><div class="ans">e³ = 20.086, e = 2.718 twice, sum 25.522: weights (0.787, 0.107, 0.107).</div></details>
+        <details class="check"><summary>2. Why does a masked score equal −∞ rather than 0?</summary><div class="ans">exp(−∞) = 0, so the key gets weight exactly 0 and the rest renormalise. A score of 0 would still give exp(0) = 1, a large weight.</div></details>
+        <details class="check"><summary>3. Why add the identity when computing rollout?</summary><div class="ans">Each block outputs z + MSA(z); the identity models the residual path, so a token keeps its own information in addition to what attention mixes in.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Each query's attention row is a probability distribution over keys; temperature sets its sharpness.</li><li>Masks turn global attention into windowed or local attention.</li><li>Rollout multiplies (A+I)/2 across layers; attention maps are evidence, not proof, of what the model used.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.4 ===================== -->
+    <section class="lesson" id="hierarchical-vit" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.4</span><h2>Hierarchical transformers (Swin)</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Detection and segmentation need high-resolution feature maps, and CNN backbones provide a pyramid: 56×56, 28×28, 14×14, 7×7. A plain ViT keeps one fixed 14×14 grid of 196 tokens, and its attention cost explodes at higher resolution (lesson 5.1). Can a transformer give a pyramid <i>and</i> linear cost?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Two ideas, both borrowed from how CNNs behave.</p>
+        <p><b>Windows.</b> Instead of every token talking to all others, divide the feature map into non-overlapping windows of M×M tokens, and let tokens talk only inside their window. A neighbourhood is usually what matters (like a convolution's receptive field), and cost drops from <i>N²</i> to <i>N·M²</i>: linear in image size.</p>
+        <p><b>Shifting.</b> Tokens at the edge of a window never hear from the neighbouring window. So in the next block, shift the window grid by half a window: the old borders are now in the middle, so information crosses them. Alternating regular and shifted windows lets information spread across the whole image after a few blocks.</p>
+        <p><b>Merging.</b> To build the pyramid, every few blocks merge each 2×2 group of tokens into one token with twice the channels, exactly like a CNN stage that halves the resolution and doubles the width.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Cost of windows.</b> With N tokens of width C and window side M (M² tokens per window):</p>
+        <div class="eq">\Omega(\mathrm{MSA})=4NC^2+2N^2C,\qquad \Omega(\mathrm{W\text{-}MSA})=4NC^2+2M^2NC</div>
+        <div class="worked"><b>Worked example: Swin-T stage 1</b>
+          <p>The first stage has N = 56·56 = 3,136 tokens, C = 96, M = 7 (M² = 49). The attention products cost 2·N²·C = 2·3,136²·96 = 1,888,223,232 MACs with global attention, but 2·M²·N·C = 2·49·3,136·96 = 29,503,488 with windows: <b>64× cheaper</b> (the ratio N/M² = 3136/49 = 64, which is also the number of windows).</p></div>
+        <p><b>Reach.</b> After one windowed layer a token has heard from M² tokens. After a shifted layer it has heard from every token in each window that its first neighbours' windows touch, roughly a (1.5M)×(1.5M) area; after several layers the whole map. The lab animates this: click a token and compare the blue (layer 1) and orange (layer 2) regions. <i>Implementation note:</i> the real Swin rolls the feature map cyclically so shifted windows keep equal size, and masks tokens that wrapped around; the lab draws the simpler no-wrap version.</p>
+        <p><b>Patch merging.</b> Take every 2×2 group of tokens (4 vectors of size C), concatenate them to one vector of 4C, normalise with LayerNorm, and apply a linear layer 4C → 2C (no bias). Height and width halve, channels double, so the number of numbers halves. From stage 1 to 2: <span class="tex">LN(384)</span> = 768 parameters, linear 384·192 = 73,728; total 74,496 parameters; MACs = 28·28·384·192 = 57,802,752.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{block pair: } \hat z=\text{W-MSA}(\mathrm{LN}(z))+z,\; z'=\mathrm{MLP}(\mathrm{LN}(\hat z))+\hat z;\;\; \hat z'=\text{SW-MSA}(\mathrm{LN}(z'))+z',\; z''=\mathrm{MLP}(\mathrm{LN}(\hat z'))+\hat z'</div>
+        <table class="sym">
+          <tr><td>W-MSA</td><td>multi-head attention inside regular M×M windows</td></tr>
+          <tr><td>SW-MSA</td><td>the same with windows shifted by ⌊M/2⌋ in both directions (cyclic roll + mask)</td></tr>
+          <tr><td>relative position bias</td><td>a learned table B of size (2M−1)² per head added to the scores, <span class="tex">\mathrm{softmax}(QK^\top/\sqrt d+B)V</span>, replaces absolute position embeddings</td></tr>
+          <tr><td>patch merging</td><td>2×2 tokens → concat (4C) → LN → linear 4C→2C</td></tr>
+        </table>
+
+        <h3 class="sec">Shape table, Swin-T (224×224, patch 4, C = 96, M = 7)</h3>
+        <table class="sym">
+          <tr><td>stage</td><td>tokens (H×W)</td><td>width</td><td>blocks, heads</td><td>windows</td><td>params of one block</td></tr>
+          <tr><td>patch embed 4×4</td><td>56×56</td><td>96</td><td>–</td><td>–</td><td>4,896 (4,608 weights + 96 bias + 192 LayerNorm)</td></tr>
+          <tr><td>stage 1</td><td>56×56 = 3,136</td><td>96</td><td>2, 3 heads</td><td>64</td><td>112,347</td></tr>
+          <tr><td>merge</td><td>28×28</td><td>192</td><td>–</td><td>–</td><td>74,496</td></tr>
+          <tr><td>stage 2</td><td>28×28 = 784</td><td>192</td><td>2, 6 heads</td><td>16</td><td>445,878</td></tr>
+          <tr><td>merge → stage 3</td><td>14×14 = 196</td><td>384</td><td>6, 12 heads</td><td>4</td><td>1,776,492</td></tr>
+          <tr><td>merge → stage 4</td><td>7×7 = 49</td><td>768</td><td>2, 24 heads</td><td>1 (global)</td><td>7,091,928</td></tr>
+        </table>
+        <p>Totals with depths (2, 2, 6, 2): <b>28,288,354 parameters (28.3 M) and 4.49 GMACs</b>, matching the published Swin-T (28.3 M, 4.5 G). Depths (2, 2, 18, 2) give Swin-S (49.6 M, 8.7 G); width 128 gives Swin-B (87.8 M). A block's parameters: attention 4C²+4C, relative bias (2M−1)²·heads (= 169·heads), MLP 8C²+5C, two LayerNorms 4C.</p>
+
+        <h3 class="sec">Draw it yourself</h3>
+        <p>image 3×224×224 → patch 4×4 + linear → 56×56×96 → [2 Swin blocks] → merge → 28×28×192 → [2 blocks] → merge → 14×14×384 → [6 blocks] → merge → 7×7×768 → [2 blocks] → global average pool → linear 1000. The four stage outputs are the feature pyramid used by detection and segmentation heads (strides 4, 8, 16, 32). Worked count: stage-1 MLP, 96·384 + 384 + 384·96 + 96 = 74,208 parameters.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: windows, shifted windows and reach</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the loop: regular windows → grid shifts by half a window → shifted windows → reach. The blue box is what the marked token has seen after layer 1; the orange region is after layer 2.</li>
+        <li>Click another token, a corner one: the shifted partition gives it a smaller window. Compare reach counts.</li>
+        <li>Change the grid to 16×16 and see the pair counts: global N² versus windowed N·M².</li></ol></div>
+      <div data-lab="swinwin"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the Swin pyramid and patch merging</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Follow four tokens as they join, stack to 4C and squeeze to 2C.</li>
+        <li>Switch to Swin-S or Swin-B and check the totals. Then raise the input resolution to 896: parameters stay the same, MACs grow about linearly with area (16×), while global attention at stage 1 would grow ~256×.</li></ol></div>
+      <div data-lab="swinstages"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Window attention does not make the model local forever.</b> Shifting plus merging (the last stage covers the full 7×7 map) restores global reach.</li>
+          <li><b>The cyclic shift is a trick, not a copy</b>: it keeps all windows the same size for efficient batching, at the price of masks for wrapped-around tokens.</li>
+          <li><b>Linear cost holds only for fixed M.</b> If M grew with the image you would be back to global attention.</li>
+          <li><b>Merging halves resolution but the pyramid is learned</b>: unlike pooling, the 4C → 2C linear layer decides what to keep.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Detection and segmentation backbones</b>: Swin plugs into Mask R-CNN, UPerNet and Mask2Former wherever a ResNet did (Modules 6 and 7).</li>
+          <li><b>Swin V2, SwinUNETR (medical 3-D)</b>, and window-attention in <b>SAM's image encoder</b> (mostly windowed blocks with a few global ones).</li>
+          <li><b>Hierarchical designs</b> beyond Swin: PVT, MViT (video), Hiera, and ConvNeXt (the CNN that copied the macro design).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 112×112 feature map with M = 7: how many windows, and how many tokens per window?</summary><div class="ans">112/7 = 16, so 16² = 256 windows of 49 tokens each.</div></details>
+        <details class="check"><summary>2. Windowed attention at N = 12,544 tokens, C = 96, M = 7: attention-product MACs?</summary><div class="ans">2·49·12,544·96 = 118,013,952 ≈ 0.118 G, versus global 2·12,544²·96 = 30,211,571,712 ≈ 30.2 G: a factor N/M² = 12,544/49 = 256.</div></details>
+        <details class="check"><summary>3. Parameters of the 4C → 2C merging linear layer at C = 192?</summary><div class="ans">LayerNorm on 768 values: 1,536 parameters; linear 768·384 = 294,912 (no bias). Total 296,448.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Window attention makes cost linear in tokens (2M²NC); shifting windows lets information cross borders.</li><li>Patch merging halves H,W and doubles C, producing a CNN-style feature pyramid.</li><li>Swin-T: 28.3 M parameters, 4.5 GMACs, stages 56²·96 → 28²·192 → 14²·384 → 7²·768.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.5 ===================== -->
+    <section class="lesson" id="cnn-vs-vit" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.5</span><h2>CNNs vs ViTs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You must choose a backbone for a new product. A ResNet needs less data and runs on a phone. A ViT beats it when pre-trained on enormous data. Why do they behave so differently, and when is each the right tool?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A model starts life with assumptions, its <b>inductive bias</b>. A CNN assumes: <i>meaning is local</i> (3×3 neighbourhoods) and <i>the same pattern means the same thing everywhere</i> (weights are shared across positions, so shifting the image shifts the features). These are true for images, so a CNN learns quickly from little data. A ViT assumes almost nothing: every patch may talk to every other, and position is just a learned code. It must <i>discover</i> locality and translation behaviour from data. With little data it overfits or learns slowly; with huge data its flexibility pays off.</p>
+        <p>An analogy: a CNN is a student given a textbook with the rules of geometry; a ViT is a student given a library and a lot of time.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Receptive field.</b> One 3×3 convolution layer sees 3×3; each extra layer adds 2 pixels per side: after L layers the field is (2L+1)×(2L+1). To see a whole 224-image a plain stack needs ~112 layers; pooling and strides shorten that. One self-attention layer sees <i>all</i> tokens at once. The lab below grows each model layer by layer.</p>
+        <p><b>Data hunger and DeiT.</b> The original ViT trained on ImageNet-1k alone underperformed comparable ResNets; it surpassed them when pre-trained on ImageNet-21k or JFT-300M (hundreds of millions of images). <b>DeiT</b> showed that the same ViT-B reaches 81.8% top-1 on ImageNet-1k from scratch with a strong training recipe (RandAugment, Mixup, CutMix, random erasing, stochastic depth, long schedule), and about 83.4% with a <b>distillation token</b> trained to imitate a CNN teacher: the teacher passes on locality bias through its labels.</p>
+        <p><b>Hybrids.</b> Put a convolutional stem in front of a transformer: the CNN extracts local features at stride 16 (here, a ResNet-50 up to stage 3 gives a 14×14×1024 map), then each <i>position</i> is a token (a 1×1 "patch" projection: 1024 → 768). You get locality early and global reasoning late, with similar token counts. Modern designs go further: ConvNeXt modernises the CNN with transformer recipes (7×7 depthwise kernels, LayerNorm, GELU, inverted bottleneck, patchify stem) and matches Swin.</p>
+        <div class="worked"><b>Worked example: the cost of the hybrid</b>
+          <p>The visualiser's hybrid (ResNet-50 stages 1–3 + ViT-B encoder) has 95.31 M parameters and 20.88 GMACs at 224×224, with the same 196 tokens as ViT-B/16 (17.56 G): the convolutional stem adds about 3.3 G. Now double the image side for a plain ViT-B/16 at 448×448: N = 784 tokens. Per block 12·784·768² = 5.55 G plus attention 2·784²·768 = 0.94 G gives 6.49 G; times 12 blocks = 77.9 G, plus 0.46 G for the patch embedding: about <b>78.4 G, 4.5× the 224 cost</b> (four times the tokens, a little extra from the N² term).</p></div>
+        <p><b>Compute scaling.</b> Per-image cost of a CNN is linear in the number of pixels; global-attention ViT is quadratic in tokens, linear only until N ≈ 6D. Memory for attention matrices is N² per head per layer, which is why long-token inputs need windowing, FlashAttention (computes attention in tiles without storing N²), or hierarchical designs. In practice on accelerators, ViTs often achieve higher throughput than CNNs of equal accuracy because they are large dense matrix multiplications.</p>
+
+        <table class="sym">
+          <tr><td>model (ImageNet-1k, 224²)</td><td>params</td><td>MACs</td><td>top-1 (published)</td></tr>
+          <tr><td>ResNet-50 (torchvision, improved recipe)</td><td>25.6 M</td><td>4.1 G</td><td>≈ 80.9% (original recipe 76.1%)</td></tr>
+          <tr><td>DeiT-S</td><td>22.1 M</td><td>4.6 G</td><td>79.8%</td></tr>
+          <tr><td>DeiT-B</td><td>86.6 M</td><td>17.6 G</td><td>81.8%</td></tr>
+          <tr><td>Swin-T</td><td>28.3 M</td><td>4.5 G</td><td>81.3%</td></tr>
+          <tr><td>ConvNeXt-T</td><td>28.6 M</td><td>4.5 G</td><td>82.1%</td></tr>
+        </table>
+        <p>The lesson of the table: with a good recipe the architectures are close; the training recipe and pre-training data matter as much as the block type.</p>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: how far does one token see?</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch depth grow from 1 to 8 layers. The CNN's square grows by one ring per layer; the windowed model jumps in steps as windows shift; the ViT sees everything after layer 1.</li>
+        <li>Click a corner token. The CNN's field is clipped by the border, the ViT's is not.</li></ol></div>
+      <div data-lab="rfgrowth"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>In the explorer pick <b>hybrid-r50-vit</b>: find where the image becomes 196 tokens (the patch 1×1 projection on 14×14×1024).</li>
+        <li>Move the resolution slider to 448 on ViT-B/16 and on the hybrid and compare MAC growth.</li></ol></div>
+      <div data-lab="archviz" data-preset="hybrid-r50-vit" data-presets="resnet50,vit-b16,hybrid-r50-vit,vit-s16" data-resolution data-title="CNN, ViT and hybrid side by side"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"ViT is better" depends on data and recipe.</b> On small datasets (tens of thousands of images) a CNN or a hybrid usually wins unless you start from a pre-trained ViT.</li>
+          <li><b>MACs are not latency.</b> Memory traffic, kernel launch overhead, resolution and hardware change the ranking; always measure on the target device.</li>
+          <li><b>Parameters are not compute.</b> ViT-B/32 has about the same parameters as ViT-B/16 (88.2 M vs 86.6 M) but a quarter of the compute (4.4 G vs 17.6 G).</li>
+          <li><b>Fine-tuning at a higher resolution</b> needs position-embedding interpolation, and token count grows with it.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Choosing backbones</b>: mobile/edge → MobileNet, EfficientNet, small hybrids; accuracy at scale → ViT/Swin/ConvNeXt; dense prediction → hierarchical (Swin, ConvNeXt).</li>
+          <li><b>Transfer learning</b>: ImageNet-21k or CLIP pre-trained ViTs are the default starting point for fine-tuning.</li>
+          <li><b>Efficient attention</b>: FlashAttention, windowing and token merging address the N² cost.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What are the two inductive biases of a convolution?</summary><div class="ans">Locality (each output depends on a small neighbourhood) and weight sharing / translation equivariance (the same filter is used at every position).</div></details>
+        <details class="check"><summary>2. Receptive field of 5 stacked 3×3 stride-1 convolutions?</summary><div class="ans">2·5+1 = 11, so 11×11 pixels.</div></details>
+        <details class="check"><summary>3. Why does DeiT's distillation token help a data-hungry model?</summary><div class="ans">It adds a second training signal: it learns from the soft predictions of a CNN teacher, which carry the CNN's locality bias, so the ViT needs less data to learn it.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>CNNs build in locality and weight sharing: data-efficient; ViTs learn them: flexible, data-hungry.</li><li>Training recipe (DeiT) and hybrids close the gap; ConvNeXt shows convolution still competes.</li><li>Global attention costs N²: windowing, hierarchies and FlashAttention manage it.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.6 ===================== -->
+    <section class="lesson" id="self-supervised-vision" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.6</span><h2>Learning without labels</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Labelling images is slow and expensive; the internet has billions of unlabelled ones. Can a network learn useful visual features from the images alone, and what task do we invent so that "solving it" forces the network to understand pictures?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Self-supervised learning invents a <b>pretext task</b> whose answer is hidden inside the data. Three families dominate.</p>
+        <ul>
+          <li><b>Contrastive</b> (SimCLR, MoCo): "two different views of the same photo should give similar vectors; views of different photos should not". Like recognising a friend in two different photos.</li>
+          <li><b>Masked reconstruction</b> (MAE): "hide most of the picture and paint it back". To fill the hole the network must learn what objects and textures are like, as when you complete a jigsaw with 75% of the pieces missing.</li>
+          <li><b>Self-distillation</b> (DINO): "a student must predict what a slowly-moving copy of itself (the teacher) says about a bigger view of the same image". No negatives needed.</li>
+        </ul>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Contrastive: SimCLR.</b> Take an image, make two random augmentations (crop, flip, colour jitter, blur), encode both, normalise the vectors <i>u</i>, <i>v</i> to unit length. The <b>InfoNCE</b> (NT-Xent) loss for a batch of N images pulls the matching pair together and pushes the other N−1 away. In the lab below use <b>simclr</b> mode; the full worked loss is computed in lesson 5.7, and the maths is the same. MoCo keeps a queue of past embeddings from a slowly moving (EMA) encoder as extra negatives, so large batches are unnecessary.</p>
+        <p><b>Masked autoencoder.</b> Cut the image into patches (14×14 = 196). Mask <b>75%</b> at random, leaving 49 visible. The <b>encoder</b> (a ViT-B) processes <i>only the 49 visible tokens</i> (no mask tokens inside it). Then a light <b>decoder</b> (8 blocks, width 512) receives the encoded tokens plus a shared learned <b>mask token</b> in every hidden position, with position embeddings so it knows where each goes, and predicts the pixels (normalised per patch) of each masked patch. The loss is mean squared error on <b>masked patches only</b>. After pre-training the decoder is thrown away; the encoder is fine-tuned on the real task.</p>
+        <div class="worked"><b>Worked example: why 75% is a bargain</b>
+          <p>N = 196 patches, mask 75% → visible N<sub>v</sub> = 49. Encoder linear layers scale with tokens: 49/196 = <b>1/4</b> of the cost. Attention pair count scales with tokens²: 49² = 2,401 versus 196² = 38,416, i.e. <b>1/16</b>. So pre-training the encoder is roughly 3–4× faster than running it on all patches, and the task is also harder (a high mask ratio prevents trivial copying from neighbours: images are redundant, text is not, which is why BERT masks only 15%). Each target patch is 16·16·3 = 768 numbers.</p></div>
+        <p><b>Self-distillation: DINO.</b> Two networks with the same architecture: a student (trained by gradient) and a teacher (an exponential moving average of the student, <span class="tex">\theta_t\leftarrow m\theta_t+(1-m)\theta_s</span>, m ≈ 0.996–1). The teacher sees two large "global" crops, the student sees all crops (also small "local" ones). The student matches the teacher's output distribution over K pseudo-classes. Collapse (all outputs identical) is avoided by <b>centering</b> the teacher's output (subtract a running mean) and <b>sharpening</b> it (low temperature).</p>
+        <div class="worked"><b>Worked example: the DINO loss on three outputs</b>
+          <p>Teacher logits after centering (1.0, 0.5, 0.0) with temperature 0.1: scaled (10, 5, 0), softmax = (0.9933, 0.0067, 0.00005). Student logits (0.8, 0.6, 0.1) with temperature 0.1: scaled (8, 6, 1); e^8 = 2981, e^6 = 403.4, e = 2.718, sum 3387 → (0.8801, 0.1191, 0.0008). Cross-entropy <span class="tex">H(p_t,p_s)=-\sum_k p_{t,k}\ln p_{s,k}</span> = 0.9933·0.1278 + 0.0067·2.128 + 0.00005·7.13 ≈ <b>0.141</b>. The sharpened teacher is nearly one-hot, so the student is pushed to put its mass on class 1.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L_{\text{InfoNCE}}=-\frac1N\sum_{i=1}^{N}\log\frac{\exp(u_i\!\cdot\!v_i/\tau)}{\sum_{j=1}^{N}\exp(u_i\!\cdot\!v_j/\tau)},\qquad \mathcal L_{\text{MAE}}=\frac1{|\mathcal M|}\sum_{p\in\mathcal M}\|\hat x_p-x_p\|^2</div>
+        <table class="sym">
+          <tr><td>u_i, v_i</td><td>unit-length embeddings of two views of image i (positive pair)</td></tr>
+          <tr><td>u_i·v_j</td><td>cosine similarity of view 1 of image i and view 2 of image j (negatives when j ≠ i)</td></tr>
+          <tr><td>τ</td><td>temperature; small τ focuses on the hardest negatives</td></tr>
+          <tr><td>𝓜</td><td>the set of masked patches</td></tr>
+          <tr><td>x̂_p, x_p</td><td>predicted and true (normalised) pixels of patch p</td></tr>
+        </table>
+
+        <h3 class="sec">Shape table: MAE with ViT-B/16, 224×224</h3>
+        <table class="sym">
+          <tr><td>stage</td><td>tokens × width</td></tr>
+          <tr><td>patchify</td><td>196 × 768</td></tr>
+          <tr><td>random mask 75%, keep</td><td>49 × 768 (+ position embeddings)</td></tr>
+          <tr><td>encoder: 12 blocks (12 heads, MLP 3072)</td><td>49 × 768</td></tr>
+          <tr><td>linear 768 → 512, insert 147 mask tokens, add positions</td><td>196 × 512</td></tr>
+          <tr><td>decoder: 8 blocks (16 heads, MLP 2048)</td><td>196 × 512</td></tr>
+          <tr><td>linear 512 → 768 (= 16·16·3 pixels)</td><td>196 × 768, loss on 147 masked</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: masked autoencoder</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the six steps: mask → keep visible patches → compact encoder sequence → insert mask tokens → decoder paints → compare.</li>
+        <li>Slide the mask ratio from 25% to 90%: the visible count, encoder cost ratios and the reconstruction error (MSE on masked patches) change. The lab's "decoder" is a simple neighbour-average stand-in, not a trained network: it shows why more masking means more error and why a learned model must understand structure.</li>
+        <li>Use <b>re-roll</b> for a different random mask.</li></ol></div>
+      <div data-lab="mae"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: contrastive pairs (SimCLR-style)</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Step or let it train: points on the sphere are embeddings of two views of 3 images. Matching views are pulled together, non-matching pushed apart; the loss falls.</li>
+        <li>Lower τ: the loss concentrates on the hardest negative (largest off-diagonal).</li></ol></div>
+      <div data-lab="clip" data-mode="simclr"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Collapse.</b> Without negatives (DINO, BYOL) or without enough augmentation, the trivial solution (output a constant) gives zero loss. Centering, sharpening, the EMA teacher or negatives prevent it.</li>
+          <li><b>Augmentations define what is learned.</b> Colour jitter makes features colour-invariant; if colour matters for your task, that is harmful.</li>
+          <li><b>MAE needs fine-tuning.</b> Its raw features are good for reconstruction; linear-probe accuracy is lower than contrastive methods but fine-tuned accuracy is higher (ViT-L: 85.9%, ViT-H: 86.9% on ImageNet-1k).</li>
+          <li><b>Batch size matters for SimCLR</b> (thousands) because negatives come from the batch.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Foundation backbones</b>: DINOv2 features are used off-the-shelf for retrieval, segmentation and depth; MAE pre-training for ViT backbones and for video (VideoMAE).</li>
+          <li><b>Domains with few labels</b>: medical, satellite and industrial imagery use self-supervised pre-training then fine-tune on a few labelled examples.</li>
+          <li><b>Language–vision</b>: CLIP (next lesson) is contrastive learning between images and text.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With mask ratio 90% on 196 patches, how many tokens does the MAE encoder see?</summary><div class="ans">0.1·196 = 19.6, rounded to 20 tokens (176 are masked, the real MAE rounds the count of kept tokens).</div></details>
+        <details class="check"><summary>2. Why does the MAE decoder receive mask tokens but the encoder does not?</summary><div class="ans">Encoder without mask tokens saves compute (it only runs on visible patches) and avoids a train/test mismatch (at fine-tuning no patch is masked). The decoder needs a slot for each missing patch to predict into.</div></details>
+        <details class="check"><summary>3. In DINO, what happens to the loss if the teacher outputs a uniform distribution for everything?</summary><div class="ans">The student can match it by also outputting a constant: loss is minimised trivially with no useful features. Sharpening (low temperature) prevents the uniform collapse; centering prevents the one-class collapse.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Self-supervision invents a task from the data: contrast views, reconstruct masked patches, or match a teacher.</li><li>MAE: mask 75%, encode the 25% visible (49 of 196), decode with mask tokens, loss on masked patches only.</li><li>Preventing collapse (negatives, centering and sharpening, masking) is the central design problem.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.7 ===================== -->
+    <section class="lesson" id="clip-multimodal" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.7</span><h2>Vision–language models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A classifier trained on 1000 ImageNet classes can never recognise the 1001st. Could a model understand <i>"a photo of a red bicycle leaning on a wall"</i> without ever being trained on a "red bicycle" label? Where would that flexibility come from?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The internet is full of images with captions. Suppose one network turns an image into a vector and another turns a sentence into a vector, and we train them so that <b>an image and its own caption land close together and unrelated pairs land far apart</b>. Now the vector space is shared by pictures and words: a new class is just a new sentence. To classify a photo, write a sentence per candidate label ("a photo of a dog", "a photo of a car"), embed them and pick the closest. This is <b>zero-shot classification</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>CLIP dual encoder.</b> An <b>image encoder</b> (a ViT, for example ViT-B/16, or a ResNet) and a <b>text encoder</b> (a transformer) each produce a vector, projected to a common dimension (512 for ViT-B/16) and normalised to unit length. So all embeddings lie on a sphere, and similarity is the cosine, a dot product in [−1, 1].</p>
+        <p><b>Contrastive training.</b> Take a batch of N image–text pairs. Compute the N×N matrix of similarities <span class="tex">S_{ij}=u_i\cdot v_j</span> (image i, text j); the correct matches are on the diagonal. Divide by a temperature τ (CLIP learns it; the final value is about 0.01, i.e. logits scaled by 100), apply softmax <i>across each row</i> (which text matches image i?) and <i>across each column</i> (which image matches text j?), and take the cross-entropy against the diagonal.</p>
+        <div class="worked"><b>Worked example: the loss on a 3×3 batch, by hand</b>
+          <p>Cosine similarities (rows = images 1–3, columns = texts 1–3):</p>
+          <div class="eq">S=\begin{bmatrix}0.9&amp;0.2&amp;0.1\\0.3&amp;0.8&amp;0.2\\0.1&amp;0.4&amp;0.7\end{bmatrix},\quad \tau=0.2\;\Rightarrow\; S/\tau=\begin{bmatrix}4.5&amp;1&amp;0.5\\1.5&amp;4&amp;1\\0.5&amp;2&amp;3.5\end{bmatrix}</div>
+          <p><b>Row 1:</b> e^4.5 = 90.02, e^1 = 2.718, e^0.5 = 1.649, sum 94.38. p<sub>11</sub> = 90.02/94.38 = 0.9537, loss = −ln 0.9537 = 0.0474.</p>
+          <p><b>Row 2:</b> e^1.5 = 4.482, e^4 = 54.60, e^1 = 2.718, sum 61.80. p<sub>22</sub> = 0.8835, loss 0.1239. <b>Row 3:</b> e^0.5 = 1.649, e² = 7.389, e^3.5 = 33.12, sum 42.16. p<sub>33</sub> = 0.7856, loss 0.2413.</p>
+          <p>Image→text loss = (0.0474 + 0.1239 + 0.2413)/3 = <b>0.1375</b>.</p>
+          <p><b>Columns</b> (softmax down each column): column 1 (4.5, 1.5, 0.5): 90.02 + 4.482 + 1.649 = 96.15, p<sub>11</sub> = 0.9362, loss 0.0659. Column 2 (1, 4, 2): 2.718+54.60+7.389 = 64.71, p<sub>22</sub> = 0.8438, loss 0.1698. Column 3 (0.5, 1, 3.5): 1.649+2.718+33.12 = 37.49, p<sub>33</sub> = 0.8835, loss 0.1239. Text→image loss = (0.0659+0.1698+0.1239)/3 = <b>0.1199</b>.</p>
+          <p>CLIP loss = average of the two = <b>0.1287</b>. If τ were 1, the logits would be nearly equal and the loss ≈ ln 3 = 1.10: a small temperature is what makes the matrix "peaky".</p></div>
+        <p><b>Zero-shot classification.</b> Embed the image: <i>u</i>. Embed one prompt per class, "a photo of a {class}": <i>v₁…v<sub>K</sub></i>. Probabilities = <span class="tex">\mathrm{softmax}_k(u\cdot v_k/\tau)</span>. No classifier is trained; the prompts are the classifier. Prompt wording matters ("a photo of a …" works better than a bare word), and averaging several templates helps.</p>
+        <div class="worked"><b>Worked example: zero-shot</b>
+          <p>Image cosines with prompts (cat, dog, car): (0.30, 0.27, 0.10), τ = 0.01 → logits (30, 27, 10). Relative to the first logit the exponentials are (1, e<sup>−3</sup> = 0.0498, e<sup>−20</sup> ≈ 2·10⁻⁹), sum 1.0498, so the probabilities are (0.953, 0.047, ≈ 0). A 0.03 difference in cosine is a 95% vs 5% decision, because of the 100× scale.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L=\tfrac12\Big[\underbrace{-\tfrac1N\sum_i\log\tfrac{e^{S_{ii}/\tau}}{\sum_j e^{S_{ij}/\tau}}}_{\text{image}\to\text{text}}\;\underbrace{-\tfrac1N\sum_j\log\tfrac{e^{S_{jj}/\tau}}{\sum_i e^{S_{ij}/\tau}}}_{\text{text}\to\text{image}}\Big],\quad S_{ij}=\frac{f(x_i)}{\|f(x_i)\|}\cdot\frac{g(t_j)}{\|g(t_j)\|}</div>
+        <table class="sym">
+          <tr><td>f, g</td><td>image encoder (ViT) and text encoder (transformer)</td></tr>
+          <tr><td>x_i, t_j</td><td>image i and caption j in the batch</td></tr>
+          <tr><td>S</td><td>N×N cosine-similarity matrix; diagonal = true pairs</td></tr>
+          <tr><td>τ</td><td>learned temperature (≈ 0.01 at the end of training)</td></tr>
+          <tr><td>N</td><td>batch size (32,768 in CLIP: ≈ 1 billion entries in S)</td></tr>
+        </table>
+
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Image → ViT-B/16 (197×768) → class-token (768) → linear to 512 → L2-normalise → <b>u</b>. Text → tokens (≤ 77) → transformer (12 layers, width 512, 8 heads) → end-token vector → linear to 512 → L2-normalise → <b>v</b>. Then <b>u·vᵀ / τ</b>. Parameters of CLIP ViT-B/16: roughly 150 M in total (about 86 M image tower, 63 M text tower, plus projections). Use the explorer to see the image tower:</p>
+      </div>
+      <div data-lab="archviz" data-preset="vit-b16" data-presets="vit-b16,vit-b32,vit-l16" data-title="CLIP image tower (ViT) — the projection to 512 sits on top of the class token"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the shared embedding sphere, the matrix and zero-shot</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In <b>contrastive training</b> mode, press play: images (circles) and texts (squares) start scattered; the loss gradient pulls true pairs together. Watch the 3×3 matrix become diagonal, the loss fall.</li>
+        <li>Change the matches (image i ↔ text j) mid-training: the points now have to rearrange; the matrix follows.</li>
+        <li>Lower and raise τ: small τ makes the softmax peaky; large τ makes all rows near uniform and the loss ≈ ln 3 = 1.10.</li>
+        <li>Switch to <b>zero-shot</b>: an image travels over the sphere, and probabilities over four prompts update. Try the ambiguous image between cat and dog.</li></ol></div>
+      <div data-lab="clip"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Zero-shot is not magic.</b> It inherits the biases and gaps of web captions; fine-grained and counting tasks are weak; prompt wording changes accuracy by several points.</li>
+          <li><b>Diagonal ≠ the only truth.</b> Other pairs in a batch may also be valid matches (two cat photos); contrastive loss treats them as negatives.</li>
+          <li><b>Cosine, not dot product of raw vectors.</b> Embeddings are normalised; otherwise vector length, not direction, would dominate.</li>
+          <li><b>τ is a learned parameter</b> (log-parametrised and clipped); too low a value early in training gives unstable gradients.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Zero-shot classification and image search</b>: type a sentence, retrieve images (text→image retrieval); reverse image search; dataset filtering (LAION was filtered with CLIP scores).</li>
+          <li><b>Vision-language models</b>: LLaVA-style models feed a CLIP/SigLIP ViT's tokens into a language model; SigLIP replaces the softmax with a per-pair sigmoid loss.</li>
+          <li><b>Generative conditioning</b>: Stable Diffusion conditions its U-Net on a CLIP text encoder's tokens; DALL·E 2 generates CLIP image embeddings (Module 8).</li>
+          <li><b>Open-vocabulary detection and segmentation</b>: OWL-ViT, CLIPSeg, Grounding DINO label arbitrary words.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A batch of N = 256 pairs: how many entries are in S, and how many are positives?</summary><div class="ans">256² = 65,536 entries, 256 positives (diagonal), 65,280 negatives.</div></details>
+        <details class="check"><summary>2. Logits (2, 0, 0) with τ = 1: probability of the first class? With τ = 0.5?</summary><div class="ans">τ = 1: e²/(e²+2) = 7.389/9.389 = 0.787. τ = 0.5: logits (4, 0, 0): 54.6/56.6 = 0.965.</div></details>
+        <details class="check"><summary>3. Why does CLIP compute the loss in both directions?</summary><div class="ans">Row softmax teaches "which text for this image" (used in zero-shot classification), column softmax teaches "which image for this text" (retrieval). Using both is symmetric and uses each pair in two ways.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Two encoders map images and text to one unit-sphere space; a true pair should be near.</li><li>The loss is cross-entropy on N×N similarities / τ, in both directions; the hand-worked 3×3 example gives 0.1287.</li><li>Zero-shot: the prompts are the classifier, probabilities = softmax(cosine/τ).</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin:30px 0"><b>Module complete.</b> You can now draw ViT-B/16 (197×768, 12 blocks, 86.57 M parameters), explain Swin's windows and merging, and compute a CLIP loss by hand. Next: <a href="cv-detection.html">Module 6 · Object detection</a>, where these backbones are put to work finding objects.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

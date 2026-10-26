@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · Statistics · Mathematics for AI</title>
+<meta name="description" content="Estimation, maximum likelihood, priors and regularization, bias–variance, confidence intervals, hypothesis tests, cross-validation and the bootstrap — learning from data, built from intuition.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-math.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-math.js"></script>
+<script defer src="assets/labs-statistics.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="math" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="mathematics.html">Mathematics for AI</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · Statistics</h1>
+        <p>Probability asks: <i>given the world, what data will I see?</i> Statistics turns it around: <i>given the data, what can I say about the world?</i> That reversal is the whole of machine learning. By the end you will know why training a network means maximising a likelihood, why weight decay is a belief about the weights, why a model can be too flexible, and how to report a result without fooling yourself.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs: Module 3 (probability)</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 4.1 ===================== -->
+    <section class="lesson" id="estimation-mle" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.1</span><h2>Estimation &amp; maximum likelihood</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A coin is tossed 10 times and lands heads 7 times. What is its true probability of heads? You will never know for certain — but one number is a more <i>reasonable</i> answer than the others. Which, and what does "reasonable" mean precisely? The same question, scaled up, is "which weights should my network have, given this training set?"</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>In Module 3 the coin was <i>known</i>: "heads has probability 0.5", and you asked what data it would produce. Real life is the reverse. The data are in your hands; the coin's bias is hidden. We need a way to run probability <b>backwards</b>.</p>
+        <p>Two words to separate before anything else:</p>
+        <ul>
+          <li>A <b>parameter</b> is a fixed but unknown property of the world — the coin's true bias <span class="tex">p</span>, the true average height <span class="tex">\mu</span> of a population, the ideal weights <span class="tex">\theta</span> of a model. It does not change from sample to sample.</li>
+          <li>An <b>estimator</b> is a recipe that turns data into a guess of the parameter, and the number it returns is an <b>estimate</b>, written with a hat: <span class="tex">\hat p</span> ("p-hat"). A different sample gives a different estimate, so <i>the estimate is itself random</i> while the parameter is not. Keep that sentence in mind; all of the lesson 4.4 grows out of it.</li>
+        </ul>
+        <p>Now the key idea. Suppose I <i>propose</i> a value for the bias, say <span class="tex">p=0.9</span>, and ask: "if the coin really were like that, how probable was it that I would see exactly the data I saw?" For 7 heads out of 10 that probability is low. For <span class="tex">p=0.7</span> it is much higher. For <span class="tex">p=0.1</span> it is nearly hopeless. We prefer the story that makes our observation <b>least surprising</b>. That preference, made precise, is <b>maximum likelihood</b>. A detective does the same: among all suspects, favour the one under whom the evidence is most probable.</p>
+
+        <h3 class="sec">Build it up: the likelihood of a coin</h3>
+        <p>Say the flips are independent and each lands heads with probability <span class="tex">p</span>. The probability of one particular sequence is the product of the probabilities of each flip: <span class="tex">p</span> for every head, <span class="tex">1-p</span> for every tail. With <span class="tex">h</span> heads and <span class="tex">t</span> tails (total <span class="tex">n=h+t</span>):</p>
+        <div class="eq">L(p)=p^{h}(1-p)^{t}</div>
+        <p>This is the <b>likelihood function</b>. Read it carefully: the data (<span class="tex">h,t</span>) are now <i>fixed numbers</i> and the thing that varies is the parameter <span class="tex">p</span>. The formula is the same as a probability, but we look at it as a function of the <i>hypothesis</i>, not of the data. It is not a probability distribution over <span class="tex">p</span> (it need not add up to 1); it only ranks candidates.</p>
+        <div class="worked"><b>Worked example — 7 heads, 3 tails</b>
+          <p><span class="tex">L(p)=p^7(1-p)^3</span>. Try three candidates:</p>
+          <p><span class="tex">p=0.5:\ 0.5^{10}=0.000977</span></p>
+          <p><span class="tex">p=0.7:\ 0.7^7\cdot0.3^3=0.0823543\times0.027=0.002224</span></p>
+          <p><span class="tex">p=0.9:\ 0.9^7\cdot0.1^3=0.4782969\times0.001=0.000478</span></p>
+          <p>So <span class="tex">p=0.7</span> makes our data 2.3× more probable than a fair coin and about 4.6× more probable than <span class="tex">p=0.9</span>. Is 0.7 the very best? Calculus will tell us.</p></div>
+        <p><b>Switch to logarithms.</b> A product of many small numbers underflows on a computer (a product of 1000 probabilities of 0.5 is about <span class="tex">10^{-301}</span>) and is awkward to differentiate. The logarithm is <i>increasing</i>, so the <span class="tex">p</span> that maximises <span class="tex">L</span> also maximises <span class="tex">\ln L</span>, and it turns products into sums (Module 0):</p>
+        <div class="eq">\ell(p)=\ln L(p)=h\ln p+t\ln(1-p)</div>
+        <p>Now differentiate and set to zero, as in any maximisation problem (Module 2):</p>
+        <div class="eq">\ell'(p)=\frac{h}{p}-\frac{t}{1-p}=0\;\Longrightarrow\;h(1-p)=t\,p\;\Longrightarrow\;h=(h+t)\,p\;\Longrightarrow\;\hat p=\frac{h}{n}</div>
+        <p>The second derivative <span class="tex">\ell''(p)=-h/p^2-t/(1-p)^2</span> is negative everywhere on <span class="tex">(0,1)</span>, so this stationary point is a maximum, not a minimum. For our coin, <span class="tex">\hat p=7/10</span>. The maximum-likelihood answer to "what fraction of heads?" is simply the observed fraction — a reassuring sanity check, and a typical result: MLE often gives the answer you would have guessed, now with a <i>reason</i>.</p>
+
+        <h3 class="sec">Build it up: a Gaussian mean, and where least squares comes from</h3>
+        <p>Suppose data <span class="tex">x_1,\dots,x_n</span> are independent draws from a Gaussian with unknown mean <span class="tex">\mu</span> and known standard deviation <span class="tex">\sigma</span>. Each point has density <span class="tex">\frac{1}{\sqrt{2\pi\sigma^2}}e^{-(x_i-\mu)^2/(2\sigma^2)}</span>. Independence means the likelihood is the product, and the log-likelihood the sum:</p>
+        <div class="eq">\ell(\mu)=\sum_{i=1}^{n}\Big[-\tfrac12\ln(2\pi\sigma^2)-\frac{(x_i-\mu)^2}{2\sigma^2}\Big]=-\frac n2\ln(2\pi\sigma^2)-\frac{1}{2\sigma^2}\sum_{i=1}^{n}(x_i-\mu)^2</div>
+        <p>Look at how <span class="tex">\mu</span> enters: only through the <b>sum of squared errors</b> <span class="tex">\sum(x_i-\mu)^2</span>, preceded by a <i>minus</i> sign and a positive constant. The first term does not depend on <span class="tex">\mu</span> at all. So maximising the log-likelihood is <b>exactly the same problem</b> as minimising the sum of squares. Differentiate: <span class="tex">\ell'(\mu)=\frac{1}{\sigma^2}\sum(x_i-\mu)=0\Rightarrow\hat\mu=\frac1n\sum x_i=\bar x</span>. The sample mean is the maximum-likelihood estimate.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Data 2, 4, 9. The MLE of the mean is <span class="tex">\bar x=15/3=5</span>. Squared distances at <span class="tex">\mu=5</span>: 9 + 1 + 16 = 26. Try <span class="tex">\mu=6</span>: 16 + 4 + 9 = 29 — larger, so a worse fit (lower likelihood). Try <span class="tex">\mu=4</span>: 4 + 0 + 25 = 29, equally worse on the other side. The minimum is at 5.</p>
+          <p>The same trick for <span class="tex">\sigma^2</span>: differentiating gives <span class="tex">\hat\sigma^2_{\text{MLE}}=\frac1n\sum(x_i-\bar x)^2=26/3\approx8.67</span>. Note it divides by <span class="tex">n</span>. The familiar "divide by <span class="tex">n-1</span>" version (13 here) is the <i>unbiased</i> variant — a correction we will understand properly in 4.3.</p></div>
+
+        <p><b>Now the big step to machine learning.</b> A regression model predicts <span class="tex">\hat y_i=f(x_i;\theta)</span>. Assume the truth is the prediction plus Gaussian noise: <span class="tex">y_i=f(x_i;\theta)+\varepsilon_i</span> with <span class="tex">\varepsilon_i\sim\mathcal N(0,\sigma^2)</span>. That says <span class="tex">y_i</span> is Gaussian with mean <span class="tex">f(x_i;\theta)</span> — exactly the situation above with <span class="tex">\mu</span> replaced by the model's output. Therefore</p>
+        <div class="eq">\hat\theta_{\text{MLE}}=\arg\max_\theta\;-\frac{1}{2\sigma^2}\sum_i\big(y_i-f(x_i;\theta)\big)^2=\arg\min_\theta\;\frac1n\sum_i\big(y_i-f(x_i;\theta)\big)^2</div>
+        <p><b>Mean-squared-error training <i>is</i> maximum-likelihood estimation under Gaussian noise.</b> The squared error was not an arbitrary choice: it is what "the noise is Gaussian" looks like after taking <span class="tex">-\ln</span>. For one-parameter linear regression <span class="tex">\hat y=wx</span>, minimising <span class="tex">\sum(y_i-wx_i)^2</span> gives <span class="tex">\hat w=\sum x_iy_i/\sum x_i^2</span>.</p>
+
+        <h3 class="sec">Build it up: classification and cross-entropy</h3>
+        <p>For a binary label <span class="tex">y_i\in\{0,1\}</span> a model outputs <span class="tex">p_i=P(y_i=1\mid x_i;\theta)</span> (e.g. a sigmoid output). Each example is a Bernoulli trial with its own <span class="tex">p_i</span>: the probability of what happened is <span class="tex">p_i^{y_i}(1-p_i)^{1-y_i}</span> — <span class="tex">p_i</span> if <span class="tex">y_i=1</span>, <span class="tex">1-p_i</span> if <span class="tex">y_i=0</span>. Multiply over independent examples, take the log, flip the sign (we like to <i>minimise</i> losses):</p>
+        <div class="eq">-\ell(\theta)=-\sum_{i=1}^{n}\Big[y_i\ln p_i+(1-y_i)\ln(1-p_i)\Big]</div>
+        <p>This is <b>binary cross-entropy</b>, the standard classification loss — now seen to be the <b>negative log-likelihood of Bernoulli data</b>. With <span class="tex">K</span> classes, the model outputs a probability vector (softmax) and the probability of the observed class <span class="tex">c_i</span> is <span class="tex">p_{i,c_i}</span>, so the loss is <span class="tex">-\sum_i\ln p_{i,c_i}</span>: categorical cross-entropy. Language models minimise exactly this, with the "class" being the next token.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Three examples with labels 1, 0, 1 and predicted probabilities of class 1 equal to 0.9, 0.2, 0.7. The probability the model assigned to what actually happened: 0.9, 0.8 (= 1 − 0.2), 0.7. Likelihood = 0.9 × 0.8 × 0.7 = 0.504. Negative log-likelihood = −(ln 0.9 + ln 0.8 + ln 0.7) = 0.1054 + 0.2231 + 0.3567 = <b>0.6852</b>; the average per example is 0.2284. A perfectly confident correct model would give 0; a confident <i>wrong</i> prediction (probability 0.01 for the true class) costs −ln 0.01 = 4.6 on its own.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">L(\theta)=p(x_1,\dots,x_n;\theta)\overset{\text{iid}}{=}\prod_{i=1}^{n}p(x_i;\theta),\qquad \ell(\theta)=\sum_{i=1}^{n}\ln p(x_i;\theta),\qquad \hat\theta_{\text{MLE}}=\arg\max_\theta\,\ell(\theta)</div>
+        <table class="sym">
+          <tr><td>θ</td><td>the unknown parameter(s) (<span class="tex">p</span>, <span class="tex">\mu</span>, network weights…)</td></tr>
+          <tr><td>x₁ … xₙ</td><td>the observed data — fixed numbers once collected</td></tr>
+          <tr><td>p(xᵢ; θ)</td><td>probability (or density) the model with parameters θ gives to observation i; the semicolon says "θ is a knob, not a random variable"</td></tr>
+          <tr><td>iid</td><td>"independent and identically distributed": the factorisation into a product needs independence, and a single <i>p</i> for every i needs identical distribution</td></tr>
+          <tr><td>L(θ), ℓ(θ)</td><td>likelihood and log-likelihood, as functions of θ</td></tr>
+          <tr><td>arg max</td><td>the <i>input</i> θ that makes the function largest (Module 0)</td></tr>
+          <tr><td>θ̂</td><td>an estimate (hat = computed from data)</td></tr>
+        </table>
+        <p>Under mild conditions the MLE is <b>consistent</b> (it converges to the true parameter as <span class="tex">n\to\infty</span>) and is about as precise as any estimator can be. Its weakness is also visible: with 3 heads out of 3 flips it states <span class="tex">\hat p=1</span> and is certain the coin can never land tails. Lesson 4.2 repairs this.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1 · Watch the likelihood form, flip by flip</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Leave the speed slow. At the start the curve is flat: with no data, every <span class="tex">p</span> is equally compatible. After each flip it is multiplied by <span class="tex">p</span> (heads) or <span class="tex">1-p</span> (tails). Notice the green line <span class="tex">\hat p</span> and the position of the peak — they are always the same place.</li>
+        <li>Watch what happens to the <i>width</i> of the peak as flips accumulate: it narrows. More data → fewer parameter values remain plausible.</li>
+        <li>Pause, then press "+ Tails" four times in a row and "+ Heads" once. The curve is dragged toward 0. You are editing the data yourself.</li>
+        <li>Switch the view to <b>log-likelihood</b>. Same peak, but now a smooth, curved hill that is a <i>sum</i> over flips and well-behaved numerically. Compare the readout of L(p̂) (tiny) with ℓ(p̂) (moderate).</li></ol></div>
+      <div id="lab-mleCoin" data-lab="mleCoin"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2 · Least squares is maximum likelihood</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press "Sweep μ" and watch both panels. When the bell is centred badly, the orange drop-lines (the density each data point receives) are short; when centred well they are taller.</li>
+        <li>Compare the squared-error sum in the caption with the green curve below: whenever one goes down the other goes up. Their optimum is at the same μ — the mean.</li>
+        <li>Edit the data (e.g. add an outlier such as <code>2, 4, 9, 30</code>). The peak jumps toward the outlier — a first hint that squared error is sensitive to extreme values.</li></ol></div>
+      <div id="lab-mleGauss" data-lab="mleGauss"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The likelihood is not the probability of the parameter.</b> <span class="tex">L(0.7)=0.0022</span> does not mean "there is a 0.2% chance that <span class="tex">p=0.7</span>". The likelihood ranks hypotheses; turning it into a probability for the parameter needs a prior (lesson 4.2).</li>
+          <li><b>Maximising a product versus a sum.</b> Taking the log changes the <i>value</i> but not the <i>location</i> of the maximum. Never compare raw log-likelihoods from different datasets as if they were probabilities.</li>
+          <li><b>MLE can overfit.</b> It trusts the data completely: 3 heads in 3 flips gives <span class="tex">\hat p=1</span>. With a very flexible model it can even memorise the training set.</li>
+          <li><b>"MSE is a Gaussian assumption."</b> It is: if your noise is heavy-tailed or the target is a probability, MSE is the wrong likelihood. Different noise model, different loss.</li>
+          <li>The MLE of variance divides by <span class="tex">n</span> and is biased low; software usually reports the <span class="tex">n-1</span> version.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Almost every loss function is a negative log-likelihood.</b> MSE ↔ Gaussian noise; binary/categorical cross-entropy ↔ Bernoulli/categorical outputs; Poisson regression for counts ↔ Poisson likelihood. "Choose a loss" really means "choose a noise model".</li>
+          <li><b>Language models</b> are trained by maximising <span class="tex">\sum_i\ln p(\text{token}_i\mid\text{previous tokens};\theta)</span> over trillions of tokens. Perplexity is just <span class="tex">e^{\text{average NLL}}</span>.</li>
+          <li><b>Training = MLE by gradient descent.</b> For a neural network no formula exists for <span class="tex">\hat\theta</span>, so we climb the log-likelihood (descend the NLL) step by step (Module 6).</li>
+          <li><b>Logistic regression, Naive Bayes, Gaussian mixtures (EM)</b> are fitted by MLE or its variants.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A coin gives 3 heads and 9 tails. Write its log-likelihood and find the MLE of p.</summary><div class="ans">ℓ(p) = 3 ln p + 9 ln(1−p). Setting ℓ′ = 3/p − 9/(1−p) = 0 gives 3(1−p) = 9p, so p̂ = 3/12 = 0.25 — the observed fraction of heads.</div></details>
+        <details class="check"><summary>2. Labels 1, 1, 0 and predicted P(class 1) = 0.8, 0.5, 0.25. Compute the average binary cross-entropy.</summary><div class="ans">Probabilities assigned to the true outcomes: 0.8, 0.5, 0.75. NLL = −(ln 0.8 + ln 0.5 + ln 0.75) = 0.2231 + 0.6931 + 0.2877 = 1.2039; average = 0.4013.</div></details>
+        <details class="check"><summary>3. Why does maximising likelihood under Gaussian noise lead to minimising squared error rather than absolute error?</summary><div class="ans">The Gaussian density contains the exponent −(y−f)²/(2σ²). The log removes the exponential and leaves a squared term; the remaining terms do not depend on θ. (Laplace noise, with exponent −|y−f|/b, would give absolute error instead.)</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Parameters are fixed and unknown; estimates are random because data are.</li><li>The likelihood scores each candidate parameter by how probable it makes the observed data; MLE picks the best.</li><li>Use log-likelihood: products become sums, no underflow, easy derivatives.</li><li>Coin MLE = observed fraction; Gaussian mean MLE = sample mean.</li><li>MSE = Gaussian-noise MLE; cross-entropy = Bernoulli/categorical MLE. Losses are noise models.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 ===================== -->
+    <section class="lesson" id="map-bayes" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.2</span><h2>Priors, MAP &amp; regularization</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You flip a fresh coin from your pocket three times and get three heads. Maximum likelihood says <span class="tex">\hat p=1</span>: "this coin can <i>never</i> land tails". You do not believe that — coins are almost always close to fair. How do we let that prior knowledge push back against a tiny amount of data? And how is this same idea hiding inside the "weight decay" knob of every deep-learning library?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Before seeing any data you already know something. Coins are nearly fair; a house price is unlikely to be negative; a weight in a network is unlikely to be enormous. Call that knowledge a <b>prior</b> — a probability distribution over the parameter, drawn <i>before</i> looking at the data. Then data arrive and you <b>update</b>: the result is the <b>posterior</b>, your belief after seeing the evidence.</p>
+        <p>A helpful picture: the prior is a handful of <b>imaginary flips</b> you add to the real ones. If you believe "coins are fair", it is as if you had already seen, say, 5 heads and 5 tails before the experiment. Three real heads are then one voice against ten imaginary ones; the compromise lands near 0.5 but leans toward heads. With 3000 real flips the imaginary ones are drowned out. This "prior fades as data grows" behaviour is exactly right, and it falls out of one line of algebra.</p>
+
+        <h3 class="sec">Build it up: Bayes' rule for a parameter</h3>
+        <p>From Module 3, Bayes' theorem reads <span class="tex">P(A\mid B)=P(B\mid A)P(A)/P(B)</span>. Put the parameter <span class="tex">\theta</span> in the role of A and the data <span class="tex">D</span> in the role of B:</p>
+        <div class="eq">\underbrace{p(\theta\mid D)}_{\text{posterior}}=\frac{\overbrace{p(D\mid\theta)}^{\text{likelihood}}\;\overbrace{p(\theta)}^{\text{prior}}}{p(D)}\;\propto\;p(D\mid\theta)\,p(\theta)</div>
+        <p>The denominator <span class="tex">p(D)</span> does not involve <span class="tex">\theta</span>; it just makes the area equal 1. For finding where the posterior is highest we can ignore it: <b>posterior ∝ likelihood × prior</b> ("∝" = "proportional to"). The <b>MAP</b> estimate ("maximum a posteriori") is the <span class="tex">\theta</span> where this product peaks:</p>
+        <div class="eq">\hat\theta_{\text{MAP}}=\arg\max_\theta\big[\ln p(D\mid\theta)+\ln p(\theta)\big]</div>
+        <p>It is the log-likelihood from 4.1 <b>plus a log-prior</b>. If the prior is flat (all values equally plausible), the second term is constant and MAP = MLE.</p>
+
+        <h3 class="sec">Worked: the coin with a Beta prior</h3>
+        <p>A convenient prior for a probability <span class="tex">p\in[0,1]</span> is the Beta distribution, with density proportional to <span class="tex">p^{a-1}(1-p)^{b-1}</span>. For <span class="tex">a=b=1</span> it is flat; for <span class="tex">a=b=5</span> it is a hump around 0.5. Multiply by the likelihood <span class="tex">p^h(1-p)^t</span>:</p>
+        <div class="eq">p(p\mid D)\;\propto\;p^{h}(1-p)^{t}\cdot p^{a-1}(1-p)^{b-1}=p^{\,h+a-1}(1-p)^{\,t+b-1}</div>
+        <p>The posterior is another Beta, with the counts simply <i>added</i>: <span class="tex">\text{Beta}(a+h,\;b+t)</span>. The prior parameters really are pseudo-counts. The peak, found exactly as in 4.1 (differentiate the log, set to zero):</p>
+        <div class="eq">\hat p_{\text{MAP}}=\frac{h+a-1}{n+a+b-2}</div>
+        <div class="worked"><b>Worked example</b>
+          <p>The same 7 heads and 3 tails (<span class="tex">n=10</span>). MLE gave 0.7.</p>
+          <p>Prior Beta(2, 2) ("one imaginary head and one imaginary tail"): posterior Beta(9, 5), MAP = (7+2−1)/(10+4−2) = 8/12 = <b>0.667</b>.</p>
+          <p>Prior Beta(5, 5) (eight imaginary flips, four of each): posterior Beta(12, 8), MAP = 11/18 = <b>0.611</b> — pulled harder toward 0.5.</p>
+          <p>And the opening example: 3 heads in 3 flips with Beta(2,2) → MAP = (3+1)/(3+2) = 0.8, not 1. The coin is no longer declared tails-proof.</p></div>
+
+        <h3 class="sec">Priors on weights are regularizers</h3>
+        <p>Now apply the same idea to a model's weights <span class="tex">\mathbf w</span>. In 4.1 we showed that under Gaussian noise the log-likelihood is <span class="tex">-\frac{1}{2\sigma^2}\sum(y_i-f(x_i;\mathbf w))^2+\text{const}</span>. Choose a prior and add its log:</p>
+        <p><b>Gaussian prior</b> — "each weight is probably small, typically within <span class="tex">\tau</span> of zero": <span class="tex">p(w_j)\propto e^{-w_j^2/(2\tau^2)}</span>, so <span class="tex">\ln p(\mathbf w)=-\frac{1}{2\tau^2}\sum_jw_j^2+\text{const}</span>. The negative log-posterior is</p>
+        <div class="eq">\frac{1}{2\sigma^2}\sum_i(y_i-f(x_i;\mathbf w))^2+\frac{1}{2\tau^2}\sum_jw_j^2\;\xrightarrow{\ \times\,\sigma^2\ }\;\frac12\sum_i(y_i-f_i)^2+\frac{\lambda}{2}\lVert\mathbf w\rVert_2^2,\qquad\lambda=\frac{\sigma^2}{\tau^2}</div>
+        <p>This is least squares plus an <b>L2 penalty</b> — ridge regression, <b>weight decay</b>. A bigger <span class="tex">\lambda</span> means a smaller prior variance <span class="tex">\tau^2</span>: a stronger belief that weights are near zero, <i>or</i> noisier data (bigger <span class="tex">\sigma^2</span>) so that we trust data less.</p>
+        <p><b>Laplace prior</b> — a sharply pointed distribution <span class="tex">p(w_j)\propto e^{-|w_j|/b}</span>: lots of probability exactly near 0 but long tails. The negative log gives <span class="tex">\frac{1}{b}\sum|w_j|</span>, so MAP becomes least squares plus an <b>L1 penalty</b> <span class="tex">\lambda\sum|w_j|</span> with <span class="tex">\lambda=\sigma^2/b</span> (the lasso).</p>
+        <div class="worked"><b>Worked example — one weight, all the numbers</b>
+          <p>Fit <span class="tex">\hat y=wx</span> to <span class="tex">x=(1,2,3)</span>, <span class="tex">y=(1.2,\,1.9,\,3.3)</span>. Then <span class="tex">S_{xy}=\sum x_iy_i=1.2+3.8+9.9=14.9</span> and <span class="tex">S_{xx}=\sum x_i^2=14</span>.</p>
+          <p>No penalty: minimise <span class="tex">\tfrac12\sum(y_i-wx_i)^2</span>; derivative <span class="tex">-S_{xy}+wS_{xx}=0</span> gives <span class="tex">w_0=S_{xy}/S_{xx}=1.0643</span>.</p>
+          <p>L2 with <span class="tex">\lambda=7</span>: derivative <span class="tex">-S_{xy}+wS_{xx}+\lambda w=0\Rightarrow w=\dfrac{S_{xy}}{S_{xx}+\lambda}=\dfrac{14.9}{21}=0.7095</span>. With <span class="tex">\lambda=14</span>: 14.9/28 = 0.5321. The weight shrinks smoothly, never reaching 0.</p>
+          <p>L1 with <span class="tex">\lambda=7</span>: for <span class="tex">w&gt;0</span> the derivative is <span class="tex">-S_{xy}+wS_{xx}+\lambda=0\Rightarrow w=(S_{xy}-\lambda)/S_{xx}=w_0-\lambda/S_{xx}=1.0643-0.5=0.5643</span>. With <span class="tex">\lambda=16</span> the step <span class="tex">\lambda/S_{xx}=1.143</span> exceeds <span class="tex">w_0</span>, so the minimum is exactly <span class="tex">w=0</span>. This rule is called <i>soft-thresholding</i>: <span class="tex">w^\star=\operatorname{sign}(w_0)\max(|w_0|-\lambda/S_{xx},\,0)</span>.</p>
+          <p>Why the difference? Near zero the L2 penalty's slope (<span class="tex">\lambda w</span>) vanishes, so it never pushes the last bit; L1's slope stays at <span class="tex">\lambda</span>, a constant pull that can reach zero and stop there. That is why L1 produces <b>sparse</b> models.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat{\mathbf w}_{\text{MAP}}=\arg\min_{\mathbf w}\;\underbrace{-\ln p(D\mid\mathbf w)}_{\text{data loss}}\;\underbrace{-\ln p(\mathbf w)}_{\text{penalty}}\qquad\begin{cases}p(\mathbf w)=\mathcal N(0,\tau^2I)&\Rightarrow\ \tfrac{\lambda}{2}\lVert\mathbf w\rVert_2^2\\[2pt]p(\mathbf w)\propto e^{-\lVert\mathbf w\rVert_1/b}&\Rightarrow\ \lambda\lVert\mathbf w\rVert_1\end{cases}</div>
+        <table class="sym">
+          <tr><td>p(w)</td><td>the prior: belief about the weights before seeing data</td></tr>
+          <tr><td>p(D | w)</td><td>the likelihood (4.1)</td></tr>
+          <tr><td>posterior</td><td><span class="tex">p(\mathbf w\mid D)\propto p(D\mid\mathbf w)\,p(\mathbf w)</span></td></tr>
+          <tr><td>τ², b</td><td>prior width (Gaussian variance; Laplace scale): small = strong belief in zero</td></tr>
+          <tr><td>λ</td><td>penalty strength; equals σ²/τ² (L2) or σ²/b (L1)</td></tr>
+          <tr><td>‖w‖₂², ‖w‖₁</td><td>sum of squares / sum of absolute values of the weights</td></tr>
+          <tr><td>MAP</td><td>mode of the posterior; "MLE with a prior"</td></tr>
+        </table>
+        <p>As data grow, the likelihood term (a sum over <span class="tex">n</span> examples) grows while the prior term stays fixed, so MAP converges to MLE — the prior's influence fades like <span class="tex">1/n</span>. Observe this in the first lab: MAP = (h + m·s)/(n + s) is a weighted average whose data weight is <span class="tex">n/(n+s)</span>.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1 · Prior × likelihood = posterior</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With prior strength 0 the purple curve is flat and the green posterior lies exactly on the orange likelihood: MAP = MLE.</li>
+        <li>Set strength to 20 and the prior belief to 0.5. Press play: for the first few flips the green curve stays near 0.5; as flips pile up (true bias 0.8) it migrates toward the data. Read the caption's percentage of "prior vs data".</li>
+        <li>Try a <i>wrong</i> prior (belief 0.2, strength 30, true p = 0.8) and see how many flips it takes to overcome it. Strong wrong beliefs are costly — but they do fade.</li></ol></div>
+      <div id="lab-mapCoin" data-lab="mapCoin"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2 · Regularization is a prior (L2 vs L1)</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Top panel: blue is the data loss (minimum at w₀), orange the penalty (minimum at 0), green their sum; the green dot is the penalised optimum w*. Press "Sweep λ" and watch the dot slide from w₀ toward 0.</li>
+        <li>Bottom panel is the same story as probabilities: the likelihood (blue) and the prior (orange) multiply to the posterior (green) whose peak is w*. A narrow prior drags the peak toward zero.</li>
+        <li>Switch to L1 (Laplace prior) and sweep: the weight reaches exactly 0 and stays; with L2 it only approaches 0.</li>
+        <li>Increase "amount of data" n: the data-loss parabola gets steeper, and for the same λ the weight barely shrinks. Data beats the prior.</li></ol></div>
+      <div id="lab-regShrink" data-lab="regShrink"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>MAP is not "the" Bayesian answer.</b> It is the single most probable value. Full Bayesian inference keeps the whole posterior (its width = remaining uncertainty); MAP discards that.</li>
+          <li><b>The penalty is not free.</b> Large <span class="tex">\lambda</span> underfits (all weights squashed to 0). Choose it with validation data (lesson 4.5), never by looking at the test set.</li>
+          <li>The prior cannot rescue you from a <i>wrong</i> model, and a very confident prior will override good data for a long time.</li>
+          <li><b>Regularize the weights, not (usually) the bias term,</b> and put features on comparable scales first — a penalty on <span class="tex">\sum w_j^2</span> treats all weights as equally "expensive", which is only fair if inputs are standardised.</li>
+          <li>In optimisers like Adam, "L2 penalty" and "weight decay" are no longer the same thing (decoupled AdamW), though both derive from the idea above.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Weight decay</b> in nearly every training recipe (<code>weight_decay=0.01</code> in AdamW) is a Gaussian prior on the weights.</li>
+          <li><b>Lasso / L1</b> feature selection: sparse linear models, and sparse activations or pruning in networks.</li>
+          <li><b>Label smoothing, dropout, early stopping</b> also act as priors/regularizers — encoded beliefs that "smooth" solutions are more probable.</li>
+          <li><b>Bayesian neural networks, Gaussian processes</b> keep the full posterior; <b>LoRA/fine-tuning with KL penalties</b> (RLHF) is "stay close to the prior model" in the same spirit.</li>
+          <li><b>Smoothing in language models and Naive Bayes</b> ("add-one" / Laplace smoothing) is exactly the Beta(2,2)-style pseudo-count trick above.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. 7 heads, 3 tails, prior Beta(3, 3). Compute the MAP estimate.</summary><div class="ans">MAP = (h+a−1)/(n+a+b−2) = (7+2)/(10+4) = 9/14 ≈ 0.643 (equivalently: add 2 imaginary heads and 2 imaginary tails to the data).</div></details>
+        <details class="check"><summary>2. With S<sub>xx</sub> = 14, S<sub>xy</sub> = 14.9 and an L2 penalty of λ = 28, what is the penalised weight?</summary><div class="ans">w = S<sub>xy</sub>/(S<sub>xx</sub>+λ) = 14.9/42 = 0.3548 (unpenalised: 1.0643).</div></details>
+        <details class="check"><summary>3. Why does an L1 penalty give exactly-zero weights while L2 only gives small ones?</summary><div class="ans">The derivative of λ|w| is ±λ no matter how small w is, a constant pull that can bring w all the way to 0; the derivative of ½λw² is λw, which fades as w→0 so the pull vanishes before reaching 0. Equivalently, the Laplace prior has a sharp peak at 0 while the Gaussian is flat there.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Posterior ∝ likelihood × prior; MAP maximises log-likelihood + log-prior.</li><li>A prior acts like imaginary data; its influence shrinks as real data grow.</li><li>Gaussian prior = L2 penalty (weight decay), λ = σ²/τ². Laplace prior = L1 penalty (sparsity).</li><li>Regularization trades a little bias for less variance — the subject of the next lesson.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 ===================== -->
+    <section class="lesson" id="bias-variance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.3</span><h2>Bias–variance &amp; generalization</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You fit a curve through 10 noisy points. A wiggly high-degree polynomial passes through every single one — training error exactly zero. Is it a great model? Almost certainly not: ask it about a new point and it will be wildly wrong. What exactly goes wrong, can we measure it, and how do we pick a model that is neither too simple nor too flexible?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine learning to throw darts. Two ways to be bad: your throws can land <b>consistently off-centre</b> (a systematic aiming mistake — <b>bias</b>) or <b>scattered all over the board</b> (inconsistency — <b>variance</b>). A beginner using a rigid technique has high bias and low variance; one using a hyper-sensitive technique that reacts to every tiny tremor has low bias but high variance.</p>
+        <p>A <i>model</i> behaves the same way. A <b>too simple</b> model (a straight line fitted to a sine wave) cannot represent the truth no matter how much data you give it: its average prediction is wrong — <b>underfitting</b>, high bias. A <b>too flexible</b> model has enough freedom to bend through every noisy point, so it also learns the <i>noise</i>; give it a different noisy sample and it draws a completely different curve — <b>overfitting</b>, high variance. We want the middle.</p>
+        <p>The crucial thing: the error on the data you trained on <b>lies</b>. Flexible models drive it toward zero. What matters is <b>generalization</b> — performance on <i>new</i> data from the same source, estimated on held-out <b>test data</b>.</p>
+
+        <h3 class="sec">Build it up: measuring it by repeating the experiment</h3>
+        <p>Here is the thought experiment that defines bias and variance. Fix one input <span class="tex">x_0</span>, where the truth is <span class="tex">f(x_0)</span>. Repeatedly: draw a brand-new training set, fit the same kind of model, record its prediction <span class="tex">\hat f(x_0)</span>. You get a <i>cloud</i> of predictions (the lab below draws one ghost curve per dataset). Two numbers describe the cloud:</p>
+        <ul>
+          <li><b>Bias</b> = (average prediction) − (truth) = <span class="tex">\mathbb E[\hat f(x_0)]-f(x_0)</span>. Where is the centre of the cloud relative to the target?</li>
+          <li><b>Variance</b> = <span class="tex">\mathbb E\big[(\hat f(x_0)-\mathbb E\hat f(x_0))^2\big]</span>. How spread out is the cloud around its own centre?</li>
+        </ul>
+        <p>A new observation is <span class="tex">y=f(x_0)+\varepsilon</span> with noise <span class="tex">\mathbb E\varepsilon=0</span>, <span class="tex">\operatorname{Var}\varepsilon=\sigma^2</span>, independent of the training set. The expected squared error of the prediction decomposes:</p>
+        <p><b>Derivation.</b> Write <span class="tex">\bar f=\mathbb E[\hat f(x_0)]</span> for the centre of the cloud. Add and subtract it:</p>
+        <div class="eq">y-\hat f=\underbrace{(f-\bar f)}_{-\text{bias}}+\underbrace{(\bar f-\hat f)}_{\text{random}}+\underbrace{\varepsilon}_{\text{noise}}</div>
+        <p>Square it. The three squares give bias², variance, noise. The cross terms vanish when we take expectations: <span class="tex">\mathbb E[\bar f-\hat f]=0</span> (the cloud's centre minus itself), and <span class="tex">\varepsilon</span> has mean zero and is independent of the rest. (E.g. <span class="tex">\mathbb E[(f-\bar f)(\bar f-\hat f)]=(f-\bar f)\cdot\mathbb E[\bar f-\hat f]=0</span>, because <span class="tex">f-\bar f</span> is a constant.) What remains:</p>
+        <div class="eq">\mathbb E\big[(y-\hat f(x_0))^2\big]=\underbrace{\big(\mathbb E\hat f(x_0)-f(x_0)\big)^2}_{\text{bias}^2}+\underbrace{\operatorname{Var}\big(\hat f(x_0)\big)}_{\text{variance}}+\underbrace{\sigma^2}_{\text{irreducible noise}}</div>
+        <div class="worked"><b>Worked example — all the numbers</b>
+          <p>At <span class="tex">x_0</span> the truth is <span class="tex">f=1</span>, the noise has <span class="tex">\sigma=0.5</span>. Fit the model on four different training sets; it predicts 0.6, 0.9, 0.3, 0.6.</p>
+          <p>Centre of the cloud: <span class="tex">\bar f=(0.6+0.9+0.3+0.6)/4=0.6</span>. Bias = 0.6 − 1 = −0.4, so bias² = <b>0.16</b>.</p>
+          <p>Variance: deviations from 0.6 are 0, 0.3, −0.3, 0 → <span class="tex">(0+0.09+0.09+0)/4=</span> <b>0.045</b>.</p>
+          <p>Noise: <span class="tex">\sigma^2=0.25</span>. Total expected squared error = 0.16 + 0.045 + 0.25 = <b>0.455</b>.</p>
+          <p>Check directly: squared distances from the truth 1 are 0.16, 0.01, 0.49, 0.16, average 0.205 = bias² + variance ✓, and adding the noise 0.25 gives 0.455 ✓. Nothing can reduce the 0.25; the other 0.205 is what model choice controls.</p></div>
+
+        <h3 class="sec">Build it up: the U-shaped test curve</h3>
+        <p>Plot error against model flexibility (say, polynomial degree):</p>
+        <ul>
+          <li><b>Training error</b> falls steadily as flexibility rises, because the model can bend to fit more of the sample, including its noise. Training error is <i>optimistic</i>: it is measured on the very points the parameters were tuned to.</li>
+          <li><b>Bias²</b> falls with flexibility (the average fit gets closer to the truth); <b>variance</b> rises (the fit leans on the quirks of each sample).</li>
+          <li><b>Test error</b> = bias² + variance + σ², so it falls at first, then rises: a <b>U shape</b>. The best model sits near the bottom of the U. Left of it: underfitting. Right of it: overfitting.</li>
+        </ul>
+        <p>More data pushes variance down (quirks average out) and lets you afford a more flexible model; regularization (4.2) reduces variance at the cost of some bias; averaging many models (ensembles, bagging, random forests) reduces variance without raising bias.</p>
+        <p><b>An intro to double descent.</b> The U shape is not the end of the story. For modern huge models — networks with more parameters than training examples — test error often falls, rises to a peak around the point where the model can <i>just barely</i> interpolate (exactly fit) the training set, and then <b>falls again</b> as size grows further. This <i>double-descent</i> curve does not contradict the decomposition; it says that among the many interpolating solutions large models, and the way gradient descent picks one, behave like strongly regularized fits. Classical intuition (the U) still governs most small-model work, and the practical rule stays: <b>judge a model on data it has not seen</b>.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\underbrace{\mathbb E\big[(y-\hat f(x))^2\big]}_{\text{expected test error at }x}=\operatorname{Bias}[\hat f(x)]^2+\operatorname{Var}[\hat f(x)]+\sigma^2,\qquad\operatorname{Bias}[\hat f(x)]=\mathbb E[\hat f(x)]-f(x)</div>
+        <table class="sym">
+          <tr><td>f(x)</td><td>the true (unknown) function; y = f(x) + ε</td></tr>
+          <tr><td>f̂(x)</td><td>the fitted model; it is <i>random</i> because it depends on the random training set</td></tr>
+          <tr><td>𝔼[·]</td><td>expectation over everything random: training sets and noise</td></tr>
+          <tr><td>Bias</td><td>systematic error of the average fit</td></tr>
+          <tr><td>Var</td><td>how much f̂(x) changes from one training set to another</td></tr>
+          <tr><td>σ²</td><td>irreducible noise variance — a floor no model can go beneath</td></tr>
+          <tr><td>train / test error</td><td>average loss on the data used to fit / on fresh data. <i>Generalization gap</i> = test − train</td></tr>
+        </table>
+        <p>(For squared error. Other losses decompose less cleanly, but the intuition carries over.)</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · The ghost-curve cloud</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start at degree 1 and let datasets arrive slowly. Ghost curves bunch tightly together (low variance), but their average (green) clearly misses the dashed truth: <b>high bias</b>, red bar large.</li>
+        <li>Move to degree 3–4: the green curve hugs the truth and the cloud is moderately tight. This is near the bottom of the test-error U in the lower chart.</li>
+        <li>Move to degree 9 with only ~14 points: the ghosts explode in all directions (variance bar huge) though their average may still be near the truth. This is overfitting made visible. The lower chart shows training error (blue) near zero while test error (orange) is large.</li>
+        <li>With degree 9, raise "points per dataset" to 40: variance collapses. More data tames a flexible model. Raise the noise σ instead: variance grows and the optimal degree moves left.</li></ol></div>
+      <div id="lab-biasVar" data-lab="biasVar"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Judging by training error.</b> It can always be driven down by adding flexibility; a perfect training score alone proves nothing (it may be memorisation).</li>
+          <li><b>Overfitting to the test set.</b> If you try 200 models and keep whichever scores best on the test set, that test score is now itself optimistic — you have trained on it indirectly. Keep a separate validation set for choices and touch the test set once (lesson 4.5).</li>
+          <li><b>"Bias" here is not social bias</b> and not the intercept term <span class="tex">b</span> of a neuron. It means systematic error of the average prediction.</li>
+          <li><b>More parameters ≠ always worse.</b> Double descent and the success of huge networks show that classical "too many parameters" warnings need nuance; what counts is effective flexibility, data and regularization.</li>
+          <li>You cannot compute bias and variance on real problems (the truth <span class="tex">f</span> is unknown and you have one dataset); they are a <i>conceptual</i> tool, which validation curves estimate indirectly.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model selection:</b> choosing degree, tree depth, number of layers, <i>k</i> in k-NN (small <i>k</i> = low bias/high variance), regularization strength: all ride the same U curve, located using a validation set.</li>
+          <li><b>Learning curves</b> (error vs training-set size) diagnose the problem: large train–val gap = high variance → more data or regularize; both errors high and close = high bias → bigger model, better features.</li>
+          <li><b>Ensembles and dropout</b> average many high-variance models; random forests are precisely variance reduction.</li>
+          <li><b>Early stopping:</b> a network's effective flexibility grows with training time; stop when validation loss turns up.</li>
+          <li><b>Scaling LLMs:</b> huge models trained on huge data sit on the far (double-descent) side where more parameters keep helping.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At a point the model's predictions across datasets are 0.8, 1.2, 1.0, 1.0 and the truth is 1.0, with noise σ² = 0.09. Compute bias², variance and expected error.</summary><div class="ans">Mean = 1.0, so bias = 0, bias² = 0. Variance = (0.04+0.04+0+0)/4 = 0.02. Expected squared error = 0 + 0.02 + 0.09 = 0.11.</div></details>
+        <details class="check"><summary>2. Training error 0.01, test error 0.50. Which is the more likely problem, high bias or high variance, and what would you try?</summary><div class="ans">High variance (overfitting): large gap between train and test. Try more data, a simpler model, stronger regularization, dropout/early stopping, or ensembling.</div></details>
+        <details class="check"><summary>3. Why can't we choose the model with the lowest training error?</summary><div class="ans">Training error keeps decreasing as flexibility grows and eventually just measures how well the model memorised its sample, including noise. Only data not used for fitting (validation/test) estimates how the model will do on new inputs.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Expected test error = bias² + variance + irreducible noise.</li><li>Too simple: high bias (underfit). Too flexible: high variance (overfit). Train error falls forever; test error is U-shaped (classically).</li><li>More data, regularization and averaging reduce variance; bigger models reduce bias.</li><li>Double descent: very large models can generalise despite interpolating, so always measure on held-out data.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 ===================== -->
+    <section class="lesson" id="intervals-tests" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.4</span><h2>Uncertainty, intervals &amp; tests</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Model A scores 84.0% accuracy on your test set and model B scores 85.5%. Is B really better, or did it just get lucky on this particular sample of examples? Any number computed from data wobbles from sample to sample — how much, and how do we state a conclusion that is honest about it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Recall from 4.1: an estimate is <i>random</i>, because the sample is. If you measured the average height of 25 random people, then again with another 25, you would get two different averages. The spread of those averages across hypothetical repetitions is the <b>standard error (SE)</b>. It says how much trust to put in a single run.</p>
+        <p>The Central Limit Theorem (Module 3) gives us the key facts: the sample mean of <span class="tex">n</span> independent values with standard deviation <span class="tex">\sigma</span> has distribution approximately Gaussian, centred on the true mean, with standard deviation</p>
+        <div class="eq">\mathrm{SE}(\bar x)=\frac{\sigma}{\sqrt n}</div>
+        <p>Notice the <span class="tex">\sqrt n</span>: to halve your uncertainty you need <b>four times</b> the data. Since <span class="tex">\sigma</span> is usually unknown, we plug in the sample standard deviation <span class="tex">s=\sqrt{\frac1{n-1}\sum(x_i-\bar x)^2}</span> (that is where <span class="tex">n-1</span> comes in — the sample mean is closer to the data than the true mean is, so dividing by <span class="tex">n</span> would underestimate the spread).</p>
+
+        <h3 class="sec">Build it up: confidence intervals</h3>
+        <p>Rather than report a single number, report a <b>range</b> built to catch the truth most of the time. Since <span class="tex">\bar x</span> is within about 2 standard errors of <span class="tex">\mu</span> in 95% of experiments (68% within 1, 95% within 1.96, 99% within 2.58 for a Gaussian), flip it around: the interval <span class="tex">\bar x\pm1.96\,\mathrm{SE}</span> contains <span class="tex">\mu</span> in 95% of experiments. For small <span class="tex">n</span> with unknown <span class="tex">\sigma</span> replace 1.96 by the slightly bigger Student-t value <span class="tex">t_{n-1}</span> (it also accounts for the extra uncertainty from estimating <span class="tex">s</span>).</p>
+        <div class="eq">\text{CI}_{95\%}=\bar x\pm t_{n-1,\,0.975}\cdot\frac{s}{\sqrt n}</div>
+        <div class="worked"><b>Worked example</b>
+          <p>A sample of <span class="tex">n=25</span> gives <span class="tex">\bar x=52</span>, <span class="tex">s=10</span>. SE = 10/√25 = 2. The t value for 24 degrees of freedom is 2.064. Interval: 52 ± 2.064 × 2 = 52 ± 4.13 = <b>[47.87, 56.13]</b>. (With the Gaussian 1.96 it would be [48.08, 55.92], slightly too narrow.) With four times the data, <span class="tex">n=100</span>, the SE halves to 1 and the interval to roughly ±2.</p></div>
+        <p><b>What the 95% means — and does not mean.</b> The truth <span class="tex">\mu</span> is a fixed number. The interval is what is random: <i>the procedure</i> produces an interval that covers <span class="tex">\mu</span> in 95% of repetitions. Once computed, a particular interval either contains <span class="tex">\mu</span> or it does not; we just do not know which. It is <b>not</b> "a 95% probability that μ is in [47.87, 56.13]". The first lab makes this literal: you will watch intervals appear one by one and about one in twenty miss.</p>
+
+        <h3 class="sec">Build it up: hypothesis tests and p-values</h3>
+        <p>A confidence interval answers "what are the plausible values?". A <b>hypothesis test</b> answers a yes/no question: "is the effect real, or could chance alone explain it?" The logic is a proof by improbable contradiction:</p>
+        <ol>
+          <li><b>Null hypothesis <span class="tex">H_0</span></b>: boring world — no difference (e.g. the two models are equally good).</li>
+          <li>Choose a <b>test statistic</b> measuring the evidence against it (the observed difference in standard errors, <span class="tex">z</span>).</li>
+          <li>Work out its distribution <i>if <span class="tex">H_0</span> were true</i> (the "null distribution").</li>
+          <li>The <b>p-value</b> is the probability, <i>assuming H₀ is true</i>, of getting a result at least as extreme as the one observed.</li>
+          <li>If the p-value is below a pre-chosen threshold <span class="tex">\alpha</span> (often 0.05) call the result <b>statistically significant</b> and reject <span class="tex">H_0</span>.</li></ol>
+        <div class="worked"><b>Worked example 1 — a coin</b>
+          <p>100 flips, 61 heads. Is the coin biased? Under <span class="tex">H_0:p=0.5</span>, <span class="tex">\mathrm{SE}=\sqrt{0.5\cdot0.5/100}=0.05</span>. The observed proportion is 0.61, so <span class="tex">z=(0.61-0.5)/0.05=2.2</span>. Two-sided p-value = <span class="tex">P(|Z|\ge2.2)=2\times0.0139=\mathbf{0.0278}</span>. Since 0.028 &lt; 0.05, "significant at 5%".</p></div>
+        <div class="worked"><b>Worked example 2 — comparing two models</b>
+          <p>On the same <span class="tex">n=100</span> test examples, B beats A by 1.5 points on average, and the per-example differences have standard deviation 10. SE = 10/√100 = 1, <span class="tex">z=1.5/1=1.5</span>, two-sided <span class="tex">p=0.1336</span>. Not significant: a gap of 1.5 points is entirely plausible from chance on 100 examples. The honest summary: <i>"B is 1.5 points better, 95% CI about [−0.5, 3.5]"</i> — the interval includes 0.</p></div>
+        <p><b>Power and effect size.</b> Two kinds of error exist: a <b>false alarm</b> (reject a true <span class="tex">H_0</span>; probability <span class="tex">\alpha</span> by construction) and a <b>miss</b> (fail to detect a real effect). The probability of detecting a real effect is the test's <b>power</b>. It grows with the effect size (how big the real difference is) and with <span class="tex">n</span> (smaller SE). With a true difference of 3 points, σ = 10 and n = 100 (SE = 1), power at α = 0.05 is <span class="tex">P(Z&gt;1.96-3)+P(Z&lt;-1.96-3)\approx0.85</span>; with n = 25 (SE = 2) it falls to about 0.32. And a tiny, practically useless effect becomes "significant" if n is huge — <b>statistical significance is not importance</b>; always report the effect size and its interval.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">z=\frac{\bar x-\mu_0}{\sigma/\sqrt n},\qquad p=P\big(|Z|\ge|z_{\text{obs}}|\;\big|\;H_0\big)=2\big(1-\Phi(|z_{\text{obs}}|)\big),\qquad \text{reject }H_0\text{ if }p&lt;\alpha</div>
+        <table class="sym">
+          <tr><td>x̄, s</td><td>sample mean and sample standard deviation</td></tr>
+          <tr><td>SE = σ/√n</td><td>standard error: standard deviation of the estimate across repeated samples</td></tr>
+          <tr><td>μ₀</td><td>the value of the mean claimed by H₀ (0 for "no difference")</td></tr>
+          <tr><td>z</td><td>how many standard errors the observation is from the null value</td></tr>
+          <tr><td>Φ</td><td>the standard normal CDF; <span class="tex">2(1-\Phi(|z|))</span> counts both tails (two-sided test)</td></tr>
+          <tr><td>α</td><td>significance level: the tolerated false-alarm rate, chosen <i>before</i> looking</td></tr>
+          <tr><td>p-value</td><td>P(data this extreme or more | H₀ true) — a statement about data given H₀</td></tr>
+          <tr><td>t<sub>n−1</sub></td><td>Student-t critical value (≈ 1.96 for 95% when n is large)</td></tr>
+        </table>
+        <p><b>Multiple comparisons.</b> If you run 20 independent tests of true null hypotheses at <span class="tex">\alpha=0.05</span>, the chance of at least one false "discovery" is <span class="tex">1-0.95^{20}=0.64</span>. Compare many models, features or hyperparameters and "significance" is guaranteed by luck. Remedies: decide the tests in advance, correct the threshold (Bonferroni: use <span class="tex">\alpha/m</span>), and replicate.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1 · Intervals that sometimes miss</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play at the default 95% level and watch the rows arrive one by one. Each row is a fresh experiment's interval; its dot is that experiment's sample mean. Green rows catch the dashed true mean, red rows miss it. Wait for ~40 and see that roughly 2 are red.</li>
+        <li>Press "+100 at once" a few times: the coverage counter should settle near 95%. That is what "95% confidence" <i>means</i>.</li>
+        <li>Switch to 68% or 80%: intervals shrink and more of them miss. Switch to 99%: wider, rarely wrong.</li>
+        <li>Increase n from 10 to 80: the intervals get narrower by about <span class="tex">\sqrt8\approx2.8</span> — but the coverage stays 95%. More data buys precision, not a different error rate.</li>
+        <li>Set n = 5 and untick "use Student-t": coverage falls below 95%, because using the Gaussian value ignores the extra uncertainty from estimating s.</li></ol></div>
+      <div id="lab-ciCoverage" data-lab="ciCoverage"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2 · The null world, p-values and power</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with the <b>true difference = 0</b> (no real effect) and press play. Each experiment drops a white dot into the blue null curve and its p-value into the histogram below. The histogram is <i>flat</i>: when there is no effect every p-value is equally likely, and about 5% land below 0.05 (the red bars) — pure false alarms.</li>
+        <li>Now set the true difference to 3 points, n = 100. The green dashed curve is the real world. Dots land mostly in the red rejection region and p-values pile up near 0. The theory line in the readout gives the power.</li>
+        <li>Keep the difference at 3 but lower n to 25: the curves overlap, power collapses, and most real effects go undetected.</li>
+        <li>Single-step with the Step button and read the caption: p-value = the orange tail area beyond the observed |difference|.</li></ol></div>
+      <div id="lab-pTest" data-lab="pTest"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps — p-value misreadings</b><ul>
+          <li><b>"p = 0.03 means there is a 3% chance the null is true."</b> No. The p-value is <span class="tex">P(\text{data}\mid H_0)</span>, not <span class="tex">P(H_0\mid\text{data})</span>. Flipping the conditional is the base-rate fallacy of Module 3: the second needs a prior.</li>
+          <li><b>"p &gt; 0.05 proves there is no effect."</b> No: it only says the data are not surprising under H₀. A small study can fail to detect a real effect (low power). Absence of evidence ≠ evidence of absence.</li>
+          <li><b>"Significant means important."</b> With a million test examples a 0.05-point accuracy gain is "highly significant" and useless. Report effect size and a CI.</li>
+          <li><b>p-hacking.</b> Trying many metrics, subsets, seeds or models and reporting the one that crossed 0.05 makes the real false-alarm rate far above 5% (20 tries → 64%). Fix the analysis before you look; correct for multiple comparisons.</li>
+          <li><b>"95% CI = 95% chance the truth is inside <i>this</i> interval"</b> — the 95% belongs to the procedure, not the one interval.</li>
+          <li><b>Ignoring dependence.</b> The formulas assume independent examples. Test examples from the same user, same document or consecutive time steps are correlated, so the real SE is larger than σ/√n.</li>
+          <li>For two models evaluated on the <i>same</i> test set, use a <i>paired</i> analysis of per-example differences, as in the worked example; comparing two separate error bars throws information away.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Comparing models honestly:</b> a benchmark score is an estimate with an SE. Accuracy <span class="tex">\hat p</span> on <span class="tex">n</span> examples has <span class="tex">\mathrm{SE}=\sqrt{\hat p(1-\hat p)/n}</span>; at 85% on 1000 examples that is ±1.1 points (×1.96 ≈ ±2.2), so a leaderboard gap of 0.5 points is noise. Tools: paired bootstrap, McNemar's test, paired t-test across seeds.</li>
+          <li><b>A/B tests</b> of recommender and ranking changes use exactly the z-test above; online platforms track power and run-length for them.</li>
+          <li><b>Seed variance:</b> RL and deep-learning results vary wildly between random seeds; reporting a mean ± CI across seeds is the modern standard.</li>
+          <li><b>Calibration and uncertainty:</b> error bars on predictions, conformal prediction and Bayesian posteriors are generalisations of the confidence interval.</li>
+          <li><b>Evaluation of LLMs</b> on small human-rated sets demands intervals: a "win rate 55%" from 100 comparisons has an SE of 5 points.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A sample of n = 64 has s = 12. Compute the standard error and the approximate 95% interval if x̄ = 40.</summary><div class="ans">SE = 12/√64 = 1.5. Approximate 95% CI = 40 ± 1.96×1.5 = [37.06, 42.94] (the exact t value for 63 d.f. is ≈ 2.00, giving about ±3.0).</div></details>
+        <details class="check"><summary>2. Eleven independent tests are each run at α = 0.05 and all nulls are true. What is the probability that at least one is "significant"? How would you fix this?</summary><div class="ans">1 − 0.95¹¹ ≈ 1 − 0.5688 = 0.431. Use a corrected threshold (Bonferroni: α/11 ≈ 0.0045), pre-register the tests, or control the false-discovery rate.</div></details>
+        <details class="check"><summary>3. A study reports p = 0.04 for a new method. State precisely what the 0.04 is, and one thing it is not.</summary><div class="ans">It is the probability of seeing a difference at least this extreme if the null hypothesis (no real difference) were true. It is not the probability that the method does not work, nor the probability the result will replicate, nor a measure of how big or useful the effect is.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Estimates wobble; the standard error σ/√n measures by how much — 4× data halves it.</li><li>A 95% confidence interval is produced by a procedure that covers the truth 95% of the time; it is not a 95% probability for one interval.</li><li>A p-value is P(data this extreme | null), not P(null | data); significant ≠ important; non-significant ≠ no effect.</li><li>Power depends on effect size and n; multiple testing inflates false alarms. Report effect sizes with intervals and compare models with paired analyses.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 ===================== -->
+    <section class="lesson" id="resampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.5</span><h2>Resampling &amp; evaluation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 1000 labelled examples and one chance to get a trustworthy answer to "how well will this model do on future data?". If you test on the data you trained on, the answer is flattering and wrong. If you hold out half for testing, you waste half your data. And once you have tuned the model many times, which numbers can you still believe? How do we squeeze the maximum honest information out of limited data?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of an exam. A student who has seen the exact questions beforehand will score well and prove nothing. A trustworthy exam must consist of questions the student has never seen. Training a model is studying; evaluation is the exam. <b>Rule zero of evaluation: never grade on what the model studied from.</b> Everything in this lesson is a technique for building an exam that is fair and, in the second half, for knowing how much to trust the grade it gives.</p>
+        <p>The standard layout uses <b>three</b> separate piles:</p>
+        <ul>
+          <li><b>Training set</b> — the model's parameters are fitted here (4.1).</li>
+          <li><b>Validation set</b> — used to <i>make choices</i>: regularization strength, degree, architecture, when to stop. Looking at it is allowed, repeatedly.</li>
+          <li><b>Test set</b> — locked away until the end; used <i>once</i> to report the final number. Every time a choice is made by looking at the test score, the test set silently turns into a validation set and its number stops being honest.</li></ul>
+        <p>A typical split is 60/20/20 or 80/10/10; for huge datasets even 1% can be enough, because the test SE (4.4) is already small.</p>
+
+        <h3 class="sec">Build it up: cross-validation</h3>
+        <p>With little data, a single validation set is both small (a noisy estimate, SE large) and wasteful. <b>k-fold cross-validation</b> solves this by letting every example take a turn as the exam:</p>
+        <ol>
+          <li>Shuffle the data and cut it into <span class="tex">k</span> equal <b>folds</b>.</li>
+          <li>For <span class="tex">i=1,\dots,k</span>: train on the other <span class="tex">k-1</span> folds; measure the error on fold <span class="tex">i</span>.</li>
+          <li>Average the <span class="tex">k</span> scores. That is the CV estimate; their spread indicates its reliability.</li></ol>
+        <p>Every example is used for validation exactly once and for training <span class="tex">k-1</span> times, and each score comes from a model that never saw its own validation fold. Common choices: <span class="tex">k=5</span> or <span class="tex">10</span>. The extreme <span class="tex">k=n</span> is <b>leave-one-out</b>: lowest bias of the estimate, but <span class="tex">n</span> fits and highly correlated models. Cost: <span class="tex">k</span> times the training. (For classification keep class proportions in each fold: <i>stratified</i> folds; for time series, always validate on the <i>future</i>, never shuffle.)</p>
+        <div class="worked"><b>Worked example</b>
+          <p>10 examples, <span class="tex">k=5</span> → each fold has 2 examples; the model is trained on 8, validated on 2, five times. Fold errors: 0.30, 0.20, 0.25, 0.35, 0.15.</p>
+          <p>Mean = (0.30+0.20+0.25+0.35+0.15)/5 = <b>0.25</b>. Deviations from the mean: 0.05, −0.05, 0, 0.10, −0.10; squares sum to 0.0025+0.0025+0+0.01+0.01 = 0.025; sample variance = 0.025/4 = 0.00625; sd = 0.0791. A rough standard error of the mean is 0.0791/√5 = 0.035 (an approximation: folds share training data, so they are not fully independent). Report: "CV error 0.25 ± 0.04".</p></div>
+
+        <h3 class="sec">Build it up: the bootstrap</h3>
+        <p>In 4.4 the standard error of a mean came from a formula that required a theory (CLT). For the median, a correlation, an F1 score or the AUC no such tidy formula exists. The <b>bootstrap</b> gets the answer by brute force, using one clever stand-in: <i>treat your sample as if it were the population</i>.</p>
+        <ol>
+          <li>You have a sample of <span class="tex">n</span> values. Draw <span class="tex">n</span> values <b>with replacement</b> from it (pick one at random, write it down, <i>put it back</i>, repeat). This is a <b>bootstrap resample</b>: some original values appear twice or thrice, some not at all.</li>
+          <li>Compute the statistic of interest on the resample.</li>
+          <li>Repeat <span class="tex">B</span> times (1000–10000). The spread of the <span class="tex">B</span> statistics approximates how the statistic would vary across real new samples.</li>
+          <li>Standard error ≈ standard deviation of those <span class="tex">B</span> values; a 95% <b>percentile interval</b> = the 2.5th and 97.5th percentiles.</li></ol>
+        <div class="worked"><b>Worked example</b>
+          <p>Original sample (3, 5, 8), mean 5.33. One resample of size 3 with replacement could be (5, 5, 8), with mean 6. There are 3³ = 27 equally likely ordered resamples. The chance a particular value, say 3, is <i>never</i> chosen is <span class="tex">(2/3)^3=8/27=0.296</span>. In general each point is missed with probability <span class="tex">(1-1/n)^n\to e^{-1}\approx0.368</span>: <b>about 37% of examples are left out of each bootstrap resample</b> and about 63% appear. Those left-out ones are the <i>out-of-bag</i> examples — a free validation set for that resample (the principle behind random forests' OOB error).</p></div>
+
+        <h3 class="sec">Build it up: leakage, the silent killer</h3>
+        <p>All of the above relies on one condition: <b>information from the held-out data must not reach the model before the final test</b>. When it does, we call it <b>data leakage</b>, and scores become fantasy. Typical leaks:</p>
+        <ul>
+          <li><b>Preprocessing before splitting.</b> Standardising features with the mean and std of the <i>whole</i> dataset, selecting the "best 20 features" using all labels, fitting PCA or an imputer or a vocabulary on everything. The test rows influenced the pipeline. Correct order: split first; fit every transformation on the training part only; apply it unchanged to validation/test.</li>
+          <li><b>Duplicates and near-duplicates</b> across splits (the same image augmented, the same user's records, overlapping text windows). Split by <i>group</i> (user, patient, document), not by row.</li>
+          <li><b>Time leakage:</b> using the future to predict the past. Split by time.</li>
+          <li><b>Target leakage:</b> a feature that secretly encodes the answer (a "refund issued" flag when predicting churn).</li>
+          <li><b>Tuning on the test set</b> (see 4.3 and the three-pile rule), including benchmark contamination: evaluation items that appeared in an LLM's training data.</li></ul>
+        <div class="worked"><b>Worked example — leakage on pure noise</b>
+          <p>With <span class="tex">n=60</span> examples whose labels are coin flips and <span class="tex">d=1000</span> features of pure noise, no pipeline can honestly beat 50%. Yet among 1000 noise features some will correlate with the labels by luck: each correlation has size about <span class="tex">1/\sqrt n\approx0.13</span>, and the <i>largest</i> of 1000 is around 0.43 (≈ 3.3 standard deviations — a simulation of this exact setting gives 0.43). If you pick the 20 "best" features using <i>all</i> labels and only <i>then</i> split to train a classifier, the test rows have helped choose those features, so the held-out accuracy is measured at about <b>91%</b> in simulation. Choose the 20 features inside the training rows only and the accuracy is an honest <b>50%</b>. Same data, same model, same code apart from the order of two steps. The lab reproduces this.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\widehat{\mathrm{Err}}_{\text{CV}}=\frac1k\sum_{i=1}^{k}\frac{1}{|F_i|}\sum_{(x,y)\in F_i}\ell\big(y,\;\hat f^{(-i)}(x)\big),\qquad \mathrm{SE}_{\text{boot}}(T)\approx\sqrt{\frac{1}{B-1}\sum_{b=1}^{B}\big(T^{*b}-\bar T^{*}\big)^2}</div>
+        <table class="sym">
+          <tr><td>k</td><td>number of folds</td></tr>
+          <tr><td>F<sub>i</sub></td><td>the i-th fold (the held-out examples), |F<sub>i</sub>| its size</td></tr>
+          <tr><td>f̂<sup>(−i)</sup></td><td>the model trained on all data <i>except</i> fold i</td></tr>
+          <tr><td>ℓ</td><td>the loss (squared error, cross-entropy, 0–1 error…)</td></tr>
+          <tr><td>T</td><td>any statistic of the data (mean, median, AUC…)</td></tr>
+          <tr><td>T<sup>*b</sup></td><td>the statistic computed on the b-th bootstrap resample; B resamples in total</td></tr>
+          <tr><td>T̄*</td><td>the average of the B bootstrap statistics</td></tr>
+        </table>
+        <p>The bootstrap interval is only as good as the sample: it cannot invent information about regions your data never visited, and it behaves poorly for extremes (the maximum) or very tiny samples.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1 · k-fold cross-validation, step by step</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and follow the numbered captions. Each row is one round: orange cells are held out, blue cells are training. The bottom chart shows the polynomial actually being fitted on the blue points only, and the orange segments are its errors on the held-out points.</li>
+        <li>Watch the green curve change between folds: the model depends on which data it saw. That is variance (4.3) made visible; averaging the k scores smooths over it.</li>
+        <li>Raise the polynomial degree to 9: fold scores become large and erratic — CV is warning you that the model overfits, while the training MSE in the readout stays deceptively small.</li>
+        <li>Set k = 20 (leave-one-out) and k = 2 and compare the CV estimate and the spread between folds.</li></ol></div>
+      <div id="lab-kfold" data-lab="kfold"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2 · The bootstrap histogram</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch one resample form: each pick is a random original value; orange stacks show repeats. Some blue dots will never be picked in a resample — that is normal (about 37% are left out).</li>
+        <li>When 15 picks are done the resample's statistic drops into the histogram. After a few dozen the histogram takes shape; press "+200 resamples" to fill it.</li>
+        <li>For the <b>mean</b>, compare the bootstrap SE with the formula s/√n in the readout — they agree closely. Now switch to the <b>median</b> or <b>standard deviation</b>: no tidy formula exists, yet the bootstrap still gives an uncertainty and a 95% interval.</li></ol></div>
+      <div id="lab-bootstrap" data-lab="bootstrap"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 3 · Leakage: a perfect score on pure noise</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and read the two rows: pipeline A selects features <i>before</i> splitting, pipeline B <i>after</i>. The labels are coin flips, so the truth is 50%.</li>
+        <li>Press "+30 trials". The red histogram (A) sits far above 50%; the green one (B) is centred on 50%, where it belongs.</li>
+        <li>Reduce the number of noise features d to 50: the illusion shrinks (fewer chances to find a lucky feature). Raise d to 2000 or lower n: it grows. Few samples + many features is the classic leakage-prone setting (genomics, small medical datasets).</li></ol></div>
+      <div id="lab-leakage" data-lab="leakage"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reusing the test set.</b> Each peek that influences a decision leaks information. If you must iterate, make a fresh validation set or use nested cross-validation (an outer CV for the final estimate, an inner one for tuning).</li>
+          <li><b>Preprocessing on all the data.</b> Scalers, imputers, PCA, feature selection, target encoding, tokenisers/vocabularies: fit on training folds only — inside every CV fold, not once outside. Use a <code>Pipeline</code> object so the order is enforced.</li>
+          <li><b>Random splits when data are grouped or ordered</b> (users, patients, videos, time). Use group-aware or time-ordered splits.</li>
+          <li><b>Reporting the best fold or best seed.</b> Report the mean and spread over folds/seeds, with intervals (4.4).</li>
+          <li><b>Bootstrap on the wrong unit.</b> Resample independent units (patients, documents), not correlated rows. And the bootstrap does not fix a biased or unrepresentative sample.</li>
+          <li><b>Mismatch between validation and deployment.</b> A perfectly clean estimate of performance on the <i>wrong distribution</i> is still wrong (distribution shift, covered later).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Hyper-parameter search</b> (grid/random search, Bayesian optimisation) scores each candidate by cross-validation or a validation split; scikit-learn's <code>GridSearchCV</code> does exactly the loop above.</li>
+          <li><b>Early stopping</b> monitors the validation loss; the <b>test</b> set is only for the final report. Deep-learning benchmarks (ImageNet, GLUE, MMLU) formalise the locked test set, and <b>benchmark contamination</b> in LLMs is a leakage problem.</li>
+          <li><b>Bagging and random forests</b> are bootstrap resamples + averaging (reduces variance, 4.3); the out-of-bag 37% gives free validation.</li>
+          <li><b>Confidence intervals on metrics</b> (accuracy, F1, AUC, BLEU) by bootstrapping the test set — the honest way to compare two models.</li>
+          <li><b>MLOps:</b> time-based splits for forecasting; group splits in medical imaging (all images of one patient in the same fold); data-leak audits before release.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. You standardise a dataset with its global mean and standard deviation, then run 5-fold CV. What is wrong, and how do you fix it?</summary><div class="ans">The scaler used statistics that include the validation fold's rows, so information from held-out data leaked into the pipeline. Inside each fold, compute the mean/std from the training folds only and apply them to the validation fold (e.g. put the scaler in a Pipeline).</div></details>
+        <details class="check"><summary>2. A dataset has n = 100 points. Roughly how many distinct original points appear in one bootstrap resample of size 100?</summary><div class="ans">Each point is missed with probability (1−1/100)¹⁰⁰ ≈ 0.366, so about 63.4 distinct points appear (≈ 63), and ≈ 37 are out-of-bag.</div></details>
+        <details class="check"><summary>3. 5-fold CV on 500 examples: how many examples train each model, and how many times is each example used for validation?</summary><div class="ans">Each fold holds 100 examples, so each model trains on 400. Every example is in the validation fold exactly once (and in the training set 4 times).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Train to fit, validation to choose, test once to report. Never grade on what the model studied.</li><li>k-fold CV lets every example serve as validation once and gives an estimate plus a spread.</li><li>The bootstrap resamples with replacement to get standard errors and intervals for any statistic; ≈ 37% of points are left out of each resample.</li><li>Leakage (preprocessing before splitting, duplicates, time, target) produces impressive but fictional scores: split first, fit everything on training data only.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say what it means to learn from data: estimate by maximum likelihood, add priors as regularization, balance bias against variance, quantify uncertainty honestly and evaluate without fooling yourself. Next, <b>Module 5</b> (Information theory) shows that cross-entropy, the loss you derived here as a negative log-likelihood, is also a measure of surprise and compression.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

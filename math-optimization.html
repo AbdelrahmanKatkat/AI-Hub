@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 6 · Optimization · Mathematics for AI</title>
+<meta name="description" content="Loss landscapes, convexity, gradient descent, SGD, momentum, Adam, learning-rate schedules, Lagrange multipliers and regularization — how models actually learn, built from intuition.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-math.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-math.js"></script>
+<script defer src="assets/labs-optimization.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="math" data-module="6">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="mathematics.html">Mathematics for AI</a> › Module 6</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">6</div>
+      <div style="flex:1">
+        <h1>Module 6 · Optimization</h1>
+        <p>Training a model means walking downhill on a landscape you can never see from above. This module shows what that landscape looks like, why a step opposite to the gradient works, how fast it converges (and why it sometimes zig-zags or explodes), how noise, momentum and adaptive scaling change the walk, why the step size should change over time, and how rules such as "keep the weights small" become constrained optimisation.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: calculus (gradient, Hessian), linear algebra (eigenvalues)</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 6.1 ===================== -->
+    <section class="lesson" id="landscapes" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">6.1</span><h2>Loss landscapes &amp; convexity</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A language model has 100 million adjustable knobs and one number, the loss, that says how badly it is doing. Somewhere in a 100-million-dimensional space there are knob settings with a small loss. How do we even describe "a lowest point" in a space we cannot draw — and if our search stops where the slope is zero, how do we know we have found a valley floor and not a hilltop or a mountain pass?</div>
+
+        <h3 class="sec">Intuition: a mountain range hidden in fog</h3>
+        <p>Imagine standing on a hillside in thick fog. Your <b>position</b> on the ground is the setting of the knobs <span class="tex">\theta</span> (with two knobs, east–west and north–south are the two coordinates). Your <b>altitude</b> is the loss <span class="tex">L(\theta)</span>: high ground means a bad model, low ground a good one. The whole surface of altitudes over all positions is the <b>loss landscape</b>. Training is the quest to walk to a low place when all you can perceive is the ground right under your feet.</p>
+        <p>Whenever the ground under your feet is perfectly level — the slope is zero in every direction — you are at a <b>critical point</b>. There are three kinds, and the fog makes them feel identical:</p>
+        <ul>
+          <li><b>Minimum</b> — the bottom of a bowl. Every direction you step leads uphill.</li>
+          <li><b>Maximum</b> — the top of a dome. Every direction leads downhill.</li>
+          <li><b>Saddle</b> — a mountain pass or a horse's saddle: uphill if you walk along the ridge line, downhill if you cross it. Level ground, yet neither top nor bottom.</li>
+        </ul>
+        <p>The slope alone (the gradient) cannot tell these apart. What distinguishes them is how the ground <i>curves</i> — and curvature is what the second derivative measures.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>One knob.</b> With a single parameter, the landscape is an ordinary curve <span class="tex">f(x)</span>. Critical points satisfy <span class="tex">f'(x)=0</span>. The second derivative <span class="tex">f''(x)</span> is "how fast the slope is changing": positive means the curve bends upward like a smile (bottom of a bowl), negative means it bends downward like a frown (top of a dome).</p>
+        <div class="worked"><b>Worked example — one knob</b>
+          <p><span class="tex">f(x)=x^3-3x</span>. Then <span class="tex">f'(x)=3x^2-3=0\Rightarrow x=\pm1</span>, and <span class="tex">f''(x)=6x</span>.</p>
+          <p>At <span class="tex">x=1</span>: <span class="tex">f''=6&gt;0</span>, a local minimum with <span class="tex">f(1)=-2</span>. At <span class="tex">x=-1</span>: <span class="tex">f''=-6&lt;0</span>, a local maximum with <span class="tex">f(-1)=2</span>. Notice the minimum is only <i>local</i>: far to the left, <span class="tex">x^3-3x</span> goes down to <span class="tex">-\infty</span>, so there is no lowest point at all.</p></div>
+        <p><b>Many knobs.</b> With <span class="tex">n</span> knobs there are <span class="tex">n</span> directions to bend in, and the second derivative becomes the <b>Hessian matrix</b> <span class="tex">H</span> of all second partial derivatives (Module 2). Because <span class="tex">H</span> is symmetric, it has real eigenvalues <span class="tex">\lambda_1,\dots,\lambda_n</span> with perpendicular eigenvectors. Each eigenvector is a "principal direction" of the landscape and its eigenvalue is the curvature along that direction: positive → bends up, negative → bends down. At a critical point:</p>
+        <ul>
+          <li>all <span class="tex">\lambda_i&gt;0</span> → local <b>minimum</b>;</li>
+          <li>all <span class="tex">\lambda_i&lt;0</span> → local <b>maximum</b>;</li>
+          <li>some positive, some negative → <b>saddle</b>;</li>
+          <li>some <span class="tex">\lambda_i=0</span> → the test is inconclusive (look at higher-order terms; think of <span class="tex">x^4</span> versus <span class="tex">x^3</span> at 0).</li>
+        </ul>
+        <div class="worked"><b>Worked example — a saddle in disguise</b>
+          <p><span class="tex">f(x,y)=x^2+4xy+y^2</span> looks harmless, like a sum of squares. Gradient: <span class="tex">\nabla f=(2x+4y,\;4x+2y)</span>, which is zero only at the origin. Hessian: <span class="tex">H=\begin{pmatrix}2&amp;4\\4&amp;2\end{pmatrix}</span>.</p>
+          <p>Eigenvalues: <span class="tex">\det(H-\lambda I)=(2-\lambda)^2-16=0\Rightarrow\lambda=2\pm4</span>, i.e. <span class="tex">6</span> and <span class="tex">-2</span>. One of each sign: a <b>saddle</b>.</p>
+          <p>Check by walking: along the eigenvector <span class="tex">(1,1)</span> (eigenvalue 6) we get <span class="tex">f(t,t)=t^2+4t^2+t^2=6t^2</span>, uphill. Along <span class="tex">(1,-1)</span> (eigenvalue −2) we get <span class="tex">f(t,-t)=t^2-4t^2+t^2=-2t^2</span>, downhill. The origin is a pass.</p></div>
+
+        <h3 class="sec">Convexity: landscapes with no traps</h3>
+        <p>Some landscapes are friendly: a single smooth bowl. We capture this with <b>convexity</b>. Pick any two points on the graph and stretch a string (a <b>chord</b>) between them. If the string never dips below the graph — for every pair of points — the function is <b>convex</b>. A bowl passes the test; a hill with two humps fails.</p>
+        <p>Why this matters: for a convex function <b>every local minimum is a global minimum</b>, and gradient-based methods have strong guarantees. A <b>convex set</b> is the same idea for regions: the straight segment between any two points of the set stays inside it (a disc is convex; a crescent is not). Convex functions are easy to recognise through curvature: <span class="tex">f''\ge0</span> everywhere in 1D, or the Hessian having all eigenvalues <span class="tex">\ge0</span> ("positive semidefinite") everywhere in many dimensions.</p>
+        <div class="worked"><b>Worked example — the chord test with numbers</b>
+          <p>Take <span class="tex">f(x)=x^2</span> and the points <span class="tex">x=0</span> and <span class="tex">x=2</span>, so <span class="tex">f=0</span> and <span class="tex">f=4</span>. At the midpoint <span class="tex">x=1</span> the chord has height <span class="tex">\tfrac12\cdot0+\tfrac12\cdot4=2</span>, while the curve has height <span class="tex">f(1)=1</span>. Curve ≤ chord ✓ (and this holds for every chord, so <span class="tex">x^2</span> is convex).</p>
+          <p>Now <span class="tex">f(x)=-x^2</span>: values 0 and −4, chord height at the midpoint <span class="tex">-2</span>, curve height <span class="tex">f(1)=-1&gt;-2</span>. The curve rises above the chord: not convex. A single failing chord is a proof of non-convexity.</p></div>
+        <p><b>Local versus global.</b> In a non-convex landscape a local minimum is only the lowest point <i>nearby</i>; a deeper valley may exist elsewhere. Modern neural networks are non-convex, yet they train well. Two reasons are commonly given. First, in very high dimensions a critical point is almost never a minimum: it needs <i>all</i> <span class="tex">n</span> curvatures to be positive, and for large <span class="tex">n</span> the overwhelming majority of critical points are saddles with at least one downhill direction, so you can keep going. Second, many of the minima that are found have very similar loss, so landing in "a" good valley is enough. Neither fact is a theorem about all networks, but together they explain why the pessimism about non-convexity has largely not matched practice.</p>
+
+        <h3 class="sec">The formal definitions</h3>
+        <div class="eq">\nabla f(\theta^\star)=0\quad(\text{critical point}),\qquad H=\nabla^2 f(\theta^\star),\quad H_{ij}=\frac{\partial^2 f}{\partial\theta_i\,\partial\theta_j}</div>
+        <div class="eq">f\ \text{convex}\iff f\big((1-t)a+tb\big)\le(1-t)f(a)+t\,f(b)\quad\text{for all }a,b\text{ and }t\in[0,1]</div>
+        <table class="sym">
+          <tr><td>θ★</td><td>a point where we are testing for a minimum</td></tr>
+          <tr><td>∇f</td><td>the gradient: the vector of slopes in each knob direction (Module 2)</td></tr>
+          <tr><td>H, ∇²f</td><td>the Hessian: the symmetric matrix of second derivatives = curvature in every direction</td></tr>
+          <tr><td>λᵢ</td><td>eigenvalues of H; the sign of each is whether that principal direction bends up or down</td></tr>
+          <tr><td>(1−t)a + t b</td><td>the point a fraction t of the way from a to b (t = 0 is a, t = 1 is b)</td></tr>
+          <tr><td>(1−t)f(a) + t f(b)</td><td>the height of the chord at that same horizontal position</td></tr>
+        </table>
+        <p>Equivalent statement: convex ⇔ the Hessian is positive semidefinite everywhere (when <span class="tex">f</span> is twice differentiable).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: classify critical points, then test the chord</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with "Hill + valley". The map shows one green minimum and one orange saddle. Click near each: the readout shows the Hessian eigenvalues (one blue bar curves up, one orange bar curves down at a saddle).</li>
+        <li>Click a point away from any critical point, press "Roll a ball", and watch it follow −∇f slowly downhill to a minimum. Then click right next to the saddle and roll again: it first creeps along the pass, then falls off the side.</li>
+        <li>Load "Sum of squares?" (<span class="tex">x^2+4xy+y^2</span>): the app reports a saddle — your worked example. Load "Himmelblau": count the minima, maxima and saddles; notice how many saddles there are compared with minima.</li>
+        <li>Load "Flat in y" (<span class="tex">x^2+y^4</span>): one curvature is almost 0, and the Hessian test is inconclusive although the point is a minimum.</li></ol></div>
+      <div data-lab="landscapes"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>Choose "x^2 (convex)": every chord (green gap) stays above the curve. Drag the ends a and b around.</li>
+        <li>Choose "double well (non-convex)" and move a and b to the two different wells: a red gap appears where the curve rises above the chord. Press "Test 400 random chords" to count violations.</li>
+        <li>Try "|x|": convex despite the sharp corner (convex does not require differentiability), and "exp(x)": convex but with no minimum at all.</li></ol></div>
+      <div data-lab="convexity"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Gradient zero means minimum."</b> It only means <i>critical point</i>. Saddles and maxima also have zero gradient.</li>
+          <li><b>"Convex means there is a minimum."</b> <span class="tex">e^x</span> is convex and never reaches a minimum. Convexity says every local minimum, <i>if one exists</i>, is global.</li>
+          <li><b>Zero curvature is silent.</b> <span class="tex">f''(0)=0</span> for <span class="tex">x^4</span> (a minimum) and for <span class="tex">x^3</span> (neither). The second-derivative test says nothing.</li>
+          <li><b>Local minima are not necessarily bad.</b> In deep learning the real trouble is more often flat plateaus and badly scaled valleys (next lessons) than poor local minima.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Convex models:</b> linear regression with squared error, logistic regression, support vector machines. Their loss has a single basin, so training always reaches the optimum. The Hessian of mean squared error for a linear model is <span class="tex">\tfrac{2}{N}X^\top X</span>, which is positive semidefinite because <span class="tex">v^\top X^\top Xv=\|Xv\|^2\ge0</span>.</li>
+          <li><b>Non-convex models:</b> every neural network with hidden layers. Training still works, and tools such as Hessian eigenvalue spectra and loss-surface visualisation are used to study how "sharp" or "flat" a solution is.</li>
+          <li><b>Symmetry saddles:</b> permuting the neurons of a hidden layer gives a different parameter vector with an identical function, so landscapes contain huge families of equivalent minima.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Classify the critical points of f(x) = x⁴ − 2x².</summary><div class="ans">f′ = 4x³ − 4x = 4x(x−1)(x+1) = 0 → x = 0, ±1. f″ = 12x² − 4. At x = 0: f″ = −4 &lt; 0, a local maximum (f = 0). At x = ±1: f″ = 8 &gt; 0, two local minima (f = −1). Two equal minima: non-convex.</div></details>
+        <details class="check"><summary>2. At a critical point the Hessian is [[3, 0],[0, −1]]. What is it, and which direction goes downhill?</summary><div class="ans">Eigenvalues 3 and −1 (the matrix is diagonal): one positive, one negative → a saddle. It curves up along the first axis and down along the second, so moving along the second axis (either way) decreases f.</div></details>
+        <details class="check"><summary>3. Why is mean squared error for a linear model, L(w) = (1/N)‖Xw − y‖², convex?</summary><div class="ans">Its Hessian is (2/N)XᵀX. For any vector v, vᵀXᵀXv = ‖Xv‖² ≥ 0, so the Hessian is positive semidefinite everywhere: every eigenvalue ≥ 0, hence convex. Every local minimum is global.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Loss landscape = altitude over parameter space; training walks downhill in fog.</li><li>∇f = 0 marks critical points; the Hessian's eigenvalue signs classify them as minimum, maximum or saddle.</li><li>Convex ⇔ chords never dip below the graph ⇔ Hessian ⪰ 0; then local minima are global.</li><li>Deep nets are non-convex, but high-dimensional saddles can be escaped and good minima are plentiful.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.2 ===================== -->
+    <section class="lesson" id="gradient-descent" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">6.2</span><h2>Gradient descent</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You are on the foggy hillside again. You can feel the slope under your feet but see nothing further. Which direction should you step, how long should the step be, and — the question that decides whether training works at all — when does a sequence of such steps actually arrive at the bottom instead of wandering, zig-zagging or flying off the mountain?</div>
+
+        <h3 class="sec">Intuition: the ball and the fog</h3>
+        <p>Place a ball on the hillside. It does not need eyes: gravity pushes it opposite to the slope, i.e. straight along the steepest downhill direction, and it keeps going until the ground is flat. Gradient descent is exactly that, in slow motion and with steps we choose. At each point: (1) feel the local slope, (2) take a small step in the downhill direction, (3) repeat.</p>
+        <p>The slope in several dimensions is the <b>gradient</b> <span class="tex">\nabla L</span>, the vector that points <i>uphill</i> in the steepest way, and whose length is how steep that is. So the downhill direction is <span class="tex">-\nabla L</span>. The step length is controlled by a number <span class="tex">\eta&gt;0</span> called the <b>learning rate</b> (or step size): small values are cautious, large values are bold.</p>
+
+        <h3 class="sec">Build it up: why stepping against the gradient must help</h3>
+        <p>We never see the whole landscape, only its tangent. Zoom into a tiny region and any smooth landscape looks like a tilted flat plane — that is the first-order <b>Taylor expansion</b> (Module 2):</p>
+        <div class="eq">L(\theta+\Delta)\;\approx\;L(\theta)+\nabla L(\theta)\cdot\Delta</div>
+        <p>The term <span class="tex">\nabla L\cdot\Delta</span> says how much the altitude changes when we move by <span class="tex">\Delta</span>. Among all moves of a fixed length <span class="tex">\|\Delta\|=\epsilon</span>, the dot product is <span class="tex">\|\nabla L\|\,\epsilon\cos\alpha</span> where <span class="tex">\alpha</span> is the angle between <span class="tex">\Delta</span> and the gradient. It is most negative when <span class="tex">\cos\alpha=-1</span>, i.e. when <span class="tex">\Delta</span> points exactly opposite to the gradient. So <b>−∇L is the direction of steepest descent</b>. Choosing <span class="tex">\Delta=-\eta\nabla L</span> gives</p>
+        <div class="eq">L(\theta-\eta\nabla L)\;\approx\;L(\theta)-\eta\,\|\nabla L(\theta)\|^2\;\le\;L(\theta)</div>
+        <p>The loss decreases by <span class="tex">\eta\|\nabla L\|^2</span>, a non-negative amount. But the key word is <i>approximately</i>: the Taylor plane is only accurate nearby. If the step is too long, the landscape curves and the real loss can go up. A cleaner statement: suppose the curvature never exceeds <span class="tex">L_{\max}</span> (we say the gradient is <i>L-smooth</i>; we call this number <span class="tex">L</span> in the quadratic below). Adding the second-order term bounds the true change by <span class="tex">-\eta\|\nabla L\|^2+\tfrac12L_{\max}\eta^2\|\nabla L\|^2=-\eta\bigl(1-\tfrac{L_{\max}\eta}{2}\bigr)\|\nabla L\|^2</span>, which is negative exactly when <span class="tex">\eta&lt;2/L_{\max}</span>. <b>Curvature sets the speed limit.</b></p>
+        <p>The algorithm, in one line:</p>
+        <div class="eq">\theta_{k+1}=\theta_k-\eta\,\nabla L(\theta_k)</div>
+        <div class="worked"><b>Worked example — one knob, by hand</b>
+          <p>Loss <span class="tex">L(w)=(w-3)^2+1</span>, so <span class="tex">L'(w)=2(w-3)</span>. Start at <span class="tex">w_0=0</span>, learning rate <span class="tex">\eta=0.1</span>.</p>
+          <p>Step 1: slope <span class="tex">2(0-3)=-6</span>; <span class="tex">w_1=0-0.1\cdot(-6)=0.6</span>; loss 10 → 6.76.</p>
+          <p>Step 2: slope <span class="tex">2(0.6-3)=-4.8</span>; <span class="tex">w_2=0.6+0.48=1.08</span>; loss → 4.6864.</p>
+          <p>Step 3: slope <span class="tex">2(1.08-3)=-3.84</span>; <span class="tex">w_3=1.08+0.384=1.464</span>; loss → 3.3593.</p>
+          <p>Pattern: the distance to the minimum (3) is multiplied by <span class="tex">1-2\eta=0.8</span> each step: <span class="tex">3,\,2.4,\,1.92,\,1.536,\dots</span> so <span class="tex">w_k=3-3\cdot0.8^k</span> (check <span class="tex">k=3</span>: <span class="tex">3-3\cdot0.512=1.464</span> ✓). Notice steps shrink as we approach: the slope shrinks, so even with a fixed <span class="tex">\eta</span> the steps naturally slow down near the bottom.</p></div>
+
+        <h3 class="sec">Convergence on a quadratic: step size and the condition number</h3>
+        <p>Quadratics are the model problem of optimisation, because near any minimum a smooth loss <i>is</i> a quadratic (Taylor again) with <span class="tex">A=</span> Hessian. Take <span class="tex">f(x)=\tfrac12x^\top Ax</span> with <span class="tex">A</span> symmetric positive definite; the minimum is at 0 and <span class="tex">\nabla f=Ax</span>. One step: <span class="tex">x_{k+1}=x_k-\eta Ax_k=(I-\eta A)x_k</span>. Describe <span class="tex">x</span> in the eigenvector basis of <span class="tex">A</span> (Module 1): each coordinate evolves independently and is multiplied by <span class="tex">(1-\eta\lambda_i)</span> every step. So after <span class="tex">k</span> steps, coordinate <span class="tex">i</span> is <span class="tex">(1-\eta\lambda_i)^k</span> times its start. It shrinks to zero iff <span class="tex">|1-\eta\lambda_i|&lt;1</span>, i.e. <span class="tex">0&lt;\eta\lambda_i&lt;2</span>. For all coordinates at once we need</p>
+        <div class="eq">0&lt;\eta&lt;\frac{2}{\lambda_{\max}}=\frac2L</div>
+        <p>(Here <span class="tex">L=\lambda_{\max}</span> is the steepest curvature.) The overall speed is set by the worst coordinate, the factor <span class="tex">\rho=\max_i|1-\eta\lambda_i|</span>. The best fixed step balances the steepest direction (which wants small <span class="tex">\eta</span>) against the flattest (which wants large <span class="tex">\eta</span>): <span class="tex">\eta^\star=\frac{2}{\lambda_{\min}+\lambda_{\max}}</span>, giving</p>
+        <div class="eq">\rho^\star=\frac{\kappa-1}{\kappa+1},\qquad\kappa=\frac{\lambda_{\max}}{\lambda_{\min}}\ \ (\text{condition number})</div>
+        <p>When <span class="tex">\kappa=1</span> (a perfectly round bowl) <span class="tex">\rho^\star=0</span>: one step lands on the minimum. When <span class="tex">\kappa</span> is huge, <span class="tex">\rho^\star\approx1-\tfrac2\kappa</span>: the iterates barely creep. The picture: a long thin valley. The steep walls force a small <span class="tex">\eta</span> (so we do not bounce out), but then progress along the gentle floor is painfully slow — the ball <b>zig-zags</b> from wall to wall while inching down the valley.</p>
+        <div class="worked"><b>Worked example — zig-zag on an ellipse</b>
+          <p><span class="tex">f(x,y)=\tfrac12(x^2+10y^2)</span>, so <span class="tex">A=\operatorname{diag}(1,10)</span>, <span class="tex">\lambda_{\max}=L=10</span>, <span class="tex">\kappa=10</span>. The limit is <span class="tex">2/L=0.2</span>. Take <span class="tex">\eta=0.18</span> and start at <span class="tex">(10,1)</span>, where <span class="tex">f=55</span>.</p>
+          <p>The gradient is <span class="tex">(x,10y)</span>. Step 1: gradient <span class="tex">(10,10)</span> → <span class="tex">(10-1.8,\;1-1.8)=(8.2,\,-0.8)</span>, <span class="tex">f=36.82</span>. Step 2: gradient <span class="tex">(8.2,-8)</span> → <span class="tex">(8.2-1.476,\;-0.8+1.44)=(6.724,\,0.64)</span>, <span class="tex">f=24.65</span>.</p>
+          <p>Look at <span class="tex">y</span>: <span class="tex">1\to-0.8\to0.64</span>, multiplied by <span class="tex">1-0.18\cdot10=-0.8</span> each time — it flips sign (zig-zag) and slowly shrinks. Look at <span class="tex">x</span>: multiplied by <span class="tex">1-0.18=0.82</span>, a smooth slow decay. The slow coordinate dictates the total time.</p>
+          <p>How long? With the best step <span class="tex">\eta^\star=2/11</span>, <span class="tex">\rho=9/11\approx0.818</span>, so shrinking the error by 1000× takes <span class="tex">\ln(10^{-3})/\ln(9/11)\approx34.4</span>, i.e. about 35 steps. For <span class="tex">\kappa=100</span>: <span class="tex">\rho=99/101</span> and it takes about 346 steps — ten times longer, for a ten-times larger condition number.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\theta_{k+1}=\theta_k-\eta\,\nabla L(\theta_k);\qquad\text{on }f=\tfrac12x^\top Ax:\quad x_{k+1}=(I-\eta A)x_k,\ \ \text{converges}\iff0&lt;\eta&lt;\tfrac{2}{\lambda_{\max}}</div>
+        <table class="sym">
+          <tr><td>θₖ</td><td>the knob settings after k steps (θ₀ is the starting guess)</td></tr>
+          <tr><td>η</td><td>learning rate / step size, a positive number you choose</td></tr>
+          <tr><td>∇L(θₖ)</td><td>the gradient at the current point: uphill direction, length = steepness</td></tr>
+          <tr><td>A</td><td>symmetric positive definite matrix = Hessian of the quadratic</td></tr>
+          <tr><td>λₘₐₓ, λₘᵢₙ</td><td>largest and smallest eigenvalue of A: steepest and gentlest curvature</td></tr>
+          <tr><td>κ = λₘₐₓ/λₘᵢₙ</td><td>condition number; 1 is perfectly round, large is a long narrow valley</td></tr>
+          <tr><td>ρ</td><td>per-step shrink factor of the error, ρ = maxᵢ|1 − ηλᵢ|; smaller is faster</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: three views of gradient descent</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li><b>One step at a time.</b> Press play (slowly!) and read the captions: ① red tangent line = the slope, ② orange arrow = step, ③ the ball moves. Compare the numbers with the worked example (0.6, 1.08, 1.464).</li>
+        <li>Drag on the plot to choose a new start. Use the presets: "too small" crawls, "perfect" (ηL = 1) jumps to the minimum in one step, "overshoot" hops from side to side but still converges, "diverges" runs away.</li></ol></div>
+      <div data-lab="gd1d"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>With κ = 1 and any step near the best, the path goes straight to the centre. Now raise κ to 30 and watch the zig-zag; read "steps to shrink error ×1000" in the readout.</li>
+        <li>Move the step-size slider to 1.0 (that is η = 2/L): the y-coordinate just flips sign forever, never converging. Above it, the path explodes.</li>
+        <li>Tick "best fixed step" and compare steps needed at κ = 10 with your own η.</li></ol></div>
+      <div data-lab="gdquad"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>All four coloured curves run on the same parabola; only r = ηL differs. Blue is slow, green is fast and smooth, orange jumps over the minimum every step yet still shrinks, red grows.</li>
+        <li>Set your own r to exactly 2 (white) and then slightly above: the border between "oscillates forever" and "diverges" is exactly η = 2/L.</li></ol></div>
+      <div data-lab="gdlr"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A learning rate that is fine in one direction is fatal in another.</b> The limit <span class="tex">2/\lambda_{\max}</span> is set by the steepest direction, even if you only care about the gentle one.</li>
+          <li><b>Loss going up means η is too big</b> (or the gradient is wrong), not that "training failed". Halve η first.</li>
+          <li><b>"Converged" means the gradient is small</b>, not that the loss is zero or that you are at the global minimum — you may sit on a plateau or a saddle.</li>
+          <li><b>The gradient lives in parameter space, not data space.</b> It tells you how to change <span class="tex">\theta</span>, not the inputs.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>The training loop.</b> Every framework repeats the same three lines: <code>loss = model(x, y)</code>, <code>loss.backward()</code> (compute <span class="tex">\nabla L</span>, Module 7), <code>optimizer.step()</code> (apply <span class="tex">\theta\leftarrow\theta-\eta\nabla L</span> or a refined version).</li>
+          <li><b>Feature scaling.</b> For linear regression the Hessian is the feature covariance (times 2/N). If one feature has variance 1 and another 100, then κ ≈ 100 and descent zig-zags; standardising features makes κ ≈ 1. This is why we normalise data.</li>
+          <li><b>Sharpness and learning-rate limits.</b> In deep networks the largest Hessian eigenvalue ("sharpness") really does bound the stable learning rate; training runs often hover at the edge <span class="tex">\eta\approx2/\lambda_{\max}</span>.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. L(w) = w², η = 0.25, w₀ = 4. Compute w₁ and w₂ and the shrink factor per step.</summary><div class="ans">L′ = 2w. w₁ = 4 − 0.25·8 = 2. w₂ = 2 − 0.25·4 = 1. Factor 1 − 2η = 0.5 each step. (Here L = f″ = 2, ηL = 0.5.)</div></details>
+        <details class="check"><summary>2. For L(w) = 5w², what is the largest learning rate for which gradient descent converges?</summary><div class="ans">f″ = 10, so the curvature limit is 2/10 = 0.2. For 0 &lt; η &lt; 0.2 the factor |1 − 10η| &lt; 1; at η = 0.2 it equals −1 (oscillates forever); above it diverges.</div></details>
+        <details class="check"><summary>3. A = diag(2, 50). Find κ, the best fixed η and the resulting ρ.</summary><div class="ans">κ = 50/2 = 25. η* = 2/(2+50) = 1/26 ≈ 0.0385. ρ* = (κ−1)/(κ+1) = 24/26 ≈ 0.923, so the error shrinks by about 8% per step; ×1000 reduction takes ln(10⁻³)/ln(0.923) ≈ 86 steps.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>θ ← θ − η∇L; the first-order Taylor expansion shows −∇L is the steepest descent direction and the loss drops by ≈ η‖∇L‖².</li><li>On a quadratic every eigen-direction shrinks by (1 − ηλᵢ); convergence needs 0 &lt; η &lt; 2/λₘₐₓ.</li><li>Speed is governed by the condition number κ: best rate (κ−1)/(κ+1). Large κ = zig-zag.</li><li>Scaling inputs and conditioning the problem are as important as the algorithm.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.3 ===================== -->
+    <section class="lesson" id="sgd" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">6.3</span><h2>Stochastic &amp; mini-batch gradient descent</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A language model trains on a trillion tokens. The true gradient is the average of per-example gradients over <i>all</i> of them. One exact gradient step would require reading the entire dataset — and we need millions of steps. How can we take useful steps without ever computing the true gradient?</div>
+
+        <h3 class="sec">Intuition: polling instead of a census</h3>
+        <p>To learn the average opinion of a country you do not ask everyone: you ask a random sample. The sample average is not exact, but it is <b>unbiased</b> (right on average) and gets more accurate as the sample grows. <b>Stochastic gradient descent</b> does the same with gradients: estimate the full-data gradient from a random handful of examples, step as if it were exact, and repeat with a fresh handful. Each step is noisier than a full-batch step, but it is cheap — and we can afford hundreds of thousands of them.</p>
+        <p>Picture the fog again, but now your compass is slightly drunk: each reading points roughly downhill with a random wobble. If the wobble averages out to zero, you still make steady progress on the whole, only along a shaky path.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The training loss is an average over <span class="tex">N</span> examples: <span class="tex">L(\theta)=\frac1N\sum_{i=1}^N\ell_i(\theta)</span> where <span class="tex">\ell_i</span> is the loss on example <i>i</i>. Gradients are linear, so the true gradient is <span class="tex">g=\frac1N\sum_i\nabla\ell_i</span>. A <b>mini-batch</b> is a random subset <span class="tex">\mathcal B</span> of size <span class="tex">B</span> and its gradient estimate is</p>
+        <div class="eq">\hat g_B=\frac1B\sum_{i\in\mathcal B}\nabla\ell_i(\theta),\qquad\theta\leftarrow\theta-\eta\,\hat g_B</div>
+        <p><b>It is unbiased.</b> Each example is equally likely to be chosen, so <span class="tex">\mathbb E[\hat g_B]=g</span>. <b>Its noise shrinks with batch size.</b> Let <span class="tex">\sigma^2=\frac1N\sum_i\|\nabla\ell_i-g\|^2</span> be how much single-example gradients disagree with the mean. Averaging <span class="tex">B</span> independent samples divides the variance by <span class="tex">B</span> (Module 3), so <span class="tex">\mathrm{Var}(\hat g_B)=\sigma^2/B</span> and the typical error is <span class="tex">\sigma/\sqrt B</span>. (Sampling without replacement multiplies the variance by the finite-population factor <span class="tex">\frac{N-B}{N-1}</span>, which is exactly 0 when <span class="tex">B=N</span>.)</p>
+        <div class="worked"><b>Worked example — three data points</b>
+          <p>Data <span class="tex">a=\{1,2,6\}</span>, per-example loss <span class="tex">\ell_i(w)=\tfrac12(w-a_i)^2</span>, so <span class="tex">\ell_i'=w-a_i</span>. The mean loss is minimised at the mean <span class="tex">\bar a=3</span>. Stand at <span class="tex">w=0</span>.</p>
+          <p>Per-example gradients: <span class="tex">-1,-2,-6</span>. The true gradient is their mean: <span class="tex">-3</span>. Their spread: <span class="tex">\sigma^2=\frac{(2)^2+(1)^2+(-3)^2}{3}=\frac{14}{3}\approx4.67</span>, so <span class="tex">\sigma\approx2.16</span>.</p>
+          <p>Batch size 1 with <span class="tex">\eta=0.5</span>: picking example 1 gives step <span class="tex">0.5\cdot1=0.5</span> (the true step would be 1.5); picking example 6 gives step <span class="tex">3</span>. Wildly different, but the average of the three possible steps is <span class="tex">(0.5+1+3)/3=1.5</span>: unbiased ✓.</p>
+          <p>Batch size 2 (without replacement): the three possible batches give gradients <span class="tex">-1.5,\,-3.5,\,-4</span>. Mean <span class="tex">-3</span> ✓ (unbiased again). Their variance is <span class="tex">\frac{1.5^2+0.5^2+1^2}{3}\approx1.167</span>; the formula <span class="tex">\frac{\sigma^2}{B}\cdot\frac{N-B}{N-1}=\frac{4.667}{2}\cdot\frac12=1.167</span> ✓. Batch size 3: every batch is the whole set, zero noise.</p></div>
+        <p><b>What does the noise do?</b> With a <i>constant</i> learning rate the iterate never settles: far from the minimum the true gradient is large and dominates, so SGD marches downhill nearly as well as full-batch. Close to the minimum the true gradient shrinks to 0 while the noise does not, so the iterate jitters around the optimum in a "noise ball" whose size grows with <span class="tex">\eta</span> and with <span class="tex">\sigma^2/B</span>. Two cures: <b>decrease</b> <span class="tex">\eta</span> over time (next lessons), or <b>increase</b> <span class="tex">B</span>. This is the central trade-off:</p>
+        <ul>
+          <li><b>Small B:</b> cheap steps, high noise, many steps per pass over the data (an <b>epoch</b> = one pass), good for exploring.</li>
+          <li><b>Large B:</b> expensive steps, low noise, better hardware parallelism, but diminishing returns: beyond a "critical batch size" extra examples mostly repeat information.</li>
+        </ul>
+        <p>Rules of thumb: noise falls as <span class="tex">1/\sqrt B</span>, so 4× more data per step halves the noise, not quarters it. When <span class="tex">B</span> is multiplied by <span class="tex">k</span> it is common to multiply <span class="tex">\eta</span> by about <span class="tex">k</span> (the "linear scaling rule") because the batch gradient is a better estimate and tolerates a bigger step — a heuristic, valid up to a point. Some researchers argue the noise of small batches also nudges training towards flatter minima that generalise better; this is plausible but not a proven law.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat g_B=\frac1B\sum_{i\in\mathcal B}\nabla\ell_i(\theta_k),\quad\mathbb E[\hat g_B]=\nabla L(\theta_k),\quad\mathbb E\|\hat g_B-\nabla L\|^2=\frac{\sigma^2}{B}\cdot\frac{N-B}{N-1}</div>
+        <table class="sym">
+          <tr><td>N</td><td>total number of training examples</td></tr>
+          <tr><td>B</td><td>mini-batch size, 1 ≤ B ≤ N (B = 1 is pure "SGD", B = N is full-batch)</td></tr>
+          <tr><td>𝓑</td><td>the random set of B example indices chosen this step</td></tr>
+          <tr><td>ℓᵢ(θ)</td><td>loss of example i; the total loss is their average</td></tr>
+          <tr><td>ĝ_B</td><td>mini-batch gradient estimate</td></tr>
+          <tr><td>σ²</td><td>variance of single-example gradients around the true gradient</td></tr>
+          <tr><td>𝔼[·]</td><td>expected value: the average over all possible random batches</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the noise of mini-batches</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Grey dots are the data a_i; the star is their mean, where the average loss is minimal. Press play slowly. The blue path (full batch) is smooth; the three orange/pink/purple SGD paths wobble. Watch the arrows: blue = the true step, yellow = this batch's step.</li>
+        <li>Set B = 1, then B = 6, then B = 24 (the whole data set). The wobble shrinks as B grows and vanishes at 24. Compare "measured" and "theory" noise in the readout.</li>
+        <li>With a medium B, notice the SGD paths reach the neighbourhood of the star as quickly as the blue path but never stop moving. Tick "decay η": the jitter dies away as η shrinks.</li>
+        <li>Increase the data spread σ: more disagreement between examples = more gradient noise at the same B.</li></ol></div>
+      <div data-lab="sgdlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Mean vs sum reduction.</b> If the loss is a <i>sum</i> over the batch instead of an average, the gradient (and the right learning rate) scales with B. Changing the batch size silently changes the effective step.</li>
+          <li><b>"Bigger batch is always better."</b> It reduces noise but costs more per step; wall-clock time and generalisation can both get worse, and the optimal η changes with B.</li>
+          <li><b>Not shuffling.</b> Batches must be random (or the data reshuffled each epoch); ordered data (all cats then all dogs) makes the gradient estimate heavily biased.</li>
+          <li><b>Judging by one noisy loss value.</b> Mini-batch losses jump around; track a smoothed average.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>All deep learning.</b> "Training with Adam, batch 256" means mini-batch SGD with an adaptive step. Large language models use batches of millions of tokens.</li>
+          <li><b>Gradient accumulation.</b> When the desired batch does not fit in memory, sum gradients from several small micro-batches before one update — mathematically the same as one big batch.</li>
+          <li><b>Data parallelism.</b> Each GPU computes the gradient of its own shard of the batch, then the gradients are averaged (an "all-reduce") — it is precisely the mini-batch average formula.</li>
+          <li><b>Noise as a tool.</b> The "gradient noise scale" estimates the batch size beyond which more data per step stops helping.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At batch size 1 the gradient noise (standard deviation) is 8. Roughly what is it at B = 16, and how big must B be to halve it again?</summary><div class="ans">Noise scales as 1/√B: 8/√16 = 2. To halve 2 → 1 we need √B to double again: B = 64 (4× the data for 2× less noise).</div></details>
+        <details class="check"><summary>2. Why is a random mini-batch gradient an unbiased estimate of the full gradient?</summary><div class="ans">Every example has the same chance of being picked, so the expected value of the batch average equals the average over all examples, which is the true gradient (expectation is linear). Unbiased means correct on average; any single batch can still be far off.</div></details>
+        <details class="check"><summary>3. Near the minimum, which method gets closer with a constant learning rate: full-batch GD or SGD with B = 1?</summary><div class="ans">Full-batch GD: its gradient shrinks to 0 at the minimum, so the steps vanish. SGD's noise does not vanish, so it keeps jittering in a noise ball whose size grows with η. Decaying η (or a larger B) shrinks that ball.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Replace the exact gradient by a random mini-batch average: unbiased, with variance σ²/B.</li><li>Far from the optimum SGD makes good progress cheaply; near it a constant η leaves a noise floor.</li><li>Batch size trades noise against compute per step; the learning rate must be retuned with B.</li><li>Every large-scale model is trained this way.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.4 ===================== -->
+    <section class="lesson" id="momentum-adam" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">6.4</span><h2>Momentum, RMSProp &amp; Adam</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>On a long narrow valley, plain gradient descent bounces between the walls and crawls along the floor. And in a neural network, some knobs (an embedding for a rare word) get tiny, occasional gradients while others (a bias) get big ones every step — one learning rate for all of them is wrong for most. Can the optimiser remember where it has been, and adapt the step of every knob separately?</div>
+
+        <h3 class="sec">Intuition 1: the heavy ball</h3>
+        <p>A real ball rolling downhill does not follow the instantaneous slope: it has <b>momentum</b>. Slope changes its <i>velocity</i> a little at a time; the velocity then carries it. In a zig-zag valley the slope across the valley alternates sign (push left, push right) — those pushes cancel in the velocity. The slope along the valley floor always points the same way — those pushes add up, so the ball accelerates along the floor. Momentum automatically turns "noisy, back-and-forth" components down and "steady" components up.</p>
+        <h3 class="sec">Intuition 2: the exponential moving average</h3>
+        <p>The tool behind everything in this lesson is the <b>exponential moving average</b> (EMA): a running average that forgets the past gradually, like a smoothed temperature reading. With a decay rate <span class="tex">\beta</span> between 0 and 1:</p>
+        <div class="eq">m_k=\beta\,m_{k-1}+(1-\beta)\,g_k</div>
+        <p>Unroll it: <span class="tex">m_k=(1-\beta)\bigl(g_k+\beta g_{k-1}+\beta^2g_{k-2}+\cdots\bigr)</span>. The newest value has weight <span class="tex">1-\beta</span>, the one before it <span class="tex">(1-\beta)\beta</span>, then <span class="tex">(1-\beta)\beta^2</span>, … a geometric fade-out. The weights add up to 1, and the "memory length" is about <span class="tex">1/(1-\beta)</span> steps: <span class="tex">\beta=0.9</span> averages roughly the last 10 values, <span class="tex">\beta=0.99</span> the last 100.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Momentum (heavy ball).</b> Keep a velocity <span class="tex">v</span> that accumulates gradients with decay <span class="tex">\beta</span> and move by it:</p>
+        <div class="eq">v_k=\beta\,v_{k-1}+g_k,\qquad\theta_{k+1}=\theta_k-\eta\,v_k</div>
+        <p>(This form omits the factor <span class="tex">1-\beta</span>; it is the EMA times <span class="tex">1/(1-\beta)</span>. If the gradient were constant, <span class="tex">v\to g/(1-\beta)</span>, so the steady-state step is <span class="tex">\eta/(1-\beta)</span> — ten times bigger for <span class="tex">\beta=0.9</span>.) Unrolled, <span class="tex">v_k=g_k+\beta g_{k-1}+\beta^2g_{k-2}+\cdots</span>: the step is a weighted <i>sum of recent gradients</i>. The lab below draws these weighted gradients as arrows laid end to end — their sum is the step.</p>
+        <div class="worked"><b>Worked example — momentum versus plain GD</b>
+          <p><span class="tex">f(w)=\tfrac12w^2</span>, so <span class="tex">g=w</span>. Start <span class="tex">w_0=10</span>, <span class="tex">\eta=0.1</span>, <span class="tex">\beta=0.9</span>, <span class="tex">v_0=0</span>.</p>
+          <p>k=1: <span class="tex">v=0.9\cdot0+10=10</span>, <span class="tex">w=10-0.1\cdot10=9</span>. k=2: <span class="tex">v=0.9\cdot10+9=18</span>, <span class="tex">w=9-1.8=7.2</span>. k=3: <span class="tex">v=0.9\cdot18+7.2=23.4</span>, <span class="tex">w=7.2-2.34=4.86</span>. k=4: <span class="tex">v=25.92</span>, <span class="tex">w=2.268</span>. k=5: <span class="tex">v=25.596</span>, <span class="tex">w=-0.2916</span> (overshoot!).</p>
+          <p>Plain GD multiplies by 0.9 each step: 9, 8.1, 7.29, 6.561. After 4 steps momentum is at 2.27, GD at 6.56. The velocity keeps growing for a few steps (10, 18, 23.4, 25.9) — the ball accelerating — and then, like a real ball, shoots past the bottom and has to come back: momentum oscillates around the minimum while it settles.</p></div>
+        <p><b>RMSProp: a separate step size for every knob.</b> Instead of averaging the gradient, average its <i>square</i> with an EMA, <span class="tex">s_k=\beta_2s_{k-1}+(1-\beta_2)g_k^2</span>. Then <span class="tex">\sqrt{s_k}</span> is the typical <i>size</i> (root-mean-square, RMS) of recent gradients for that knob. Divide the gradient by it:</p>
+        <div class="eq">\theta_{k+1}=\theta_k-\eta\,\frac{g_k}{\sqrt{s_k}+\varepsilon}</div>
+        <p>A knob with huge gradients gets a smaller effective step; a knob with tiny gradients gets a bigger one: every coordinate moves at roughly the same "typical" speed <span class="tex">\approx\eta</span> regardless of its gradient's scale. (<span class="tex">\varepsilon\sim10^{-8}</span> only prevents division by zero.) This is a cheap way to fight bad conditioning (Lesson 6.5), because it rescales each axis separately.</p>
+        <div class="worked"><b>Worked example — RMSProp by hand</b>
+          <p>One knob, <span class="tex">\theta_0=1</span>, gradients <span class="tex">g=4,\,2,\,-1</span>, <span class="tex">\beta_2=0.9</span>, <span class="tex">\eta=0.1</span>, <span class="tex">s_0=0</span>.</p>
+          <p>k=1: <span class="tex">s=0.9\cdot0+0.1\cdot16=1.6</span>; update <span class="tex">0.1\cdot4/\sqrt{1.6}=0.3162</span>; <span class="tex">\theta=0.6838</span>.</p>
+          <p>k=2: <span class="tex">s=0.9\cdot1.6+0.1\cdot4=1.84</span>; update <span class="tex">0.1\cdot2/\sqrt{1.84}=0.1474</span>; <span class="tex">\theta=0.5363</span>.</p>
+          <p>k=3: <span class="tex">s=0.9\cdot1.84+0.1\cdot1=1.756</span>; update <span class="tex">0.1\cdot(-1)/\sqrt{1.756}=-0.0755</span>; <span class="tex">\theta=0.6118</span>.</p>
+          <p>Notice step 1: the true RMS of the gradient so far is 4, which would give an update of 0.1, but <span class="tex">s_1=1.6</span> — far too small because the EMA started from 0. The first update is inflated by 3×. That start-up bias is why Adam adds a correction.</p></div>
+        <p><b>Adam = momentum + RMSProp + bias correction.</b> Adam keeps both averages — <span class="tex">m</span> for the gradient's direction, <span class="tex">v</span> for its squared size — and fixes the start-up bias. Because <span class="tex">m_0=v_0=0</span>, early values are shrunk towards 0. After <span class="tex">k</span> steps the weights of an EMA sum to <span class="tex">1-\beta^k</span> rather than 1, so dividing by <span class="tex">1-\beta^k</span> corrects it exactly:</p>
+        <div class="eq">\begin{aligned}m_k&amp;=\beta_1m_{k-1}+(1-\beta_1)g_k,&amp;\quad v_k&amp;=\beta_2v_{k-1}+(1-\beta_2)g_k^2\\ \hat m_k&amp;=\frac{m_k}{1-\beta_1^{\,k}},&amp;\quad\hat v_k&amp;=\frac{v_k}{1-\beta_2^{\,k}}\\ \theta_{k+1}&amp;=\theta_k-\eta\,\frac{\hat m_k}{\sqrt{\hat v_k}+\varepsilon}\end{aligned}</div>
+        <div class="worked"><b>Worked example — Adam by hand (3 steps)</b>
+          <p>Same data: <span class="tex">\theta_0=1</span>, <span class="tex">g=4,2,-1</span>, <span class="tex">\eta=0.1</span>, <span class="tex">\beta_1=0.9</span>, <span class="tex">\beta_2=0.999</span>, <span class="tex">\varepsilon\approx0</span>.</p>
+          <p><b>k=1.</b> <span class="tex">m=0.1\cdot4=0.4</span>; <span class="tex">v=0.001\cdot16=0.016</span>. Corrections: <span class="tex">1-0.9=0.1</span>, <span class="tex">1-0.999=0.001</span> → <span class="tex">\hat m=4</span>, <span class="tex">\hat v=16</span>. Update <span class="tex">=0.1\cdot4/\sqrt{16}=0.1</span>; <span class="tex">\theta=0.9</span>.</p>
+          <p><b>k=2.</b> <span class="tex">m=0.9\cdot0.4+0.1\cdot2=0.56</span>; <span class="tex">v=0.999\cdot0.016+0.001\cdot4=0.019984</span>. Corrections: <span class="tex">1-0.81=0.19</span>, <span class="tex">1-0.999^2=0.001999</span> → <span class="tex">\hat m=2.9474</span>, <span class="tex">\hat v=9.997</span>. Update <span class="tex">=0.1\cdot2.9474/3.1618=0.09322</span>; <span class="tex">\theta=0.80678</span>.</p>
+          <p><b>k=3.</b> <span class="tex">m=0.9\cdot0.56+0.1\cdot(-1)=0.404</span>; <span class="tex">v=0.999\cdot0.019984+0.001=0.020964</span>. Corrections: <span class="tex">1-0.729=0.271</span>, <span class="tex">1-0.999^3=0.002997</span> → <span class="tex">\hat m=1.4908</span>, <span class="tex">\hat v=6.995</span>. Update <span class="tex">=0.1\cdot1.4908/2.6448=0.05637</span>; <span class="tex">\theta=0.75042</span>.</p>
+          <p><b>Why bias correction matters.</b> Without it, step 1 would be <span class="tex">0.1\cdot0.4/\sqrt{0.016}=0.3162</span> — about <span class="tex">3.16\,\eta</span> (because <span class="tex">0.1/\sqrt{0.001}=3.16</span>), a wild jump that depends on the arbitrary start. With it, the first update is <span class="tex">\eta\,g/|g|=\eta</span> exactly: the step size is controlled by η alone, whatever the gradient's scale. Step 2 and 3 show the momentum effect: the gradient dropped from 4 to 2 to −1, but the averaged <span class="tex">\hat m</span> falls more gently (4 → 2.95 → 1.49), remembering the past.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>The three updates above are the whole story; their symbols:</p>
+        <table class="sym">
+          <tr><td>β, β₁</td><td>EMA decay for the gradient (momentum), typically 0.9</td></tr>
+          <tr><td>β₂</td><td>EMA decay for the squared gradient, typically 0.999 (long memory) — LLM recipes often use 0.95</td></tr>
+          <tr><td>mₖ, vₖ</td><td>EMA of g and of g², element-wise (every parameter has its own)</td></tr>
+          <tr><td>m̂ₖ, v̂ₖ</td><td>bias-corrected versions: divide by 1 − βᵏ</td></tr>
+          <tr><td>√v̂ₖ</td><td>RMS size of recent gradients for that parameter (the "scale")</td></tr>
+          <tr><td>ε</td><td>tiny constant (≈10⁻⁸) preventing division by zero</td></tr>
+          <tr><td>η</td><td>base learning rate; a parameter moves by ≈ η per step when its gradient is steady</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: momentum, an Adam table, and the optimiser race</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start slow (2 steps/s). Both balls begin at the same point on the ravine. Blue (GD) bounces off the walls; green (momentum) smooths the zig-zag. Orange arrows are the recent gradients, each shrunk by β^j and laid tip-to-tail — they sum to the green ball's step.</li>
+        <li>Set β = 0 : momentum becomes plain GD (green = blue). Raise β to 0.95: faster along the floor but more overshoot. Compare "reached f&lt;0.01 at step …" in the readout.</li></ol></div>
+      <div data-lab="momentumlab"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>Press "Reveal next row" and check each number against the hand calculation above (gradients 4, 2, −1).</li>
+        <li>Untick "bias correction" and see the first update jump to 0.316. Change the first gradient to 400 or 0.004: with correction the first update is still 0.1.</li>
+        <li>Switch to RMSProp and compare with the RMSProp worked example.</li></ol></div>
+      <div data-lab="adamtable"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>Choose the "Valley" preset and watch SGD, Momentum and Adam run the same track. Which one reaches the valley floor first? Which overshoots?</li>
+        <li>On "Ripples" (many small hills) notice how momentum can roll through a small bump while plain SGD may stall.</li></ol></div>
+      <div data-lab="descent"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Two conventions for momentum.</b> Frameworks use <span class="tex">v\leftarrow\beta v+g</span> (PyTorch SGD) or the EMA form with <span class="tex">(1-\beta)g</span>; with the second, the learning rate is scaled by <span class="tex">1-\beta</span> relative to the first. Check which one you are reading.</li>
+          <li><b>v is not variance.</b> It is the (uncentred) average of <span class="tex">g^2</span>, the typical gradient size, even when the gradient has a consistent mean.</li>
+          <li><b>Adam is not tuning-free.</b> The learning rate still matters a lot, and a bad <span class="tex">\varepsilon</span> or <span class="tex">\beta_2</span> can destabilise training.</li>
+          <li><b>L2 penalty ≠ weight decay in Adam.</b> Adding <span class="tex">\lambda\theta</span> to the gradient lets Adam rescale it with everything else; AdamW applies decay directly to the weights (Lesson 6.6).</li>
+          <li><b>Memory.</b> Adam stores two extra numbers per parameter (<span class="tex">m</span> and <span class="tex">v</span>): the optimiser state costs 2× the model size.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Adam/AdamW is the default optimiser for transformers and LLMs</b> (typical β₁ = 0.9, β₂ = 0.95–0.999, ε = 10⁻⁸). Its per-parameter scaling is why embeddings of rare tokens still learn.</li>
+          <li><b>SGD with momentum</b> remains common in computer vision (ResNets), where it often generalises well with careful tuning.</li>
+          <li><b>Relatives:</b> Adafactor and 8-bit Adam reduce optimiser memory, Lion uses the sign of a momentum average, Nesterov momentum evaluates the gradient at a "look-ahead" position.</li>
+          <li><b>EMAs everywhere:</b> EMA of model weights for evaluation, BatchNorm running statistics, and the target networks in reinforcement learning are all the same <span class="tex">\beta m+(1-\beta)x</span> recipe.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Roughly how many past gradients does an EMA with β = 0.99 average over? What is the steady-state velocity of heavy-ball momentum (v ← βv + g) with β = 0.9 and constant gradient g?</summary><div class="ans">Memory ≈ 1/(1−β) = 100 steps. With constant g the fixed point satisfies v = 0.9v + g, so v = g/(1−0.9) = 10g: steps are 10× longer than plain GD.</div></details>
+        <details class="check"><summary>2. Why is Adam's first update ≈ η·sign(g) after bias correction, and what would it be without correction (β₁ = 0.9, β₂ = 0.999)?</summary><div class="ans">m₁ = 0.1g, v₁ = 0.001g², and the corrections divide by 0.1 and 0.001, so m̂ = g, v̂ = g² and the update is ηg/|g| = ±η. Without correction: 0.1g/√(0.001g²) = ±0.1/0.0316 = ±3.16η, about three times too big.</div></details>
+        <details class="check"><summary>3. Two parameters have gradients of typical size 100 and 0.01. What are their RMSProp/Adam steps relative to plain SGD?</summary><div class="ans">Plain SGD steps are η·100 and η·0.01 — 10⁴ apart. With RMS scaling both are ≈ η·g/RMS(g) ≈ ±η: equal. The huge-gradient parameter gets a much smaller step than SGD would give; the tiny-gradient parameter a much larger one.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>EMA = geometric forgetting; memory length ≈ 1/(1−β).</li><li>Momentum is a heavy ball: velocity = EMA of gradients, cancelling zig-zag and accelerating consistent directions (steady step ≈ η/(1−β)).</li><li>RMSProp divides by the RMS of recent gradients: per-parameter step sizes.</li><li>Adam = momentum + RMSProp + bias correction (divide by 1 − βᵏ); the default for training LLMs.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.5 ===================== -->
+    <section class="lesson" id="schedules" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">6.5</span><h2>Learning-rate schedules &amp; conditioning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Every recipe for training a large model says "learning rate 3·10⁻⁴, warm up for 2,000 steps, then decay with a cosine curve". Why not simply pick one good value and keep it? And why does a landscape that is "badly conditioned" make training so much harder, no matter which rate we choose?</div>
+
+        <h3 class="sec">Intuition: a hike in the fog</h3>
+        <p>Early in the hike you are far from the goal and the path is steep and clear: long strides save time. But right at the start, in unfamiliar territory, the ground may curve sharply and your estimates (the optimiser's running averages, the random weights) are unreliable — a long stride could throw you off a ledge, so you begin with small careful steps (<b>warm-up</b>). Near the end you need to land on one precise spot; with the compass shaking (SGD noise) long strides keep you jittering around it, so you shorten the stride gradually (<b>decay</b>). Fast in the middle, careful at both ends: that is the shape of nearly every good schedule.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Why decay.</b> From Lesson 6.3 the SGD noise floor grows with <span class="tex">\eta</span>. A large rate gets you to the right valley quickly, but cannot settle in it; shrinking <span class="tex">\eta</span> reduces the jitter and lets the loss fall further. Similarly, on a quadratic, a rate near <span class="tex">2/L</span> is the fastest at first but oscillates at the end.</p>
+        <p><b>Why warm-up.</b> Three reasons usually combine. (1) At random initialisation the loss surface can be very sharp (large curvature <span class="tex">L</span>), so the stability limit <span class="tex">2/L</span> is small at first and grows as training "flattens" the landscape; the toy lab models that. (2) Adam's second-moment estimate <span class="tex">v</span> is based on only a few gradients at the start and is unreliable. (3) Early gradients are large and nearly random; big steps can wreck the weights irreversibly. A short warm-up with <span class="tex">\eta</span> rising linearly from ≈0 to its peak avoids all three.</p>
+        <p><b>The common schedules</b> (<span class="tex">t</span> = step number, <span class="tex">T</span> = total steps, <span class="tex">\eta_{\max}</span> = peak rate, <span class="tex">\eta_{\min}</span> = final rate):</p>
+        <ul>
+          <li><b>Constant:</b> <span class="tex">\eta_t=\eta_{\max}</span>. Simple; leaves a noise floor.</li>
+          <li><b>Step decay:</b> multiply by <span class="tex">\gamma</span> (say 0.1) every fixed number of steps/epochs: <span class="tex">\eta_t=\eta_{\max}\gamma^{\lfloor t/s\rfloor}</span>. Classic in image models.</li>
+          <li><b>Exponential decay:</b> <span class="tex">\eta_t=\eta_{\max}\,\rho^{\,t/T}</span> smooth version.</li>
+          <li><b>Cosine:</b> <span class="tex">\eta_t=\eta_{\min}+\tfrac12(\eta_{\max}-\eta_{\min})\bigl(1+\cos\tfrac{\pi t}{T}\bigr)</span>: starts flat, falls fastest in the middle, ends flat. No extra hyper-parameter besides <span class="tex">T</span>.</li>
+          <li><b>Linear warm-up:</b> <span class="tex">\eta_t=\eta_{\max}\,\tfrac{t}{W}</span> for <span class="tex">t&lt;W</span>, then any decay above (so "warm-up + cosine").</li>
+        </ul>
+        <div class="worked"><b>Worked example — cosine and warm-up</b>
+          <p>Cosine, <span class="tex">\eta_{\max}=10^{-3}</span>, <span class="tex">\eta_{\min}=0</span>, <span class="tex">T=100</span>. Using <span class="tex">\cos0=1</span>, <span class="tex">\cos\tfrac\pi4=0.7071</span>, <span class="tex">\cos\tfrac\pi2=0</span>, <span class="tex">\cos\tfrac{3\pi}4=-0.7071</span>, <span class="tex">\cos\pi=-1</span>:</p>
+          <p><span class="tex">t=0</span>: <span class="tex">\tfrac12\cdot10^{-3}\cdot2=10^{-3}</span>. <span class="tex">t=25</span>: <span class="tex">\tfrac12\cdot10^{-3}(1.7071)=8.54\cdot10^{-4}</span>. <span class="tex">t=50</span>: <span class="tex">5\cdot10^{-4}</span>. <span class="tex">t=75</span>: <span class="tex">\tfrac12\cdot10^{-3}(0.2929)=1.46\cdot10^{-4}</span>. <span class="tex">t=100</span>: 0.</p>
+          <p>Notice that after a quarter of the training the rate has fallen only 15%, while half of the total decrease happens in the middle half.</p>
+          <p>Linear warm-up, <span class="tex">W=2000</span>, <span class="tex">\eta_{\max}=3\cdot10^{-4}</span>: at step 500, <span class="tex">\eta=\tfrac{500}{2000}\cdot3\cdot10^{-4}=7.5\cdot10^{-5}</span>; at step 2000 the full <span class="tex">3\cdot10^{-4}</span> and the cosine decay takes over.</p></div>
+
+        <h3 class="sec">Conditioning: why the landscape's shape matters</h3>
+        <p>Lesson 6.2 showed that the rate of gradient descent on a quadratic is governed by the condition number <span class="tex">\kappa=\lambda_{\max}/\lambda_{\min}</span>. No schedule fixes a bad <span class="tex">\kappa</span>: the stability limit <span class="tex">2/\lambda_{\max}</span> forces small steps, which then crawl in the flat directions. The better cure is to <b>change the problem so that <span class="tex">\kappa</span> is small</b>.</p>
+        <div class="worked"><b>Worked example — standardising a feature</b>
+          <p>Linear regression with two inputs: feature 1 has variance 1, feature 2 has variance 100 (e.g. a size in metres and a price in thousands). The loss Hessian is proportional to the feature covariance, so (up to a constant) <span class="tex">A=\operatorname{diag}(1,100)</span>, <span class="tex">\kappa=100</span>. Best rate <span class="tex">\rho=99/101=0.980</span>: shrinking the error 1000× takes <span class="tex">\ln(10^{-3})/\ln(0.980)\approx346</span> steps.</p>
+          <p>Divide feature 2 by 10 (standardise): <span class="tex">A=\operatorname{diag}(1,1)</span>, <span class="tex">\kappa=1</span>, <span class="tex">\rho=0</span>: <b>one step</b>. A one-line preprocessing change replaced 346 steps by 1.</p></div>
+        <p>Deep networks have the same problem inside: activations in different layers can have wildly different scales. Remedies that act on conditioning:</p>
+        <ul>
+          <li><b>Input standardisation</b> (zero mean, unit variance per feature).</li>
+          <li><b>Normalisation layers</b> (BatchNorm, LayerNorm, RMSNorm) re-centre and rescale activations at every layer, keeping each layer's inputs well scaled so the Hessian's eigenvalues stay in a reasonable range.</li>
+          <li><b>Good initialisation</b> (Module 7) keeps early activations and gradients at a sane scale.</li>
+          <li><b>Adaptive optimisers</b> (Adam) divide each coordinate by its gradient scale — a diagonal rescaling that acts like a cheap preconditioner. (True second-order methods multiply by <span class="tex">H^{-1}</span>, which makes the problem perfectly round but costs far too much for large models.)</li>
+          <li><b>Gradient clipping</b> caps the gradient norm to survive occasional huge gradients — a safety net, not a conditioning fix.</li>
+        </ul>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\eta_t=\begin{cases}\eta_{\max}\dfrac{t}{W}&amp;t&lt;W\\[6pt]\eta_{\min}+\dfrac12(\eta_{\max}-\eta_{\min})\Bigl(1+\cos\dfrac{\pi(t-W)}{T-W}\Bigr)&amp;t\ge W\end{cases}</div>
+        <table class="sym">
+          <tr><td>t</td><td>current optimisation step (0, 1, 2, …)</td></tr>
+          <tr><td>T</td><td>total number of steps planned</td></tr>
+          <tr><td>W</td><td>number of warm-up steps</td></tr>
+          <tr><td>η_max</td><td>peak learning rate, reached at the end of warm-up</td></tr>
+          <tr><td>η_min</td><td>final learning rate; often 0 or 10% of the peak</td></tr>
+          <tr><td>γ, s</td><td>step-decay factor and step length (in step decay)</td></tr>
+          <tr><td>κ</td><td>condition number of the (local) Hessian</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: schedules on a toy training run</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The top panel shows five schedules; the bottom panel trains the same noisy 10-dimensional toy problem with each (log-scale loss). Watch them unfold slowly. "Constant" stops improving at a noise floor; step, cosine and exponential keep falling as η shrinks.</li>
+        <li>Untick "early sharpness": warm-up now gives little advantage. With it ticked, a large η_max makes the schedules that start at full rate spike or blow up while warm-up + cosine stays calm.</li>
+        <li>Raise the noise σ: floors go up and decay matters more. Lower W to 0: the orange curve loses its protection.</li>
+        <li>Use the calculator below to check the cosine numbers: set t = 25, T = 100, η_max = 0.001.</li></ol></div>
+      <div data-lab="schedules"></div>
+      <div data-lab="calc" data-title="Cosine schedule calculator" data-sub="η(t) with η_min = 0" data-params="t=25:0..100:1; T=100:50..200:10; mx=0.001:0.0001..0.003:0.0001" data-rows="cosine η(t) = mx*0.5*(1+cos(pi*t/T)); fraction of peak = 0.5*(1+cos(pi*t/T)); linear warm-up over 100 steps = mx*t/100" data-note="At t = T/2 the rate is exactly half the peak; at t = T it is 0."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The schedule is tied to T.</b> A cosine over 100k steps stopped at step 50k leaves a still-large rate; changing the training length means re-planning the schedule.</li>
+          <li><b>Warm-up too short or absent</b> with large batches and Adam is a classic cause of early loss spikes or divergence.</li>
+          <li><b>Decaying to exactly 0</b> is not required; many recipes end at 10% of the peak.</li>
+          <li><b>Do not confuse</b> learning-rate decay (shrinking the step) with weight decay (shrinking the weights, Lesson 6.6).</li>
+          <li><b>Chasing a schedule to repair bad conditioning.</b> If κ is huge, standardise or normalise first.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>LLM pretraining recipes.</b> Typical: AdamW, peak <span class="tex">\eta\approx3\cdot10^{-4}</span> (smaller for bigger models), linear warm-up over ~1–2k steps, cosine decay to ~10% of the peak (the LLaMA-style recipe). Newer "warm-up–stable–decay" recipes hold the rate constant and decay only at the end, so training can be extended without a rewrite.</li>
+          <li><b>Fine-tuning</b> uses much smaller rates (10⁻⁵ to 10⁻⁴) with short warm-up and linear decay.</li>
+          <li><b>Vision.</b> The classic ResNet recipe: SGD with momentum, rate 0.1, divided by 10 at fixed epochs (step decay).</li>
+          <li><b>Normalisation layers</b> exist largely because they improve conditioning: they are why transformers and ResNets tolerate large rates.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the cosine learning rate at t = 75 for η_max = 10⁻³, η_min = 0, T = 100.</summary><div class="ans">η = ½·10⁻³·(1 + cos(3π/4)) = ½·10⁻³·(1 − 0.7071) = 1.46·10⁻⁴.</div></details>
+        <details class="check"><summary>2. Linear warm-up lasts W = 2000 steps to a peak of 3·10⁻⁴. What is η at step 500?</summary><div class="ans">η = (500/2000)·3·10⁻⁴ = 7.5·10⁻⁵ — a quarter of the peak because we are a quarter of the way through warm-up.</div></details>
+        <details class="check"><summary>3. Why does standardising features reduce the number of gradient-descent steps, and by how much for variances 1 and 100?</summary><div class="ans">It makes the Hessian eigenvalues equal, so κ drops from 100 to 1. The best-case shrink factor per step goes from (κ−1)/(κ+1) = 99/101 ≈ 0.98 to 0, cutting ≈ 346 steps (to shrink the error 1000×) down to ~1.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Warm-up protects the unstable start (sharp landscape, unreliable Adam statistics); decay removes the SGD noise floor at the end.</li><li>Cosine, step and exponential decays are all "big early, small late"; the peak rate and length T matter more than the exact curve.</li><li>The condition number κ of the landscape sets the speed limit; fix it by standardising, normalising and sensible initialisation.</li><li>Adaptive optimisers help by rescaling each coordinate, but good conditioning is free speed.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.6 ===================== -->
+    <section class="lesson" id="constraints-reg" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">6.6</span><h2>Constraints, Lagrange multipliers &amp; regularization</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Find the point with the smallest <span class="tex">x^2+y^2</span> — but only among points that satisfy <span class="tex">x+y=2</span>. The unconstrained minimum (0, 0) is forbidden. And in machine learning: we want the lowest loss <i>subject to the weights being small</i>, because small weights generalise better. How do constraints change the answer, and why does one kind of "small" (the L1 norm) produce weights that are exactly zero while another (L2) does not?</div>
+
+        <h3 class="sec">Intuition: a hiker on a fenced path</h3>
+        <p>A hiker wants the lowest altitude but must stay on a fenced trail. Free to roam, they would walk straight downhill. On the trail, the ground may still slope — but only the slope <i>along</i> the trail matters, because the fence cancels any pull across it. Where the hiker finally stops, the ground does not slope along the trail: the only remaining downhill pull points <b>straight at the fence</b>, perpendicular to the trail. In mathematics: <b>at a constrained optimum, the gradient of the loss is parallel to the normal of the constraint.</b></p>
+        <p>Equivalent picture with <i>contour lines</i> (curves of equal loss): start at the lowest loss and grow a contour outward. The first moment the contour touches the allowed region is the constrained optimum, and there the contour and the boundary are tangent — they have the same normal direction. The lab at the bottom of this lesson animates exactly this.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Equality constraint.</b> Minimise <span class="tex">f(x)</span> subject to <span class="tex">g(x)=0</span>. The normal to the curve <span class="tex">g=0</span> is <span class="tex">\nabla g</span> (the gradient of a function points perpendicular to its own level curves). Parallel gradients mean one is a multiple of the other:</p>
+        <div class="eq">\nabla f(x^\star)=\lambda\,\nabla g(x^\star),\qquad g(x^\star)=0</div>
+        <p>The number <span class="tex">\lambda</span> is the <b>Lagrange multiplier</b>. The trick to remember: define the <b>Lagrangian</b> <span class="tex">\mathcal L(x,\lambda)=f(x)-\lambda g(x)</span>. Setting all its partial derivatives to zero reproduces both equations at once (<span class="tex">\partial_x\mathcal L=0</span> is the parallel condition, <span class="tex">\partial_\lambda\mathcal L=0</span> is the constraint). We have turned a constrained problem into solving equations.</p>
+        <div class="worked"><b>Worked example — the question</b>
+          <p>Minimise <span class="tex">f=x^2+y^2</span> subject to <span class="tex">g=x+y-2=0</span>. <span class="tex">\nabla f=(2x,2y)</span>, <span class="tex">\nabla g=(1,1)</span>. Parallel condition: <span class="tex">2x=\lambda,\;2y=\lambda</span> → <span class="tex">x=y</span>. Constraint: <span class="tex">x+y=2</span> → <span class="tex">x=y=1</span>, <span class="tex">\lambda=2</span>, <span class="tex">f=2</span>.</p>
+          <p>Check: at (1,1) the gradient (2,2) is a multiple of the normal (1,1) ✓. Compare another feasible point, (2,0): <span class="tex">f=4&gt;2</span> ✓. Meaning of <span class="tex">\lambda</span>: if the constraint were <span class="tex">x+y=c</span> the best value would be <span class="tex">c^2/2</span>, whose rate of change at <span class="tex">c=2</span> is <span class="tex">c=2=\lambda</span>. <b>The multiplier is the price of the constraint</b>: how much the optimum improves per unit of relaxation.</p></div>
+        <p><b>Inequality constraints</b> <span class="tex">g(x)\le0</span> (such as "weights inside a ball") split into two cases. Either the unconstrained minimum already satisfies the constraint: the fence is irrelevant and <span class="tex">\lambda=0</span>; or the optimum lies on the boundary, the fence is "active", and the parallel condition holds with a <i>sign</i>: the loss's downhill direction <span class="tex">-\nabla f</span> must point <i>out</i> through the fence (otherwise we could move inside and do better), so <span class="tex">\lambda\ge0</span>. These are the <b>KKT conditions</b>: <span class="tex">\nabla f+\lambda\nabla g=0,\;\lambda\ge0,\;g\le0,\;\lambda g=0</span> (the last, "complementary slackness", says either the constraint is active or its multiplier is 0).</p>
+
+        <h3 class="sec">Regularization is a constraint in disguise</h3>
+        <p><b>Regularisation</b> means discouraging complicated models. The standard way is to add a penalty to the loss: minimise <span class="tex">L(w)+\lambda\,R(w)</span> with <span class="tex">R(w)=\|w\|_2^2</span> (<b>L2</b>, also "ridge" or "weight decay") or <span class="tex">R(w)=\|w\|_1=\sum|w_i|</span> (<b>L1</b>, "lasso"). By the Lagrangian view, this is the same as minimising <span class="tex">L(w)</span> subject to <span class="tex">R(w)\le r</span> for some budget <span class="tex">r</span> that depends on <span class="tex">\lambda</span>: a stronger penalty = a smaller ball. The allowed region is a <b>ball</b>: a <b>circle</b> for L2 (<span class="tex">w_1^2+w_2^2\le r^2</span>) and a <b>diamond</b> for L1 (<span class="tex">|w_1|+|w_2|\le r</span>).</p>
+        <p><b>Why L1 gives sparsity and L2 does not.</b> Look at the shapes. A circle is smooth everywhere: a contour approaches it and touches at a generic point where both coordinates are non-zero. The diamond has <b>corners on the axes</b>, where one coordinate is exactly zero. Corners stick out the furthest, so growing contours very often hit a corner first — and at a corner there is not one normal but a whole fan of normals, so many different loss directions are all "balanced" by the same point. The result: the L1-constrained solution lies on an axis, i.e. some weights are <b>exactly zero</b> (sparsity = automatic feature selection). In higher dimensions the L1 ball has even more corners and edges lying in coordinate subspaces, so more weights become zero.</p>
+        <div class="worked"><b>Worked example — circle versus diamond</b>
+          <p>Loss <span class="tex">f=(w_1-3)^2+(w_2-0.5)^2</span> (contours are circles around (3, 0.5)), budget <span class="tex">r=2</span>. The unconstrained minimum (3, 0.5) is outside both balls, so the constraint is active.</p>
+          <p><b>L2 ball</b> <span class="tex">w_1^2+w_2^2\le4</span>: by symmetry the solution is the point of the circle closest to (3, 0.5), along the line from the origin: <span class="tex">w^\star=2\cdot\frac{(3,0.5)}{\sqrt{9.25}}=(1.973,\,0.329)</span>. Both weights non-zero, loss 1.084.</p>
+          <p><b>L1 ball</b> <span class="tex">|w_1|+|w_2|\le2</span>: the corner (2, 0) has loss <span class="tex">1+0.25=1.25</span>. Is it optimal? There <span class="tex">-\nabla f=2(3-2,\;0.5-0)=(2,1)</span>. The normal cone at the corner is spanned by the two face normals (1, 1) and (1, −1); and <span class="tex">(2,1)=1.5\,(1,1)+0.5\,(1,-1)</span> with both coefficients <span class="tex">\ge0</span> ✓. So (2, 0) satisfies the KKT condition: <span class="tex">w_2=0</span> exactly (a brute-force search along the diamond's boundary agrees). The weight <span class="tex">w_2</span> was killed.</p></div>
+        <p>In one dimension the effect is a clean formula. Minimise <span class="tex">(w-a)^2+\lambda R(w)</span>: for L2, <span class="tex">w^\star=\dfrac{a}{1+\lambda}</span> (always shrinks, never reaches 0); for L1, <span class="tex">w^\star=\operatorname{sign}(a)\max\bigl(|a|-\tfrac\lambda2,\,0\bigr)</span> ("soft thresholding": it shrinks by a fixed amount and snaps to exactly 0 when <span class="tex">|a|\le\lambda/2</span>). With <span class="tex">a=1.5</span> and <span class="tex">\lambda=3</span>: L2 gives <span class="tex">1.5/4=0.375</span>; L1 gives <span class="tex">\max(1.5-1.5,0)=0</span>.</p>
+        <p><b>Weight decay in gradient descent.</b> With the L2 penalty <span class="tex">\tfrac\lambda2\|w\|^2</span>, the gradient gains a term <span class="tex">\lambda w</span> and one step is <span class="tex">w\leftarrow w-\eta(\nabla L+\lambda w)=(1-\eta\lambda)\,w-\eta\nabla L</span>: every step first <i>shrinks</i> the weights by the factor <span class="tex">1-\eta\lambda</span> ("decay"), then moves along the loss gradient. For <span class="tex">w=2</span>, <span class="tex">\eta\lambda=0.01</span> the shrink alone gives 1.98.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L(x,\lambda)=f(x)-\lambda\,g(x),\qquad\nabla_x\mathcal L=0,\quad g(x)=0\qquad\Longleftrightarrow\qquad\min_x\ f(x)\ \text{ s.t. }\ g(x)=0</div>
+        <div class="eq">\min_w\ L(w)+\lambda\|w\|_p^p\quad\longleftrightarrow\quad\min_w\ L(w)\ \text{ s.t. }\ \|w\|_p\le r\qquad(p=1:\ \text{diamond},\ p=2:\ \text{circle})</div>
+        <table class="sym">
+          <tr><td>f</td><td>objective to minimise (the loss)</td></tr>
+          <tr><td>g</td><td>constraint function; g(x) = 0 (equality) or g(x) ≤ 0 (inequality)</td></tr>
+          <tr><td>λ</td><td>Lagrange multiplier (for regularisation: the penalty strength); ≥ 0 for inequalities</td></tr>
+          <tr><td>ℒ</td><td>the Lagrangian f − λg combining objective and constraint</td></tr>
+          <tr><td>‖w‖₁, ‖w‖₂</td><td>L1 norm Σ|wᵢ| and L2 norm √Σwᵢ²</td></tr>
+          <tr><td>r</td><td>radius (budget) of the ball; larger λ ⇔ smaller r</td></tr>
+          <tr><td>w★</td><td>the constrained optimum</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: grow the contour until it touches the ball</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press "L1: lands on an axis". Watch the orange contour of equal loss grow around the red ★ until it first touches the blue diamond at the corner. The orange arrow (−∇f) lies inside the dashed fan of normals: the Lagrange condition.</li>
+        <li>Switch to the circle: the contour touches at a generic point with both weights non-zero, and −∇f (orange) lines up exactly with the outward normal (blue).</li>
+        <li>Drag ★ around. Put it close to an axis and the L1 solution stays on the axis for a wide range of positions; the L2 solution slides smoothly. Put ★ inside the ball: the constraint turns inactive (λ = 0).</li>
+        <li>Increase the "loss stretch" and tilt: with a tilted ellipse the L1 solution can leave the corner — sparsity is likely, not guaranteed. Shrink the radius (= stronger regularisation) and watch weights shrink.</li></ol></div>
+      <div data-lab="constraints"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol>
+        <li>Plot of the 1-D solutions: x-axis is the unregularised weight a, the curves are the regularised ones for a penalty strength l. Orange (L2) is a straight line with slope 1/(1+l): always shrinks. Green (L1) has a flat piece at 0 for |a| ≤ l/2.</li>
+        <li>Set l = 3 and read both at a = 1.5: 0.375 and 0.</li></ol></div>
+      <div data-lab="fplot" data-title="Shrinkage: L2 versus L1" data-names="no penalty;L2 (ridge);L1 (lasso)" data-f="x; x/(1+l); x/(abs(x)+0.000001)*max(abs(x)-l/2,0)" data-params="l=3:0..6:0.1" data-view="-4,4,-4,4"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Lagrange gives candidates, not proofs.</b> Solutions of <span class="tex">\nabla f=\lambda\nabla g</span> can be maxima or saddles of the constrained problem; check the values, or use convexity.</li>
+          <li><b>The multiplier's sign depends on your convention</b> (<span class="tex">f-\lambda g</span> versus <span class="tex">f+\lambda g</span>); the geometry (parallel gradients) is convention-free.</li>
+          <li><b>Penalty strength and radius are inversely related</b>: raising <span class="tex">\lambda</span> shrinks the ball. They are two parametrisations of the same trade-off.</li>
+          <li><b>L2 does not give exact zeros</b>; it makes weights small but dense. Only L1 (and similar corner-shaped constraints) yield sparsity.</li>
+          <li><b>Penalising the bias and the normalisation scales</b> is usually not intended; weight decay is normally applied to weight matrices only.</li>
+          <li><b>L2-in-the-loss ≠ weight decay</b> for adaptive optimisers like Adam; AdamW applies the decay <span class="tex">(1-\eta\lambda)w</span> outside the adaptive rescaling.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Weight decay</b> (typically 0.01–0.1 in AdamW) is the L2 constraint used in nearly all neural-network training; L1 penalties are used for sparse linear models (<b>Lasso</b>, feature selection) and for pruning-friendly networks.</li>
+          <li><b>Support vector machines.</b> The hard-margin SVM minimises <span class="tex">\tfrac12\|w\|^2</span> subject to <span class="tex">y_i(w\cdot x_i+b)\ge1</span> for every training point. Each constraint gets a multiplier <span class="tex">\alpha_i\ge0</span>; by complementary slackness only the <i>active</i> constraints (points exactly on the margin) have <span class="tex">\alpha_i&gt;0</span> — these are the <b>support vectors</b> — and <span class="tex">w=\sum_i\alpha_iy_ix_i</span>.</li>
+          <li><b>Trust regions.</b> TRPO maximises reward subject to a KL-divergence budget between the old and new policy; PPO and RLHF's KL penalty are the Lagrangian relaxation of that constraint (the multiplier is the KL coefficient).</li>
+          <li><b>Projected gradient descent</b> (take a step, then project back onto the allowed set) is used for adversarial examples inside an <span class="tex">\ell_\infty</span> ball, for weight-norm constraints and for probability simplices.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Minimise f = x + y subject to x² + y² = 2. Find the optimum and λ (convention ∇f = λ∇g, g = x² + y² − 2).</summary><div class="ans">∇f = (1, 1) = λ(2x, 2y) → x = y = 1/(2λ). Constraint: 2x² = 2 → x = ±1. So (1, 1) with λ = 1/2 gives f = 2 (the maximum on the circle) and (−1, −1) with λ = −1/2 gives f = −2, the minimum. Both satisfy the parallel condition; comparing values decides.</div></details>
+        <details class="check"><summary>2. One weight, unregularised optimum a = 2, penalty strength λ = 1 in (w − a)² + λR(w). Find the L2 and L1 solutions.</summary><div class="ans">L2: a/(1+λ) = 2/2 = 1. L1: sign(a)·max(|a| − λ/2, 0) = 2 − 0.5 = 1.5. Neither is 0 here because |a| = 2 &gt; λ/2 = 0.5; with a = 0.4 the L1 answer would be exactly 0 while L2 would give 0.2.</div></details>
+        <details class="check"><summary>3. Why does the L1 diamond produce sparse solutions but the L2 circle does not?</summary><div class="ans">The diamond has corners on the coordinate axes (where one weight is 0) that stick out furthest and have a wide fan of normals, so a growing loss contour often touches a corner first. The circle has no corners: a contour typically touches it at a generic point where both coordinates are non-zero.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>At a constrained optimum ∇f is parallel to the constraint normal: ∇f = λ∇g; the Lagrangian f − λg encodes it and λ is the price of the constraint.</li><li>Inequality constraints add λ ≥ 0 and complementary slackness (active or λ = 0).</li><li>Penalty regularisation ⇔ a norm-ball constraint; stronger penalty = smaller ball. L2 = circle (small, dense weights), L1 = diamond (exact zeros, sparsity).</li><li>Weight decay shrinks weights by (1 − ηλ) each step; SVMs, TRPO/RLHF and adversarial robustness are all constrained problems.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now explain how a model's knobs are tuned: stepping against the gradient, why the step size must respect curvature, how mini-batches, momentum, Adam and schedules change the walk, and how constraints become regularisation. Next, <b>Module 7</b> opens up the neural network itself — neurons, softmax, loss functions, and backpropagation, the algorithm that computes the gradients you have just learned to use.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

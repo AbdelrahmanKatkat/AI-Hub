@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · CNN architectures · Computer Vision</title>
+<meta name="description" content="The blueprints of modern convolutional networks: LeNet, AlexNet, VGG, Inception, ResNet, DenseNet, MobileNet, EfficientNet and ConvNeXt, with shapes, parameters, MACs and animated block diagrams.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-architectures.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · CNN architectures — the blueprints</h1>
+        <p>Every famous network is a blueprint: a <b>stem</b>, a few <b>stages</b> built from repeated <b>blocks</b>, and a <b>head</b>. In this module you will meet each blueprint as a <i>problem → idea → block diagram → shape table → parameters → MACs → receptive field → why it works</i>, and watch tensors flow through branches, skips and merges. By the end you can draw LeNet, AlexNet, VGG, Inception, ResNet, DenseNet, MobileNet, EfficientNet and ConvNeXt from memory — with correct numbers — and design a network to fit a budget.</p>
+        <div class="chips"><span class="chip">9 lessons</span><span class="chip">Block animations</span><span class="chip">Exact params &amp; MACs</span><span class="chip">Needs Module 3 (CNNs)</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 4.1 ===================== -->
+    <section class="lesson" id="arch-design-space" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.1</span><h2>How to read an architecture</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A paper says "ResNet-50: 25.6 M parameters, 4.1 GFLOPs". Your phone has 4 GB of memory and a few watts of power. Can it run the model? Which of the two numbers decides memory, which decides speed, and which part of the network do they come from? Before comparing architectures we need a way to <i>read</i> one.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a network as a <b>factory assembly line for a photograph</b>. The raw photo arrives at the door (the <i>input</i>). A <b>stem</b> does the first rough work: it shrinks the photo and creates a first set of simple features. Then comes a sequence of <b>stages</b>. Inside one stage the picture keeps the same size, and the same <b>block</b> design is repeated several times, each repetition refining the features. Between stages the picture is shrunk (usually halved in height and width) while the number of <b>channels</b> is increased (usually doubled): the factory trades <i>where</i> things are for <i>what</i> they are. A <b>head</b> at the end collapses the last feature maps into class scores.</p>
+        <p>Every architecture paper is therefore a variation on four decisions: (1) what is the block, (2) how many blocks per stage (<b>depth</b>), (3) how many channels per stage (<b>width</b>), (4) how large is the input (<b>resolution</b>). Learn to read these and you can read any paper.</p>
+
+        <h3 class="sec">Build it up: the three accounts</h3>
+        <p>For every layer we keep three accounts. Take a convolution with input <span class="tex">C_{in}\times H\times W</span>, kernel <span class="tex">k\times k</span>, <span class="tex">C_{out}</span> filters, stride <span class="tex">s</span> and padding <span class="tex">p</span>.</p>
+        <p><b>1 · Shape.</b> The output has <span class="tex">C_{out}</span> channels and spatial size <span class="tex">\lfloor (H+2p-k)/s\rfloor+1</span>. Shape bookkeeping tells you which layers can be connected and how big every tensor is.</p>
+        <p><b>2 · Parameters</b> (what you must <i>store</i>). Each filter has <span class="tex">C_{in}k^2</span> weights, and there are <span class="tex">C_{out}</span> filters, so <span class="tex">C_{in}k^2C_{out}</span> weights (plus <span class="tex">C_{out}</span> biases, or <span class="tex">2C_{out}</span> if a batch-norm follows, because BN has a scale and a shift per channel). Notice that the image size <span class="tex">H,W</span> is <i>absent</i>: the same filter is reused at every position. That reuse is the whole point of a convolution.</p>
+        <p><b>3 · MACs</b> (what you must <i>compute</i>). One multiply-accumulate is <span class="tex">a\leftarrow a+w\cdot x</span>. Every output position needs <span class="tex">C_{in}k^2</span> of them per filter, so the layer costs <span class="tex">C_{in}k^2C_{out}\cdot H_{out}W_{out}</span> MACs. Papers often say "FLOPs" but mean MACs; a true floating-point operation count is twice as large (one multiply plus one add). Here we always say MACs.</p>
+        <p>Two more quantities complete the picture. <b>Activation memory</b>: the output tensors must be kept for backpropagation, <span class="tex">C_{out}H_{out}W_{out}</span> numbers per layer — this is what limits your batch size when <i>training</i>. <b>Receptive field</b> (RF): the patch of input pixels that can influence one output value. It grows by <span class="tex">(k-1)\cdot j</span> per layer, where the <i>jump</i> <span class="tex">j</span> is the product of all strides so far.</p>
+        <div class="worked"><b>Worked example — one VGG layer, four accounts</b>
+          <p>The second convolution of VGG-16 takes a <span class="tex">64\times224\times224</span> tensor and applies 64 filters of 3×3 (padding 1, stride 1).</p>
+          <ul><li>Shape: <span class="tex">\lfloor(224+2-3)/1\rfloor+1=224</span> → output <span class="tex">64\times224\times224</span>.</li>
+          <li>Weights: <span class="tex">64\cdot 9\cdot 64=36{,}864</span>; plus 64 biases = <b>36,928</b> parameters.</li>
+          <li>MACs: <span class="tex">36{,}864\times224\times224=1{,}849{,}688{,}064\approx1.85</span> G. This one layer alone costs about as much as the whole of ResNet-18 (1.81 G).</li>
+          <li>Activations: <span class="tex">64\cdot224\cdot224=3{,}211{,}264</span> numbers, i.e. 12.8 MB in float32 — for one image.</li>
+          <li>Receptive field: it is the second 3×3 conv, so RF = 1 + 2 + 2 = 5.</li></ul></div>
+        <p>Notice the asymmetry: 36.9 K parameters but 1.85 G MACs. Early layers are <b>compute-heavy and parameter-light</b>; late layers (small maps, many channels) are the opposite; fully connected layers are <b>parameter-heavy and compute-light</b>. Reading an architecture means knowing where each account is spent.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P_{conv}=\frac{C_{in}}{g}\,k^2\,C_{out},\qquad \text{MACs}=P_{conv}\cdot H_{out}W_{out},\qquad r_{out}=r_{in}+(k-1)\,j_{in},\quad j_{out}=j_{in}\,s</div>
+        <table class="sym">
+          <tr><td><span class="tex">C_{in},C_{out}</span></td><td>input and output channel counts</td></tr>
+          <tr><td><span class="tex">k,s,p</span></td><td>kernel size, stride, padding</td></tr>
+          <tr><td><span class="tex">g</span></td><td>groups (1 = ordinary conv; <span class="tex">g=C_{in}</span> = depthwise; see lesson 4.6)</td></tr>
+          <tr><td><span class="tex">r,j</span></td><td>receptive field size and "jump" (distance between neighbouring outputs, measured in input pixels); start with <span class="tex">r=1,j=1</span></td></tr>
+          <tr><td>FC layer</td><td><span class="tex">N_{in}N_{out}+N_{out}</span> parameters and <span class="tex">N_{in}N_{out}</span> MACs — no weight reuse, so params = MACs</td></tr>
+        </table>
+        <div class="worked"><b>Worked example — reading a table</b>
+          <p>ResNet-50 (below) has a stem that turns <span class="tex">3\times224\times224</span> into <span class="tex">64\times56\times56</span>, then four stages whose outputs are 256×56×56, 512×28×28, 1024×14×14, 2048×7×7. Each stage halves the map (÷4 pixels) and doubles the channels. Compute per 3×3 layer stays roughly constant across stages (4× fewer pixels × 4× more weights per pixel), while parameters grow 4× per stage — which is why the <i>last</i> stage holds 15.0 M of the 25.6 M parameters (plus 2.0 M in the FC head) but only 0.81 G of the 4.1 G MACs.</p></div>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 7×7 /2</td><td class="mono">64×112×112</td><td>9,536</td><td>118.01 M</td><td>7</td></tr><tr><td>max pool</td><td class="mono">64×56×56</td><td>0</td><td>0</td><td>11</td></tr><tr><td>bottleneck</td><td class="mono">256×56×56</td><td>75,008</td><td>231.21 M</td><td>19</td></tr><tr><td>bottleneck ×2</td><td class="mono">256×56×56</td><td>70,400</td><td>218.37 M</td><td>27</td></tr><tr><td>bottleneck /2</td><td class="mono">512×28×28</td><td>379,392</td><td>372.51 M</td><td>43</td></tr><tr><td>bottleneck ×3</td><td class="mono">512×28×28</td><td>280,064</td><td>218.37 M</td><td>59</td></tr><tr><td>bottleneck /2</td><td class="mono">1024×14×14</td><td>1,512,448</td><td>372.51 M</td><td>107</td></tr><tr><td>bottleneck ×5</td><td class="mono">1024×14×14</td><td>1,117,184</td><td>218.37 M</td><td>139</td></tr><tr><td>bottleneck /2</td><td class="mono">2048×7×7</td><td>6,039,552</td><td>372.51 M</td><td>299</td></tr><tr><td>bottleneck ×2</td><td class="mono">2048×7×7</td><td>4,462,592</td><td>218.37 M</td><td>363</td></tr><tr><td>global pool</td><td class="mono">2048</td><td>0</td><td>0</td><td>427</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>2,049,000</td><td>2.05 M</td><td>427</td></tr><tr><td><b>total</b></td><td></td><td><b>25,557,032</b></td><td><b>4.09 G</b></td><td></td></tr></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: dissect an architecture</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the white pulse enter ResNet-50. Click blocks and read the sub-layer table: check that the shapes follow ÷2 / ×2 at each stage boundary.</li>
+        <li>Drag the input resolution from 224 down to 112. Parameters do not change; MACs fall by ≈4×. <i>Why?</i> (Hint: the weights are reused at every pixel.)</li>
+        <li>In the text box delete the <code>fc 1000</code> line, then add <code>flatten</code> and <code>fc 1000</code> instead of <code>gap</code>. Watch the parameter count explode — the head matters.</li></ol></div>
+      <div data-lab="archviz" data-preset="resnet50" data-presets="resnet18,resnet50,vgg16,mobilenetv2" data-edit data-resolution data-title="Read any architecture"></div>
+      <div class="try" style="margin-top:12px"><b>Try this</b><ol>
+        <li>Use the calculator to rebuild the worked example: C_in = 64, C_out = 64, k = 3, H = 224.</li>
+        <li>Change k from 3 to 1: weights drop 9×, MACs drop 9×. Now change H to 112: params stay, MACs fall 4×.</li></ol></div>
+      <div data-lab="calc" data-title="Conv layer accountant" data-params="Cin=64:1..512:1; Cout=64:1..512:1; k=3:1..7:2; H=224:7..224:1" data-rows="weights = Cin*k^2*Cout; params with bias = Cin*k^2*Cout + Cout; MACs = Cin*k^2*Cout*H^2; MACs in GMACs = Cin*k^2*Cout*H^2/1e9; output values (activations) = Cout*H^2; float32 MB for activations = Cout*H^2*4/1e6"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>FLOPs vs MACs.</b> "4.1 GFLOPs" in many papers means 4.1 G MACs. A real FLOP count is 2×. Always check which one is meant before comparing.</li>
+          <li><b>Parameters ≠ speed.</b> MobileNets have few parameters <i>and</i> few MACs, but real latency also depends on memory traffic and hardware support; depthwise layers move a lot of data per MAC.</li>
+          <li><b>Counting memory.</b> Parameters decide the <i>file size</i> (×4 bytes in float32); activations decide <i>training memory</i> and, with the weights, inference memory.</li>
+          <li>Forgetting BN's 2C parameters, or the bias that disappears when BN follows a conv.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every model card and paper table lists params and MACs; you will use this arithmetic to decide whether a backbone fits an edge device or a GPU budget.</li>
+          <li>Detection and segmentation models (Modules 6–7) reuse these backbones and use the <i>stage outputs</i> (strides 4, 8, 16, 32) as a feature pyramid, so the stage structure you learn here is the vocabulary of everything later.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Block diagram: <code>input → stem → [stage 1: block ×n₁] → [stage 2 …] → head (global pool → FC)</code>. Shape table: write one row per stage with output <span class="tex">C\times H\times W</span>. Worked count: <span class="tex">3\times3</span> conv, 64→128: <span class="tex">64\cdot9\cdot128=73{,}728</span> weights; at 56×56 it costs <span class="tex">73{,}728\cdot3136=231{,}211{,}008</span> MACs.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters does a 3×3 conv from 128 to 256 channels have (with bias)?</summary><div class="ans"><span class="tex">128\cdot9\cdot256=294{,}912</span> weights + 256 biases = <b>295,168</b>.</div></details>
+        <details class="check"><summary>2. A 7×7 conv, stride 2, padding 3 on a 224×224 image: output size?</summary><div class="ans"><span class="tex">\lfloor(224+6-7)/2\rfloor+1=112</span>.</div></details>
+        <details class="check"><summary>3. Why do MACs scale with H·W but parameters do not?</summary><div class="ans">The same filter weights are applied at every spatial position (weight sharing), so storing them costs nothing extra, but computing them at each of the <span class="tex">H_{out}W_{out}</span> positions does.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Stem → stages of repeated blocks → head; depth, width, resolution are the dials.</li><li>Params = <span class="tex">C_{in}k^2C_{out}/g</span>; MACs = params × output pixels; RF grows by <span class="tex">(k-1)j</span>.</li><li>Early layers: compute-heavy. Late layers and FC heads: parameter-heavy.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 ===================== -->
+    <section class="lesson" id="lenet-alexnet-vgg" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.2</span><h2>LeNet → AlexNet → VGG</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>In 1998 a 61 K-parameter network read handwritten digits for banks. In 2012 a 61 M-parameter network won ImageNet by a landslide. In 2014 a network used <i>only</i> 3×3 kernels and 138 M parameters. What changed each time, and why does a stack of small kernels beat a single big one?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>LeNet-5 (1998)</b> already had the whole recipe: convolution to find local patterns, pooling to shrink the image, then a small fully connected classifier. Its limits were data and hardware: there was no large labelled set and no GPU. <b>AlexNet (2012)</b> was LeNet scaled up when ImageNet (1.2 M images) and GPUs arrived, plus three tricks that made scale trainable: <b>ReLU</b> instead of tanh (no saturating gradient, much faster training), <b>dropout</b> in the big FC layers (they hold 96 % of the parameters and overfit), and <b>data augmentation</b>. It cut top-5 error from 26.2 % to 15.3 %. <b>VGG (2014)</b> asked: instead of mixing 11×11, 5×5, 3×3 kernels with ad-hoc choices, what if we use <i>one</i> simple rule — 3×3 convs only, double the channels each time the map is halved — and just go deeper?</p>
+        <p>Why is 3×3 enough? Two stacked 3×3 convs see a 5×5 patch; three see 7×7 — the same receptive field as a single 7×7 — but with <b>fewer parameters</b> (<span class="tex">3\cdot3^2C^2=27C^2</span> instead of <span class="tex">49C^2</span>) and <b>three non-linearities</b> instead of one, so the stack can represent more complex functions.</p>
+
+        <h3 class="sec">Build it up: shape tables</h3>
+        <p><b>The problem each design had.</b> LeNet: too small for natural images. AlexNet: irregular, hand-tuned kernel sizes (11×11 stride 4 loses detail) and a monstrous FC head. VGG: simple and accurate, but enormous (138 M parameters, 15.5 G MACs): about 90 % of its parameters sit in the first FC layer.</p>
+        <p>LeNet-5 (input 32×32 gray). Our version uses average pooling as in the common re-implementations; the original had trainable subsampling and a sparse C3 connection table (60,850 params).</p>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">1×32×32</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 5×5</td><td class="mono">6×28×28</td><td>156</td><td>117.6 K</td><td>5</td></tr><tr><td>avg pool</td><td class="mono">6×14×14</td><td>0</td><td>0</td><td>6</td></tr><tr><td>conv 5×5</td><td class="mono">16×10×10</td><td>2,416</td><td>240.0 K</td><td>14</td></tr><tr><td>avg pool</td><td class="mono">16×5×5</td><td>0</td><td>0</td><td>16</td></tr><tr><td>flatten</td><td class="mono">400</td><td>0</td><td>0</td><td>16</td></tr><tr><td>FC 120</td><td class="mono">120</td><td>48,120</td><td>48.0 K</td><td>16</td></tr><tr><td>FC 84</td><td class="mono">84</td><td>10,164</td><td>10.1 K</td><td>16</td></tr><tr><td>FC 10</td><td class="mono">10</td><td>850</td><td>840</td><td>16</td></tr><tr><td><b>total</b></td><td></td><td><b>61,706</b></td><td><b>416.5 K</b></td><td></td></tr></table>
+        <p>AlexNet (single-stream version, as in torchvision; the 2012 original split the channels over two GPUs). 61.10 M parameters, 0.71 G MACs; the three FC layers have 58.63 M of them (96 %).</p>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 11×11 /4</td><td class="mono">64×55×55</td><td>23,296</td><td>70.28 M</td><td>11</td></tr><tr><td>max pool</td><td class="mono">64×27×27</td><td>0</td><td>0</td><td>19</td></tr><tr><td>conv 5×5</td><td class="mono">192×27×27</td><td>307,392</td><td>223.95 M</td><td>51</td></tr><tr><td>max pool</td><td class="mono">192×13×13</td><td>0</td><td>0</td><td>67</td></tr><tr><td>conv 3×3</td><td class="mono">384×13×13</td><td>663,936</td><td>112.14 M</td><td>99</td></tr><tr><td>conv 3×3</td><td class="mono">256×13×13</td><td>884,992</td><td>149.52 M</td><td>131</td></tr><tr><td>conv 3×3</td><td class="mono">256×13×13</td><td>590,080</td><td>99.68 M</td><td>163</td></tr><tr><td>max pool</td><td class="mono">256×6×6</td><td>0</td><td>0</td><td>195</td></tr><tr><td>flatten</td><td class="mono">9216</td><td>0</td><td>0</td><td>195</td></tr><tr><td>FC 4096</td><td class="mono">4096</td><td>37,752,832</td><td>37.75 M</td><td>195</td></tr><tr><td>FC 4096</td><td class="mono">4096</td><td>16,781,312</td><td>16.78 M</td><td>195</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>4,097,000</td><td>4.10 M</td><td>195</td></tr><tr><td><b>total</b></td><td></td><td><b>61,100,840</b></td><td><b>714.19 M</b></td><td></td></tr></table>
+        <p>VGG-16: 13 conv layers + 3 FC (hence "16"). Conv parameters total 14.71 M; FC: 123.64 M (89 %).</p>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 3×3</td><td class="mono">64×224×224</td><td>1,792</td><td>86.70 M</td><td>3</td></tr><tr><td>conv 3×3</td><td class="mono">64×224×224</td><td>36,928</td><td>1.85 G</td><td>5</td></tr><tr><td>max pool</td><td class="mono">64×112×112</td><td>0</td><td>0</td><td>6</td></tr><tr><td>conv 3×3</td><td class="mono">128×112×112</td><td>73,856</td><td>924.84 M</td><td>10</td></tr><tr><td>conv 3×3</td><td class="mono">128×112×112</td><td>147,584</td><td>1.85 G</td><td>14</td></tr><tr><td>max pool</td><td class="mono">128×56×56</td><td>0</td><td>0</td><td>16</td></tr><tr><td>conv 3×3</td><td class="mono">256×56×56</td><td>295,168</td><td>924.84 M</td><td>24</td></tr><tr><td>conv 3×3 ×2</td><td class="mono">256×56×56</td><td>590,080</td><td>1.85 G</td><td>32</td></tr><tr><td>max pool</td><td class="mono">256×28×28</td><td>0</td><td>0</td><td>44</td></tr><tr><td>conv 3×3</td><td class="mono">512×28×28</td><td>1,180,160</td><td>924.84 M</td><td>60</td></tr><tr><td>conv 3×3 ×2</td><td class="mono">512×28×28</td><td>2,359,808</td><td>1.85 G</td><td>76</td></tr><tr><td>max pool</td><td class="mono">512×14×14</td><td>0</td><td>0</td><td>100</td></tr><tr><td>conv 3×3 ×3</td><td class="mono">512×14×14</td><td>2,359,808</td><td>462.42 M</td><td>132</td></tr><tr><td>max pool</td><td class="mono">512×7×7</td><td>0</td><td>0</td><td>212</td></tr><tr><td>flatten</td><td class="mono">25088</td><td>0</td><td>0</td><td>212</td></tr><tr><td>FC 4096</td><td class="mono">4096</td><td>102,764,544</td><td>102.76 M</td><td>212</td></tr><tr><td>FC 4096</td><td class="mono">4096</td><td>16,781,312</td><td>16.78 M</td><td>212</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>4,097,000</td><td>4.10 M</td><td>212</td></tr><tr><td><b>total</b></td><td></td><td><b>138,357,544</b></td><td><b>15.47 G</b></td><td></td></tr></table>
+        <div class="worked"><b>Worked example — 7×7 versus three 3×3 at C = 64</b>
+          <p>One 7×7 conv, 64→64: <span class="tex">49\cdot64\cdot64=200{,}704</span> weights. Three 3×3 convs, 64→64: <span class="tex">3\cdot9\cdot64\cdot64=110{,}592</span> weights (45 % fewer), same RF 7, and 3 ReLUs. At 56×56 the MACs are 629.4 M versus 346.8 M. Check the RF recurrence: <span class="tex">1\to3\to5\to7</span>.</p></div>
+        <div class="worked"><b>Worked example — VGG keeps compute balanced</b>
+          <p>The last conv of each VGG stage (64→64 at 224, 128→128 at 112, 256→256 at 56, 512→512 at 28) costs exactly <b>1.85 G</b> MACs each. Halving the map divides pixels by 4; doubling channels multiplies the weights per pixel by 4. The designer's rule "÷2 size, ×2 channels" keeps work per stage almost constant, while parameters grow 4× per stage. Only the last stage (14×14) is cheaper, at 0.46 G.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\underbrace{\text{3 stacked }3\times3}_{27C^2\text{ params}}\;\text{vs}\;\underbrace{\text{one }7\times7}_{49C^2},\qquad r=1+n(k-1)\ \text{for }n\text{ stride-1 convs of size }k</div>
+        <table class="sym">
+          <tr><td>n</td><td>number of stacked convolutions</td></tr>
+          <tr><td>r</td><td>receptive field after those layers</td></tr>
+          <tr><td>C</td><td>channels in = channels out (for the comparison)</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick LeNet-5 and click each block: the map shrinks 32→28→14→10→5, then the FC layers read 400 numbers.</li>
+        <li>Pick AlexNet, click <code>FC 4096</code>: its table row shows 37.75 M parameters in a single layer. Compare with the biggest conv (0.88 M).</li>
+        <li>Pick VGG-16 and watch the box shapes: height halves, thickness doubles, five times.</li></ol></div>
+      <div data-lab="archviz" data-preset="vgg16" data-presets="lenet5,alexnet,vgg16" data-edit data-title="LeNet → AlexNet → VGG"></div>
+      <div class="try" style="margin-top:12px"><b>Try this</b><ol><li>Set C = 64: stacked 3×3 cost versus one 7×7. Then raise C to 512 and watch the gap scale as C².</li></ol></div>
+      <div data-lab="calc" data-title="Stack of 3×3 versus one big kernel" data-params="C=64:8..512:8; H=56:7..112:7" data-rows="three 3×3 weights = 27*C^2; one 7×7 weights = 49*C^2; saving = 1-27/49; MACs three 3×3 = 27*C^2*H^2; MACs one 7×7 = 49*C^2*H^2"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>"Bigger kernels see more": stacking small kernels gives the same receptive field more cheaply.</li>
+          <li>Believing depth is free: VGG-16 needs 15.5 G MACs per image, ≈ 3.8× ResNet-50, for lower accuracy.</li>
+          <li>Counting LeNet from memory with sparse connections: our table uses fully connected C3 (61,706 total).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>VGG-16 features are still used as a <b>perceptual loss</b> (style transfer, super-resolution, GAN training): distances between VGG feature maps match human similarity better than pixel distances.</li>
+          <li>AlexNet's ReLU + dropout + data augmentation + GPU training became the default recipe; LeNet's conv–pool–FC pattern is the skeleton of every small classifier (digits, MNIST-style tasks, microcontrollers).</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>VGG-16 diagram: <code>[conv64×2] pool → [conv128×2] pool → [conv256×3] pool → [conv512×3] pool → [conv512×3] pool → flatten(25088) → FC4096 → FC4096 → FC1000</code>. Worked count: first FC <span class="tex">25088\cdot4096+4096=102{,}764{,}544</span> — 74 % of the whole network in one layer.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Receptive field of five stacked 3×3 convs (stride 1)?</summary><div class="ans"><span class="tex">1+5\cdot2=11</span>, the same as one 11×11 (AlexNet's first kernel) at far fewer parameters: <span class="tex">45C^2</span> vs <span class="tex">121C^2</span>.</div></details>
+        <details class="check"><summary>2. Why does the first FC layer of VGG have 25,088 inputs?</summary><div class="ans">The last pool outputs 512×7×7 = 25,088 values, flattened.</div></details>
+        <details class="check"><summary>3. Which two AlexNet ideas address (a) slow training and (b) overfitting of the FC layers?</summary><div class="ans">(a) ReLU activations (non-saturating) plus GPUs; (b) dropout (and data augmentation).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>LeNet = conv–pool–FC; AlexNet = same at scale with ReLU, dropout, GPUs; VGG = only 3×3 and a regular ÷2/×2 rule.</li><li>Stacked 3×3 ≈ bigger kernel with fewer params and more non-linearity.</li><li>FC heads hold most parameters of these early nets — later designs replace them by global average pooling.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 ===================== -->
+    <section class="lesson" id="inception" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.3</span><h2>Inception &amp; multi-branch blocks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A cat may fill the whole frame or be a tiny patch in a corner. Which kernel size should a layer use: 1×1, 3×3, 5×5? VGG's answer was "always 3×3". Could a layer simply use <i>all of them in parallel</i> and let training pick — and could it do so without exploding the cost?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a team of four specialists examining the same photograph: one looks at single pixels' colour mixtures (1×1), one at small details (3×3), one at larger shapes (5×5) and one at the strongest local response (max-pool). Each writes a report with its own number of feature maps; the reports are <b>stacked side by side</b> (concatenated along channels) so the next layer reads all of them. This is the <b>Inception module</b> of GoogLeNet (2014).</p>
+        <p>The naive version has a problem. A 5×5 conv on 192 channels producing 32 maps costs <span class="tex">192\cdot25\cdot32=153{,}600</span> weights, and the pooling branch passes <i>all</i> 192 channels on, so the output grows wider and wider. The fix is the <b>1×1 bottleneck</b> ("network-in-network"): before an expensive 3×3 or 5×5 conv, a cheap 1×1 conv <b>reduces the channels</b> (192→16); after pooling, a 1×1 conv <b>projects</b> the channels down. A 1×1 conv mixes channels at each pixel and costs only <span class="tex">C_{in}C_{out}</span>.</p>
+
+        <h3 class="sec">Build it up: the block, the numbers</h3>
+        <p><b>The problem the previous design had:</b> VGG/AlexNet commit to one scale per layer and spend most parameters in FC layers; making them wider quadratically increases cost. <b>The idea:</b> multi-scale branches + 1×1 reductions + global average pooling instead of big FC layers. Result: 22 layers deep, 7.0 M parameters (8.7× fewer than AlexNet), 1.58 G MACs, top-5 error 6.7 % (ILSVRC-2014 winner).</p>
+        <div class="worked"><b>Worked example — inception 3a (input 192×28×28)</b>
+          <p>Branches (output channels): 1×1 → 64; 1×1 reduce → 96 then 3×3 → 128; 1×1 reduce → 16 then 5×5 → 32; max-pool 3×3 then 1×1 → 32. Concatenated: <span class="tex">64+128+32+32=256</span> channels, still 28×28.</p>
+          <ul><li>1×1 branch: <span class="tex">192\cdot64=12{,}288</span></li>
+          <li>3×3 branch: <span class="tex">192\cdot96+96\cdot9\cdot128=18{,}432+110{,}592=129{,}024</span></li>
+          <li>5×5 branch: <span class="tex">192\cdot16+16\cdot25\cdot32=3{,}072+12{,}800=15{,}872</span> (versus 153,600 without the reduction: 9.7× less)</li>
+          <li>pool-proj branch: <span class="tex">192\cdot32=6{,}144</span></li>
+          <li>weights total 163,328 + 368 biases = <b>163,696</b> parameters; MACs = 163,328 × 784 ≈ <b>128.0 M</b>.</li></ul>
+          <p>The naive module (no reductions, pool passes 192 channels through) has 387,296 parameters, 303.5 M MACs <i>and</i> 416 output channels: 2.4× the cost and a wider output that snowballs through later modules.</p></div>
+        <h3 class="sec">Why it works</h3>
+        <p>(1) <b>Multi-scale</b>: the four branches have receptive fields of 1, 3, 5 and 3 pixels at the same depth, so a single layer can respond to different object sizes. (2) <b>Dimension reduction</b>: a 1×1 conv is a learned low-rank projection of channels; squeezing 192→16 before a 5×5 loses little because feature maps are highly redundant. (3) <b>Global average pooling</b> replaced VGG's 100 M-parameter FC layer: the whole classifier is 1024×1000 ≈ 1.0 M. (4) <b>Auxiliary classifiers</b> on middle modules injected gradient into early layers (a precursor of ResNet's shortcut idea). Later Inception-v2/v3 factorised further: a 5×5 becomes two 3×3 (<span class="tex">25C^2\to18C^2</span>), an <span class="tex">n\times n</span> becomes <span class="tex">1\times n</span> followed by <span class="tex">n\times1</span> (7×7: 49→14), and added batch-norm.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y=\big[\,f_{1\times1}(x)\;\Vert\;f_{3\times3}(r_3(x))\;\Vert\;f_{5\times5}(r_5(x))\;\Vert\;f_{1\times1}(\text{pool}(x))\,\big],\qquad C_{out}=\sum_b C_b</div>
+        <table class="sym">
+          <tr><td>‖</td><td>concatenation along the channel axis (spatial sizes must match, hence "same" padding in every branch)</td></tr>
+          <tr><td><span class="tex">r_3,r_5</span></td><td>1×1 reduction convs in front of the 3×3 and 5×5 branches</td></tr>
+          <tr><td><span class="tex">f_{k\times k}</span></td><td>k×k convolution followed by ReLU</td></tr>
+          <tr><td><span class="tex">C_b</span></td><td>channels produced by branch b</td></tr>
+        </table>
+        <p>Compare with a <b>sum</b> (<span class="tex">y=\sum_b f_b(x)</span>): concatenation keeps each branch's evidence separate and lets the next layer's weights decide how to mix it.</p>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press step and watch the single input tensor <b>split</b> into four branches; the 1×1 reductions run first, then the 3×3 / 5×5. The concat circle waits for all four before it fires.</li>
+        <li>Set <i>naive</i> to 1: the reductions vanish, the output channels jump from 256 to 416 and the MACs more than double (compare the summary box).</li>
+        <li>Click a node to see how its parameters are counted.</li></ol></div>
+      <div data-lab="blockflow" data-block="inception" data-blocks="inception" data-C="192" data-H="28" data-title="Inception module 3a"></div>
+      <div class="try" style="margin-top:12px"><b>Try this</b><ol><li>Play the whole GoogLeNet: nine inception modules, channels (and the 28→14→7 maps) grow module by module; the final classifier is a 1024→1000 FC after global pooling.</li></ol></div>
+      <div data-lab="modelstrip" data-model="googlenet"></div>
+      <div class="prose">
+        <h3 class="sec">GoogLeNet shape table</h3>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td></tr><tr><td>conv 7×7 /2</td><td class="mono">64×112×112</td><td>9,472</td><td>118.01 M</td></tr><tr><td>max pool /2</td><td class="mono">64×56×56</td><td>0</td><td>0</td></tr><tr><td>conv 1×1</td><td class="mono">64×56×56</td><td>4,160</td><td>12.85 M</td></tr><tr><td>conv 3×3</td><td class="mono">192×56×56</td><td>110,784</td><td>346.82 M</td></tr><tr><td>max pool /2</td><td class="mono">192×28×28</td><td>0</td><td>0</td></tr><tr><td>inception 3a</td><td class="mono">256×28×28</td><td>163,696</td><td>128.05 M</td></tr><tr><td>inception 3b</td><td class="mono">480×28×28</td><td>388,736</td><td>304.27 M</td></tr><tr><td>max pool /2</td><td class="mono">480×14×14</td><td>0</td><td>0</td></tr><tr><td>inception 4a</td><td class="mono">512×14×14</td><td>376,176</td><td>73.61 M</td></tr><tr><td>inception 4b</td><td class="mono">512×14×14</td><td>449,160</td><td>87.91 M</td></tr><tr><td>inception 4c</td><td class="mono">512×14×14</td><td>510,104</td><td>99.85 M</td></tr><tr><td>inception 4d</td><td class="mono">528×14×14</td><td>605,376</td><td>118.52 M</td></tr><tr><td>inception 4e</td><td class="mono">832×14×14</td><td>868,352</td><td>170.00 M</td></tr><tr><td>max pool /2</td><td class="mono">832×7×7</td><td>0</td><td>0</td></tr><tr><td>inception 5a</td><td class="mono">832×7×7</td><td>1,043,456</td><td>51.08 M</td></tr><tr><td>inception 5b</td><td class="mono">1024×7×7</td><td>1,444,080</td><td>70.70 M</td></tr><tr><td>global pool</td><td class="mono">1024</td><td>0</td><td>0</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>1,025,000</td><td>1.02 M</td></tr><tr><td><b>total</b></td><td></td><td><b>6,998,552</b></td><td><b>1.58 G</b></td></tr></table>
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Forgetting the module's output is a <i>concatenation</i>: 64+128+32+32 channels, not 4 × 64.</li>
+          <li>Thinking 1×1 convs are "useless": they are cross-channel mixers and the main cost-saving device of the next five lessons.</li>
+          <li>Parameter counts differ slightly between implementations (torchvision's GoogLeNet adds BN and uses 3×3 in place of 5×5); ours follows the paper: 6.998 M.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>1×1 bottlenecks</b> are in ResNet-50, MobileNet, EfficientNet and every transformer's MLP (a per-token 1×1).</li>
+          <li><b>Multi-branch / multi-scale</b> reappears in feature-pyramid networks, ASPP in DeepLab (parallel dilated convs) and Inception-ResNet / Xception.</li>
+          <li>Inception-v3 features give the "FID" score used to evaluate generative image models.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: <code>x → {1×1 | 1×1→3×3 | 1×1→5×5 | pool→1×1} → concat</code>. Shapes for 3a: in 192×28×28 → branches 64, 128, 32, 32 channels → out 256×28×28. Count: 5×5 reduced branch = 3,072 + 12,800 weights.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Weights of a 3×3 conv 256→256 versus 1×1(256→64) then 3×3(64→64) then 1×1(64→256)?</summary><div class="ans">Direct: <span class="tex">256\cdot9\cdot256=589{,}824</span>. Bottleneck: <span class="tex">16{,}384+36{,}864+16{,}384=69{,}632</span> — 8.5× fewer (this is exactly the ResNet-50 bottleneck, next lesson).</div></details>
+        <details class="check"><summary>2. Why must every branch keep the same H×W?</summary><div class="ans">Concatenation along channels requires equal spatial size, so each branch uses "same" padding and stride 1.</div></details>
+        <details class="check"><summary>3. How many output channels does a module with branches 128, 192, 96 and 64 produce?</summary><div class="ans">128+192+96+64 = <b>480</b> (this is inception 3b).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Parallel branches with different kernels capture multiple scales; outputs are concatenated.</li><li>1×1 convs before expensive kernels cut cost ~2–10×.</li><li>Global average pooling replaces huge FC heads (7.0 M params total).</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 ===================== -->
+    <section class="lesson" id="resnet" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.4</span><h2>ResNet &amp; residual connections</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>If a 20-layer network works, a 56-layer network should work at least as well: just let the extra 36 layers copy their input. Yet in 2015 He et al. measured the opposite — the deeper plain network had <i>higher training error</i> than the shallow one. It was not overfitting. What was going wrong, and what one-line change fixed it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Asking a stack of non-linear layers to <i>copy</i> its input is surprisingly hard: it needs the weights to land on an exact identity map. Optimisers fail to find it, and the deeper stack ends up worse than the shallow one — this is the <b>degradation problem</b> (a training-optimisation failure, distinct from vanishing gradients, which batch-norm largely fixed).</p>
+        <p>The residual idea: stop asking the layers to produce the whole output. Let them produce only the <b>correction</b>. The block outputs <span class="tex">x+F(x)</span>: the input travels along a <b>skip connection</b> untouched, and the layers learn the residual <span class="tex">F(x)</span>. "Do nothing" is now the easy default (<span class="tex">F=0</span>, just shrink the weights), and each block has only to learn a small adjustment. Think of editing a draft instead of rewriting it from scratch.</p>
+
+        <h3 class="sec">Build it up: the block, the gradient, the shapes</h3>
+        <p><b>Problem:</b> accuracy gets worse beyond ~20 plain layers. <b>Idea:</b> <span class="tex">y=F(x)+x</span>. <b>Blocks:</b></p>
+        <ul>
+          <li><b>Basic block</b> (ResNet-18/34): two 3×3 convs (BN after each, ReLU between) + identity skip. When the stage downsamples or the channel count changes, the skip uses a 1×1 conv (stride 2) so that the shapes match before the addition.</li>
+          <li><b>Bottleneck block</b> (ResNet-50/101/152): 1×1 reduce → 3×3 → 1×1 expand, skip around all three. The 3×3 runs on a quarter of the channels.</li>
+        </ul>
+        <div class="worked"><b>Worked example — basic block, 64 channels at 56×56</b>
+          <p>Two 3×3 convs: <span class="tex">64\cdot9\cdot64=36{,}864</span> weights each → 73,728; two BN layers: 2·128 = 256; total <b>73,984</b> parameters. MACs: <span class="tex">73{,}728\cdot3136=231{,}211{,}008</span>. The identity skip costs nothing. A downsampling block (64→128, stride 2) adds a 1×1 projection of <span class="tex">64\cdot128+256=8{,}448</span> parameters: its total is 230,144.</p></div>
+        <div class="worked"><b>Worked example — why a bottleneck?</b>
+          <p>At 256 channels, two 3×3 convs would need <span class="tex">2\cdot256\cdot9\cdot256=1{,}179{,}648</span> weights. The bottleneck (256→64→64→256) needs <span class="tex">16{,}384+36{,}864+16{,}384=69{,}632</span> (+768 BN) = <b>70,400</b> parameters and 218.4 M MACs at 56×56: 17× fewer parameters, so ResNet-50 can be deeper (50 layers) than ResNet-34 at similar cost (4.1 G vs 3.7 G MACs).</p></div>
+        <h3 class="sec">Why it works: the gradient highway</h3>
+        <p>Write a stack of residual blocks as <span class="tex">x_{l+1}=x_l+F_l(x_l)</span>. Unrolling from block <span class="tex">l</span> to the end <span class="tex">L</span>:</p>
+        <div class="eq">x_L=x_l+\sum_{i=l}^{L-1}F_i(x_i)\quad\Longrightarrow\quad \frac{\partial\mathcal L}{\partial x_l}=\frac{\partial\mathcal L}{\partial x_L}\left(1+\frac{\partial}{\partial x_l}\sum_{i=l}^{L-1}F_i(x_i)\right)</div>
+        <p>For a single block this is the chain rule applied to <span class="tex">y=F(x)+x</span>: <span class="tex">\partial\mathcal L/\partial x=\partial\mathcal L/\partial y\cdot(1+\partial F/\partial x)</span>. The "1" is the key. In a plain network the gradient is a <i>product</i> of per-layer Jacobians, so a typical factor below 1 shrinks it exponentially with depth. With the skip, the gradient always contains the <b>direct term</b> <span class="tex">\partial\mathcal L/\partial x_L</span>: whatever happens inside the branches, the loss signal reaches every block unchanged. Also in the forward direction, the features of any earlier block are available to every later block by simple addition.</p>
+        <div class="worked"><b>Worked example — the numbers</b>
+          <p>Suppose every layer scales the gradient by 0.8. After 20 plain layers: <span class="tex">0.8^{20}=0.0115</span> — the first layer receives 1 % of the signal; after 50 layers: <span class="tex">1.4\times10^{-5}</span>. In a residual network each block's factor is <span class="tex">1+F'</span> with <span class="tex">F'</span> small at the start (e.g. 0.05 — branches are often initialised near zero), so 20 blocks give <span class="tex">1.05^{20}=2.65</span>: the signal neither vanishes nor needs luck. (A residual branch can of course learn <span class="tex">F'=-0.2</span> and reproduce the plain factor 0.8 — but it is no longer <i>forced</i> to.)</p></div>
+        <p><b>Pre-activation ResNet (v2).</b> The original block applies ReLU <i>after</i> the addition, which sits on the skip path. The follow-up puts BN → ReLU → conv <i>inside</i> the branch, so the skip path is a pure identity from the first block to the last; this trained 1001-layer networks. <b>Projection vs identity:</b> only use a 1×1 projection when shapes change.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y=\mathcal F(x;\{W_i\})+x,\qquad \mathcal F_{basic}=W_2\,\sigma(W_1x),\quad \mathcal F_{bottleneck}=W_3\,\sigma(W_2\,\sigma(W_1x))</div>
+        <table class="sym">
+          <tr><td>x, y</td><td>input and output tensors of the block (same shape; otherwise use <span class="tex">W_sx</span> with a 1×1 projection <span class="tex">W_s</span> on the skip)</td></tr>
+          <tr><td><span class="tex">\mathcal F</span></td><td>the residual function: a few conv + BN layers</td></tr>
+          <tr><td><span class="tex">W_i</span></td><td>convolution weights (BN omitted for clarity)</td></tr>
+          <tr><td><span class="tex">\sigma</span></td><td>ReLU</td></tr>
+          <tr><td><span class="tex">\mathcal L</span></td><td>the training loss</td></tr>
+        </table>
+        <p><b>The family</b> (params / MACs, 224×224): ResNet-18 11.69 M / 1.81 G; ResNet-34 21.80 M / 3.66 G; ResNet-50 25.56 M / 4.09 G; ResNet-101 44.55 M / 7.80 G; ResNet-152 ≈ 60.2 M / 11.5 G (published). Top-1: ≈ 69.8, 73.3, 76.1, 77.4, 78.3 %. Shape tables:</p>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 7×7 /2</td><td class="mono">64×112×112</td><td>9,536</td><td>118.01 M</td><td>7</td></tr><tr><td>max pool</td><td class="mono">64×56×56</td><td>0</td><td>0</td><td>11</td></tr><tr><td>res block ×2</td><td class="mono">64×56×56</td><td>73,984</td><td>231.21 M</td><td>27</td></tr><tr><td>res block /2</td><td class="mono">128×28×28</td><td>230,144</td><td>179.83 M</td><td>67</td></tr><tr><td>res block</td><td class="mono">128×28×28</td><td>295,424</td><td>231.21 M</td><td>99</td></tr><tr><td>res block /2</td><td class="mono">256×14×14</td><td>919,040</td><td>179.83 M</td><td>147</td></tr><tr><td>res block</td><td class="mono">256×14×14</td><td>1,180,672</td><td>231.21 M</td><td>211</td></tr><tr><td>res block /2</td><td class="mono">512×7×7</td><td>3,673,088</td><td>179.83 M</td><td>307</td></tr><tr><td>res block</td><td class="mono">512×7×7</td><td>4,720,640</td><td>231.21 M</td><td>435</td></tr><tr><td>global pool</td><td class="mono">512</td><td>0</td><td>0</td><td>435</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>513,000</td><td>512.0 K</td><td>435</td></tr><tr><td><b>total</b></td><td></td><td><b>11,689,512</b></td><td><b>1.81 G</b></td><td></td></tr></table>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 7×7 /2</td><td class="mono">64×112×112</td><td>9,536</td><td>118.01 M</td><td>7</td></tr><tr><td>max pool</td><td class="mono">64×56×56</td><td>0</td><td>0</td><td>11</td></tr><tr><td>bottleneck</td><td class="mono">256×56×56</td><td>75,008</td><td>231.21 M</td><td>19</td></tr><tr><td>bottleneck ×2</td><td class="mono">256×56×56</td><td>70,400</td><td>218.37 M</td><td>27</td></tr><tr><td>bottleneck /2</td><td class="mono">512×28×28</td><td>379,392</td><td>372.51 M</td><td>43</td></tr><tr><td>bottleneck ×3</td><td class="mono">512×28×28</td><td>280,064</td><td>218.37 M</td><td>59</td></tr><tr><td>bottleneck /2</td><td class="mono">1024×14×14</td><td>1,512,448</td><td>372.51 M</td><td>107</td></tr><tr><td>bottleneck ×5</td><td class="mono">1024×14×14</td><td>1,117,184</td><td>218.37 M</td><td>139</td></tr><tr><td>bottleneck /2</td><td class="mono">2048×7×7</td><td>6,039,552</td><td>372.51 M</td><td>299</td></tr><tr><td>bottleneck ×2</td><td class="mono">2048×7×7</td><td>4,462,592</td><td>218.37 M</td><td>363</td></tr><tr><td>global pool</td><td class="mono">2048</td><td>0</td><td>0</td><td>427</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>2,049,000</td><td>2.05 M</td><td>427</td></tr><tr><td><b>total</b></td><td></td><td><b>25,557,032</b></td><td><b>4.09 G</b></td><td></td></tr></table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab 1 — the gradient highway</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: a yellow wave sweeps backward from the loss. In the <b>plain</b> network the bars collapse to nothing (red); in the <b>residual</b> network they stay level.</li>
+        <li>Increase depth to 50, lower the branch gain j to 0.5: the plain gradient is gone at layer 1, the residual one is intact.</li>
+        <li>Click a few residual blocks to <b>cut their skip</b> (dashed red): the highway breaks there and the gradient behind the cut falls by that block's gain. Cut every block and the residual net behaves like the plain one.</li></ol></div>
+      <div data-lab="gradflow" data-title="Gradient flow: plain vs residual (toy model)"></div>
+      <div class="prose"><div class="caption">The model: each block multiplies the gradient norm by a random Jacobian gain (mean j). With the skip the factor becomes <span class="tex">\sqrt{1+(sj)^2}</span> because <span class="tex">(I+J)</span> keeps the identity part; s&lt;1 mimics zero-initialised branches. It is a toy illustrating the <i>mechanism</i>, not a measurement of a trained ResNet.</div></div>
+      <h3 class="sec" style="max-width:780px">Lab 2 — the blocks, animated</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with the <b>basic block</b>: the tensor splits into the main path and the skip, meets at the <b>+</b>. Step through it.</li>
+        <li>Set stride to 2 and C_out to 128: a 1×1 projection appears on the skip path so that the shapes match.</li>
+        <li>Switch to <b>bottleneck</b> (C = 256, mid = 64) and compare its parameter count to the plain block with 256 channels.</li></ol></div>
+      <div data-lab="blockflow" data-blocks="basic,bottleneck,plain" data-block="basic" data-C="64" data-H="56" data-title="Residual blocks"></div>
+      <div data-lab="archviz" data-preset="resnet18" data-presets="resnet18,resnet50" data-edit data-resolution data-title="ResNet-18 and ResNet-50"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>"Skip connections fix vanishing gradients" is only part of it: the degradation problem is about <i>optimisation</i> of deep stacks (even with BN), and residual form eases it.</li>
+          <li>The addition needs identical shapes; forgetting the 1×1 projection on stage boundaries is the commonest implementation bug.</li>
+          <li>Original ResNet puts the stride on the first 1×1 of a bottleneck; the popular "v1.5" (and our table) puts it on the 3×3, adding ~0.5 % accuracy at ~5 % more MACs.</li>
+          <li>Residuals are added, not concatenated (that is DenseNet).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>ResNet-50 is the default backbone of detection (Faster/Mask R-CNN, RetinaNet), segmentation, re-identification and self-supervised baselines.</li>
+          <li>The residual idea is everywhere: every transformer block is <span class="tex">x+\text{Attn}(\text{LN}(x))</span>; U-Net and diffusion UNets use residual blocks; GPT-style models are deep stacks of residual sums.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram (bottleneck): <code>x →[1×1,mid]→[3×3,mid]→[1×1,C]→ (+) ← x</code>. Shapes for ResNet-50 stage 2: 256×56×56 → bottleneck ×3 (mid 64) → 256×56×56. Count: the first block has 75,008 parameters (its 1×1 projection 64→256 alone is 64·256 + 512 = 16,896) and two more blocks have 70,400 each: 215,808 parameters in the stage.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Derive ∂L/∂x for y = F(x) + x.</summary><div class="ans"><span class="tex">\partial\mathcal L/\partial x=\partial\mathcal L/\partial y\cdot\partial y/\partial x=\partial\mathcal L/\partial y\,(\partial F/\partial x+1)</span>: the identity contributes the "1" term.</div></details>
+        <details class="check"><summary>2. A plain net has per-layer gradient factor 0.9. Gradient left after 100 layers?</summary><div class="ans"><span class="tex">0.9^{100}=2.7\times10^{-5}</span>.</div></details>
+        <details class="check"><summary>3. Parameters of one basic block with 128 channels (with BN, no projection)?</summary><div class="ans">2 convs: <span class="tex">2\cdot128\cdot9\cdot128=294{,}912</span>; BN: <span class="tex">2\cdot256=512</span>; total <b>295,424</b> (matches the table).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Deep plain nets get <i>worse</i> training error (degradation); <span class="tex">y=F(x)+x</span> makes identity the default.</li><li><span class="tex">\partial\mathcal L/\partial x=\partial\mathcal L/\partial y\,(1+\partial F/\partial x)</span>: a gradient highway.</li><li>Basic block for shallow nets, bottleneck (17× fewer params at 256 ch) for deep ones; project the skip only when shapes change.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 ===================== -->
+    <section class="lesson" id="densenet-dual-paths" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.5</span><h2>DenseNet &amp; feature reuse</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>ResNet <i>adds</i> the input to the output. Adding mixes two feature sets into one — information from earlier layers can no longer be told apart. What if, instead, each layer received <i>everything</i> computed before it, intact? And would that waste or save parameters?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture a group project with a shared whiteboard. In a ResNet, each member overwrites the board with a revised version of what was there. In a <b>DenseNet</b> nobody erases anything: each member reads the <i>entire</i> board, writes a small new note (only <span class="tex">k</span> new feature maps — the <b>growth rate</b>), and pins it to the board. The board (collective knowledge) grows by <span class="tex">k</span> channels per layer. Because earlier features stay available, later layers do not have to re-learn them: that is <b>feature reuse</b>, and it lets each layer be very thin (k = 32 versus 64–512 channels in a ResNet).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Problem:</b> in ResNet, identical features are re-computed in many layers and the sum <span class="tex">x+F(x)</span> blurs which layer contributed what. <b>Idea:</b> concatenation. In a dense block of <span class="tex">L</span> layers, layer <span class="tex">\ell</span> receives <span class="tex">[x_0,x_1,\dots,x_{\ell-1}]</span>:</p>
+        <div class="eq">x_\ell=H_\ell\big([x_0,x_1,\dots,x_{\ell-1}]\big),\qquad C_\ell^{in}=C_0+k(\ell-1),\qquad \#\text{connections}=\frac{L(L+1)}{2}</div>
+        <table class="sym">
+          <tr><td><span class="tex">H_\ell</span></td><td>BN-ReLU-1×1 conv (4k channels) → BN-ReLU-3×3 conv (k channels): a "bottleneck" layer (DenseNet-B)</td></tr>
+          <tr><td>[ · ]</td><td>concatenation along channels</td></tr>
+          <tr><td><span class="tex">k</span></td><td>growth rate: new channels per layer (32 in DenseNet-121)</td></tr>
+          <tr><td><span class="tex">C_0</span></td><td>channels entering the block</td></tr>
+        </table>
+        <div class="worked"><b>Worked example — the first dense block of DenseNet-121 (64 channels at 56×56, L = 6, k = 32)</b>
+          <p>Layer 1 sees 64 channels: BN (128 params) + 1×1: <span class="tex">64\cdot128=8{,}192</span> + BN (256) + 3×3: <span class="tex">128\cdot9\cdot32=36{,}864</span> = <b>45,440</b> parameters and outputs 32 channels. Layer 2 sees 96 channels, layer 6 sees 224. After six layers the block outputs <span class="tex">64+6\cdot32=256</span> channels. Block total: <b>335,552</b> parameters, 1.04 G MACs. The 3×3 conv costs the same in every layer (36,864 weights); only the 1×1 grows with the input width.</p></div>
+        <p><b>Transition layers</b> between blocks stop the channel count from growing forever: BN → 1×1 conv that halves the channels (compression θ = 0.5) → 2×2 average pool. Channels through DenseNet-121: 64 → <b>256</b> → 128 → <b>512</b> → 256 → <b>1024</b> → 512 → <b>1024</b> (after blocks of 6, 12, 24, 16 layers; 1 + 2·58 + 3 + 1 = 121 layers).</p>
+        <h3 class="sec">Why it works — and what it costs</h3>
+        <ul>
+          <li><b>Parameter efficiency</b>: DenseNet-121 has 7.98 M parameters and top-1 ≈ 74.4 % — fewer parameters than ResNet-18 (11.7 M, 69.8 %), though 2.83 G MACs.</li>
+          <li><b>Short paths</b>: the loss gradient reaches every layer directly (like ResNet's highway), and every layer gets "deep supervision".</li>
+          <li><b>Reuse vs refine</b>: addition (ResNet) re-uses features by refining them; concatenation (DenseNet) keeps them separate and explores new ones. <b>Dual Path Networks</b> combine both: part of the channels are summed (residual path, reuse) and part concatenated (dense path, exploration).</li>
+          <li><b>The cost</b>: concatenated tensors must be stored and copied, so training memory is high (naïve implementations materialise every concatenation); and the cost of a layer grows with the accumulated width. This is why DenseNets are loved in medical imaging (small data, few parameters) but rarely used as fast production backbones.</li>
+        </ul>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 7×7 /2</td><td class="mono">64×112×112</td><td>9,536</td><td>118.01 M</td><td>7</td></tr><tr><td>max pool</td><td class="mono">64×56×56</td><td>0</td><td>0</td><td>11</td></tr><tr><td>dense 6×g32</td><td class="mono">256×56×56</td><td>335,552</td><td>1.04 G</td><td>59</td></tr><tr><td>conv 1×1</td><td class="mono">128×56×56</td><td>32,896</td><td>102.76 M</td><td>59</td></tr><tr><td>avg pool</td><td class="mono">128×28×28</td><td>0</td><td>0</td><td>63</td></tr><tr><td>dense 12×g32</td><td class="mono">512×28×28</td><td>920,704</td><td>712.90 M</td><td>255</td></tr><tr><td>conv 1×1</td><td class="mono">256×28×28</td><td>131,328</td><td>102.76 M</td><td>255</td></tr><tr><td>avg pool</td><td class="mono">256×14×14</td><td>0</td><td>0</td><td>263</td></tr><tr><td>dense 24×g32</td><td class="mono">1024×14×14</td><td>2,839,808</td><td>549.13 M</td><td>1031</td></tr><tr><td>conv 1×1</td><td class="mono">512×14×14</td><td>524,800</td><td>102.76 M</td><td>1031</td></tr><tr><td>avg pool</td><td class="mono">512×7×7</td><td>0</td><td>0</td><td>1047</td></tr><tr><td>dense 16×g32</td><td class="mono">1024×7×7</td><td>2,160,128</td><td>104.37 M</td><td>2071</td></tr><tr><td>global pool</td><td class="mono">1024</td><td>0</td><td>0</td><td>2071</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>1,025,000</td><td>1.02 M</td><td>2071</td></tr><tr><td><b>total</b></td><td></td><td><b>7,979,752</b></td><td><b>2.83 G</b></td><td></td></tr></table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Step through the 4-layer block: every layer's output is sent to <i>all</i> later layers by arcs and is also forwarded to the final concat. The in-width of each layer is printed under its name (64, 96, 128, 160).</li>
+        <li>Increase the growth rate k from 32 to 48: block parameters grow roughly with k², but the output width only with k.</li>
+        <li>Increase L to 6 and watch the output channels <span class="tex">64+32L</span>.</li></ol></div>
+      <div data-lab="blockflow" data-blocks="dense" data-block="dense" data-C="64" data-H="56" data-cfg="L=4;gk=32" data-title="A dense block"></div>
+      <div data-lab="archviz" data-preset="densenet121" data-presets="densenet121,resnet18" data-edit data-title="DenseNet-121"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Concatenation ≠ addition: shapes need equal H×W, but channels add up (C₁ + C₂), not stay the same.</li>
+          <li>"Dense" does not mean every layer has 1000 channels; layers are thin (k = 32) and the 1×1 bottleneck keeps the 3×3 cheap.</li>
+          <li>Few parameters ≠ low cost: DenseNet-121 uses 2.83 G MACs and a lot of activation memory.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>CheXNet (DenseNet-121) for chest X-ray diagnosis; many biomedical segmentation nets (Tiramisu / DenseUNet).</li>
+          <li>The concatenation skip is the heart of U-Net (Module 7) and feature pyramids: reuse of earlier, higher-resolution features.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: boxes <code>x₀, H₁, …, H_L</code> with arcs from every box to every later box; output = concat of all. Shapes: 64×56×56 → (L=6, k=32) → 256×56×56 → transition (1×1 conv 256→128, avgpool) → 128×28×28. Count: transition 1×1 conv <span class="tex">256cdot128=32{,}768</span> weights (our DSL adds a 128-value bias, hence 32,896 in the table), preceded by a BN with <span class="tex">2cdot256=512</span> parameters.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Input channels of the 10th layer in a dense block with C₀ = 64, k = 32?</summary><div class="ans"><span class="tex">64+32\cdot9=352</span>.</div></details>
+        <details class="check"><summary>2. Number of direct connections in a block with L = 12 layers?</summary><div class="ans"><span class="tex">12\cdot13/2=78</span> (counting each layer's inputs from the block input and all previous layers).</div></details>
+        <details class="check"><summary>3. Why does DenseNet use 1×1 convs of 4k channels?</summary><div class="ans">The 3×3 conv would otherwise read all accumulated channels (hundreds): reducing to 4k = 128 first makes it <span class="tex">128\cdot9\cdot32=36{,}864</span> weights regardless of depth.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Concatenate instead of add: each layer reads all earlier features and contributes only k new channels.</li><li>Transition layers (1×1 compress + pool) control width; DenseNet-121 = 7.98 M params, 2.83 G MACs.</li><li>Parameter-efficient but memory-hungry.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.6 ===================== -->
+    <section class="lesson" id="efficient-convs" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.6</span><h2>Efficient convolutions</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A 3×3 conv with 256 input and 256 output channels has 590,000 parameters and a phone must run dozens of them every frame at 30 fps. Is there a way to get nearly the same representational power for ~9× less compute? What are we really paying for in a convolution?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An ordinary convolution does two jobs <i>at once</i>: it looks at a spatial neighbourhood (3×3) <b>and</b> it mixes all input channels. Doing both jointly is the expensive part: every filter has <span class="tex">k^2C_{in}</span> weights. Separate the jobs. First, a <b>depthwise</b> convolution: one 3×3 filter per channel, no mixing — pure spatial filtering. Then a <b>pointwise</b> 1×1 convolution: no spatial look, but it mixes channels. Like a kitchen where one cook chops (spatial) and another seasons (channel), instead of every cook doing both.</p>
+
+        <h3 class="sec">Build it up: derive the saving</h3>
+        <p>Input <span class="tex">C_{in}\times H\times W</span>, output <span class="tex">C_{out}\times H\times W</span> (stride 1).</p>
+        <div class="eq">\text{standard: } k^2C_{in}C_{out}HW\qquad\text{depthwise: }k^2C_{in}HW\qquad\text{pointwise: }C_{in}C_{out}HW</div>
+        <div class="eq">\frac{\text{depthwise}+\text{pointwise}}{\text{standard}}=\frac{k^2C_{in}+C_{in}C_{out}}{k^2C_{in}C_{out}}=\frac{1}{C_{out}}+\frac{1}{k^2}</div>
+        <p>For <span class="tex">k=3</span> and large <span class="tex">C_{out}</span> the ratio approaches <span class="tex">1/9</span>: about 8–9× cheaper. The product <span class="tex">k^2\cdot C_{out}</span> became a sum.</p>
+        <div class="worked"><b>Worked example — 128 → 128 channels at 56×56</b>
+          <p>Standard 3×3: <span class="tex">128\cdot9\cdot128=147{,}456</span> weights, <span class="tex">147{,}456\cdot3136=462.4</span> M MACs. Separable: depthwise <span class="tex">128\cdot9=1{,}152</span> + pointwise <span class="tex">128\cdot128=16{,}384</span> = 17,536 weights, 55.0 M MACs. Ratio <span class="tex">17{,}536/147{,}456=0.1189=1/128+1/9</span>: 8.4× cheaper.</p></div>
+        <p><b>Grouped convolution</b> is the continuum between the two extremes: split channels into <span class="tex">g</span> groups, each group convolves only its own channels: cost <span class="tex">k^2C_{in}C_{out}/g</span>. <span class="tex">g=1</span> is a standard conv; <span class="tex">g=C_{in}</span> is depthwise. <b>ResNeXt</b> uses <span class="tex">g=32</span> in the 3×3 of a bottleneck: with 128 mid channels the 3×3 has 4,608 weights instead of 147,456, so the block (70,144 weights) matches a ResNet bottleneck's cost but is much wider.</p>
+
+        <h3 class="sec">The blueprints</h3>
+        <p><b>MobileNet-v1 (2017)</b>: stack of depthwise-separable blocks (dw 3×3 + BN + ReLU, pw 1×1 + BN + ReLU). 4.23 M parameters, 0.569 G MACs, 70.6 % top-1 — 27× fewer MACs than VGG-16 (15.47 G) at similar accuracy. 95 % of its MACs and 75 % of its parameters are in the 1×1 convs; the FC layer holds most of the rest. Width multiplier α (thin channels everywhere) scales cost by α², resolution multiplier ρ scales it by ρ².</p>
+        <p><b>The problem with v1</b>: no residuals, and ReLU applied to very <i>narrow</i> tensors destroys information. <b>MobileNet-v2 (2018): the inverted residual with linear bottleneck.</b> A classical residual block is wide → narrow → wide (bottleneck). v2 inverts it: the block's <i>ends</i> are narrow (24 channels) and its middle is wide (×6 = 144): expand with a 1×1, filter with a cheap depthwise 3×3 on the wide tensor, project back with a 1×1 that has <b>no ReLU</b>. The skip connects the narrow ends (cheap to store).</p>
+        <div class="worked"><b>Worked example — inverted residual, 24 → 24 channels, t = 6, at 56×56</b>
+          <p>Expand: <span class="tex">24\cdot144=3{,}456</span> (+288 BN). Depthwise: <span class="tex">144\cdot9=1{,}296</span> (+288). Project: <span class="tex">144\cdot24=3{,}456</span> (+48). Total <b>8,832</b> parameters, <b>25.7 M</b> MACs; the skip adds nothing. A ResNet basic block with 24 channels would be 10,368 weights but with no wide intermediate space.</p></div>
+        <p><b>Why "linear"?</b> The interesting content of a feature map lies on a low-dimensional <i>manifold</i>. ReLU zeroes every negative coordinate. If the tensor is wide (144 dims) the data still survives — enough coordinates stay positive to reconstruct it. In a narrow tensor (24 dims, or 2 in the lab below) ReLU folds the manifold onto itself and information is lost for good. Hence: apply the non-linearity only in the wide middle; make the narrow projection linear.</p>
+        <p><b>Squeeze-and-Excitation (2017)</b> adds <i>channel attention</i>: global-average-pool each channel to a single number (squeeze), pass the <span class="tex">C</span>-vector through a small MLP <span class="tex">C\to C/r\to C</span> with sigmoid (excitation), and multiply the feature map by these gates (scale). For <span class="tex">C=256,\ r=16</span>: <span class="tex">256\cdot16+16+16\cdot256+256=8{,}464</span> parameters, only 8,192 MACs — negligible compute. Adding SE to every block of ResNet-50 costs +2.53 M parameters (≈ 28.1 M total) for a gain of roughly 1–1.5 points top-1. EfficientNet and MobileNet-v3 use it.</p>
+        <p><b>ShuffleNet (2018)</b> pushes further: the 1×1 convs now hold the cost, so make them <i>grouped</i>. Grouped 1×1 convs never mix channels across groups, so a <b>channel shuffle</b> (a free reordering) interleaves the groups before the next grouped conv. With C = 240, g = 3, bottleneck width 60: 4,800 + 540 + 4,800 = 10,140 weights.</p>
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y_{c}=\sum_{i,j}w^{dw}_{c,i,j}\,x_{c}(\cdot+i,\cdot+j)\ \ \text{(depthwise)},\qquad z_{o}=\sum_{c}w^{pw}_{o,c}\,y_{c}\ \ \text{(pointwise)}</div>
+        <table class="sym">
+          <tr><td>c</td><td>channel index (depthwise never sums across c)</td></tr>
+          <tr><td><span class="tex">w^{dw}</span></td><td>k×k filter, one per channel: <span class="tex">k^2C</span> parameters</td></tr>
+          <tr><td><span class="tex">w^{pw}</span></td><td>1×1 mixing matrix: <span class="tex">C_{in}C_{out}</span> parameters</td></tr>
+          <tr><td>t</td><td>expansion factor of an inverted residual (6 in MobileNet-v2): middle width = t·C_in</td></tr>
+        </table>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th><th>RF (px)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td><td>1</td></tr><tr><td>conv 3×3 /2</td><td class="mono">32×112×112</td><td>928</td><td>10.84 M</td><td>3</td></tr><tr><td>inv. res ×1</td><td class="mono">16×112×112</td><td>896</td><td>10.04 M</td><td>7</td></tr><tr><td>inv. res ×6 /2</td><td class="mono">24×56×56</td><td>5,136</td><td>29.20 M</td><td>11</td></tr><tr><td>inv. res ×6</td><td class="mono">24×56×56</td><td>8,832</td><td>25.74 M</td><td>19</td></tr><tr><td>inv. res ×6 /2</td><td class="mono">32×28×28</td><td>10,000</td><td>15.47 M</td><td>27</td></tr><tr><td>inv. res ×6 ×2</td><td class="mono">32×28×28</td><td>14,848</td><td>10.99 M</td><td>43</td></tr><tr><td>inv. res ×6 /2</td><td class="mono">64×14×14</td><td>21,056</td><td>7.56 M</td><td>75</td></tr><tr><td>inv. res ×6 ×3</td><td class="mono">64×14×14</td><td>54,272</td><td>10.31 M</td><td>107</td></tr><tr><td>inv. res ×6</td><td class="mono">96×14×14</td><td>66,624</td><td>12.72 M</td><td>203</td></tr><tr><td>inv. res ×6 ×2</td><td class="mono">96×14×14</td><td>118,272</td><td>22.69 M</td><td>235</td></tr><tr><td>inv. res ×6 /2</td><td class="mono">160×7×7</td><td>155,264</td><td>15.61 M</td><td>299</td></tr><tr><td>inv. res ×6 ×2</td><td class="mono">160×7×7</td><td>320,000</td><td>15.48 M</td><td>363</td></tr><tr><td>inv. res ×6</td><td class="mono">320×7×7</td><td>473,920</td><td>23.00 M</td><td>491</td></tr><tr><td>conv 1×1</td><td class="mono">1280×7×7</td><td>412,160</td><td>20.07 M</td><td>491</td></tr><tr><td>global pool</td><td class="mono">1280</td><td>0</td><td>0</td><td>491</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>1,281,000</td><td>1.28 M</td><td>491</td></tr><tr><td><b>total</b></td><td></td><td><b>3,504,872</b></td><td><b>300.77 M</b></td><td></td></tr></table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab 1 — the cost calculator</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Keep k = 3 and press <b>Sweep C_out</b>: the depthwise-separable bar shrinks toward 11.1 % (= 1/9) as C_out grows. Read the "measured" vs "1/C_out + 1/k²" lines: they agree exactly.</li>
+        <li>Set k = 1: the saving disappears (1/C_out + 1 ≈ 1) — depthwise separation only helps when the kernel is spatial.</li>
+        <li>Raise groups g: the purple bar shows grouped conv; the inverted residual bar (t = 6) is a whole block, so it is larger than dw-sep — what you pay for the wide middle.</li></ol></div>
+      <div data-lab="convcost" data-title="Standard vs grouped vs depthwise-separable vs inverted residual"></div>
+      <h3 class="sec" style="max-width:780px">Lab 2 — the linear bottleneck</h3>
+      <div class="try"><b>Try this</b><ol><li>With N = 2 the recovered curve is badly bent: ReLU destroyed information. Increase N to 10 and 30: the curve comes back. This is why the 24-channel projection in MobileNet-v2 has no ReLU while the 144-channel middle does.</li></ol></div>
+      <div data-lab="relumanifold"></div>
+      <h3 class="sec" style="max-width:780px">Lab 3 — the blocks, animated</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Inverted residual: watch the tensor <i>widen</i> (24 → 144), pass the depthwise layer, then <i>narrow</i> again; the skip joins the narrow ends. Change t to 1: the expansion layer vanishes.</li>
+        <li>Squeeze-and-Excitation: the feature map waits while the gate vector is computed along the lower path, then is multiplied channel by channel.</li>
+        <li>ResNeXt: change the groups from 32 to 1 and back; ShuffleNet: change g.</li></ol></div>
+      <div data-lab="blockflow" data-blocks="invres,dwsep,se,resnext,shuffle" data-block="invres" data-C="24" data-H="56" data-cfg="Cout=24;t=6" data-title="Efficient blocks"></div>
+      <div data-lab="archviz" data-preset="mobilenetv2" data-presets="mobilenetv1,mobilenetv2,resnet50" data-edit data-resolution data-title="MobileNets"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>MACs are not latency: depthwise convs do few operations per byte moved, so on GPUs and some NPUs MobileNets are less fast than their MAC counts suggest.</li>
+          <li>The 1/9 saving is for large C_out; a depthwise-separable layer with C_out = 16 only saves ≈ 6×.</li>
+          <li>"Inverted" refers to the <i>width pattern</i> (narrow-wide-narrow), not to the order of operations.</li>
+          <li>Putting ReLU6 or ReLU after the projection is exactly the mistake the linear bottleneck avoids.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>On-device vision: camera apps, face unlock, AR, MediaPipe, TensorFlow Lite models, Edge-TPU classifiers.</li>
+          <li>Depthwise + pointwise is the backbone of ConvNeXt (lesson 4.8), of Xception, EfficientNet and of the "separable" layers in speech and audio models; SE-style channel gating appears in many attention modules.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Inverted residual: <code>x[24] →1×1(×6)→ [144] →dw3×3→ [144] →1×1 linear→ [24] ⊕ x</code>. Shapes at 56×56: 24×56×56 → 144×56×56 → 144×56×56 → 24×56×56. Count: 3,456 + 1,296 + 3,456 weights (+ BN 624) = 8,832.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Depthwise-separable vs standard cost for k = 3, C_out = 64?</summary><div class="ans"><span class="tex">1/64+1/9=0.0156+0.1111=0.1267</span> → 7.9× cheaper.</div></details>
+        <details class="check"><summary>2. Parameters of a depthwise 5×5 conv on 96 channels, and of an SE block with C = 96, r = 16?</summary><div class="ans">Depthwise: <span class="tex">96\cdot25=2{,}400</span> (no bias). SE: <span class="tex">96\cdot6+6+6\cdot96+96=1{,}254</span>.</div></details>
+        <details class="check"><summary>3. Why is the 1×1 projection at the end of an inverted residual linear?</summary><div class="ans">The output is a narrow tensor; ReLU would zero negative coordinates and, in low dimension, irreversibly lose information. The non-linearities act only on the wide expanded tensor.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Depthwise (spatial) + pointwise (channel) costs <span class="tex">1/C_{out}+1/k^2</span> of a standard conv.</li><li>MobileNet-v2: narrow–wide–narrow with linear projection; 3.50 M params, 0.30 G MACs.</li><li>SE adds cheap channel attention; ShuffleNet/ResNeXt use grouped convs; MACs ≠ latency.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.7 ===================== -->
+    <section class="lesson" id="scaling-efficientnet" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.7</span><h2>Scaling networks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have a good small network and 10× more compute. Do you make it deeper, wider, or feed it larger images? Practitioners used to pick one and tune by hand — ResNet-18 → 200 (depth), WideResNet (width), 480-pixel inputs (resolution). Is there a principled recipe that gives a whole <i>family</i> of models, from a phone-sized B0 to a server-sized B7?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a photograph you want to examine. <b>Resolution</b> is how much detail you can see; <b>depth</b> is how many reasoning steps you take to connect details into objects; <b>width</b> is how many different things you look for at each step. Making only one of them large hits diminishing returns: with very high resolution but few layers the network cannot "think" about all the detail (its receptive field is too small); with very many layers but low resolution there is no detail left to think about; with huge width and tiny depth you look for many simple things but never combine them. The three have to grow <b>together, in balance</b>.</p>
+
+        <h3 class="sec">Build it up: the cost law and the recipe</h3>
+        <p><b>What each dial costs.</b> Doubling the depth doubles the number of layers: ×2 params, ×2 MACs. Doubling the width doubles both <span class="tex">C_{in}</span> and <span class="tex">C_{out}</span> of every conv: ×4. Doubling the resolution makes every feature map 4× larger: ×4 MACs (parameters unchanged). So, with multipliers <span class="tex">d,w,r</span>:</p>
+        <div class="eq">\text{params}\propto d\,w^2,\qquad \text{MACs}\propto d\,w^2\,r^2</div>
+        <p><b>Compound scaling</b> (EfficientNet, 2019): use one coefficient <span class="tex">\phi</span> to scale all three with fixed bases found by a small grid search at <span class="tex">\phi=1</span>:</p>
+        <div class="eq">d=\alpha^{\phi},\quad w=\beta^{\phi},\quad r=\gamma^{\phi},\qquad \text{s.t. }\ \alpha\cdot\beta^2\cdot\gamma^2\approx2,\ \ \alpha,\beta,\gamma\ge1</div>
+        <table class="sym">
+          <tr><td><span class="tex">\phi</span></td><td>user-chosen compute knob: each +1 roughly doubles the MACs</td></tr>
+          <tr><td><span class="tex">\alpha,\beta,\gamma</span></td><td>fixed constants for depth, width, resolution; found once for the baseline (EfficientNet-B0: α = 1.2, β = 1.1, γ = 1.15)</td></tr>
+          <tr><td><span class="tex">\alpha\beta^2\gamma^2\approx2</span></td><td>since MACs ∝ d·w²·r², the total cost is <span class="tex">(\alpha\beta^2\gamma^2)^\phi\approx2^\phi</span></td></tr>
+        </table>
+        <div class="worked"><b>Worked example — φ = 3</b>
+          <p>Check the constraint: <span class="tex">1.2\cdot1.1^2\cdot1.15^2=1.2\cdot1.21\cdot1.3225=1.920</span> ≈ 2. For φ = 3: depth ×<span class="tex">1.2^3=1.728</span>, width ×<span class="tex">1.1^3=1.331</span>, resolution ×<span class="tex">1.15^3=1.521</span> → 224·1.521 ≈ 341 px. MACs × <span class="tex">1.728\cdot1.331^2\cdot1.521^2=7.08</span> (= 1.920³) → 0.39 G · 7.08 ≈ 2.8 G; parameters × <span class="tex">1.728\cdot1.331^2=3.06</span> → 5.29 M · 3.06 ≈ 16 M. The published B3 (12 M params, 1.8 G MACs, 300 px) lies in this neighbourhood; the published family used hand-picked coefficients near the same law.</p></div>
+        <p><b>The baseline matters.</b> B0 itself was found by <b>neural architecture search (NAS)</b>: a controller proposes architectures from a search space (kernel sizes, expansion ratios, SE or not, layers per stage), each is trained briefly, and the controller is rewarded for accuracy <i>and</i> penalised for cost (MnasNet's reward is <span class="tex">\text{ACC}\cdot(\text{LAT}/T)^{w}</span> with <span class="tex">w\approx-0.07</span>). The result is a MobileNet-v2-like network of MBConv blocks (inverted residuals) with SE and some 5×5 depthwise kernels: 5.29 M params, 0.386 G MACs, 77.1 % top-1. <b>RegNet</b> (2020) takes the opposite view — instead of searching single networks, search the <i>design space</i>: it finds that good networks have stage widths following a quantised linear rule (<span class="tex">u_j=w_0+w_a\,j</span>), similar depth ≈ 20 blocks, and that blocks should be simple (bottleneck ratio 1). Both ideas answer "how do I choose widths and depths" systematically.</p>
+        <p><b>Why it works.</b> A larger input needs a larger receptive field (more depth) and more channels to capture finer patterns; balancing keeps all three limited by the same compute. Scaling a single dimension saturates quickly: the EfficientNet paper reports that ResNet-1000 is barely better than ResNet-101, and wider/higher-resolution variants saturate at about 80 % top-1 — whereas the compound-scaled B7 reaches 84.3 %.</p>
+        <table class="tbl" style="font-size:13px"><tr><th>model</th><th>width ×</th><th>depth ×</th><th>input</th><th>params</th><th>MACs</th><th>top-1</th></tr>
+          <tr><td>B0</td><td>1.0</td><td>1.0</td><td>224</td><td>5.3 M</td><td>0.39 G</td><td>77.1</td></tr><tr><td>B1</td><td>1.0</td><td>1.1</td><td>240</td><td>7.8 M</td><td>0.70 G</td><td>79.1</td></tr><tr><td>B2</td><td>1.1</td><td>1.2</td><td>260</td><td>9.2 M</td><td>1.0 G</td><td>80.1</td></tr><tr><td>B3</td><td>1.2</td><td>1.4</td><td>300</td><td>12 M</td><td>1.8 G</td><td>81.6</td></tr><tr><td>B4</td><td>1.4</td><td>1.8</td><td>380</td><td>19 M</td><td>4.2 G</td><td>82.9</td></tr><tr><td>B5</td><td>1.6</td><td>2.2</td><td>456</td><td>30 M</td><td>9.9 G</td><td>83.6</td></tr><tr><td>B6</td><td>1.8</td><td>2.6</td><td>528</td><td>43 M</td><td>19 G</td><td>84.0</td></tr><tr><td>B7</td><td>2.0</td><td>3.1</td><td>600</td><td>66 M</td><td>37 G</td><td>84.3</td></tr></table>
+        <p>Check the law on B7: <span class="tex">3.1\cdot2.0^2\cdot(600/224)^2=89</span> × 0.39 G = 34.7 G (published 37 G); params <span class="tex">3.1\cdot4\cdot5.29=65.6</span> M (published 66 M). The cost model is good to ~7 %.</p>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td></tr><tr><td>stem conv 3×3 /2</td><td class="mono">32×112×112</td><td>928</td><td>10.84 M</td></tr><tr><td>stage 1: 1× MBConv1 k3</td><td class="mono">16×112×112</td><td>1,448</td><td>10.04 M</td></tr><tr><td>stage 2: 2× MBConv6 k3</td><td class="mono">24×56×56</td><td>16,714</td><td>54.95 M</td></tr><tr><td>stage 3: 2× MBConv6 k5</td><td class="mono">40×28×28</td><td>46,640</td><td>37.94 M</td></tr><tr><td>stage 4: 3× MBConv6 k3</td><td class="mono">80×14×14</td><td>242,930</td><td>43.56 M</td></tr><tr><td>stage 5: 3× MBConv6 k5</td><td class="mono">112×14×14</td><td>543,148</td><td>86.10 M</td></tr><tr><td>stage 6: 4× MBConv6 k5</td><td class="mono">192×7×7</td><td>2,026,348</td><td>91.53 M</td></tr><tr><td>stage 7: 1× MBConv6 k3</td><td class="mono">320×7×7</td><td>717,232</td><td>29.52 M</td></tr><tr><td>head conv 1×1</td><td class="mono">1280×7×7</td><td>412,160</td><td>20.07 M</td></tr><tr><td>global pool</td><td class="mono">1280</td><td>0</td><td>0</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>1,281,000</td><td>1.28 M</td></tr><tr><td><b>total</b></td><td></td><td><b>5,288,548</b></td><td><b>385.81 M</b></td></tr></table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Slide φ from 0 to 7. The schematic grows in all three directions at once (more layers, thicker slabs, bigger input); the orange dot climbs the published B0–B7 curve.</li>
+        <li>Change α, β, γ so the product α·β²·γ² is no longer ≈ 2 (the readout turns orange): the cost per unit of φ drifts away from 2×.</li>
+        <li>Switch the strategy to <b>depth only</b>, then <b>width only</b>: at the same MAC budget the multipliers become extreme (e.g. depth × 7 at φ = 3), which is where single-axis scaling saturates.</li></ol></div>
+      <div data-lab="scaling" data-title="Compound scaling explorer"></div>
+      <div data-lab="modelstrip" data-model="efficientnet-b0" data-title="EfficientNet-B0, stage by stage"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>The accuracy in the explorer is <i>interpolated from published numbers</i>; scaling a network yourself needs retraining with a matching recipe (larger models need stronger regularisation and more epochs).</li>
+          <li>"FLOPs" in the EfficientNet paper are MACs; real latency on a GPU grows faster than MACs for large resolutions because of activation memory.</li>
+          <li>The coefficients α, β, γ depend on the baseline: do not reuse (1.2, 1.1, 1.15) blindly on another architecture.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Model families (EfficientNet B0–B7, EfficientNetV2 S/M/L, ResNet-18…152, ConvNeXt T/S/B/L, ViT-S/B/L) let you pick a size for a deployment budget; the scaling-law view reappears for transformers and LLMs.</li>
+          <li>NAS-designed backbones (MnasNet, MobileNet-v3, EfficientNet) power on-device vision; RegNet's design-space thinking shaped later work.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: the same block repeated; three knobs on a cube: stack height (depth ×d), slab thickness (channels ×w), input size (×r). Worked count: B0 → φ=1: d 1.2, w 1.1, r 1.15; MACs × 1.92, params × 1.2·1.21 = 1.45.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. If depth ×2, width ×1.5 and resolution ×1.5, by what factor do MACs grow?</summary><div class="ans"><span class="tex">2\cdot1.5^2\cdot1.5^2=2\cdot2.25\cdot2.25=10.1</span>.</div></details>
+        <details class="check"><summary>2. Why is width squared in the cost?</summary><div class="ans">Scaling width by w multiplies both input and output channels of each conv, so weights and MACs per pixel scale by <span class="tex">w\cdot w</span>.</div></details>
+        <details class="check"><summary>3. Name one benefit of NAS and one benefit of RegNet-style design-space search.</summary><div class="ans">NAS finds a strong specific baseline for a cost target (B0); design-space search finds general rules (width quantisation, depth) that make <i>all</i> sampled networks better.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>params ∝ d·w², MACs ∝ d·w²·r².</li><li>Compound scaling: d = α^φ, w = β^φ, r = γ^φ with α·β²·γ² ≈ 2, so each +1 of φ doubles MACs.</li><li>Good baselines come from NAS or design-space search; B0 = 5.29 M params, 0.386 G MACs.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.8 ===================== -->
+    <section class="lesson" id="convnext-modern" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.8</span><h2>Modernising the ConvNet</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>In 2020–2021 Vision Transformers overtook ResNets on ImageNet. Is it the <i>attention</i> mechanism — or the training recipe and a pile of design details that came with it? Liu et al. (2022) asked: if we take a plain ResNet-50 and change it one step at a time toward a transformer's design choices, keeping <i>convolutions</i>, how far do we get?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>It is like tuning an old car with a modern engineer's checklist: new tyres, better fuel, a lighter frame — each change is small, but together they make it competitive with the new model. Each step of the roadmap has a reason borrowed from transformers (a layer-by-layer ratio, a big patchify stem, a larger spatial window, an inverted MLP, LayerNorm and GELU) — and each can be implemented with convolutions.</p>
+
+        <h3 class="sec">Build it up: the roadmap</h3>
+        <p><b>Step 0 — the recipe.</b> Retraining ResNet-50 with a modern recipe (AdamW, long schedule, strong augmentation, label smoothing, stochastic depth) lifts it from 76.1 % to 78.8 % <i>with no architecture change</i>. Part of the "transformer advantage" was the recipe. Then (accuracy as reported by the authors):</p>
+        <table class="tbl" style="font-size:13px"><tr><th>step</th><th>change</th><th>reason</th><th>top-1</th></tr>
+          <tr><td>0</td><td>ResNet-50, modern training recipe</td><td>baseline</td><td>78.8</td></tr>
+          <tr><td>1</td><td>stage ratio (3,4,6,3) → (3,3,9,3)</td><td>compute in the 14×14 stage, like Swin-T's 1:1:3:1</td><td>79.4</td></tr>
+          <tr><td>2</td><td>"patchify" stem: 4×4 conv, stride 4</td><td>non-overlapping patches as in ViT; replaces 7×7 s2 conv + max pool</td><td>79.5</td></tr>
+          <tr><td>3</td><td>depthwise 3×3 (ResNeXt-ify) and wider (64→96)</td><td>separates spatial and channel mixing, like attention vs MLP</td><td>80.5</td></tr>
+          <tr><td>4</td><td>inverted bottleneck (hidden width 4C)</td><td>the transformer MLP is also 4× expanded</td><td>80.6</td></tr>
+          <tr><td>5</td><td>large kernel: depthwise 7×7 (moved before the 1×1s)</td><td>a bigger spatial window, cheap because depthwise</td><td>80.6</td></tr>
+          <tr><td>6</td><td>ReLU → GELU</td><td>transformer standard, smoother</td><td>80.6</td></tr>
+          <tr><td>7</td><td>fewer activations: only one per block</td><td>a transformer block has one activation in its MLP</td><td>81.3</td></tr>
+          <tr><td>8</td><td>fewer norms: one per block</td><td>same</td><td>81.4</td></tr>
+          <tr><td>9</td><td>BatchNorm → LayerNorm</td><td>no dependence on batch statistics</td><td>81.5</td></tr>
+          <tr><td>10</td><td>separate downsampling layers (2×2 conv, stride 2, with LN)</td><td>like Swin's patch merging; stabilises training</td><td>82.0</td></tr></table>
+        <p>The final <b>ConvNeXt-T</b>: 28.59 M parameters, 4.46 G MACs, 82.1 % top-1 — slightly ahead of Swin-T (81.3 %) at the same compute, using only standard convolutions.</p>
+        <div class="worked"><b>Worked example — the ConvNeXt block at C = 96 (stage 1, 56×56)</b>
+          <ul><li>depthwise 7×7: <span class="tex">96\cdot49=4{,}704</span> + 96 bias = 4,800</li>
+          <li>LayerNorm: <span class="tex">2\cdot96=192</span></li>
+          <li>1×1 up (96→384): <span class="tex">96\cdot384=36{,}864</span> + 384 = 37,248</li>
+          <li>GELU (no parameters); 1×1 down (384→96): 36,864 + 96 = 36,960</li>
+          <li>layer scale γ: 96; then add the skip.</li></ul>
+          <p>Total <b>79,296</b> parameters; MACs <span class="tex">(4{,}704+36{,}864+36{,}864)\cdot3136=245.96</span> M. Receptive field of the 7×7 depthwise layer is 7, and at stride 4 each block widens the receptive field by <span class="tex">6\cdot4=24</span> pixels. Compare ResNet-50's first bottleneck (stage 1, 256 channels): 70,400 parameters. The ConvNeXt block uses <i>more</i> parameters per block but spends 94 % of its MACs in the two 1×1 layers — the same structure as an MLP block.</p></div>
+        <h3 class="sec">Why it works</h3>
+        <p>The ConvNeXt block <b>is</b> a transformer block with attention replaced by a depthwise conv: <i>token mixing</i> (spatial) first, then a <i>channel MLP</i> (inverted bottleneck), both wrapped in LayerNorm and a residual. A depthwise 7×7 is a fixed-window, weight-shared, local version of self-attention. It keeps the convolution's inductive biases (translation equivariance, locality), so it needs less data than a ViT and is simpler to run at high resolution — important for detection and segmentation.</p>
+        <div class="eq">y=x+\gamma\odot W_2\,\mathrm{GELU}\big(W_1\,\mathrm{LN}(\mathrm{DW}_{7\times7}(x))\big)</div>
+        <table class="sym">
+          <tr><td>DW₇ₓ₇</td><td>depthwise 7×7 convolution (spatial mixing)</td></tr>
+          <tr><td>LN</td><td>LayerNorm over the channels at each pixel</td></tr>
+          <tr><td><span class="tex">W_1,W_2</span></td><td>1×1 convs (per-pixel linear layers): C→4C and 4C→C</td></tr>
+          <tr><td>γ</td><td>learned per-channel layer scale, initialised near 0 (so every block starts as an identity)</td></tr>
+          <tr><td>⊙</td><td>elementwise multiplication, broadcast over the image</td></tr>
+        </table>
+        <table class="tbl" style="font-size:12.5px"><tr><th>block</th><th>output (C×H×W)</th><th>params (per block)</th><th>MACs (per block)</th></tr><tr><td>input</td><td class="mono">3×224×224</td><td>0</td><td>0</td></tr><tr><td>stem 4×4 /4 + LN</td><td class="mono">96×56×56</td><td>4,896</td><td>14.45 M</td></tr><tr><td>stage 1: 3× ConvNeXt block</td><td class="mono">96×56×56</td><td>237,888</td><td>737.89 M</td></tr><tr><td>downsample 2×2 /2</td><td class="mono">192×28×28</td><td>74,112</td><td>57.80 M</td></tr><tr><td>stage 2: 3× ConvNeXt block</td><td class="mono">192×28×28</td><td>918,144</td><td>715.76 M</td></tr><tr><td>downsample 2×2 /2</td><td class="mono">384×14×14</td><td>295,680</td><td>57.80 M</td></tr><tr><td>stage 3: 9× ConvNeXt block</td><td class="mono">384×14×14</td><td>10,817,280</td><td>2.11 G</td></tr><tr><td>downsample 2×2 /2</td><td class="mono">768×7×7</td><td>1,181,184</td><td>57.80 M</td></tr><tr><td>stage 4: 3× ConvNeXt block</td><td class="mono">768×7×7</td><td>14,289,408</td><td>699.16 M</td></tr><tr><td>global pool + LN</td><td class="mono">768</td><td>1,536</td><td>0</td></tr><tr><td>FC 1000</td><td class="mono">1000</td><td>769,000</td><td>768.0 K</td></tr><tr><td><b>total</b></td><td></td><td><b>28,589,128</b></td><td><b>4.46 G</b></td></tr></table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Step through the block: the tensor goes through the depthwise 7×7 (spatial), LayerNorm, expands to 4C = 384 channels, then comes back to C; the skip rejoins at the +. Compare the node order with Lesson 4.6's inverted residual — the depthwise layer moved to the <i>narrow</i> side.</li>
+        <li>Set C = 768 and H = 7 (the last stage): the block holds 4.8 M parameters — the 1×1 convs dominate.</li>
+        <li>Then play the full ConvNeXt-T: four stages of 3, 3, 9, 3 blocks, a 4×4 patchify stem and 2×2 downsampling layers.</li></ol></div>
+      <div data-lab="blockflow" data-blocks="convnext,bottleneck" data-block="convnext" data-C="96" data-H="56" data-title="ConvNeXt block"></div>
+      <div data-lab="modelstrip" data-model="convnext-t" data-title="ConvNeXt-T"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Crediting an architecture for gains that came from the training recipe — compare under the <i>same</i> recipe (step 0 above is the proof).</li>
+          <li>A 7×7 <i>depthwise</i> kernel is cheap (49C weights); a 7×7 <i>standard</i> conv at C = 96 would cost 49·96² = 451,584 weights.</li>
+          <li>LayerNorm in a conv net normalises over channels per pixel, not over the whole feature map.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>ConvNeXt backbones in detection/segmentation (Mask R-CNN, UPerNet) and as the image encoder in some multimodal systems; ConvNeXt-V2 pairs it with masked-autoencoder pre-training.</li>
+          <li>The "token mixer + channel MLP" block is the same abstraction as the transformer in Module 5: <b>MetaFormer</b> — mixing and MLP structure matter as much as the mixer itself.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Diagram: <code>x → DW7×7 → LN → 1×1(C→4C) → GELU → 1×1(4C→C) → ×γ → (+) ← x</code>. ConvNeXt-T shapes: stem 96×56×56 → stage 1 (×3) → ↓ 192×28×28 (×3) → ↓ 384×14×14 (×9) → ↓ 768×7×7 (×3) → global pool → LN → FC 1000. Stem count: 4·4·3·96 = 4,608 + 96 bias (+ LN 192).</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Parameters of the two 1×1 layers of a ConvNeXt block with C = 192 (with biases)?</summary><div class="ans"><span class="tex">192\cdot768+768=148{,}224</span> and <span class="tex">768\cdot192+192=147{,}648</span>: total 295,872.</div></details>
+        <details class="check"><summary>2. What is the receptive-field growth of a depthwise 7×7 layer compared with a 3×3 one at stride 1?</summary><div class="ans"><span class="tex">(7-1)j</span> versus <span class="tex">(3-1)j</span>: 6j vs 2j — three times more per layer.</div></details>
+        <details class="check"><summary>3. Which two "transformer ingredients" did ConvNeXt keep that are not about attention?</summary><div class="ans">Any two of: patchify stem, LayerNorm, GELU, 4× inverted MLP, fewer norms/activations, separate downsampling, stage ratio 1:1:3:1, modern training recipe.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A big part of the ViT advantage was recipe and design details; ConvNeXt reaches 82.1 % with pure convolutions.</li><li>Block = depthwise 7×7 (mix space) + LN + inverted 1×1 MLP + layer scale + residual.</li><li>ConvNeXt-T: 28.59 M params, 4.46 G MACs.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.9 ===================== -->
+    <section class="lesson" id="architecture-lab" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.9</span><h2>Capstone: design under a budget</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A product manager says: "Our app must classify photos on a mid-range phone: under 4 million parameters and 0.35 billion MACs per image." Another: "The microcontroller in our camera has 256 K weights of flash." Which blocks from Module 4 do you choose, how wide, how deep — and how do you <i>check</i> your design before training anything?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Architecture design is <b>budget accounting</b>. You have three currencies: <b>parameters</b> (flash/RAM for weights), <b>MACs</b> (latency and energy) and <b>activation memory</b> (peak RAM). Every block you learned is a different exchange rate between them and representational power:</p>
+        <ul>
+          <li><b>Standard conv</b>: expensive, powerful (the baseline: VGG).</li>
+          <li><b>Bottleneck / 1×1 reduction</b>: 8–17× cheaper than a full 3×3 at the same width (Inception, ResNet-50).</li>
+          <li><b>Depthwise-separable / inverted residual</b>: ≈ 8–9× cheaper (MobileNets).</li>
+          <li><b>Global average pooling instead of flatten + FC</b>: removes tens of millions of parameters (AlexNet: 58.6 M in FC).</li>
+          <li><b>Earlier or stronger downsampling</b>: ÷4 MACs per halving of resolution.</li>
+          <li><b>Width and depth</b>: params ∝ d·w², MACs ∝ d·w²·r² (Lesson 4.7).</li>
+        </ul>
+
+        <h3 class="sec">Build it up: a design procedure</h3>
+        <p><b>1.</b> Fix the input resolution (it multiplies MACs by r²). <b>2.</b> Choose a stem that downsamples fast (stride 2, then pool or stride 2). <b>3.</b> Choose a block by budget: ResNet blocks for servers, inverted residuals / dw-sep for phones and microcontrollers. <b>4.</b> Set channel widths per stage (double when halving). <b>5.</b> End with <code>gap</code> + <code>fc</code> (never flatten of a big map). <b>6.</b> Compute params and MACs; find the biggest spender and fix <i>it</i> first. <b>7.</b> Check the receptive field: the last layer should see most of the image (RF ≥ ~75 % of the input here).</p>
+        <div class="worked"><b>Worked example — meeting the phone budget</b>
+          <p>Start from ResNet-18 (11.69 M, 1.81 G MACs): fails both. The biggest spenders are the last stage (4.7 M + 3.7 M params) and the early layers (compute). Replace the whole body by MobileNet-v2's inverted residuals: 3.505 M parameters, 0.301 G MACs, RF 491 — meets ≤ 4 M and ≤ 0.35 G (note the 1.28 M-parameter classifier alone is 36 % of the whole model!). For the 160-pixel camera task (≤ 2 M, ≤ 0.15 G) MobileNet-v2 gives 3.5 M / 0.154 G — over budget; halving the channels of a MobileNet-v1 body gives 1.33 M / 0.077 G. For the 96-pixel microcontroller task (≤ 0.25 M, ≤ 0.03 G): a nine-block dw-sep network ending at 128 channels has 0.188 M parameters and 0.004 G MACs — the 128 K FC layer is now the largest single cost.</p></div>
+        <p>Each solution is a point on an accuracy–cost trade-off; the comparison lab below shows the published points. Your goal in the lab is <b>feasibility first, then efficiency</b>: meet the budget, then see how far below it you can go.</p>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab 1 — design under a budget</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose <b>Phone</b>. The editor starts with ResNet-18: both bars are red. The yellow hint names the biggest spender.</li>
+        <li>Load <code>mobilenetv2</code> from "Start from": the bars turn green and the badge says <b>BUDGET MET</b>. Now edit it: drop a block, change a width, add <code>invres 96 t6 x2</code>. Watch the bars animate.</li>
+        <li>Switch task to <b>Edge camera</b> (160 px) — your MobileNet-v2 now fails again. Halve the channel numbers of <code>mobilenetv1</code>. Then try <b>Microcontroller</b>: what must change most? (Look at the strip under the diagram: orange bars are parameter shares, blue are MAC shares.)</li>
+        <li>Break it on purpose: replace <code>gap</code> by <code>flatten</code> and see the checklist and the parameter bar react.</li></ol></div>
+      <div data-lab="archlab" data-title="Capstone: architecture under a budget"></div>
+      <div class="prose"><div class="caption">The input size comes from the selected task (the first line of your text is rewritten internally). Layer reference: <code>conv OUT kK sS</code>, <code>dwconv</code>, <code>dwsep OUT [sS]</code>, <code>invres OUT tT [sS]</code>, <code>res OUT [sS]</code>, <code>bottleneck OUT midM [sS]</code>, <code>dense L G</code>, <code>maxpool</code>, <code>avgpool</code>, <code>gap</code>, <code>flatten</code>, <code>fc OUT</code>; append <code>xN</code> to repeat; <code>bn</code>/<code>relu</code> after a layer add its batch-norm.</div></div>
+      <h3 class="sec" style="max-width:780px">Lab 2 — compare designs side by side</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick <b>Parameters</b> and then <b>MACs</b>: the bar order changes — AlexNet and VGG are parameter giants, MobileNets and EfficientNet are small in both.</li>
+        <li>Pick <b>Activations</b>: MobileNet-v2 has 3.3× fewer parameters than ResNet-18 but its activation total is still 62 % of ResNet-18's. Why? (Wide expanded tensors at high resolution.)</li>
+        <li>Use the scatter plot: which model gives the most accuracy per MAC? Which models are strictly dominated (another model has fewer MACs and higher accuracy)?</li></ol></div>
+      <div data-lab="archcompare" data-title="Architecture comparison"></div>
+      <div class="try" style="margin-top:12px"><b>Try this</b><ol><li>Open any model in the explorer and sort the blocks in your head by cost: where is the money spent?</li></ol></div>
+      <div data-lab="archviz" data-preset="mobilenetv2" data-presets="small-cnn,lenet5,alexnet,vgg16,resnet18,resnet50,mobilenetv1,mobilenetv2,densenet121" data-edit data-resolution data-title="Model explorer"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Optimising the wrong number.</b> Parameters, MACs and latency are different; a model with fewer MACs can be slower on your hardware (memory-bound depthwise layers). Measure on the device when it matters.</li>
+          <li><b>Ignoring the classifier.</b> With 1000 classes, <code>fc 1000</code> from 1280 channels is 1.28 M parameters — more than half of a small budget.</li>
+          <li><b>Budget met ≠ accurate.</b> This lab checks cost and structure only; a feasible design still has to be trained and validated.</li>
+          <li><b>Resolution is a multiplier on everything</b>: dropping input size is the cheapest MAC saver but loses small objects.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Model selection in production: choose a backbone family and size (MobileNet / EfficientNet / ResNet / ConvNeXt) by params, MACs and measured latency on the target chip.</li>
+          <li>Hardware-aware NAS (MnasNet, FBNet, Once-for-All) automates exactly the loop you did by hand: propose → count cost → keep if within budget → measure accuracy.</li></ul></div>
+        <h3 class="sec">Draw it yourself</h3>
+        <p>For your final design write: block diagram (stem, stages, head), a shape table (one row per stage: C×H×W), the parameter count of the main block (e.g. inverted residual 24→24, t = 6: 8,832) and the total from the lab. Example worked count: classifier <code>gap → fc 1000</code> from 1280 channels = 1280·1000 + 1000 = 1,281,000 parameters.</p>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Which single change reduces MACs most for a 224-pixel network: halving the input to 112 px, or halving all widths?</summary><div class="ans">Both give ≈ ÷4 (resolution² and width² respectively); resolution leaves the parameter count unchanged while halving widths also cuts parameters ≈ 4×.</div></details>
+        <details class="check"><summary>2. Your network has 12 M parameters, 1.8 G MACs and ends with flatten + FC from a 512×7×7 map to 1000 classes. What is the easiest fix?</summary><div class="ans">Replace flatten + FC (25,088·1000 = 25.1 M parameters!) by global average pooling + FC (512·1000 = 0.51 M).</div></details>
+        <details class="check"><summary>3. A design meets the budget but accuracy is poor. What do you try, in order?</summary><div class="ans">Spend remaining budget where it helps most: increase resolution or width slightly (compound), use stronger blocks (SE, inverted residual instead of plain), train with a better recipe; confirm with measured latency.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Design = budget accounting over params, MACs, activations.</li><li>Find the biggest spender first; typical fixes: dw-sep/invres blocks, gap instead of FC, earlier downsampling, narrower widths.</li><li>Cost checks are necessary, not sufficient: train and measure.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now read, draw and cost the main CNN architectures: VGG's regular stacks, Inception's branches, ResNet's skips, DenseNet's concatenations, MobileNet's cheap convolutions, EfficientNet's balanced scaling and ConvNeXt's modernisation. Next, <b>Module 5</b> replaces convolution by attention: images become sequences of patches and the Vision Transformer takes over.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

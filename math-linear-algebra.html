@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Linear algebra · Mathematics for AI</title>
+<meta name="description" content="Vectors, dot products, matrices, transformations, determinants, eigenvectors, SVD, PCA and least squares — the geometry behind every neural network, built from intuition.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-math.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-math.js"></script>
+<script defer src="assets/labs-linear-algebra.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="math" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="mathematics.html">Mathematics for AI</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">1</div>
+      <div style="flex:1">
+        <h1>Module 1 · Linear algebra</h1>
+        <p>Linear algebra is the study of lists of numbers (vectors), tables of numbers (matrices) and the simple geometric moves they perform. A neural network is, at heart, a long chain of these moves. By the end you will see a matrix as a <i>machine that reshapes space</i>, understand why <span class="tex">A\mathbf x=\mathbf b</span> sometimes has no solution, and know where PCA, LoRA and linear regression come from.</p>
+        <div class="chips"><span class="chip">11 lessons</span><span class="chip">≈ 4 hours</span><span class="chip">Needs Module 0</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 1.1 ===================== -->
+    <section class="lesson" id="vectors" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.1</span><h2>Vectors</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A music app describes every song by three numbers: how <i>energetic</i> it is, how <i>acoustic</i> it is, how <i>happy</i> it sounds. Song A is (0.9, 0.1, 0.8), song B is (0.8, 0.2, 0.7). Can we do arithmetic on songs — "take song A, but make it twice as energetic", or "the average of my three favourites" — and can we say which new songs are reachable by mixing a few known ones?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>vector</b> has two faces, and you need both.</p>
+        <ul>
+          <li><b>The arrow face.</b> A vector is an <i>arrow</i> starting at the origin: it has a direction and a length. The vector <span class="tex">(3,2)</span> is the arrow that goes 3 steps right and 2 steps up. Arrows are good for <i>seeing</i> what is going on.</li>
+          <li><b>The list face.</b> A vector is an <i>ordered list of numbers</i>: <span class="tex">(3,2)</span>, or <span class="tex">(0.9,0.1,0.8)</span>. Lists are good for <i>computing</i>, and they work in 3, 100 or 12 000 dimensions where no arrow can be drawn.</li>
+        </ul>
+        <p>These are the same thing. The tip of the arrow sits at the point whose coordinates are the list (this is exactly the "point in ℝⁿ" from Module 0). Whenever you meet a vector in 500 dimensions, quietly imagine the 2-D arrow: every rule you learn here is checked in 2-D and then simply carries on in more.</p>
+        <p>There are only <b>two operations</b> on vectors, and the whole of linear algebra is built from them:</p>
+        <ol>
+          <li><b>Adding</b> two vectors: walk along the first arrow, then walk along the second one starting from where you ended up (tip to tail). The result is the arrow from the start to the end.</li>
+          <li><b>Scaling</b> a vector by a number: stretch it (number bigger than 1), shrink it (between 0 and 1), or flip it to point the other way (negative number).</li>
+        </ol>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>In coordinates</b> both operations act entry by entry — there is no hidden trick. With <span class="tex">\mathbf a=(2,1)</span> and <span class="tex">\mathbf b=(-1,3)</span>:</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Add: <span class="tex">\mathbf a+\mathbf b=(2+(-1),\,1+3)=(1,4)</span>. Walk 2 right and 1 up, then 1 left and 3 up: you end 1 right and 4 up. ✓</p>
+          <p>Scale: <span class="tex">3\mathbf a=(6,3)</span> (three times as long, same direction); <span class="tex">-\mathbf b=(1,-3)</span> (same length, opposite direction).</p>
+          <p>Combine: <span class="tex">2\mathbf a-\mathbf b=(4,2)-(-1,3)=(5,-1)</span>.</p></div>
+        <p>Now the idea that makes vectors <i>powerful</i>. Scale each vector by a number of your choice and add the results. This is a <b>linear combination</b>:</p>
+        <div class="eq">c_1\mathbf a+c_2\mathbf b</div>
+        <p>The numbers <span class="tex">c_1,c_2</span> are the <b>coefficients</b> — think of them as knobs on a mixing desk: <span class="tex">\mathbf a</span> and <span class="tex">\mathbf b</span> are two ingredients, the knobs say how much of each to pour in. Turning the knobs makes the result slide around. The question that matters: <b>which results can we reach?</b> The set of every vector you can make this way is called the <b>span</b> of <span class="tex">\mathbf a</span> and <span class="tex">\mathbf b</span>.</p>
+        <p>What does a span look like?</p>
+        <ul>
+          <li>One non-zero vector <span class="tex">\mathbf a</span> alone: all multiples <span class="tex">c\mathbf a</span> — a <b>line</b> through the origin.</li>
+          <li>Two vectors in the plane pointing in <i>different</i> directions: the <b>whole plane</b>. Any target can be reached; there is a unique pair of knob settings for it.</li>
+          <li>Two vectors pointing along the <i>same</i> line (one is a multiple of the other, e.g. <span class="tex">(2,1)</span> and <span class="tex">(4,2)</span>): still only a line. The second ingredient adds nothing new — it is <b>redundant</b>. We say the vectors are <b>linearly dependent</b>. Vectors that are not redundant in this sense are <b>linearly independent</b>.</li>
+        </ul>
+        <div class="worked"><b>Worked example — reaching a target</b>
+          <p>Can we reach <span class="tex">(1,11)</span> from <span class="tex">\mathbf a=(2,1)</span> and <span class="tex">\mathbf b=(-1,3)</span>? We need <span class="tex">c_1(2,1)+c_2(-1,3)=(1,11)</span>, i.e. two equations: <span class="tex">2c_1-c_2=1</span> and <span class="tex">c_1+3c_2=11</span>. From the first, <span class="tex">c_2=2c_1-1</span>; into the second: <span class="tex">c_1+6c_1-3=11\Rightarrow c_1=2</span>, so <span class="tex">c_2=3</span>. Check: <span class="tex">2(2,1)+3(-1,3)=(4-3,\,2+9)=(1,11)</span> ✓. Two independent vectors in the plane reach every target — this one needed 2 of <b>a</b> and 3 of <b>b</b>.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf v=\begin{pmatrix}v_1\\v_2\\\vdots\\v_n\end{pmatrix}\in\mathbb R^n,\qquad \mathbf a+\mathbf b=\begin{pmatrix}a_1+b_1\\\vdots\\a_n+b_n\end{pmatrix},\qquad c\,\mathbf a=\begin{pmatrix}c\,a_1\\\vdots\\c\,a_n\end{pmatrix}</div>
+        <div class="eq">\operatorname{span}\{\mathbf a_1,\dots,\mathbf a_k\}=\{\,c_1\mathbf a_1+\dots+c_k\mathbf a_k\;:\;c_1,\dots,c_k\in\mathbb R\,\}</div>
+        <table class="sym">
+          <tr><td>𝐯 ∈ ℝⁿ</td><td>a vector with <i>n</i> entries (bold lower-case letter by convention); <span class="tex">v_i</span> is its <i>i</i>-th entry. Written as a <b>column</b> when we multiply by matrices later.</td></tr>
+          <tr><td>𝐚 + 𝐛</td><td>add entry by entry; both vectors must have the <b>same length</b></td></tr>
+          <tr><td>c𝐚</td><td>multiply every entry by the single number <i>c</i> (a <b>scalar</b>)</td></tr>
+          <tr><td>c₁𝐚₁ + … + c<sub>k</sub>𝐚<sub>k</sub></td><td>a linear combination of the vectors with coefficients <span class="tex">c_i</span></td></tr>
+          <tr><td>span{…}</td><td>the set of <i>all</i> linear combinations — everything reachable</td></tr>
+        </table>
+        <p><b>Independence, precisely:</b> vectors <span class="tex">\mathbf a_1,\dots,\mathbf a_k</span> are linearly independent if the <i>only</i> way to get the zero vector, <span class="tex">c_1\mathbf a_1+\dots+c_k\mathbf a_k=\mathbf 0</span>, is to set every <span class="tex">c_i=0</span>. (If some non-zero choice worked, you could solve for one vector in terms of the others — it would be redundant.) In <span class="tex">\mathbb R^n</span> you can never have more than <i>n</i> independent vectors. A set of <i>n</i> independent vectors in <span class="tex">\mathbb R^n</span> spans everything and is called a <b>basis</b>; the standard one is <span class="tex">\mathbf e_1=(1,0,\dots),\ \mathbf e_2=(0,1,\dots)</span>, so that <span class="tex">(3,2)=3\mathbf e_1+2\mathbf e_2</span> — the list of numbers is just the list of coefficients in the standard recipe.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the <b>c₁</b> and <b>c₂</b> sliders. The blue arrow is c₁<b>a</b>; the orange arrow starts at its tip and is c₂<b>b</b>; the green arrow is the sum. Set c₁ = 2, c₂ = 3: you should land on (1, 11), as in the worked example.</li>
+        <li>Click anywhere on the plane. The sliders glide to the unique coefficients that reach that spot — any point is reachable.</li>
+        <li>Press <b>Sweep</b> and leave it for a while: the trail of green dots slowly fills the whole plane. That is "span = the plane".</li>
+        <li>Choose the preset <b>b = 2a (collinear)</b> and sweep again. The trail stays on one line, and clicking off the line cannot be reached. The second vector brought nothing new.</li></ol></div>
+      <div data-lab="lincomb"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A vector is not a location <i>and</i> an arrow at once — it is whichever helps.</b> The point (3,2) and the arrow to it are two pictures of one object. A vector does not "live" somewhere: the arrow from (1,1) to (4,3) is the <i>same</i> vector as the one from the origin to (3,2).</li>
+          <li><b>You cannot add vectors of different lengths.</b> <span class="tex">(1,2)+(1,2,3)</span> is undefined — in code, NumPy may "broadcast" it silently, which hides bugs.</li>
+          <li><b>"Span" is not "the vectors themselves".</b> It is everything you can <i>build</i> from them. Two vectors can span a plane even if neither lies in it "obviously".</li>
+          <li><b>Two vectors can be different and still redundant</b> (<span class="tex">(2,1)</span> and <span class="tex">(4,2)</span>). Independence is about directions, not about being unequal.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Feature vectors.</b> One house, one patient, one customer row is a vector; a model's whole job is to map such vectors to predictions.</li>
+          <li><b>Embeddings.</b> A word, image or user becomes a vector in ℝᵈ (d = 768…12 288). Famous demonstration: <span class="tex">\mathbf v_{\text{king}}-\mathbf v_{\text{man}}+\mathbf v_{\text{woman}}\approx\mathbf v_{\text{queen}}</span> — arithmetic on meaning, which only makes sense because vectors can be added and scaled.</li>
+          <li><b>Mixing features.</b> Every hidden unit of a neural network outputs a <i>linear combination</i> of its inputs; the weights are the coefficients. "What can this layer express?" is a span question.</li>
+          <li><b>Redundancy.</b> Two highly correlated features are almost linearly dependent — one reason models can become unstable (lesson 1.7).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute 3(1,2) − 2(0,1).</summary><div class="ans">3(1,2) = (3,6); 2(0,1) = (0,2); the difference is (3,4).</div></details>
+        <details class="check"><summary>2. Is (3,3) in the span of (1,2) and (2,4)? What is that span?</summary><div class="ans">No. (2,4) = 2·(1,2), so the two vectors are dependent and span only the line y = 2x. The point (3,3) is not on it (3 ≠ 6).</div></details>
+        <details class="check"><summary>3. What is the span of e₁ = (1,0,0) and e₂ = (0,1,0) inside ℝ³?</summary><div class="ans">All vectors (c₁, c₂, 0): the flat x–y plane (third coordinate 0). Two vectors can only ever span a plane (or less) — they can never fill all of ℝ³, which needs three independent vectors.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A vector is an arrow and a list of numbers at once; both operations (add, scale) work entry by entry.</li><li>A linear combination c₁a + c₂b is "mix the ingredients with these amounts"; the span is everything reachable.</li><li>Redundant (dependent) vectors add no new directions. n independent vectors in ℝⁿ reach everything.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 ===================== -->
+    <section class="lesson" id="dot-product" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.2</span><h2>Dot product &amp; angle</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have two documents, each turned into a long vector of word counts. How do you measure <i>how alike</i> they are with a single number? And, in a neural network, how does one neuron combine many inputs into one "score" that says how strongly the input matches what the neuron is looking for?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine pushing a shopping trolley along a straight rail. You push with some force at some angle. Only the part of your push that points <i>along the rail</i> makes the trolley move; a sideways push is wasted on the rail. The dot product measures exactly this: <b>"how much do these two arrows point the same way, weighted by their lengths?"</b></p>
+        <ul>
+          <li>Arrows pointing roughly the same way: big <b>positive</b> number.</li>
+          <li>Arrows at right angles (perpendicular): <b>zero</b> — neither helps the other.</li>
+          <li>Arrows pointing roughly opposite ways: <b>negative</b>.</li>
+        </ul>
+        <p>The surprising and beautiful fact is that there are <i>two</i> completely different ways to compute this number — one a trivially simple multiply-and-add, the other pure geometry — and they always agree.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Recipe 1 — the algebraic one.</b> Multiply the vectors entry by entry and add up:</p>
+        <div class="eq">\mathbf a\cdot\mathbf b=a_1b_1+a_2b_2+\dots+a_nb_n=\sum_{i=1}^n a_ib_i</div>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">\mathbf a=(2,1),\ \mathbf b=(1,3)</span>: <span class="tex">\mathbf a\cdot\mathbf b=2\cdot1+1\cdot3=5</span>. And <span class="tex">(3,4)\cdot(4,-3)=12-12=0</span> — these two arrows are perpendicular (draw them!).</p></div>
+        <p>Notice the answer is a <b>single number</b>, not a vector.</p>
+        <p><b>Recipe 2 — the geometric one.</b> Let <span class="tex">\lVert\mathbf a\rVert</span> be the length of <b>a</b> (Pythagoras: <span class="tex">\sqrt{a_1^2+a_2^2+\dots}</span>, the distance formula from Module 0) and <span class="tex">\theta</span> the angle between the two arrows. Then</p>
+        <div class="eq">\mathbf a\cdot\mathbf b=\lVert\mathbf a\rVert\,\lVert\mathbf b\rVert\cos\theta</div>
+        <p>Why would these agree? Think of projecting <b>a</b> onto the line through <b>b</b>: drop a perpendicular from the tip of <b>a</b> onto that line. The foot of the perpendicular lies at a signed distance <span class="tex">\lVert\mathbf a\rVert\cos\theta</span> along <b>b</b>'s direction (basic right-triangle trigonometry). Multiply by the length of <b>b</b> and you get the formula. The algebraic recipe computes the very same number — you can check it in the lab below. (A short proof: expand the law of cosines for the triangle with sides <b>a</b>, <b>b</b>, <b>a − b</b>.)</p>
+        <div class="worked"><b>Worked example — angle from entries</b>
+          <p>For <span class="tex">\mathbf a=(2,1),\mathbf b=(1,3)</span>: <span class="tex">\mathbf a\cdot\mathbf b=5</span>, <span class="tex">\lVert\mathbf a\rVert=\sqrt5\approx2.236</span>, <span class="tex">\lVert\mathbf b\rVert=\sqrt{10}\approx3.162</span>. Then <span class="tex">\cos\theta=\dfrac{5}{\sqrt5\sqrt{10}}=\dfrac5{\sqrt{50}}\approx0.7071</span>, so <span class="tex">\theta=45^\circ</span>.</p>
+          <p><b>Projection:</b> the part of <b>a</b> that lies along <b>b</b> is the vector <span class="tex">\dfrac{\mathbf a\cdot\mathbf b}{\mathbf b\cdot\mathbf b}\,\mathbf b=\dfrac{5}{10}(1,3)=(0.5,\,1.5)</span>. The leftover <span class="tex">\mathbf a-(0.5,1.5)=(1.5,-0.5)</span> is perpendicular to <b>b</b>: <span class="tex">(1.5)(1)+(-0.5)(3)=0</span> ✓.</p></div>
+        <p>Reading the sign: since lengths are positive, the sign of <span class="tex">\mathbf a\cdot\mathbf b</span> is the sign of <span class="tex">\cos\theta</span>. Positive means an angle below 90°, zero means exactly 90° (<b>orthogonal</b>, the general word for perpendicular — and it works in any dimension), negative means above 90°.</p>
+        <p><b>Cosine similarity.</b> Dividing out the lengths leaves a pure "direction agreement" score between −1 and +1:</p>
+        <div class="eq">\cos\theta=\frac{\mathbf a\cdot\mathbf b}{\lVert\mathbf a\rVert\,\lVert\mathbf b\rVert}</div>
+        <p>Because it ignores length, a short document and a long document on the same topic can still score close to 1. That is why this, not the raw dot product, is the standard "how alike?" measure for text and embeddings.</p>
+        <p><b>A neuron is a dot product.</b> A single artificial neuron takes inputs <span class="tex">\mathbf x</span>, owns a weight vector <span class="tex">\mathbf w</span> and a bias <span class="tex">b</span>, and computes <span class="tex">z=\mathbf w\cdot\mathbf x+b</span>, then squashes it (for example with the sigmoid). By the geometric formula, <span class="tex">\mathbf w\cdot\mathbf x=\lVert\mathbf w\rVert\lVert\mathbf x\rVert\cos\theta</span>: the neuron responds most strongly to inputs pointing in the direction of <b>w</b>. The weights are a <i>template</i>; the neuron measures how well the input matches it.</p>
+        <div class="worked"><b>Worked example — a neuron</b>
+          <p><span class="tex">\mathbf w=(0.5,-1,2)</span>, <span class="tex">\mathbf x=(4,2,1)</span>, <span class="tex">b=0.5</span>. Products: <span class="tex">0.5\cdot4=2</span>, <span class="tex">-1\cdot2=-2</span>, <span class="tex">2\cdot1=2</span>; sum = 2; add the bias: <span class="tex">z=2.5</span>. Sigmoid: <span class="tex">\sigma(2.5)=1/(1+e^{-2.5})\approx0.924</span> — a confident "yes, this matches".</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf a\cdot\mathbf b=\sum_{i=1}^{n}a_ib_i=\lVert\mathbf a\rVert\lVert\mathbf b\rVert\cos\theta,\qquad \mathbf a\cdot\mathbf a=\lVert\mathbf a\rVert^2,\qquad \operatorname{proj}_{\mathbf b}\mathbf a=\frac{\mathbf a\cdot\mathbf b}{\mathbf b\cdot\mathbf b}\,\mathbf b</div>
+        <table class="sym">
+          <tr><td>𝐚 · 𝐛</td><td>the dot (inner) product: a single number. Also written <span class="tex">\langle\mathbf a,\mathbf b\rangle</span> or <span class="tex">\mathbf a^{\!\top}\mathbf b</span> (the last form comes in lesson 1.4)</td></tr>
+          <tr><td>‖𝐚‖</td><td>the length (norm) of <b>a</b>, <span class="tex">\sqrt{\mathbf a\cdot\mathbf a}</span>; the dot of a vector with itself is its squared length</td></tr>
+          <tr><td>θ</td><td>the angle between the two arrows, 0° to 180°</td></tr>
+          <tr><td>cos θ</td><td>+1 same direction, 0 perpendicular, −1 opposite</td></tr>
+          <tr><td>proj<sub>b</sub> a</td><td>the vector shadow of <b>a</b> on the line through <b>b</b>; defined when <span class="tex">\mathbf b\ne\mathbf 0</span></td></tr>
+        </table>
+        <p><b>Orthogonal</b> means <span class="tex">\mathbf a\cdot\mathbf b=0</span>. Properties worth knowing: <span class="tex">\mathbf a\cdot\mathbf b=\mathbf b\cdot\mathbf a</span>; <span class="tex">\mathbf a\cdot(\mathbf b+\mathbf c)=\mathbf a\cdot\mathbf b+\mathbf a\cdot\mathbf c</span>; <span class="tex">(c\mathbf a)\cdot\mathbf b=c(\mathbf a\cdot\mathbf b)</span>. The Cauchy–Schwarz inequality <span class="tex">|\mathbf a\cdot\mathbf b|\le\lVert\mathbf a\rVert\lVert\mathbf b\rVert</span> is just the statement that |cos θ| ≤ 1.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the blue and orange tips. Watch the three numbers: the algebraic <i>a·b</i>, the angle, and cos θ. Confirm that a·b = |a||b|cos θ with a calculator.</li>
+        <li>Make the arrows perpendicular (θ ≈ 90°): the dot product goes to 0 and the green projection shrinks to nothing.</li>
+        <li>Swing <b>a</b> to the other side of <b>b</b> (θ &gt; 90°): the dot product turns negative and the projection flips backwards.</li></ol></div>
+      <div data-lab="vec2" data-title="Dot product, angle and projection" data-show="dot,proj,angle,norm" data-ax="2" data-ay="1" data-bx="1" data-by="3"></div>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Point x along w</b>: the neuron's output jumps to its maximum for inputs of that size — cos θ = 1.</li>
+        <li>Press <b>Make x ⟂ w</b>: w·x drops to 0 and only the bias remains. The neuron is blind to inputs perpendicular to its template.</li>
+        <li>Press <b>Point x against w</b>: the sum is as negative as it can be, the sigmoid output is near 0.</li></ol></div>
+      <div data-lab="neuron"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The dot product is not another vector.</b> It collapses two vectors into one number. (The "vector times vector → vector" product is a different thing, the cross product, which rarely matters in ML.)</li>
+          <li><b>Large dot product ≠ similar direction.</b> <span class="tex">(100,0)\cdot(1,0)=100</span> and <span class="tex">(1,0)\cdot(1,0)=1</span> have the same angle (0°). Length inflates the raw dot product — normalise (cosine) if you want pure direction.</li>
+          <li><b>Zero dot product does not mean one vector is zero</b> — it means perpendicular. (Of course the zero vector also gives 0.)</li>
+          <li><b>Angles in high dimensions.</b> In ℝ¹⁰⁰⁰ random vectors are almost always nearly perpendicular (cos θ ≈ 0). "Nearly orthogonal" is the <i>normal</i> state of affairs, so a score like 0.3 can already be significant.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Neuron pre-activation:</b> <span class="tex">z=\mathbf w\cdot\mathbf x+b</span> — every dense layer computes many of these in parallel.</li>
+          <li><b>Attention scores</b> in transformers: the similarity of a query and a key is <span class="tex">\mathbf q\cdot\mathbf k/\sqrt d</span>; a large positive dot product means "this token should attend to that one".</li>
+          <li><b>Cosine similarity</b> for semantic search, retrieval-augmented generation, recommendation and clustering of embeddings.</li>
+          <li><b>Linear classifiers / logistic regression:</b> the decision is the sign of <span class="tex">\mathbf w\cdot\mathbf x+b</span>, the hyperplane from Module 0.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute (1,2,3)·(4,−5,6).</summary><div class="ans">1·4 + 2·(−5) + 3·6 = 4 − 10 + 18 = 12.</div></details>
+        <details class="check"><summary>2. Are (2,−1) and (1,2) orthogonal?</summary><div class="ans">Dot product = 2·1 + (−1)·2 = 0, so yes: they are perpendicular.</div></details>
+        <details class="check"><summary>3. Find the cosine similarity between (1,1) and (3,3), and between (1,0) and (−2,0). Compare with their dot products (2·3 = 6 … and −2).</summary><div class="ans">(1,1)·(3,3) = 6, lengths √2 and √18, so cos θ = 6/(√2·√18) = 6/6 = 1 (same direction). (1,0)·(−2,0) = −2, lengths 1 and 2, cos θ = −2/2 = −1 (opposite). The dot product of the first pair is 6 only because (3,3) is long; the cosine ignores length.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>a·b = Σaᵢbᵢ = |a||b|cos θ: multiply-and-add equals length × length × alignment.</li><li>Sign tells the angle: positive &lt; 90°, zero = orthogonal, negative &gt; 90°.</li><li>Cosine similarity removes length and keeps direction.</li><li>A neuron is a dot product with a template w; attention scores are dot products too.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 ===================== -->
+    <section class="lesson" id="norms-distance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.3</span><h2>Norms &amp; distances</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model's error on three test examples is the vector (3, −4, 0). Is that "big"? We need a single number for the <i>size</i> of a vector — but is "size" the straight-line length, the total of all the misses, or just the worst single miss? Different answers lead to different learning behaviour. Which should we choose, and why does a model penalised by one of them end up with lots of exact zeros in its weights?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>"How big is this vector?" has several sensible answers, depending on how you travel. Picture a city built on a grid, and you want to get from the origin to the point (3, −4).</p>
+        <ul>
+          <li>A <b>helicopter</b> flies in a straight line: length <span class="tex">\sqrt{3^2+4^2}=5</span>. This is the <b>L2 norm</b>, the everyday Euclidean length.</li>
+          <li>A <b>taxi</b> must follow the grid streets: 3 blocks across plus 4 blocks down = <b>7</b>. This is the <b>L1 norm</b> ("Manhattan" or taxicab length).</li>
+          <li>A <b>delivery limit</b> says "no leg longer than the longest single move": the biggest coordinate magnitude, <b>4</b>. This is the <b>L∞ norm</b> ("max norm" or Chebyshev).</li>
+        </ul>
+        <p>A <b>norm</b> is any rule that assigns a size to vectors and behaves sensibly: sizes are never negative, only the zero vector has size 0, scaling a vector by <i>c</i> scales its size by |c|, and the <i>triangle inequality</i> holds (a detour is never shorter than the direct route: <span class="tex">\lVert\mathbf a+\mathbf b\rVert\le\lVert\mathbf a\rVert+\lVert\mathbf b\rVert</span>). All three examples above obey these rules.</p>
+        <p>To see how they differ, draw the <b>unit ball</b>: all points whose norm is exactly 1. For L2 it is a circle. For L1 it is a diamond (a tilted square whose corners sit on the axes). For L∞ it is an axis-aligned square. The shape <i>is</i> the personality of the norm.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="eq">\lVert\mathbf x\rVert_1=\sum_i|x_i|,\qquad \lVert\mathbf x\rVert_2=\sqrt{\sum_i x_i^2},\qquad \lVert\mathbf x\rVert_\infty=\max_i|x_i|</div>
+        <p>These are three members of one family, the <b>p-norms</b> <span class="tex">\lVert\mathbf x\rVert_p=\left(\sum_i|x_i|^p\right)^{1/p}</span> for <span class="tex">p\ge1</span>. Put <span class="tex">p=1</span> or <span class="tex">p=2</span> and you recover the first two; let <span class="tex">p\to\infty</span> and the biggest coordinate dominates everything, giving L∞. (For <span class="tex">p&lt;1</span> the triangle inequality breaks and the formula is no longer a true norm.) A good habit: always <span class="tex">\lVert\mathbf x\rVert_\infty\le\lVert\mathbf x\rVert_2\le\lVert\mathbf x\rVert_1</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">\mathbf v=(3,-4)</span>: L1 = 3 + 4 = 7; L2 = √(9+16) = 5; L∞ = max(3, 4) = 4. Indeed 4 ≤ 5 ≤ 7. ✓</p>
+          <p><b>Unit vector.</b> Divide a non-zero vector by its length to get a vector of length 1 pointing the same way: <span class="tex">\hat{\mathbf v}=\mathbf v/\lVert\mathbf v\rVert_2=(3,-4)/5=(0.6,-0.8)</span>. Check: <span class="tex">0.36+0.64=1</span> ✓. This is "normalising" and keeps only direction.</p></div>
+        <p><b>Distance</b> is simply the size of the difference: <span class="tex">d(\mathbf a,\mathbf b)=\lVert\mathbf a-\mathbf b\rVert</span>. With the L2 norm it is the Euclidean distance of Module 0.</p>
+        <div class="worked"><b>Worked example — one pair, three distances</b>
+          <p><span class="tex">\mathbf a=(1,2,3)</span>, <span class="tex">\mathbf b=(4,6,3)</span>; difference <span class="tex">(-3,-4,0)</span>. Euclidean: √(9+16+0) = 5. Manhattan: 3+4+0 = 7. Chebyshev: 4.</p></div>
+        <p><b>Similarity versus distance.</b> They are opposite viewpoints. A <i>distance</i> is small when things are alike; a <i>similarity</i> is large. Cosine similarity compares directions, Euclidean distance compares positions. They disagree when length differs: the vectors <span class="tex">(1,0)</span> and <span class="tex">(10,0)</span> are 9 apart in Euclidean distance, yet have cosine similarity 1. Which is "right" depends on whether magnitude is meaningful (a document's length usually is not; a measured quantity usually is). If all vectors are first normalised to length 1, the two coincide: <span class="tex">\lVert\mathbf a-\mathbf b\rVert_2^2=2-2\cos\theta</span>.</p>
+        <p><b>Why the shape matters for learning.</b> Suppose a model can reach the same prediction with weights <span class="tex">(1,0,0)</span> (one feature does all the work) or <span class="tex">(\tfrac13,\tfrac13,\tfrac13)</span> (shared equally). Both give <span class="tex">\mathbf w\cdot(1,1,1)=1</span>. The L1 norms are 1 and 1 — a tie, so L1 does not mind concentrating the weight. The squared L2 norms are 1 and 1/3 — L2 strongly prefers spreading the weight out. Pushing weights toward the <i>corners</i> of the diamond (L1) makes some weights land on exactly 0, while the round L2 ball has no corners, so weights shrink but rarely vanish.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press the <b>L1</b>, <b>L2</b> and <b>L∞</b> chips and watch the blue shape morph slowly between diamond, circle and square. The grey dashed circle is the L2 reference.</li>
+        <li>Use <b>Tour</b> for the whole journey. Then drag the <b>p</b> slider between 1 and 2 to see the corners round off, and set p = 0.5: the shape caves in — not a norm.</li>
+        <li>Drag the orange point to about (2, −2.5) (the lab's window is small; the idea is the same as for (3, −4)). Read the three norms and confirm L∞ ≤ L2 ≤ L1 always.</li>
+        <li>Put the point on the boundary of the blue shape: the p-norm equals r exactly.</li></ol></div>
+      <div data-lab="unitball"></div>
+      <div class="try"><b>Try this</b><ol><li>In the next widget, the red segment is the distance between the two tips. Drag them so both tips have the same height — the distance becomes just the horizontal gap.</li></ol></div>
+      <div data-lab="vec2" data-title="Distance and length" data-show="norm,dist" data-ax="3" data-ay="1" data-bx="-1" data-by="3"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"The norm" usually means L2</b>, but always check the subscript. In a paper, <span class="tex">\lVert\cdot\rVert</span> with no subscript almost always means L2; <span class="tex">\lVert\cdot\rVert_F</span> is the Frobenius norm of a matrix (square root of the sum of squares of all entries).</li>
+          <li><b>Squared L2 is not a norm</b> (it breaks the triangle inequality) but is used everywhere because it is smooth and easy to differentiate: <span class="tex">\lVert\mathbf x\rVert_2^2=\mathbf x\cdot\mathbf x</span>.</li>
+          <li><b>Unscaled features</b> let one big-valued coordinate dominate any distance. Standardise features first (subtract the mean, divide by the standard deviation).</li>
+          <li><b>Normalising the zero vector</b> divides by zero. Libraries add a tiny ε to the denominator for this reason.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Regularisation:</b> <i>ridge</i> adds <span class="tex">\lambda\lVert\mathbf w\rVert_2^2</span> to the loss (weight decay in deep learning) and shrinks weights; <i>lasso</i> adds <span class="tex">\lambda\lVert\mathbf w\rVert_1</span> and drives many weights to exactly zero (sparse models).</li>
+          <li><b>Losses are norms:</b> mean squared error is a squared L2 norm of the error vector; mean absolute error is an L1 norm; L∞ appears in adversarial robustness ("change each pixel by at most ε").</li>
+          <li><b>k-nearest neighbours</b>, k-means and retrieval all depend on the choice of distance.</li>
+          <li><b>Normalisation layers</b> (LayerNorm, RMSNorm) rescale vectors by their L2 length; embeddings are often L2-normalised so that dot product = cosine similarity; gradient clipping caps the L2 norm of the gradient.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the L1, L2 and L∞ norms of (1, −2, 2).</summary><div class="ans">L1 = 1+2+2 = 5; L2 = √(1+4+4) = 3; L∞ = 2. Indeed 2 ≤ 3 ≤ 5.</div></details>
+        <details class="check"><summary>2. Normalise (1, −2, 2) to a unit vector.</summary><div class="ans">Divide by its L2 length 3: (1/3, −2/3, 2/3). Check: 1/9 + 4/9 + 4/9 = 1.</div></details>
+        <details class="check"><summary>3. Why does the diamond shape of the L1 ball encourage sparse weights, while the circle of the L2 ball does not?</summary><div class="ans">The diamond has sharp corners lying on the coordinate axes. When a loss contour first touches the L1 ball it is likely to touch at a corner, where some coordinates are exactly 0. The circle has no corners and the touching point is generically off-axis, so all weights are small but non-zero.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A norm measures size: L1 = total, L2 = straight line, L∞ = largest coordinate; always L∞ ≤ L2 ≤ L1.</li><li>Distance = norm of the difference; normalising divides by the length.</li><li>The unit ball's shape (diamond, circle, square) explains why L1 gives sparsity and L2 gives shrinkage.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 ===================== -->
+    <section class="lesson" id="matrices" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.4</span><h2>Matrices</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 4 houses, each described by 3 numbers (rooms, area, age). A price model uses one weight per feature. How do you store the whole dataset as one object, and compute the predicted price for <i>all four houses at once</i> instead of writing a loop? And what does it mean to "flip" the table?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>matrix</b> is a rectangular table of numbers. That is all it is, at first. A spreadsheet is a matrix. A grey-scale photo is a matrix (one number per pixel). Where a vector is one list, a matrix is a stack of lists — and which way you slice the stack gives you two useful viewpoints:</p>
+        <ul>
+          <li><b>As a stack of rows</b>: each row is one example (one house). Reading down the table, you meet example after example.</li>
+          <li><b>As a row of columns</b>: each column is one feature (all the areas, all the ages). Reading across, you meet feature after feature.</li>
+        </ul>
+        <p>Keeping both views in your head is the single most useful habit in linear algebra. Later we will find a third view: a matrix as a <i>machine that moves vectors</i> (lessons 1.5 and 1.6).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The <b>shape</b> of a matrix with <i>m</i> rows and <i>n</i> columns is written <span class="tex">m\times n</span> ("m by n", rows first, always). The entry in row <i>i</i>, column <i>j</i> is <span class="tex">X_{ij}</span> (or <span class="tex">x_{ij}</span>). Here is our data matrix — 4 houses, 3 features, so <span class="tex">4\times3</span>:</p>
+        <div class="eq">X=\begin{pmatrix}3&amp;120&amp;8\\2&amp;85&amp;15\\4&amp;150&amp;3\\3&amp;100&amp;10\end{pmatrix}\qquad\text{columns: rooms, area (m}^2\text{), age (years)}</div>
+        <p>Row 2 is house 2: <span class="tex">(2,85,15)</span>. Column 3 is "the ages of all houses": <span class="tex">(8,15,3,10)</span>. The entry <span class="tex">X_{23}=15</span> is "the age of house 2" — row index first, column index second.</p>
+        <p><b>Transpose.</b> Flip the table over its diagonal: the first row becomes the first column, and so on. The result is written <span class="tex">X^{\top}</span> and its entries satisfy <span class="tex">(X^\top)_{ji}=X_{ij}</span>. A <span class="tex">4\times3</span> matrix becomes <span class="tex">3\times4</span>. Transposing twice gives back the original. Transposing a <i>column</i> vector gives a <i>row</i> vector; this is why the dot product can be written <span class="tex">\mathbf a^{\top}\mathbf b</span> — a one-row matrix times a one-column matrix.</p>
+        <p><b>Matrix–vector product, first look.</b> Put one weight per feature in a vector <span class="tex">\mathbf w=(10,\,1,\,-2)</span> (toy numbers: a price contribution per room, per m², per year of age). The predicted price of house 1 is the dot product of its row with <b>w</b>: <span class="tex">3\cdot10+120\cdot1+8\cdot(-2)=134</span>. The wonderful thing: stacking all four dot products gives <span class="tex">X\mathbf w</span>, a vector of four predictions.</p>
+        <div class="worked"><b>Worked example — all four predictions at once</b>
+          <p>House 1: <span class="tex">30+120-16=134</span>. House 2: <span class="tex">20+85-30=75</span>. House 3: <span class="tex">40+150-6=184</span>. House 4: <span class="tex">30+100-20=110</span>.</p>
+          <p>So <span class="tex">X\mathbf w=(134,\,75,\,184,\,110)</span>: a <span class="tex">4\times3</span> times a length-3 vector gives a length-4 vector. The inner sizes (3 and 3) matched and disappeared; the outer sizes survive. We will make this the main theme of the next lesson.</p></div>
+        <p><b>Special matrices worth naming.</b> A <b>square</b> matrix has <i>m = n</i>. The <b>identity</b> <span class="tex">I</span> is square with 1s on the diagonal and 0 elsewhere — it changes nothing (<span class="tex">I\mathbf x=\mathbf x</span>). A <b>diagonal</b> matrix has non-zero entries only on the diagonal. A <b>symmetric</b> matrix equals its own transpose (<span class="tex">A=A^\top</span>; it mirrors over the diagonal) — these are very well-behaved, and will matter a lot in lessons 1.9–1.10. A matrix can be added to another of the same shape (entry by entry) and scaled by a number, just like a vector.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">A=\begin{pmatrix}a_{11}&amp;a_{12}&amp;\cdots&amp;a_{1n}\\a_{21}&amp;a_{22}&amp;\cdots&amp;a_{2n}\\\vdots&amp;&amp;\ddots&amp;\vdots\\a_{m1}&amp;a_{m2}&amp;\cdots&amp;a_{mn}\end{pmatrix}\in\mathbb R^{m\times n},\qquad (A^\top)_{ij}=a_{ji},\qquad (X\mathbf w)_i=\sum_{j=1}^{n}X_{ij}\,w_j</div>
+        <table class="sym">
+          <tr><td>A ∈ ℝ<sup>m×n</sup></td><td>a table of real numbers with <i>m</i> rows and <i>n</i> columns (bold or plain capital letter)</td></tr>
+          <tr><td>a<sub>ij</sub></td><td>the entry in row <i>i</i>, column <i>j</i> — rows first</td></tr>
+          <tr><td>Aᵀ</td><td>the transpose; row <i>i</i> of A becomes column <i>i</i> of Aᵀ; shape becomes <i>n × m</i></td></tr>
+          <tr><td>(Xw)<sub>i</sub> = Σⱼ X<sub>ij</sub>w<sub>j</sub></td><td>entry <i>i</i> of the product is row <i>i</i> of X dotted with <b>w</b></td></tr>
+          <tr><td>I</td><td>the identity matrix (ones on the diagonal)</td></tr>
+        </table>
+        <p>Handy rules: <span class="tex">(A^\top)^\top=A</span>, <span class="tex">(A+B)^\top=A^\top+B^\top</span>, and (to be proved after lesson 1.5) <span class="tex">(AB)^\top=B^\top A^\top</span> — note the reversal.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Hover over any number. Its row (blue) is one house; its column (orange) is one feature. Read the sentence in the readout.</li>
+        <li>Press <b>Transpose</b> and watch the entries slide across the diagonal — slowly. The shape label changes from 4 × 3 to 3 × 4. Hover again: the same blue row is now a blue column.</li>
+        <li>Press it again: transposing twice restores X.</li></ol></div>
+      <div data-lab="datamatrix"></div>
+      <div class="try"><b>Try this</b><ol>
+        <li>The sliders are the weights <b>w</b>. Check that with w = (10, 1, −2) the four predictions are 134, 75, 184, 110.</li>
+        <li>Make the weight on age more negative: older houses (house 2) lose the most value, as expected.</li>
+        <li>This is <span class="tex">X\mathbf w</span>: four dot products computed together.</li></ol></div>
+      <div data-lab="calc" data-title="Predictions for all houses: X w" data-sub="toy weights: value per room, per m², per year of age" data-params="w1=10:-20..20:0.5; w2=1:-2..4:0.1; w3=-2:-6..4:0.1"
+           data-rows="house 1 = 3*w1 + 120*w2 + 8*w3; house 2 = 2*w1 + 85*w2 + 15*w3; house 3 = 4*w1 + 150*w2 + 3*w3; house 4 = 3*w1 + 100*w2 + 10*w3"
+           data-note="Each row of X is dotted with the same weight vector w. One matrix–vector product replaces four separate loops."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Rows first, columns second.</b> A 3×5 matrix has 3 rows and 5 columns, and <span class="tex">a_{23}</span> is row 2, column 3. Mixing this up is the most common source of shape errors.</li>
+          <li><b>Conventions differ.</b> Math textbooks often treat a data point as a <i>column</i>; most ML libraries (NumPy, PyTorch, scikit-learn) store examples as <i>rows</i>: <code>X.shape == (n_samples, n_features)</code>. Check which convention a paper or library uses before multiplying.</li>
+          <li><b>1-D arrays are neither row nor column.</b> In NumPy a vector of shape <code>(3,)</code> behaves differently from a <code>(3,1)</code> column or a <code>(1,3)</code> row; transposing a <code>(3,)</code> array does nothing.</li>
+          <li><b>A matrix is not just "a list of numbers"</b> — its rectangular shape carries meaning; reshaping a 2×6 into 3×4 does not give a mathematically equivalent object.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>The data matrix</b> <span class="tex">X\in\mathbb R^{N\times d}</span>: N examples, d features. A whole mini-batch of 32 images (flattened) is a matrix with 32 rows.</li>
+          <li><b>Weight matrices</b> <span class="tex">W\in\mathbb R^{d_{\text{out}}\times d_{\text{in}}}</span>: a dense layer is the matrix–vector product <span class="tex">W\mathbf x+\mathbf b</span>, computing <i>d</i><sub>out</sub> neurons at once.</li>
+          <li><b>Images and tokens:</b> a grey-scale image is an H×W matrix; a sentence of T tokens with d-dimensional embeddings is a T×d matrix.</li>
+          <li><b>Symmetric matrices</b> appear as covariance matrices, Hessians (second derivatives of the loss) and similarity (Gram) matrices — and these are the ones with the nicest eigen-structure (lesson 1.9).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A dataset has 1000 examples and 20 features. What is the shape of X and of Xᵀ?</summary><div class="ans">X is 1000 × 20 (rows = examples); Xᵀ is 20 × 1000.</div></details>
+        <details class="check"><summary>2. Write the transpose of A = [[1,2,3],[4,5,6]]. What is its shape?</summary><div class="ans">Aᵀ = [[1,4],[2,5],[3,6]], shape 3 × 2 (A was 2 × 3).</div></details>
+        <details class="check"><summary>3. Compute Xw for X = [[1,2],[3,4],[5,6]] and w = (2,1).</summary><div class="ans">Row 1: 1·2+2·1 = 4. Row 2: 3·2+4·1 = 10. Row 3: 5·2+6·1 = 16. So Xw = (4, 10, 16): a 3×2 times a length-2 vector gives a length-3 vector.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A matrix is a table; read it as a stack of rows (examples) or a row of columns (features).</li><li>Shape m × n: rows first. Transpose swaps rows and columns and reverses the shape.</li><li>Xw stacks many dot products: all predictions of a linear model in one operation.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 ===================== -->
+    <section class="lesson" id="matmul" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.5</span><h2>Matrix multiplication</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A neural network layer turns 3 input numbers into 2 output numbers using 6 weights. A second layer then turns those 2 numbers into 4. We want <i>one</i> rule for combining tables of numbers that handles a single example, a batch of 1000, and a chain of layers alike. What rule makes the shapes line up — and why does the order of multiplication matter?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Matrix multiplication looks like an arbitrary recipe the first time you see it — "multiply rows by columns" — and many people memorise it without ever understanding why it is defined that way. It is defined that way because it does <b>three jobs at once</b>, and the recipe is the one that makes all three consistent. Learn the three views and the recipe stops being mysterious:</p>
+        <ol>
+          <li><b>The dot-product view</b> — every entry of the answer is one dot product of a <i>row</i> of the left matrix with a <i>column</i> of the right one. (Good for computing by hand.)</li>
+          <li><b>The column view</b> — each column of the answer is a <i>linear combination of the columns</i> of the left matrix, with the right matrix's column telling you the amounts. (Good for understanding what the product <i>spans</i>.)</li>
+          <li><b>The composition view</b> — multiplying matrices means <i>doing one transformation after the other</i>: <span class="tex">(AB)\mathbf x=A(B\mathbf x)</span>. (Good for understanding what it <i>means</i>; made visual in the next lesson.)</li>
+        </ol>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Start small: matrix times vector.</b> From lesson 1.4, <span class="tex">X\mathbf w</span> was "dot each row with <b>w</b>". The very same product also has a second reading: if <span class="tex">A</span> has columns <span class="tex">\mathbf a_1,\mathbf a_2,\mathbf a_3</span> then</p>
+        <div class="eq">A\mathbf x=x_1\mathbf a_1+x_2\mathbf a_2+x_3\mathbf a_3</div>
+        <p>— the entries of <b>x</b> are the knob settings, and <span class="tex">A\mathbf x</span> is the mix of the <i>columns</i> of A. This is the linear combination from lesson 1.1, now with the ingredients packed into a matrix. Everything about "what outputs can <span class="tex">A\mathbf x</span> produce?" is a span question about the columns of A.</p>
+        <p><b>Now matrix times matrix.</b> Treat <span class="tex">B</span> as several column vectors side by side; multiply <i>A</i> by each of them separately and place the results side by side. The shapes must agree: the number of <b>columns of A</b> must equal the number of <b>rows of B</b> (the "inner" sizes match, because each dot product pairs up a row of A with a column of B entry by entry). The outer sizes give the result.</p>
+        <div class="eq">\underbrace{A}_{m\times k}\;\underbrace{B}_{k\times n}=\underbrace{C}_{m\times n}</div>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">A=\begin{pmatrix}1&amp;2&amp;3\\4&amp;5&amp;6\end{pmatrix}</span> (2×3), <span class="tex">B=\begin{pmatrix}7&amp;8\\9&amp;10\\11&amp;12\end{pmatrix}</span> (3×2). Inner sizes 3 and 3 match; the result is 2×2.</p>
+          <p><b>Dot-product view.</b> <span class="tex">C_{11}=1\cdot7+2\cdot9+3\cdot11=7+18+33=58</span>; <span class="tex">C_{12}=1\cdot8+2\cdot10+3\cdot12=64</span>; <span class="tex">C_{21}=4\cdot7+5\cdot9+6\cdot11=139</span>; <span class="tex">C_{22}=4\cdot8+5\cdot10+6\cdot12=154</span>. So <span class="tex">C=\begin{pmatrix}58&amp;64\\139&amp;154\end{pmatrix}</span>.</p>
+          <p><b>Column view.</b> Column 1 of C = 7·(column 1 of A) + 9·(column 2 of A) + 11·(column 3 of A) = <span class="tex">7(1,4)+9(2,5)+11(3,6)=(7+18+33,\;28+45+66)=(58,139)</span> ✓ — the same numbers, found a different way.</p>
+          <p><b>Row view.</b> Row 1 of C = 1·(row 1 of B) + 2·(row 2 of B) + 3·(row 3 of B) = <span class="tex">(7,8)+2(9,10)+3(11,12)=(58,64)</span> ✓. (Rows of the answer are combinations of the <i>rows</i> of B.)</p></div>
+        <p><b>Order matters.</b> In ordinary arithmetic 3·5 = 5·3. Not here. Often <span class="tex">BA</span> is not even defined: a 3×2 times a 2×3 is fine, but if the shapes were 2×3 and 2×3 you could not multiply them in either order. Even for square matrices, <span class="tex">AB\ne BA</span> in general:</p>
+        <div class="worked"><b>Worked example — non-commutativity</b>
+          <p><span class="tex">P=\begin{pmatrix}1&amp;1\\0&amp;1\end{pmatrix},\ Q=\begin{pmatrix}1&amp;0\\1&amp;1\end{pmatrix}</span>. Then <span class="tex">PQ=\begin{pmatrix}2&amp;1\\1&amp;1\end{pmatrix}</span> but <span class="tex">QP=\begin{pmatrix}1&amp;1\\1&amp;2\end{pmatrix}</span>. Different! With the composition view this is no surprise: "put on socks, then shoes" is not "put on shoes, then socks".</p></div>
+        <p><b>What does hold?</b> Associativity <span class="tex">(AB)C=A(BC)</span> (so we may drop brackets), distributivity <span class="tex">A(B+C)=AB+AC</span>, the identity <span class="tex">AI=IA=A</span>, and the transpose rule <span class="tex">(AB)^\top=B^\top A^\top</span> (order reverses — you can check it from the formula: entry (i,j) of <span class="tex">(AB)^\top</span> is <span class="tex">(AB)_{ji}=\sum_kA_{jk}B_{ki}=\sum_k(B^\top)_{ik}(A^\top)_{kj}</span>).</p>
+        <p><b>Cost.</b> Each of the <i>m·n</i> entries needs <i>k</i> multiplications and additions, so the product costs about <span class="tex">m\cdot n\cdot k</span> multiply–adds. A dense layer applied to a batch of 32 inputs with 4096 inputs and 4096 outputs is a <span class="tex">(32\times4096)(4096\times4096)</span> product: <span class="tex">32\cdot4096\cdot4096=536{,}870{,}912</span> ≈ 0.54 billion multiply–adds — for <i>one</i> layer, <i>one</i> batch. This is why GPUs, which are essentially matrix-multiplication machines, drive modern AI. Associativity also affects cost: for 1000×1000 matrices A, B and a vector <b>x</b>, computing <span class="tex">(AB)\mathbf x</span> costs about <span class="tex">10^9</span> operations while <span class="tex">A(B\mathbf x)</span> costs about <span class="tex">2\times10^6</span> — same answer, 500 times cheaper if you multiply the vector first.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">C=AB,\qquad C_{ij}=\sum_{l=1}^{k}A_{il}\,B_{lj}\qquad(A\in\mathbb R^{m\times k},\;B\in\mathbb R^{k\times n},\;C\in\mathbb R^{m\times n})</div>
+        <table class="sym">
+          <tr><td>C<sub>ij</sub></td><td>entry in row <i>i</i>, column <i>j</i> of the product</td></tr>
+          <tr><td>Σ<sub>l=1..k</sub></td><td>add over the shared (inner) index <i>l</i> — the index that "disappears"</td></tr>
+          <tr><td>A<sub>il</sub></td><td>row <i>i</i> of A, running across its <i>k</i> columns</td></tr>
+          <tr><td>B<sub>lj</sub></td><td>column <i>j</i> of B, running down its <i>k</i> rows</td></tr>
+          <tr><td>m × k · k × n</td><td>inner sizes must be equal; outer sizes give the shape of C</td></tr>
+        </table>
+        <p>Equivalent statements: <span class="tex">C_{:,j}=A\,B_{:,j}</span> (column <i>j</i> of C is A times column <i>j</i> of B) and <span class="tex">(AB)\mathbf x=A(B\mathbf x)</span> for every vector <b>x</b> of the right length.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b> and watch slowly. Row 1 of A is outlined in blue, column 1 of B in orange; each step multiplies one pair and adds it to a running sum. After the last pair the number is written into C. Use <b>Step</b> to go one move at a time, and the speed slider to slow it down more.</li>
+        <li>Check the first entry against the worked example: 58.</li>
+        <li>Switch <b>View</b> to <i>column by column</i>. Now a whole column of A (blue) is scaled by one number from B (orange) and added into a column of C: the column view of the same product.</li>
+        <li>Change the sizes (m, k, n) with the drop-downs, edit a number, or press <b>Random numbers</b>. Notice the cost line: m·n·k multiplications.</li></ol></div>
+      <div data-lab="matmulsteps"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Not commutative.</b> <span class="tex">AB\ne BA</span> in general; <span class="tex">BA</span> may not even exist. Always write products in the order the data flows.</li>
+          <li><b>The entry-wise product is a different thing.</b> <code>A * B</code> in NumPy multiplies matching entries (Hadamard product, written <span class="tex">A\odot B</span>); the matrix product is <code>A @ B</code>. Mixing them is a silent bug whenever shapes happen to allow both.</li>
+          <li><b>No cancellation.</b> From <span class="tex">AB=AC</span> you cannot conclude <span class="tex">B=C</span>; and <span class="tex">AB=0</span> does not force <span class="tex">A=0</span> or <span class="tex">B=0</span>.</li>
+          <li><b>Check shapes first.</b> Most dimension errors vanish if you write the shapes under every factor: <code>(32×4096)(4096×1024) → 32×1024</code>.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every dense / linear layer</b> of an MLP, every projection in a transformer (<span class="tex">Q=XW_Q</span>, <span class="tex">K=XW_K</span>, <span class="tex">V=XW_V</span>) and the attention score matrix <span class="tex">QK^\top</span> is a matrix product. Convolutions are implemented as matrix products too.</li>
+          <li><b>Batching:</b> stacking 32 inputs as the rows of X turns 32 matrix–vector products into <i>one</i> matrix–matrix product — this is what GPUs are fast at; training cost is measured in "FLOPs", mostly matmul FLOPs.</li>
+          <li><b>Chains of layers</b> <span class="tex">W_3W_2W_1\mathbf x</span> are compositions. Without non-linear activations in between they would collapse into the single matrix <span class="tex">W_3W_2W_1</span> (lesson 1.6).</li>
+          <li><b>Low-rank adaptation (LoRA)</b> replaces a big matrix update by a product of two thin matrices (lesson 1.10); the multiplication order determines the cost, as in our associativity example.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A is 5×3 and B is 3×7. What is the shape of AB? Can you form BA?</summary><div class="ans">AB is 5×7. BA would need B's columns (7) to equal A's rows (5), which they do not — BA is undefined.</div></details>
+        <details class="check"><summary>2. Compute [[1,2],[3,4]]·[[0,1],[1,0]] and [[0,1],[1,0]]·[[1,2],[3,4]]. What does each do to [[1,2],[3,4]]?</summary><div class="ans">First: [[2,1],[4,3]] — the columns are swapped. Second: [[3,4],[1,2]] — the rows are swapped. The two orders give different results; the swap matrix acts on columns when it stands on the right and on rows when it stands on the left.</div></details>
+        <details class="check"><summary>3. How many multiplications does a (64×512)(512×256) product take?</summary><div class="ans">m·n·k = 64·256·512 = 8,388,608 (about 8.4 million).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>C = AB: C<sub>ij</sub> = row i of A · column j of B; inner sizes must match, outer sizes give the shape.</li><li>Three views: dot products, combinations of columns, and composition (do B, then A).</li><li>Not commutative, but associative; the transpose reverses the order. Cost is m·n·k — the workload of every layer.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 ===================== -->
+    <section class="lesson" id="linear-maps" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.6</span><h2>Matrices as transformations</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Rotate a photo, stretch it, shear it like a slanted font: each of these moves every point of the plane. Is there one compact object that describes <i>any</i> such motion? And when a neural network layer multiplies by a weight matrix, what is it actually doing to the space the data lives in?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>So far a matrix was a table. Now watch it <i>act</i>. A matrix <span class="tex">A</span> is a machine: feed in a vector <b>x</b>, out comes the vector <span class="tex">A\mathbf x</span>. Do this for every point of the plane at once and the whole plane gets <b>moved</b>: rotated, stretched, flipped, sheared, squashed. Imagine the plane printed on a sheet of rubber with a square grid drawn on it. The matrix grabs the sheet and deforms it — but only in a very well-behaved way:</p>
+        <ul>
+          <li>the <b>origin stays put</b>;</li>
+          <li><b>straight lines stay straight</b> (no bending);</li>
+          <li><b>grid lines stay parallel and evenly spaced</b> (the grid becomes a slanted, stretched grid of parallelograms).</li>
+        </ul>
+        <p>Any motion with these properties is called a <b>linear transformation</b>. The marvellous fact: such a motion is completely determined by what it does to just <b>two arrows</b> — the basis vectors <span class="tex">\hat\imath=(1,0)</span> and <span class="tex">\hat\jmath=(0,1)</span>. Because the grid stays a regular grid, knowing where one step right and one step up land tells you where <i>everything</i> lands.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here is the key. Any vector is a combination of the basis vectors: <span class="tex">(x,y)=x\hat\imath+y\hat\jmath</span>. A linear transformation respects combinations: <span class="tex">T(x\hat\imath+y\hat\jmath)=x\,T(\hat\imath)+y\,T(\hat\jmath)</span>. So if the arrow <span class="tex">\hat\imath</span> lands on <span class="tex">(a,c)</span> and <span class="tex">\hat\jmath</span> lands on <span class="tex">(b,d)</span>, then the image of <span class="tex">(x,y)</span> is <span class="tex">x(a,c)+y(b,d)</span>. Put those two landing spots as the <b>columns</b> of a matrix and this is exactly the matrix–vector product from the last lesson:</p>
+        <div class="eq">A=\begin{pmatrix}a&amp;b\\c&amp;d\end{pmatrix},\qquad A\begin{pmatrix}x\\y\end{pmatrix}=x\begin{pmatrix}a\\c\end{pmatrix}+y\begin{pmatrix}b\\d\end{pmatrix}</div>
+        <p><b>The columns of A are where the basis vectors land.</b> To read a matrix, look at its columns; to design a transformation, decide where î and ĵ should go and write those as columns. A gallery of the classics (try each in the lab):</p>
+        <table class="tbl" style="max-width:780px">
+          <tr><th>Move</th><th>Matrix</th><th>Where î, ĵ go</th></tr>
+          <tr><td>Scale x by 2, y by 3</td><td><span class="tex">\begin{pmatrix}2&amp;0\\0&amp;3\end{pmatrix}</span></td><td>î → (2,0), ĵ → (0,3)</td></tr>
+          <tr><td>Rotate by 90° anticlockwise</td><td><span class="tex">\begin{pmatrix}0&amp;-1\\1&amp;0\end{pmatrix}</span></td><td>î → (0,1), ĵ → (−1,0)</td></tr>
+          <tr><td>Rotate by θ</td><td><span class="tex">\begin{pmatrix}\cos\theta&amp;-\sin\theta\\\sin\theta&amp;\cos\theta\end{pmatrix}</span></td><td>î → (cos θ, sin θ), ĵ → (−sin θ, cos θ)</td></tr>
+          <tr><td>Shear (slant)</td><td><span class="tex">\begin{pmatrix}1&amp;1\\0&amp;1\end{pmatrix}</span></td><td>î stays, ĵ → (1,1)</td></tr>
+          <tr><td>Reflect across the y-axis</td><td><span class="tex">\begin{pmatrix}-1&amp;0\\0&amp;1\end{pmatrix}</span></td><td>î → (−1,0), ĵ stays</td></tr>
+          <tr><td>Squash onto a line</td><td><span class="tex">\begin{pmatrix}1&amp;1\\1&amp;1\end{pmatrix}</span></td><td>both land on (1,1): the plane collapses to one line</td></tr>
+        </table>
+        <div class="worked"><b>Worked example</b>
+          <p>Rotate <span class="tex">(2,1)</span> by 90°: <span class="tex">\begin{pmatrix}0&amp;-1\\1&amp;0\end{pmatrix}\begin{pmatrix}2\\1\end{pmatrix}=2\begin{pmatrix}0\\1\end{pmatrix}+1\begin{pmatrix}-1\\0\end{pmatrix}=\begin{pmatrix}-1\\2\end{pmatrix}</span>. Sanity check: the arrow (2,1) turned a quarter turn anticlockwise is (−1,2), the same length (√5) ✓.</p>
+          <p>Shear <span class="tex">\begin{pmatrix}1&amp;1\\0&amp;1\end{pmatrix}</span> on (2,1): <span class="tex">2(1,0)+1(1,1)=(3,1)</span>: the height stays 1 but the point is pushed right by an amount equal to its height — a slant.</p></div>
+        <p><b>Composition is the matrix product.</b> Do transformation <span class="tex">B</span> first, then <span class="tex">A</span>. Where does î end up? First B sends it to its first column, then A acts on that. Doing this for both basis vectors builds the matrix of the combined motion — and it is exactly the product <span class="tex">AB</span> from lesson 1.5. That is <i>why</i> matrix multiplication is defined the way it is.</p>
+        <div class="worked"><b>Worked example — composition</b>
+          <p>Rotation <span class="tex">R=\begin{pmatrix}0&amp;-1\\1&amp;0\end{pmatrix}</span> first, then shear <span class="tex">S=\begin{pmatrix}1&amp;1\\0&amp;1\end{pmatrix}</span>. Track î: R sends (1,0) to (0,1); S sends (0,1) to (1,1). Track ĵ: R sends (0,1) to (−1,0); S sends (−1,0) to (−1,0). So the combined matrix has columns (1,1) and (−1,0): <span class="tex">SR=\begin{pmatrix}1&amp;-1\\1&amp;0\end{pmatrix}</span> — matching the direct product. In the other order, <span class="tex">RS=\begin{pmatrix}0&amp;-1\\1&amp;1\end{pmatrix}</span>: a different motion. The order of moves matters.</p></div>
+        <p><b>What is <i>not</i> linear?</b> Shifting every point by (1,0) moves the origin, so it is not linear — it is an <i>affine</i> map: <span class="tex">\mathbf x\mapsto A\mathbf x+\mathbf b</span> (this is exactly what a neural layer does: matrix first, then add the bias). Squaring coordinates, or taking ReLU, bends lines, so they are not linear either.</p>
+        <p><b>Non-square matrices.</b> A 3×2 matrix takes a plane and <i>embeds</i> it as a flat sheet inside 3-D space; a 2×3 matrix <i>flattens</i> 3-D space onto a plane (loses a dimension). In general an <span class="tex">m\times n</span> matrix is a linear map from <span class="tex">\mathbb R^n</span> to <span class="tex">\mathbb R^m</span>: input dimension = number of columns, output dimension = number of rows. A neural layer "reshapes space" in exactly this sense, changing the number of dimensions while twisting and stretching the data.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">T:\mathbb R^n\to\mathbb R^m\text{ is linear}\iff T(\mathbf u+\mathbf v)=T(\mathbf u)+T(\mathbf v)\ \text{ and }\ T(c\mathbf u)=c\,T(\mathbf u)</div>
+        <div class="eq">T(\mathbf x)=A\mathbf x,\qquad A=\begin{pmatrix}\big|&amp;&amp;\big|\\T(\mathbf e_1)&amp;\cdots&amp;T(\mathbf e_n)\\\big|&amp;&amp;\big|\end{pmatrix},\qquad (T_A\circ T_B)(\mathbf x)=(AB)\mathbf x</div>
+        <table class="sym">
+          <tr><td>T</td><td>a function from vectors to vectors (a "transformation")</td></tr>
+          <tr><td>linear</td><td>sums go to sums, and scaling commutes with T — equivalently, combinations are preserved</td></tr>
+          <tr><td>𝐞₁, …, 𝐞ₙ</td><td>the standard basis vectors (î, ĵ in 2-D)</td></tr>
+          <tr><td>columns of A</td><td>the images <span class="tex">T(\mathbf e_j)</span>: where each basis vector lands</td></tr>
+          <tr><td>∘</td><td>composition: "first the right-hand map, then the left-hand map"; its matrix is the product AB</td></tr>
+        </table>
+        <p>Every linear map between finite-dimensional spaces <i>is</i> a matrix, and every matrix <i>is</i> a linear map: two languages for one thing.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the transform lab, press <b>Identity</b>, then <b>Rotate 45°</b> and press <b>Animate from identity</b>: the grid turns without stretching. The green arrow is î's landing spot (column 1), the red is ĵ's (column 2).</li>
+        <li>Try <b>Shear</b>, <b>Stretch</b>, <b>Reflect</b>, and the unlucky <b>Squash</b> (both columns equal): the whole plane collapses onto a line. The purple square's area is the determinant (next lesson).</li>
+        <li>Type your own numbers into the four boxes — set the first column to (0, 2) and the second to (3, 0) and predict what happens before you look.</li></ol></div>
+      <div data-lab="matrix"></div>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the composition lab, press <b>Play</b>. Phase 1 applies M₁ alone (green and red arrows move to M₁'s columns). Phase 2 applies M₂ on top. The grey outline is where the unit square ends up under the single matrix M₂M₁.</li>
+        <li>Use the preset <b>rotate 90°, then shear</b>; then press <b>Swap order</b> and play again. The final pictures differ: order matters.</li>
+        <li>Use <b>two rotations (commute)</b>: both orders give the same picture — rotations in the plane commute.</li></ol></div>
+      <div data-lab="compose"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Columns, not rows, are the images of the basis vectors.</b> Reading the rows as "where î goes" gives the transpose — a different transformation.</li>
+          <li><b>The product reads right-to-left.</b> In <span class="tex">AB\mathbf x</span>, B acts first because it is closest to <b>x</b>.</li>
+          <li><b>Linear ≠ "a line".</b> A function like <span class="tex">y=2x+1</span> is called linear in school but is <i>not</i> a linear map (it moves the origin). In this course "linear" means preserving combinations; "affine" is linear plus a shift.</li>
+          <li><b>Stacking linear layers without activations is pointless</b>: <span class="tex">W_2(W_1\mathbf x)=(W_2W_1)\mathbf x</span> is a single matrix, so depth adds nothing until a non-linearity bends the space between layers.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>A dense layer</b> <span class="tex">\mathbf h=W\mathbf x+\mathbf b</span> is a linear map followed by a shift; training chooses the <i>columns</i> of W — where each input feature lands in the output space.</li>
+          <li><b>Why non-linearities exist:</b> composing linear maps gives a linear map, so networks insert ReLU/GELU between layers; each layer then reshapes space linearly and the activation bends it.</li>
+          <li><b>Rotations</b> (RoPE rotary position embeddings) and orthogonal initialisations use matrices that preserve lengths; <b>data augmentation</b> applies rotations, scalings and shears to images.</li>
+          <li><b>Embedding spaces</b>: aligning two languages or two models is often done by learning a linear map between their vector spaces.</li>
+          <li><b>Change of basis</b>: describing the same data in new coordinates (as PCA does, lesson 1.10) is a matrix multiplication.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A transformation sends î to (0, 2) and ĵ to (3, 0). Write its matrix and find the image of (1, 1).</summary><div class="ans">Columns are the images: [[0,3],[2,0]]. Image of (1,1) = 1·(0,2) + 1·(3,0) = (3, 2).</div></details>
+        <details class="check"><summary>2. Is f(x, y) = (x + 1, y) a linear transformation?</summary><div class="ans">No. It sends the origin (0,0) to (1,0), but every linear map must fix the origin (T(0) = T(0·v) = 0·T(v) = 0). It is an affine map (a shift).</div></details>
+        <details class="check"><summary>3. What is the matrix of "first rotate by 90°, then stretch x by a factor 2"?</summary><div class="ans">Stretch S = [[2,0],[0,1]] acts second, rotation R = [[0,−1],[1,0]] acts first, so the matrix is SR = [[0,−2],[1,0]]. Check on î: R gives (0,1), then S gives (0,1) — the first column (0,1) ✓.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A matrix is a transformation of space; its columns say where the basis vectors land.</li><li>Linear = origin fixed, lines stay straight, grids stay parallel. Rotation, scaling, shear, reflection and projection are all matrices.</li><li>Matrix product = composition (right matrix acts first). A layer changes the shape of the data cloud; non-linearities stop layers collapsing into one.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.7 ===================== -->
+    <section class="lesson" id="det-inverse" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.7</span><h2>Determinant &amp; inverse</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A matrix transformed your data into new coordinates. Can you get the original back? When can a transformation be undone — and why do regression formulas blow up with nonsense when two of your features are nearly copies of each other?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Take the unit square (the square with corners (0,0), (1,0), (1,1), (0,1)) and push it through a matrix. It turns into a <b>parallelogram</b>, spanned by the two column vectors. The <b>determinant</b> is a single number that records <b>by what factor the area changed</b>:</p>
+        <ul>
+          <li>determinant 2: every region doubles in area;</li>
+          <li>determinant 0.5: every region halves;</li>
+          <li>determinant 1: area is preserved (rotations, shears);</li>
+          <li>determinant <b>negative</b>: area scales by |det|, <i>and</i> the picture is flipped like a mirror image (orientation reversed);</li>
+          <li>determinant <b>0</b>: the whole plane is flattened onto a line (or a point). All the area is gone.</li>
+        </ul>
+        <p>Because every region of the plane is just a pile of tiny unit-square-like pieces, and the transformation scales them all by the same factor, the factor for the unit square is the factor for <i>everything</i>. In 3-D the determinant is the volume scaling factor; in <i>n</i> dimensions, the <i>n</i>-volume scaling factor.</p>
+        <p>Now the inverse. If the transformation did not squash anything flat, you can run the film backwards: every point of the output came from exactly one input, so there is an <b>undo</b> machine, the <b>inverse matrix</b> <span class="tex">A^{-1}</span>. But once the plane is flattened onto a line, many different points land on the same spot. Given such a point you cannot tell which one it came from — information has been destroyed, and no machine can restore it. So <b>the inverse exists exactly when the determinant is not zero.</b> A matrix with no inverse is called <b>singular</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>For a 2×2 matrix with columns <span class="tex">(a,c)</span> and <span class="tex">(b,d)</span>, the parallelogram's signed area is</p>
+        <div class="eq">\det\begin{pmatrix}a&amp;b\\c&amp;d\end{pmatrix}=ad-bc</div>
+        <p>(Check with the unit square itself, <span class="tex">I</span>: <span class="tex">1\cdot1-0\cdot0=1</span>; with scaling by 2 and 3: <span class="tex">2\cdot3-0=6</span>, area of a 2×3 rectangle ✓; with the shear: <span class="tex">1\cdot1-1\cdot0=1</span>, slanting a square keeps its base and height ✓.)</p>
+        <p>The 2×2 inverse is obtained by swapping the diagonal entries, negating the off-diagonal ones, and dividing by the determinant:</p>
+        <div class="eq">A^{-1}=\frac1{ad-bc}\begin{pmatrix}d&amp;-b\\-c&amp;a\end{pmatrix}\qquad(ad-bc\ne0)</div>
+        <p>Notice the division by <span class="tex">ad-bc</span>: that is precisely why a zero determinant has no inverse.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">A=\begin{pmatrix}3&amp;1\\2&amp;4\end{pmatrix}</span>: <span class="tex">\det A=3\cdot4-1\cdot2=10</span>, so areas grow tenfold. <span class="tex">A^{-1}=\frac1{10}\begin{pmatrix}4&amp;-1\\-2&amp;3\end{pmatrix}=\begin{pmatrix}0.4&amp;-0.1\\-0.2&amp;0.3\end{pmatrix}</span>.</p>
+          <p>Check: <span class="tex">AA^{-1}</span>: row 1 · col 1 = 3·0.4 + 1·(−0.2) = 1; row 1 · col 2 = 3·(−0.1) + 1·0.3 = 0; row 2 · col 1 = 2·0.4 + 4·(−0.2) = 0; row 2 · col 2 = 2·(−0.1) + 4·0.3 = 1. We get <span class="tex">I</span> ✓.</p>
+          <p><b>Solving a system.</b> To solve <span class="tex">A\mathbf x=\mathbf b</span> with <span class="tex">\mathbf b=(5,6)</span>, undo A: <span class="tex">\mathbf x=A^{-1}\mathbf b=(0.4\cdot5-0.1\cdot6,\;-0.2\cdot5+0.3\cdot6)=(1.4,\,0.8)</span>. Check: 3·1.4+0.8 = 5 ✓ and 2·1.4+4·0.8 = 6 ✓.</p></div>
+        <p><b>Singular example.</b> <span class="tex">\begin{pmatrix}2&amp;4\\1&amp;2\end{pmatrix}</span> has determinant <span class="tex">2\cdot2-4\cdot1=0</span>. Its columns <span class="tex">(2,1)</span> and <span class="tex">(4,2)</span> are multiples of each other (linearly dependent, lesson 1.1), so every output lies on the single line through (2,1): the plane has been squashed flat. No inverse.</p>
+        <p><b>Rules worth knowing.</b> <span class="tex">\det(AB)=\det A\cdot\det B</span> (scaling factors multiply when you compose); <span class="tex">\det(A^{-1})=1/\det A</span>; <span class="tex">\det(A^\top)=\det A</span>; <span class="tex">(AB)^{-1}=B^{-1}A^{-1}</span> (undo in reverse order: socks and shoes again); the determinant of a diagonal or triangular matrix is the product of its diagonal entries (e.g. <span class="tex">\operatorname{diag}(2,3,4)</span> has det 24: it stretches 3-D volume by 24).</p>
+        <p><b>Near-singular: the dangerous case.</b> A determinant that is tiny but not zero means the matrix almost flattens space — and its inverse is enormous. Take <span class="tex">A=\begin{pmatrix}1&amp;1\\1&amp;1.001\end{pmatrix}</span> (det = 0.001, <span class="tex">A^{-1}=\begin{pmatrix}1001&amp;-1000\\-1000&amp;1000\end{pmatrix}</span>). Solve <span class="tex">A\mathbf x=(2,2)</span>: <span class="tex">\mathbf x=(2,0)</span>. Now nudge the right-hand side by one thousandth, <span class="tex">\mathbf b=(2,2.001)</span>: the solution jumps to <span class="tex">(1,1)</span>. A change of 0.001 in the data changed the answer by 1 — a thousandfold amplification. If your measurements have any noise, the "solution" is mostly noise.</p>
+        <p>This is exactly what happens with <b>collinear features</b>. Suppose two columns of the data matrix X are (almost) copies — say the same length measured in metres and in feet. Then X flattens one direction, and <span class="tex">X^\top X</span> is singular or nearly so; the normal equation of regression (lesson 1.11), <span class="tex">(X^\top X)^{-1}X^\top\mathbf y</span>, requires its inverse. Example: columns (1,2,3) and (2,4,6) give <span class="tex">X^\top X=\begin{pmatrix}14&amp;28\\28&amp;56\end{pmatrix}</span> with determinant <span class="tex">14\cdot56-28\cdot28=0</span> — no inverse; infinitely many weight settings fit equally well.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\det A=\text{(signed) volume scaling factor of }\mathbf x\mapsto A\mathbf x,\qquad A^{-1}A=AA^{-1}=I,\qquad A^{-1}\text{ exists}\iff\det A\ne0</div>
+        <table class="sym">
+          <tr><td>det A</td><td>for 2×2, <span class="tex">ad-bc</span>; for larger matrices, a sum over products of entries (computed by elimination in practice). Square matrices only.</td></tr>
+          <tr><td>|det A|</td><td>factor by which areas (volumes) are multiplied</td></tr>
+          <tr><td>sign of det A</td><td>negative: space is flipped (orientation reversed)</td></tr>
+          <tr><td>A⁻¹</td><td>the matrix that undoes A; it satisfies <span class="tex">A^{-1}A=I</span>. <b>Not</b> the entry-wise reciprocal 1/A.</td></tr>
+          <tr><td>singular / invertible</td><td>det = 0 / det ≠ 0 (square matrices). Singular ⇔ the columns are dependent ⇔ some non-zero <b>x</b> has <span class="tex">A\mathbf x=\mathbf 0</span>.</td></tr>
+        </table>
+        <p>In practice, to solve <span class="tex">A\mathbf x=\mathbf b</span> one almost never computes <span class="tex">A^{-1}</span> explicitly — elimination (next lesson) is faster and more accurate. The inverse is a <i>concept</i> first and a formula second.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The lab starts on <b>A = [2 1; 1 1]</b>. The purple square is the image of the unit square; its area is |det| (read it at the top). Press <b>Play</b>: the plane is transformed by A over several seconds, you get a pause, and then A⁻¹ is applied and everything glides back.</li>
+        <li>Pick <b>reflect (det &lt; 0)</b>: the F inside the square is mirrored and the colour changes — a negative determinant flips orientation.</li>
+        <li>Pick <b>rotate 60° (det = 1)</b>: area is untouched.</li>
+        <li>Pick <b>singular</b> and play: the square collapses to a line (area 0) and in phase 2 nothing can undo it.</li>
+        <li>Pick <b>almost singular</b>: the determinant is tiny and A⁻¹ (read it in the panel) has huge entries.</li></ol></div>
+      <div data-lab="detinv"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Only square matrices have determinants and (ordinary) inverses.</b> A 3×2 matrix cannot be inverted; the closest thing is the pseudo-inverse (lesson 1.10–1.11).</li>
+          <li><b>A⁻¹ is not 1/A entry by entry.</b> The inverse of <span class="tex">\begin{pmatrix}2&amp;0\\0&amp;4\end{pmatrix}</span> is <span class="tex">\operatorname{diag}(\tfrac12,\tfrac14)</span> only because it is diagonal; in general inverting entries gives nonsense.</li>
+          <li><b>det(A + B) ≠ det A + det B.</b> The determinant is multiplicative, not additive.</li>
+          <li><b>"Nonzero" is not enough on a computer.</b> A determinant of 10⁻¹² means "numerically singular". Use the condition number (ratio of largest to smallest stretch, lesson 1.10) to judge how much errors are amplified.</li>
+          <li><b>Do not compute inverses in code.</b> Use <code>np.linalg.solve(A, b)</code> instead of <code>np.linalg.inv(A) @ b</code>.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>The normal equation</b> <span class="tex">\mathbf w=(X^\top X)^{-1}X^\top\mathbf y</span> for linear regression needs an invertible <span class="tex">X^\top X</span>; collinear features make it singular, which is why we drop duplicate features or add ridge regularisation <span class="tex">(X^\top X+\lambda I)^{-1}</span> — adding λ to the diagonal pushes the determinant away from zero.</li>
+          <li><b>Multicollinearity</b> in tabular data: wildly unstable, huge coefficients with opposite signs are the visible symptom of a near-singular matrix.</li>
+          <li><b>Normalising flows</b> are generative models built from invertible transformations; they track the determinant of the Jacobian because density changes by the volume factor (change of variables).</li>
+          <li><b>Whitening</b> and Gaussian densities use <span class="tex">\Sigma^{-1}</span> and <span class="tex">\det\Sigma</span> of covariance matrices; Gaussian processes and Kalman filters invert matrices too.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Find the determinant of [[2,4],[1,3]] and say what it does to area.</summary><div class="ans">2·3 − 4·1 = 2: every area is doubled (and orientation is preserved because 2 &gt; 0).</div></details>
+        <details class="check"><summary>2. Find the inverse of [[2,4],[1,3]].</summary><div class="ans">(1/2)·[[3,−4],[−1,2]] = [[1.5,−2],[−0.5,1]]. Check: 2·1.5 + 4·(−0.5) = 1; 2·(−2) + 4·1 = 0; 1·1.5 + 3·(−0.5) = 0; 1·(−2) + 3·1 = 1. ✓</div></details>
+        <details class="check"><summary>3. Why is [[1,2],[2,4]] not invertible? Give both the algebra and the geometric reason.</summary><div class="ans">Determinant 1·4 − 2·2 = 0. Geometrically the columns (1,2) and (2,4) lie on one line, so the matrix flattens the plane onto that line; many inputs map to the same output, so no function can undo it.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>det = signed area/volume scaling; 2×2: ad − bc. Negative = mirror flip; zero = flattened.</li><li>A⁻¹ undoes A and exists exactly when det ≠ 0 (columns independent).</li><li>Near-zero determinants amplify noise; collinear features make XᵀX singular and regression unstable. Solve systems, do not invert.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.8 ===================== -->
+    <section class="lesson" id="linear-systems" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.8</span><h2>Linear systems &amp; rank</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have several measurements and some unknown quantities, linked by equations. Sometimes there is exactly one answer, sometimes none (the data contradict each other), sometimes infinitely many (the data are not enough). Can we tell <i>which</i> case we are in before solving — and how many numbers of information does a matrix really hold?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>linear system</b> is a set of equations in which each unknown appears only multiplied by a number and added up. For example</p>
+        <div class="eq">\begin{aligned}2x+y&amp;=5\\x-y&amp;=1\end{aligned}\qquad\Longleftrightarrow\qquad\begin{pmatrix}2&amp;1\\1&amp;-1\end{pmatrix}\begin{pmatrix}x\\y\end{pmatrix}=\begin{pmatrix}5\\1\end{pmatrix}\qquad\Longleftrightarrow\qquad A\mathbf x=\mathbf b</div>
+        <p>Module 0 solved this by sliding along the lines. The same system has <b>two pictures</b>, and switching between them is the secret skill of linear algebra:</p>
+        <ul>
+          <li><b>Row picture.</b> Each equation is a <i>line</i> (in 3-D, a plane; in n-D, a hyperplane). A solution is a point lying on <i>all</i> of them: where the lines meet.</li>
+          <li><b>Column picture.</b> The left side <span class="tex">A\mathbf x=x\,\mathbf a_1+y\,\mathbf a_2</span> is a <i>linear combination of the columns</i> of A. Solving the system means: <b>find the recipe (x, y) that mixes the column arrows into the target arrow b.</b> In the example, 2 of the first column and 1 of the second: <span class="tex">2(2,1)+1(1,-1)=(5,1)</span> ✓.</li>
+        </ul>
+        <p>Both pictures give the same answer, and the column picture is the more powerful one because it immediately tells you <i>when a solution exists</i>: if and only if <b>b</b> lies in the <b>span of the columns</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The three possibilities.</b> Two lines in a plane can meet in one point (usually), never meet (parallel), or be the same line (meet everywhere). In the column picture: the columns are independent (they span the plane, b is reachable in exactly one way); the columns lie on one line and b is off that line (unreachable); or the columns lie on one line and b is on it (reachable in infinitely many ways, because the dependent columns can trade amounts). The numbers of solutions are only ever <b>0, 1, or infinitely many</b> — never exactly 2 or 3.</p>
+        <div class="worked"><b>Worked examples</b>
+          <p>(a) <span class="tex">x+y=2,\ x+y=3</span>: the same left side must equal two different numbers — contradiction, no solution (parallel lines).</p>
+          <p>(b) <span class="tex">x+y=2,\ 2x+2y=4</span>: the second equation is just twice the first — it carries no new information, so one equation for two unknowns: infinitely many solutions <span class="tex">(t,\,2-t)</span>.</p>
+          <p>(c) <span class="tex">2x+y=5,\ x-y=1</span>: add them: <span class="tex">3x=6</span>, x = 2, y = 1 — exactly one solution.</p></div>
+        <p><b>Rank: how many genuinely different directions?</b> The <b>rank</b> of a matrix is the number of linearly independent columns — equivalently (a fact worth knowing) the number of independent rows. It is the dimension of the <b>column space</b>, the set of all <span class="tex">A\mathbf x</span>. For a 2×2 matrix the rank is 2 if the columns point in different directions, 1 if they lie on one line, 0 only for the zero matrix. For a matrix with <i>n</i> columns:</p>
+        <div class="eq">\operatorname{rank}(A)+\dim\operatorname{null}(A)=n</div>
+        <p>where the <b>null space</b> is the set of vectors that A sends to zero: <span class="tex">\{\mathbf x:A\mathbf x=\mathbf 0\}</span>. Every dimension of the input either survives into the output (counted by rank) or is crushed to zero (counted by the null space) — nothing is lost from the books. The null space is also exactly the "wiggle room" in the solutions: if <span class="tex">\mathbf x_0</span> solves <span class="tex">A\mathbf x=\mathbf b</span>, so does <span class="tex">\mathbf x_0+\mathbf n</span> for any null vector <b>n</b>, since <span class="tex">A(\mathbf x_0+\mathbf n)=\mathbf b+\mathbf 0</span>.</p>
+        <p><b>Deciding the case</b> (the rank test). Let <span class="tex">[A\,|\,\mathbf b]</span> be A with <b>b</b> attached as an extra column. If <span class="tex">\operatorname{rank}[A|\mathbf b]&gt;\operatorname{rank}A</span>, adding b added a new direction, so it is not in the column space: <b>no solution</b>. Otherwise a solution exists; it is <b>unique</b> if rank A equals the number of unknowns n (null space = {0}), and <b>infinite</b> if rank A &lt; n.</p>
+        <div class="worked"><b>Worked example — rank and null space</b>
+          <p><span class="tex">A=\begin{pmatrix}1&amp;2&amp;3\\2&amp;4&amp;6\\1&amp;0&amp;1\end{pmatrix}</span>. Row 2 = 2 × row 1, so it adds nothing: the rank is 2, not 3 (rows 1 and 3 are independent). Rank–nullity: null space has dimension 3 − 2 = 1. Find it: <span class="tex">x_1+2x_2+3x_3=0</span> and <span class="tex">x_1+x_3=0</span> give <span class="tex">x_1=-x_3</span>, then <span class="tex">-x_3+2x_2+3x_3=0\Rightarrow x_2=-x_3</span>. Taking <span class="tex">x_3=-1</span>: the vector <span class="tex">(1,1,-1)</span>. Check each row: <span class="tex">1+2-3=0</span>, <span class="tex">2+4-6=0</span>, <span class="tex">1+0-1=0</span> ✓. Notice this null vector is perpendicular to every row — the null space and the row space are orthogonal complements.</p></div>
+        <p><b>How machines solve it: Gaussian elimination.</b> Use the allowed moves — swap equations, multiply one by a non-zero number, add a multiple of one equation to another — none of which change the solutions, to make a triangle of zeros, then work upward.</p>
+        <div class="worked"><b>Worked example — elimination on three unknowns</b>
+          <p><span class="tex">x+y+z=6,\quad 2x-y+z=3,\quad x+2y-z=2</span>.</p>
+          <p>Eliminate x: (row 2) − 2(row 1): <span class="tex">-3y-z=-9</span>. (row 3) − (row 1): <span class="tex">y-2z=-4</span>.</p>
+          <p>Eliminate y from the last: (new row 3) + (1/3)(new row 2): <span class="tex">-\tfrac73z=-7\Rightarrow z=3</span>.</p>
+          <p>Back-substitute: <span class="tex">-3y-3=-9\Rightarrow y=2</span>; then <span class="tex">x+2+3=6\Rightarrow x=1</span>. Solution <span class="tex">(1,2,3)</span>. Check row 3: 1 + 4 − 3 = 2 ✓.</p></div>
+        <p><b>Wide versus tall.</b> With <i>fewer</i> equations than unknowns (a wide matrix) the system is <b>under-determined</b>: generally infinitely many solutions. With <i>more</i> equations than unknowns (a tall matrix — the usual situation in machine learning: many data points, few parameters) it is <b>over-determined</b>: generally <i>no</i> exact solution, because noisy data never satisfy every equation. Then we ask for the best compromise: the <b>least-squares</b> solution (lesson 1.11).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">A\mathbf x=\mathbf b,\quad A\in\mathbb R^{m\times n};\qquad \operatorname{col}(A)=\{A\mathbf x\},\quad \operatorname{null}(A)=\{\mathbf x:A\mathbf x=\mathbf 0\},\quad \operatorname{rank}(A)=\dim\operatorname{col}(A)</div>
+        <table class="sym">
+          <tr><td>A (m×n)</td><td>m equations (rows), n unknowns (columns)</td></tr>
+          <tr><td>col(A)</td><td>column space: the span of the columns = all reachable right-hand sides</td></tr>
+          <tr><td>null(A)</td><td>null space (kernel): inputs that A flattens to zero; the freedom in the solutions</td></tr>
+          <tr><td>rank(A)</td><td>number of independent columns (= number of independent rows) ≤ min(m, n)</td></tr>
+          <tr><td>[A | b]</td><td>the augmented matrix; solvable ⇔ rank[A|b] = rank A</td></tr>
+        </table>
+        <p><b>Solutions:</b> if consistent, the full solution set is <span class="tex">\mathbf x_0+\operatorname{null}(A)</span> — one particular solution plus anything from the null space. A square <i>n×n</i> matrix is invertible exactly when its rank is <i>n</i> (full rank), tying this lesson to the last.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The lab starts with <b>one solution</b>. Left: two lines crossing at a green dot. Right: press <b>Replay</b> and watch slowly: first column 1 is stretched by x, then column 2 is attached to its tip and stretched by y — landing exactly on the red target b.</li>
+        <li>Click <b>no solution (parallel)</b>: the lines never meet. On the right both columns are on one line (the purple band) while b is off it; the dashed red gap shows the nearest reachable point.</li>
+        <li>Click <b>infinitely many</b>: the two equations are the same line. The readout shows rank 1 with a one-dimensional null space.</li>
+        <li>Edit any number in the six boxes (a b e / c d f stand for a·x + b·y = e and c·x + d·y = f) and watch the rank and the case update.</li></ol></div>
+      <div data-lab="linsys"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Square does not mean solvable.</b> A square matrix with dependent rows is singular; the system then has no solution or infinitely many.</li>
+          <li><b>"More equations than unknowns" does not guarantee a solution</b> — it usually does the opposite — and "fewer equations" does not guarantee an infinity (the equations may contradict each other).</li>
+          <li><b>Rank is about independent directions, not size.</b> A 1000×1000 matrix can have rank 3. In real data, exact dependence is rare but near-dependence (tiny singular values) is common.</li>
+          <li><b>Row operations preserve the solution set, not the column space.</b> Elimination changes the columns, so you cannot read the original column space off the reduced matrix (but you can read which columns are independent).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Over-determined data:</b> N training examples and d &lt; N parameters give <span class="tex">X\mathbf w=\mathbf y</span> with no exact solution — the setting of linear regression and least squares.</li>
+          <li><b>Under-determined / over-parameterised models:</b> modern networks have more parameters than data points, so there are infinitely many parameter settings that fit the training data exactly; the null space is huge and optimisers/regularisers decide <i>which</i> solution is selected.</li>
+          <li><b>Redundancy and low rank:</b> embedding or weight matrices are often effectively low-rank, so the rank (and later the singular values) tells how much information they carry — the basis of LoRA and compression.</li>
+          <li><b>Feature redundancy:</b> one-hot encoding all categories plus an intercept makes columns sum to a constant column — a rank deficiency known as the "dummy variable trap".</li>
+          <li><b>Solving systems at scale</b> — Gaussian elimination, Cholesky, conjugate gradient — appears inside Gaussian processes, Newton methods and sparse solvers.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many solutions do x + y = 1 and 2x + 2y = 3 have?</summary><div class="ans">None. The second equation says x + y = 1.5, contradicting the first (parallel lines).</div></details>
+        <details class="check"><summary>2. What is the rank of [[1,2],[2,4],[3,6]]?</summary><div class="ans">1. Column 2 is twice column 1 (equivalently every row is a multiple of (1,2)), so there is only one independent direction. Its null space has dimension 2 − 1 = 1 (e.g. (2, −1)).</div></details>
+        <details class="check"><summary>3. A is 3 × 5. What are the largest possible rank, and the smallest possible null-space dimension?</summary><div class="ans">Rank ≤ min(3, 5) = 3. By rank–nullity the null space has dimension 5 − rank ≥ 5 − 3 = 2. So any 3 × 5 system A x = b that is solvable has infinitely many solutions.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Ax = b: rows = lines that must meet; columns = a recipe that must reach b. b must lie in the column space.</li><li>0, 1, or ∞ solutions — never in between. Rank counts independent directions; rank + null-space dimension = number of columns.</li><li>Tall (over-determined) systems have no exact solution → least squares; wide (under-determined) systems have a whole family.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.9 ===================== -->
+    <section class="lesson" id="eigen" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.9</span><h2>Eigenvalues &amp; eigenvectors</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A system evolves in steps: next year's state is the matrix <span class="tex">A</span> times this year's state (a population in two regions, the weights of a web page's importance, the signal inside a recurrent network). What happens after 10 steps, or 1000? Does it blow up, die out, or settle into a pattern — and is there a quick way to know without multiplying 1000 times?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>When a matrix acts on a vector, it usually <b>turns</b> it: the output points in a different direction from the input. But for almost every matrix there are a few special directions where the matrix does <i>not</i> turn anything — it only <b>stretches</b> (or shrinks, or flips) the vector along its own line. Those directions are the matrix's <b>eigenvectors</b> ("own vectors", from German <i>eigen</i>), and the stretch factors are the <b>eigenvalues</b>.</p>
+        <p>Picture the rubber-sheet from lesson 1.6. After the matrix deforms the sheet, most lines through the origin have been rotated to some other line. A few lines are still lines through the origin pointing the same way — the sheet has just been stretched along them. These are the eigen-directions, the "natural axes" of the transformation. In those directions the complicated matrix behaves like plain multiplication by a number.</p>
+        <p>Why do we care? Because <b>repeating</b> a transformation is hard in general but easy along its eigen-directions: apply it <i>k</i> times to an eigenvector and you simply multiply by <span class="tex">\lambda^k</span>. And almost any vector can be built as a mix of eigenvectors, so the long-run behaviour is read off from the eigenvalues.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Say it in symbols: a vector <b>v</b> (non-zero) is an eigenvector of A with eigenvalue λ if</p>
+        <div class="eq">A\mathbf v=\lambda\mathbf v</div>
+        <p><b>How to find them.</b> Rewrite as <span class="tex">(A-\lambda I)\mathbf v=\mathbf 0</span>. We want a <i>non-zero</i> solution <b>v</b>, so the matrix <span class="tex">A-\lambda I</span> must flatten something — it must be singular (lesson 1.7) — so its determinant must be 0. That gives the <b>characteristic equation</b> <span class="tex">\det(A-\lambda I)=0</span>. For 2×2 it is a quadratic: <span class="tex">\lambda^2-(\operatorname{tr}A)\lambda+\det A=0</span> where the <b>trace</b> <span class="tex">\operatorname{tr}A=a+d</span> is the sum of the diagonal. Solve for λ, then for each λ solve <span class="tex">(A-\lambda I)\mathbf v=\mathbf 0</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">A=\begin{pmatrix}4&amp;1\\2&amp;3\end{pmatrix}</span>: trace 7, determinant 10, so <span class="tex">\lambda^2-7\lambda+10=0</span>, i.e. <span class="tex">(\lambda-5)(\lambda-2)=0</span>: <b>λ = 5 and λ = 2</b>.</p>
+          <p>For λ = 5: <span class="tex">(A-5I)=\begin{pmatrix}-1&amp;1\\2&amp;-2\end{pmatrix}</span>; the first row says <span class="tex">-v_1+v_2=0</span>, so <span class="tex">\mathbf v=(1,1)</span>. Check: <span class="tex">A(1,1)=(5,5)=5(1,1)</span> ✓.</p>
+          <p>For λ = 2: <span class="tex">(A-2I)=\begin{pmatrix}2&amp;1\\2&amp;1\end{pmatrix}</span>: <span class="tex">2v_1+v_2=0</span>, so <span class="tex">\mathbf v=(1,-2)</span>. Check: <span class="tex">A(1,-2)=(4-2,\;2-6)=(2,-4)=2(1,-2)</span> ✓.</p>
+          <p>Handy checks: the eigenvalues add to the trace (5 + 2 = 7) and multiply to the determinant (5 · 2 = 10).</p></div>
+        <p><b>Diagonalisation: switch to the natural axes.</b> If a matrix has <i>n</i> independent eigenvectors, collect them as the columns of V and the eigenvalues on the diagonal of Λ. Then <span class="tex">AV=V\Lambda</span>, i.e.</p>
+        <div class="eq">A=V\Lambda V^{-1},\qquad A^k=V\Lambda^kV^{-1}</div>
+        <p>In words: change to eigen-coordinates (<span class="tex">V^{-1}</span>), where the matrix is just a stretch by each λ, apply the stretch <i>k</i> times (<span class="tex">\Lambda^k</span> — raise numbers, not matrices, to the power), and change back (<i>V</i>). Computing <span class="tex">A^{1000}</span> now costs almost nothing.</p>
+        <div class="worked"><b>Worked example — powers</b>
+          <p><span class="tex">A=\begin{pmatrix}2&amp;1\\1&amp;2\end{pmatrix}</span> has trace 4, determinant 3: λ = 3 and λ = 1, with eigenvectors (1,1) and (1,−1). Any start vector is a mix of these: <span class="tex">(1,0)=\tfrac12(1,1)+\tfrac12(1,-1)</span>. Apply A <i>k</i> times: <span class="tex">A^k(1,0)=\tfrac12\,3^k(1,1)+\tfrac12\,1^k(1,-1)</span>. The first part grows like 3<sup>k</sup>; the second never changes. So after a few steps the vector points almost exactly along (1,1).</p>
+          <p>Check by brute force: (1,0) → (2,1) → (5,4) → (14,13) → (41,40) → …; the ratios 2:1, 5:4, 14:13, 41:40 → 1:1. And <span class="tex">A^5=\begin{pmatrix}122&amp;121\\121&amp;122\end{pmatrix}</span> because <span class="tex">(3^5+1)/2=122</span> and <span class="tex">(3^5-1)/2=121</span>.</p></div>
+        <p>That is <b>power iteration</b>: multiply again and again and the vector aligns with the eigenvector of the <b>largest</b> |λ| (the dominant one). It is the simplest algorithm for finding a leading eigenvector — and the principle behind PageRank. It works because the dominant eigen-direction grows fastest; the others become negligible in comparison.</p>
+        <p><b>What the eigenvalues tell you about repetition.</b> For <span class="tex">\mathbf x_{t+1}=A\mathbf x_t</span>: if <i>every</i> eigenvalue has |λ| &lt; 1, the system <b>decays</b> to zero (stable); if some eigenvalue has |λ| &gt; 1, it generally <b>explodes</b> along that direction; if the largest is exactly 1, it settles to a steady state. Negative eigenvalues flip the sign every step. Some real matrices have <b>complex</b> eigenvalues <span class="tex">r(\cos\theta\pm i\sin\theta)</span>: there is no real direction that survives — the matrix <i>rotates</i> (by θ) while scaling (by r). A pure rotation has no real eigenvectors, since every direction turns.</p>
+        <p><b>Symmetric matrices are the best-behaved.</b> If <span class="tex">A=A^\top</span> (lesson 1.4), then (the <b>spectral theorem</b>) all eigenvalues are real, the eigenvectors can be chosen of length 1 and mutually perpendicular, and <span class="tex">A=Q\Lambda Q^\top</span> with <span class="tex">Q^{-1}=Q^\top</span> (a rotation/reflection). So a symmetric matrix is simply: <i>rotate to the natural axes, stretch each axis, rotate back</i>. Covariance matrices and Hessians are symmetric, which is why eigenvalues are so central in AI.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">A\mathbf v=\lambda\mathbf v\ (\mathbf v\neq\mathbf 0),\qquad \det(A-\lambda I)=0,\qquad \sum_i\lambda_i=\operatorname{tr}A,\qquad \prod_i\lambda_i=\det A</div>
+        <table class="sym">
+          <tr><td>A</td><td>a <b>square</b> matrix (eigenvalues are only defined when input and output spaces are the same)</td></tr>
+          <tr><td>𝐯</td><td>an eigenvector: a non-zero direction that A does not turn. Any non-zero multiple of 𝐯 is also an eigenvector — only the direction matters.</td></tr>
+          <tr><td>λ</td><td>the eigenvalue: the stretch factor along 𝐯 (negative = flip, 0 = crushed, complex = rotation involved)</td></tr>
+          <tr><td>det(A − λI)</td><td>the characteristic polynomial; its roots are the eigenvalues</td></tr>
+          <tr><td>tr A</td><td>trace: sum of the diagonal entries</td></tr>
+          <tr><td>V, Λ</td><td>V: eigenvectors as columns; Λ: diagonal matrix of eigenvalues. A = VΛV⁻¹ when V is invertible.</td></tr>
+          <tr><td>Q</td><td>for symmetric A: orthogonal matrix of eigenvectors (<span class="tex">Q^\top Q=I</span>)</td></tr>
+        </table>
+        <p>An eigenvalue 0 means A crushes a direction to zero, i.e. A is singular (det = 0 = product of eigenvalues).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the transform lab, set the matrix to [2 1; 1 2] by typing, or press <b>Stretch</b> for a simple case. The yellow dashed lines are the eigenvectors: lines that the transformation only stretches. Slide the test vector v onto a yellow line — Mv lands on the same line.</li>
+        <li>Put the matrix to <b>Rotate 45°</b>: the yellow lines disappear (complex eigenvalues, no real eigen-directions). The readout shows λ = a ± bi.</li></ol></div>
+      <div data-lab="matrix"></div>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Multiply again and again</b> with the preset [2 1; 1 2]. The orange arrow is the current vector Mᵏv₀; faint orange arrows are its earlier positions. Watch it rotate toward the yellow line of the dominant eigenvalue λ = 3 and stay there. The stretch factor each step approaches 3.</li>
+        <li>Change the starting direction slider and replay — every start (except exactly the other eigenvector) ends along the same line.</li>
+        <li>Untick <b>rescale</b> to see the true growth: the arrow shoots off-screen as 3ᵏ.</li>
+        <li>Try [0.9 0.2; 0.1 0.7]: both eigenvalues are below 1, so everything shrinks toward the origin. Try the <b>rotation</b> preset: no direction survives and the vector just circles. Try the <b>shear</b>: only one eigen-direction exists.</li>
+        <li>Slow the rate to 0.2 steps/s to follow each individual multiplication.</li></ol></div>
+      <div data-lab="eigenvis"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Eigenvectors are directions, not specific vectors.</b> (1,1), (2,2) and (−5,−5) are the same eigenvector. Normalise to length 1 when you need a canonical choice (and note the sign is still arbitrary).</li>
+          <li><b>Not every matrix has a full set of eigenvectors.</b> The shear <span class="tex">\begin{pmatrix}1&amp;1\\0&amp;1\end{pmatrix}</span> has λ = 1 twice but only <i>one</i> eigen-direction, so it cannot be diagonalised. Symmetric matrices never have this problem.</li>
+          <li><b>Real matrices can have complex eigenvalues</b> (rotations). That is a feature (it signals rotation), not an error.</li>
+          <li><b>Eigenvalues of A + B or AB are not simply sums or products</b> of those of A and B (unless the matrices share eigenvectors).</li>
+          <li><b>Only square matrices</b> have eigenvalues. For rectangular matrices use singular values (lesson 1.10).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>PCA</b>: the principal components are the eigenvectors of the data's covariance matrix, with eigenvalues = variance captured (lesson 1.10).</li>
+          <li><b>Stability of dynamics and recurrent nets</b>: a recurrent network repeatedly multiplies by a weight matrix <span class="tex">W</span>; if the largest |eigenvalue| &gt; 1 signals explode, if &lt; 1 they vanish — the same phenomenon as exploding/vanishing gradients. Careful initialisation (orthogonal matrices, |λ| ≈ 1) is chosen for this reason.</li>
+          <li><b>Hessian curvature</b>: the eigenvalues of the Hessian (matrix of second derivatives of the loss) are the curvatures along its eigen-directions; their ratio (condition number) decides how fast gradient descent converges (Module 6). Sharp vs flat minima are statements about large vs small eigenvalues.</li>
+          <li><b>PageRank and Markov chains</b>: a web page's rank is the dominant eigenvector of the link matrix, found by power iteration; the stationary distribution of a Markov chain is an eigenvector with λ = 1 (Module 8).</li>
+          <li><b>Spectral clustering and graph neural networks</b> use eigenvectors of the graph Laplacian.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Find the eigenvalues and eigenvectors of [[1,2],[2,1]].</summary><div class="ans">Trace 2, determinant 1 − 4 = −3: λ² − 2λ − 3 = 0 → (λ−3)(λ+1) = 0, so λ = 3 and λ = −1. For λ = 3: (A−3I) = [[−2,2],[2,−2]] → v = (1,1). For λ = −1: [[2,2],[2,2]] → v = (1,−1). Check: A(1,1) = (3,3) ✓; A(1,−1) = (−1,1) = −(1,−1) ✓.</div></details>
+        <details class="check"><summary>2. The dominant eigenvalue of a system matrix is 0.9 and the others are smaller in size. What happens to Aᵏx as k grows?</summary><div class="ans">All components shrink (each at least as fast as 0.9ᵏ), so Aᵏx → 0: the system is stable and decays. If the dominant eigenvalue were 1.1 it would explode instead.</div></details>
+        <details class="check"><summary>3. Compute A¹⁰ for A = diag(2, 0.5), and say what its eigenvalues are.</summary><div class="ans">A diagonal matrix's eigenvalues are its diagonal entries (2 and 0.5), with eigenvectors e₁, e₂. A¹⁰ = diag(2¹⁰, 0.5¹⁰) = diag(1024, 1/1024 ≈ 0.000977): the first direction is stretched enormously, the second almost annihilated.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Av = λv: eigenvectors are directions A only stretches; λ is the stretch factor. Find λ from det(A − λI) = 0.</li><li>A = VΛV⁻¹ makes powers easy: Aᵏ = VΛᵏV⁻¹. Repeated multiplication aligns any vector with the dominant eigenvector (power iteration).</li><li>|λ| &lt; 1 decays, |λ| &gt; 1 explodes. Symmetric matrices have real eigenvalues and perpendicular eigenvectors: the backbone of PCA and curvature analysis.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.10 ===================== -->
+    <section class="lesson" id="svd-pca" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.10</span><h2>SVD &amp; PCA</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A photo is a 1000×1000 matrix: a million numbers. A word-embedding table has hundreds of millions. Most of that information is redundant. Can we find the few directions that carry most of the content, throw away the rest, and know exactly how much we lose? And when each data point has 50 features, which handful of combinations of them explain most of the variation between examples?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Eigenvectors were wonderful but limited: they need a <i>square</i> matrix, and may not be perpendicular. The <b>singular value decomposition</b> (SVD) is the version that works for <b>every</b> matrix, of any shape, and always has beautifully orthogonal pieces. Its message is this:</p>
+        <div class="callout" style="max-width:780px"><b>Every matrix is a rotation, then a stretch along the axes, then another rotation.</b></div>
+        <p>Remember the picture of the rubber sheet. Take the unit circle and push it through any matrix: you always get an <b>ellipse</b> (possibly flat). The <i>directions of the ellipse's axes</i> and <i>how long each semi-axis is</i> describe the matrix completely. The semi-axis lengths are the <b>singular values</b> <span class="tex">\sigma_1\ge\sigma_2\ge\dots\ge0</span>: how much the matrix stretches in its most-stretched, next-most-stretched … directions. The directions in the output are <span class="tex">\mathbf u_1,\mathbf u_2,\dots</span>; the input directions that get mapped to them are <span class="tex">\mathbf v_1,\mathbf v_2,\dots</span>; and <span class="tex">A\mathbf v_i=\sigma_i\mathbf u_i</span>. A matrix with a singular value of 0 flattens one direction completely.</p>
+        <p>The punchline is <b>compression</b>. Write the matrix as a sum of simple "layers", each layer being a rank-1 piece (a column times a row), ordered from most important to least. Keep the first few layers and you have the best possible low-detail version of the matrix; the singular values tell how much each layer matters. And <b>PCA</b> is this very idea applied to a centred data table: the most important layers are the directions in which the data varies most.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The decomposition.</b> For any <span class="tex">m\times n</span> matrix A:</p>
+        <div class="eq">A=U\Sigma V^\top=\sum_{i=1}^{r}\sigma_i\,\mathbf u_i\mathbf v_i^\top</div>
+        <p>where V (n×n) and U (m×m) have perpendicular unit-length columns (rotations/reflections), and Σ is the diagonal matrix of singular values. Read right-to-left on a vector: <span class="tex">V^\top</span> rotates into the "natural input axes", Σ stretches each axis by σᵢ, U rotates into the output. The sum form says: A is a sum of <i>r</i> rank-1 layers <span class="tex">\sigma_i\mathbf u_i\mathbf v_i^\top</span> (a column times a row is a matrix whose rows are all multiples of one vector). The <b>rank</b> r of A is the number of non-zero singular values.</p>
+        <p><b>How to find them.</b> Look at <span class="tex">A^\top A</span> — an n×n symmetric matrix. Its eigenvectors are the <span class="tex">\mathbf v_i</span> and its eigenvalues are <span class="tex">\sigma_i^2</span>. (Because <span class="tex">\lVert A\mathbf v\rVert^2=\mathbf v^\top A^\top A\mathbf v</span>: the squared stretch is a quadratic form of <span class="tex">A^\top A</span>.) Then <span class="tex">\mathbf u_i=A\mathbf v_i/\sigma_i</span>.</p>
+        <div class="worked"><b>Worked example — the shear</b>
+          <p><span class="tex">A=\begin{pmatrix}1&amp;1\\0&amp;1\end{pmatrix}</span>. Then <span class="tex">A^\top A=\begin{pmatrix}1&amp;1\\1&amp;2\end{pmatrix}</span> with trace 3 and determinant 1: <span class="tex">\mu^2-3\mu+1=0\Rightarrow\mu=\frac{3\pm\sqrt5}2\approx2.618,\ 0.382</span>. So the singular values are <span class="tex">\sigma_1=\sqrt{2.618}\approx1.618</span> and <span class="tex">\sigma_2=\sqrt{0.382}\approx0.618</span> (the golden ratio and its reciprocal!).</p>
+          <p>The unit circle becomes an ellipse with semi-axes 1.618 and 0.618. Check: their product 1.618 · 0.618 = 1 = |det A| — the area scaling factor, as it must be (the product of singular values is |det|). The first input direction is <span class="tex">\mathbf v_1\approx(0.526,0.851)</span>; <span class="tex">A\mathbf v_1=(1.376,0.851)=1.618\cdot(0.851,0.526)</span>, so <span class="tex">\mathbf u_1\approx(0.851,0.526)</span> ✓.</p>
+          <p><b>Rank-1 approximation:</b> keep only the first layer, <span class="tex">A_1=\sigma_1\mathbf u_1\mathbf v_1^\top\approx\begin{pmatrix}0.724&amp;1.171\\0.447&amp;0.724\end{pmatrix}</span>. The error matrix <span class="tex">A-A_1</span> has size exactly <span class="tex">\sigma_2=0.618</span> (Frobenius norm).</p></div>
+        <p><b>Best low-rank approximation.</b> The Eckart–Young theorem says: among all matrices of rank at most <i>k</i>, the truncated sum <span class="tex">A_k=\sum_{i\le k}\sigma_i\mathbf u_i\mathbf v_i^\top</span> is the <i>closest</i> to A, with error <span class="tex">\lVert A-A_k\rVert_F=\sqrt{\sigma_{k+1}^2+\sigma_{k+2}^2+\cdots}</span>. The fraction of "energy" kept is <span class="tex">\sum_{i\le k}\sigma_i^2/\sum_i\sigma_i^2</span>. Storage drops from <i>mn</i> numbers to <i>k(m+n+1)</i> (store <i>k</i> columns of U, <i>k</i> of V and <i>k</i> singular values). For a 1000×1000 image with k = 50: 100 050 numbers instead of 1 000 000. Structured data (photos, text statistics) has quickly decaying singular values; pure noise does not — the lab shows both.</p>
+        <p><b>PCA: the same machine on data.</b> Take your data matrix X (N examples × d features) and <b>centre</b> it: subtract each column's mean, so the cloud is centred at the origin. We want a direction <b>u</b> (unit length) such that the data projected on it — the numbers <span class="tex">\mathbf x_i\cdot\mathbf u</span> — are as <i>spread out</i> as possible (maximum variance): that direction shows the most about how the examples differ. The variance along <b>u</b> is <span class="tex">\mathbf u^\top C\mathbf u</span> where <span class="tex">C=\tfrac1NX^\top X</span> is the <b>covariance matrix</b> (symmetric!). Maximising it over unit vectors gives, by the spectral theorem, the top eigenvector of C: the <b>first principal component</b>; the next one is the best direction perpendicular to it, and so on. The eigenvalue λᵢ is exactly the variance captured by component <i>i</i>.</p>
+        <p>There is a second way to say the same thing, which is why PCA is both "maximum variance" and "minimum loss": by Pythagoras, for each point, (squared length) = (squared length of its shadow on the line) + (squared distance to the line). Since the total is fixed, <i>maximising the shadows' variance is the same as minimising the squared distances</i> to the line. And the SVD of the centred X gives everything at once: right singular vectors = principal directions, and <span class="tex">\lambda_i=\sigma_i^2/N</span>.</p>
+        <div class="worked"><b>Worked example — PCA by hand</b>
+          <p>Four centred points: (2,1), (−2,−1), (1,2), (−1,−2). Covariance: <span class="tex">C_{11}=(4+4+1+1)/4=2.5</span>, <span class="tex">C_{22}=(1+1+4+4)/4=2.5</span>, <span class="tex">C_{12}=(2+2+2+2)/4=2</span>. So <span class="tex">C=\begin{pmatrix}2.5&amp;2\\2&amp;2.5\end{pmatrix}</span>: its eigenvalues are 4.5 and 0.5 (trace 5, determinant 6.25 − 4 = 2.25 = 4.5·0.5) with eigenvectors <span class="tex">\tfrac1{\sqrt2}(1,1)</span> and <span class="tex">\tfrac1{\sqrt2}(1,-1)</span>.</p>
+          <p>PC1 = (1,1)/√2 captures <span class="tex">4.5/(4.5+0.5)=90\%</span> of the variance. The coordinates of the four points on PC1: <span class="tex">(2+1)/\sqrt2=2.121</span>, −2.121, 2.121, −2.121; variance <span class="tex">(2.121^2\cdot4)/4=4.5</span> ✓. We can describe 2-D data by one number per point and lose only 10 % of the variance. (Here we divide by N; many libraries divide by N − 1, which only rescales all variances.)</p></div>
+        <p><b>Recipe for PCA:</b> centre the data → covariance matrix (or SVD of X) → sort eigenvalues → keep the top <i>k</i> directions → project: <span class="tex">Z=XV_k</span> (N×k). Choose <i>k</i> from the explained-variance ratio (e.g. "keep 95 %").</p>
+        <p><b>Two more things the SVD gives.</b> The <b>condition number</b> <span class="tex">\sigma_1/\sigma_r</span> says how badly the matrix amplifies errors (huge for near-singular matrices, lesson 1.7). The <b>pseudo-inverse</b> <span class="tex">A^+=V\Sigma^+U^\top</span> (invert the non-zero σ's, leave zeros alone) works for any shape and rank — used for least squares (next lesson).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">A=U\Sigma V^\top,\quad U^\top U=I,\ V^\top V=I,\quad \Sigma=\operatorname{diag}(\sigma_1\ge\sigma_2\ge\dots\ge0);\qquad A\mathbf v_i=\sigma_i\mathbf u_i</div>
+        <div class="eq">C=\frac1N X^\top X=Q\Lambda Q^\top,\qquad \text{PC}_i=\mathbf q_i,\quad \operatorname{Var}_i=\lambda_i=\frac{\sigma_i^2}{N},\quad \text{explained ratio}_i=\frac{\lambda_i}{\sum_j\lambda_j}</div>
+        <table class="sym">
+          <tr><td>U (m×m), V (n×n)</td><td>orthogonal matrices: columns are perpendicular unit vectors (rotations/reflections); <b>u</b>ᵢ output directions, <b>v</b>ᵢ input directions</td></tr>
+          <tr><td>σᵢ</td><td>singular values, never negative, sorted largest first; σᵢ² are the eigenvalues of AᵀA; number of non-zero ones = rank</td></tr>
+          <tr><td>Σ</td><td>m×n matrix that is zero except for σ₁, σ₂, … on its diagonal</td></tr>
+          <tr><td>A<sub>k</sub></td><td>keep only the first k terms: best rank-k approximation (Eckart–Young)</td></tr>
+          <tr><td>X</td><td>data matrix, N examples × d features, <b>centred</b> (column means subtracted)</td></tr>
+          <tr><td>C</td><td>covariance matrix, d×d, symmetric; C<sub>jk</sub> measures how features j and k vary together</td></tr>
+          <tr><td>q<sub>i</sub>, λ<sub>i</sub></td><td>principal direction i and the variance of the data along it</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The blue dots are 70 centred data points. The orange line is <i>your</i> direction φ (start: a poor one). The lower graph shows the variance of the data along each direction φ: one smooth hump with its maximum at the true first principal axis (yellow arrow).</li>
+        <li>Press <b>Project</b>: the points slowly slide onto your line. Red segments are the distance each travels. Read "variance kept" and "information lost" — they add up to the total.</li>
+        <li>Press <b>Sweep φ</b> and watch the orange line rotate slowly while the marker rides the variance curve; at the maximum the points are most spread out <i>and</i> travel the least distance when projected.</li>
+        <li>Press <b>Snap φ to PC1</b> and then Project: the best 1-D summary. Make the cloud rounder (short spread → long spread): the hump flattens, because no direction is special.</li></ol></div>
+      <div data-lab="pca2d"></div>
+      <div class="try"><b>Try this</b><ol>
+        <li>With the smiley face, set k = 1 and press <b>Add layers one by one</b>. Each step adds one rank-1 layer σᵢuᵢvᵢᵀ; the picture sharpens. See the energy kept and the storage (k(m+n+1) numbers instead of 576).</li>
+        <li>The bar chart shows the singular values: they fall quickly for structured images — a few layers are enough.</li>
+        <li>Switch to <b>random noise</b>: the bars decay slowly and you need nearly all 24 layers. No structure, no compression.</li></ol></div>
+      <div data-lab="svdimage"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Forgetting to centre the data</b> before PCA: otherwise the first component just points at the mean instead of the direction of variation.</li>
+          <li><b>Forgetting to scale features.</b> PCA follows variance, so a feature measured in large units dominates. Standardise first unless the units are meaningful.</li>
+          <li><b>High variance ≠ important for the task.</b> PCA is unsupervised; the direction of largest variance may be noise or irrelevant to your label.</li>
+          <li><b>Principal components are directions defined up to sign</b>; plots may flip between runs.</li>
+          <li><b>σ vs λ:</b> singular values of X are not the eigenvalues of C — λᵢ = σᵢ²/N. Squaring matters when you compute "explained variance".</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>PCA</b> for visualisation, noise reduction, decorrelation (whitening) and as preprocessing before k-NN, clustering or regression.</li>
+          <li><b>LoRA</b> (low-rank adaptation) fine-tunes a big weight matrix W by learning an update <span class="tex">\Delta W=BA</span> with a tiny inner dimension r: for a 1024×1024 matrix and r = 4, that is <span class="tex">2\cdot1024\cdot4=8192</span> parameters instead of 1 048 576 (0.78 %) — the same low-rank idea as truncated SVD.</li>
+          <li><b>Compression and recommendation:</b> matrix factorisation (the Netflix prize) is a low-rank approximation of the user × item rating matrix; <b>latent semantic analysis</b> applies SVD to word × document counts; embeddings are often compressed with PCA/SVD.</li>
+          <li><b>Analysing networks:</b> the singular values of weight matrices and embeddings reveal effective rank and training dynamics; the condition number predicts numerical trouble; the pseudo-inverse gives closed-form fits.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A = [[1,2],[2,4]] has columns that are multiples of each other. What are its singular values and its rank?</summary><div class="ans">AᵀA = [[5,10],[10,20]] has eigenvalues 25 and 0, so σ₁ = 5 and σ₂ = 0. Rank 1 (one non-zero singular value). It equals a single layer σ₁u₁v₁ᵀ; as a check ‖A‖_F = √(1+4+4+16) = 5 = σ₁.</div></details>
+        <details class="check"><summary>2. How many parameters does a rank-4 LoRA update of a 2048×2048 weight matrix use, as a percentage of the full matrix?</summary><div class="ans">2 · 2048 · 4 = 16,384 parameters versus 2048² = 4,194,304: 16,384 / 4,194,304 ≈ 0.39 %.</div></details>
+        <details class="check"><summary>3. A covariance matrix has eigenvalues 6, 3 and 1. How much variance do the first two principal components capture?</summary><div class="ans">(6 + 3) / (6 + 3 + 1) = 9/10 = 90 %.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Every matrix = rotate · stretch · rotate (UΣVᵀ) = a sum of rank-1 layers σᵢuᵢvᵢᵀ, strongest first.</li><li>Truncating to k layers is the best rank-k approximation; the discarded σ's tell the error. This is compression and LoRA.</li><li>PCA = eigenvectors of the covariance matrix of centred data = directions of maximum variance = minimum reconstruction error; λᵢ = σᵢ²/N.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.11 ===================== -->
+    <section class="lesson" id="projections-ls" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.11</span><h2>Projections &amp; least squares</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Three data points do not lie on a single straight line, so <span class="tex">X\mathbf w=\mathbf y</span> has no exact solution (lesson 1.8). Which line is "best"? And is there a formula — with a clear geometric meaning — that gives the best weights directly, without any search?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Stand a stick upright in the sunshine: its shadow on the ground is the <b>projection</b> of the stick onto the ground plane. The shadow is the point of the ground <i>closest</i> to the top of the stick, and the line from the top of the stick straight down to the shadow is <b>perpendicular</b> to the ground. That single picture is the entire lesson:</p>
+        <div class="callout" style="max-width:780px"><b>The closest point of a flat set (line, plane, subspace) to a given point is where the perpendicular from the point lands.</b> The leftover error is perpendicular to the flat set.</div>
+        <p>Now connect it to regression. The set of all outputs a model can produce, <span class="tex">X\mathbf w</span> as <b>w</b> varies, is the <b>column space</b> of X — a flat sheet (a subspace) living inside the space of all possible target vectors. The real data <b>y</b> usually sticks out of that sheet, because of noise. The best we can do is to pick the point of the sheet <i>closest</i> to <b>y</b> — the projection of <b>y</b> onto the column space. Its coordinates (the combination of columns that reaches it) are the least-squares weights. "Least squares" because the distance squared is the sum of the squared residuals.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: projecting onto a line.</b> From lesson 1.2, the projection of <b>b</b> onto the line spanned by <b>a</b> is</p>
+        <div class="eq">\mathbf p=\frac{\mathbf a\cdot\mathbf b}{\mathbf a\cdot\mathbf a}\,\mathbf a,\qquad \mathbf e=\mathbf b-\mathbf p,\qquad \mathbf e\cdot\mathbf a=0</div>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">\mathbf b=(2,3)</span> onto <span class="tex">\mathbf a=(3,1)</span>: <span class="tex">\mathbf a\cdot\mathbf b=9</span>, <span class="tex">\mathbf a\cdot\mathbf a=10</span>, so <span class="tex">\mathbf p=0.9\,(3,1)=(2.7,\,0.9)</span>. The error is <span class="tex">\mathbf e=(2,3)-(2.7,0.9)=(-0.7,\,2.1)</span>, and <span class="tex">\mathbf e\cdot\mathbf a=-2.1+2.1=0</span> ✓ (perpendicular). Pythagoras: <span class="tex">\lVert\mathbf b\rVert^2=13</span> and <span class="tex">\lVert\mathbf p\rVert^2+\lVert\mathbf e\rVert^2=8.1+4.9=13</span> ✓. Any other point on the line, say <span class="tex">1\cdot\mathbf a=(3,1)</span>, is farther from <b>b</b>: distance² = 1 + 4 = 5 &gt; 4.9.</p></div>
+        <p><b>Step 2: projecting onto a subspace spanned by several columns.</b> We want <span class="tex">\mathbf p=X\hat{\mathbf w}</span> such that the residual <span class="tex">\mathbf e=\mathbf y-X\hat{\mathbf w}</span> is perpendicular to <i>every</i> column of X. "Perpendicular to every column" means each column's dot product with <b>e</b> is zero; written for all columns at once, that is <span class="tex">X^\top\mathbf e=\mathbf 0</span>. Substituting:</p>
+        <div class="eq">X^\top(\mathbf y-X\hat{\mathbf w})=\mathbf 0\quad\Longrightarrow\quad X^\top X\,\hat{\mathbf w}=X^\top\mathbf y\quad\Longrightarrow\quad\hat{\mathbf w}=(X^\top X)^{-1}X^\top\mathbf y</div>
+        <p>This is the <b>normal equation</b> ("normal" = perpendicular). The last form requires <span class="tex">X^\top X</span> to be invertible, which holds exactly when the columns of X are independent (no redundant features — lesson 1.7). The projection itself is <span class="tex">\mathbf p=X\hat{\mathbf w}=P\mathbf y</span> with the <b>projection matrix</b> <span class="tex">P=X(X^\top X)^{-1}X^\top</span>. It satisfies <span class="tex">P^2=P</span> (projecting twice changes nothing: a shadow's shadow is itself) and <span class="tex">P^\top=P</span>.</p>
+        <div class="worked"><b>Worked example — fit a line to three points</b>
+          <p>Data: (x, y) = (0,1), (1,2), (2,2). Model <span class="tex">y\approx w_0+w_1x</span>. Columns of X: a column of ones (for the intercept) and the x-values:</p>
+          <p><span class="tex">X=\begin{pmatrix}1&amp;0\\1&amp;1\\1&amp;2\end{pmatrix},\ \mathbf y=\begin{pmatrix}1\\2\\2\end{pmatrix}</span>. Then <span class="tex">X^\top X=\begin{pmatrix}3&amp;3\\3&amp;5\end{pmatrix}</span>, <span class="tex">X^\top\mathbf y=\begin{pmatrix}5\\6\end{pmatrix}</span>. Determinant <span class="tex">15-9=6</span>, inverse <span class="tex">\tfrac16\begin{pmatrix}5&amp;-3\\-3&amp;3\end{pmatrix}</span>.</p>
+          <p><span class="tex">\hat{\mathbf w}=\tfrac16(5\cdot5-3\cdot6,\;-3\cdot5+3\cdot6)=\tfrac16(7,3)=(1.167,\,0.5)</span>: the line <span class="tex">\hat y=1.167+0.5x</span>.</p>
+          <p>Predictions <span class="tex">X\hat{\mathbf w}=(1.167,\,1.667,\,2.167)</span>; residuals <span class="tex">\mathbf e=(-0.167,\,0.333,\,-0.167)</span>. Check perpendicularity: <b>1</b>·e = −0.167 + 0.333 − 0.167 = 0 and <b>x</b>·e = 0·(−0.167) + 1·0.333 + 2·(−0.167) = 0 ✓ — the residuals sum to zero and are uncorrelated with x. Sum of squared errors = 1/36 + 1/9 + 1/36 = <b>1/6 ≈ 0.167</b>. Compare another reasonable line, <span class="tex">\hat y=1+0.5x</span>: predictions (1, 1.5, 2), residuals (0, 0.5, 0), squared error 0.25 &gt; 0.167. The projection wins.</p></div>
+        <p><b>Why "least squares" is the same as "perpendicular".</b> Take <i>any</i> point <span class="tex">X\mathbf w</span> of the column space. By Pythagoras, <span class="tex">\lVert\mathbf y-X\mathbf w\rVert^2=\lVert\mathbf y-\mathbf p\rVert^2+\lVert\mathbf p-X\mathbf w\rVert^2</span> (because <span class="tex">\mathbf y-\mathbf p</span> is perpendicular to the plane, and <span class="tex">\mathbf p-X\mathbf w</span> lies in it). The second term is ≥ 0 and vanishes only at <span class="tex">X\mathbf w=\mathbf p</span>. So the projection uniquely minimises the sum of squared residuals. (Calculus gives the same normal equation: the gradient of <span class="tex">\lVert\mathbf y-X\mathbf w\rVert^2</span> is <span class="tex">-2X^\top(\mathbf y-X\mathbf w)</span>; set it to zero — see Module 2.)</p>
+        <p><b>In practice.</b> Explicitly forming <span class="tex">(X^\top X)^{-1}</span> is numerically fragile (the condition number is squared). Software solves the least-squares problem with QR factorisation or the SVD pseudo-inverse, <span class="tex">\hat{\mathbf w}=X^+\mathbf y</span>, which also handles dependent columns by returning the smallest solution. When columns are nearly dependent, <b>ridge regression</b> solves <span class="tex">(X^\top X+\lambda I)\mathbf w=X^\top\mathbf y</span>: adding λ to the diagonal makes the matrix safely invertible.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat{\mathbf w}=\arg\min_{\mathbf w}\lVert\mathbf y-X\mathbf w\rVert_2^2\ \Longleftrightarrow\ X^\top X\hat{\mathbf w}=X^\top\mathbf y,\qquad \mathbf p=X\hat{\mathbf w}=P\mathbf y,\quad P=X(X^\top X)^{-1}X^\top</div>
+        <table class="sym">
+          <tr><td>X (N×d)</td><td>design/data matrix: N examples, d features (include a column of ones for an intercept)</td></tr>
+          <tr><td>𝐲 (N)</td><td>target vector</td></tr>
+          <tr><td>ŵ</td><td>the weights minimising the sum of squared residuals (“hat” = estimated)</td></tr>
+          <tr><td>𝐞 = 𝐲 − Xŵ</td><td>residual vector; always satisfies <span class="tex">X^\top\mathbf e=\mathbf 0</span></td></tr>
+          <tr><td>XᵀXŵ = Xᵀ𝐲</td><td>the normal equations: d equations, d unknowns</td></tr>
+          <tr><td>P</td><td>projection matrix onto the column space of X; <span class="tex">P^2=P=P^\top</span>; invertible-case formula requires independent columns</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the blue tip <b>a</b>: the green arrow is the projection of a onto b. At 90° it vanishes; past 90° it flips backwards. The dashed segment is the residual, always perpendicular to b.</li></ol></div>
+      <div data-lab="vec2" data-title="Projection onto a line" data-show="proj,angle" data-ax="2" data-ay="3" data-bx="3" data-by="1"></div>
+      <div class="try"><b>Try this</b><ol>
+        <li>Left: three data points (blue) and <i>your</i> line (green). Right: the same problem seen in observation space, where each axis is one data point. The purple sheet is the column space — every line you can draw is one point of it. The blue arrow is the data vector <b>y</b>.</li>
+        <li>Move the <b>w₀</b> and <b>w₁</b> sliders: the green point Xw slides around the purple sheet, and the red gap to <b>y</b> (the residual) changes length. Watch the SSE readout.</li>
+        <li>Press <b>Snap to least squares</b>: the point glides to the spot on the sheet nearest to y. Now the red segment sits at a right angle to the sheet, the SSE is the smallest possible, and Xᵀe ≈ 0.</li>
+        <li>Change y₁, y₂, y₃ and snap again. Press <b>y on the plane (perfect fit)</b>: when y lies in the sheet, the residual is zero (the three points are exactly collinear). Drag the 3-D picture to rotate, or tick <i>slowly rotate</i>.</li></ol></div>
+      <div data-lab="lsproj"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Least squares minimises <i>vertical</i> (y-direction) squared errors</b>, not perpendicular distance to the line in the (x, y) plane. (The perpendicular in the lesson is in the <i>space of observations</i>, not the scatter plot.) Errors in x are ignored.</li>
+          <li><b>Forgetting the intercept column.</b> Without a column of ones the line is forced through the origin, and the residuals no longer sum to zero.</li>
+          <li><b>Squared error is sensitive to outliers</b>: one wild point can drag the line a long way.</li>
+          <li><b>(XᵀX)⁻¹ needs independent columns.</b> Redundant or near-redundant features make it singular or wildly unstable (lesson 1.7); use a solver, SVD, or ridge instead of inverting.</li>
+          <li><b>A perfect fit on training data is not the goal</b> when d ≥ N: the projection is then <b>y</b> itself and the model has memorised the noise (overfitting, Module 4).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Linear regression</b> is exactly this projection: the closed-form fit is the normal equation; gradient descent on the squared loss converges to the same ŵ.</li>
+          <li><b>Feature-based models:</b> polynomial regression, random-feature models, and "linear probes" on frozen embeddings are all least-squares problems in a transformed design matrix.</li>
+          <li><b>Ridge regression / weight decay</b> is the regularised projection <span class="tex">(X^\top X+\lambda I)^{-1}X^\top\mathbf y</span> and has a Bayesian reading (Module 4).</li>
+          <li><b>Residual structure:</b> "residuals are orthogonal to the features" underlies diagnostic plots, and the same orthogonality appears in Gram–Schmidt / QR decompositions and in iterative solvers.</li>
+          <li><b>PCA is a projection too</b>: the reconstruction from k components is the orthogonal projection of the data onto the top-k eigen-subspace (lesson 1.10); autoencoders learn a (nonlinear) analogue.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Project b = (3, 1) onto a = (2, 1) and verify the residual is perpendicular to a.</summary><div class="ans">a·b = 7, a·a = 5, so p = 1.4·(2,1) = (2.8, 1.4). Residual e = (3,1) − (2.8,1.4) = (0.2, −0.4). e·a = 0.4 − 0.4 = 0 ✓.</div></details>
+        <details class="check"><summary>2. Fit y = w₀ + w₁x through (0,0), (1,1), (2,1) using the normal equations.</summary><div class="ans">X = [[1,0],[1,1],[1,2]], y = (0,1,1): XᵀX = [[3,3],[3,5]], Xᵀy = (2,3). Inverse = (1/6)[[5,−3],[−3,3]], so w = (1/6)(10−9, −6+9) = (1/6, 1/2) ≈ (0.167, 0.5). Predictions (0.167, 0.667, 1.167), residuals (−0.167, 0.333, −0.167), which sum to 0 and have x·e = 0.333 − 0.333 = 0 ✓.</div></details>
+        <details class="check"><summary>3. Why does the projection matrix satisfy P² = P?</summary><div class="ans">Pb is already a point of the column space. Projecting a point that is already in the plane leaves it where it is (its nearest point in the plane is itself), so P(Pb) = Pb for every b — a shadow's shadow is the same shadow.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Projection = foot of the perpendicular: the nearest point of a subspace, with an error perpendicular to it.</li><li>Least squares = project y onto the column space of X: XᵀXŵ = Xᵀy, i.e. residual ⟂ every feature column. Needs independent columns; use solvers/ridge in practice.</li><li>Linear regression is geometry: the best-fit line is a shadow in observation space.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now see a matrix as a machine that reshapes space; you know when it can be undone (determinant, rank), what its natural axes are (eigenvectors, SVD), and how regression is a projection. Next, <b>Module 2: Calculus</b> asks how a function changes when its input changes slightly — the slope of the loss that every training algorithm follows.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

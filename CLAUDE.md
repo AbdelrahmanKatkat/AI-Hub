@@ -60,6 +60,14 @@ A page is not done until labs render, equations typeset (no raw `\frac`), and th
 - `verify-site` — headless Chrome check + screenshot review.
 
 ## Where things stand / next
-- Math modules 1–8 were authored in parallel from the curriculum; review each for errors after merging.
-- Machine Learning page is still the shallow first draft → rebuild as modules using `plan-curriculum` + `write-deep-lesson`.
-- Next topics in order: Data Science, Computer Vision, NLP, Voice, Generative AI, Governing AI, RL, Domains.
+- **Mathematics**: hub + modules 0-4 and 6-8 written to the deep standard (`math-*.html`). Module 5 (information theory, `math-information.html`)
+  is a *placeholder* — write it (entropy, cross-entropy-kl, mutual-info) per `curriculum/mathematics.md`.
+- **Computer Vision**: live. Hub `computer-vision.html` + modules 0-9 (`cv-*.html`, 70 lessons). Shared tooling: `assets/arch.js` (architecture
+  engine + DSL, verified against published parameter/MAC counts) and `assets/labs-cv.js` (`pixels`, `convolve`, `archviz`). Spec in
+  `curriculum/computer-vision.md`; authoring addendum `curriculum/AUTHORING-CV.md`.
+- Known review items: agents verified pages in headless Chrome only (no real-time smoothness check, no hand-clicked interactions);
+  arch.js reports ResNet-50 final receptive field 427 px vs the commonly quoted 483 (check definition); DeepLab/SAM archviz specs are
+  approximations (stated in the lessons).
+- **Machine Learning** page is still the shallow first draft -> rebuild as modules (`plan-curriculum` + `write-deep-lesson`).
+- Next topics in order: Data Science, NLP, Voice, Generative AI, Governing AI, Reinforcement Learning, Domains (GeoAI, Robotics, ...).
+- Agent runs can hit the session rate limit: when that happens, resume the agents (SendMessage) — their files are saved on disk.

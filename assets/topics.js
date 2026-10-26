@@ -3,7 +3,7 @@ window.HUB = {
   repo: 'https://github.com/AbdelrahmanKatkat/AI-Hub',
   topics: [
     {
-      id: 'math', title: 'Mathematics for AI', icon: '∑', color: '#39c5cf', status: 'live', href: 'mathematics.html', next: 'ml',
+      id: 'math', title: 'Mathematics for AI', icon: '∑', color: '#39c5cf', status: 'live', href: 'mathematics.html', curriculum: 'assets/curriculum-math.js', next: 'ml',
       desc: 'Linear algebra, calculus, optimization, backpropagation and probability — animated.',
       tags: ['Matrices', 'Derivatives', 'Optimizers', 'Backprop', 'Probability'],
       // sections/modules are generated from curriculum/mathematics.md (see assets/curriculum-math.js)
@@ -22,7 +22,11 @@ window.HUB = {
       ],
     },
     { id: 'ds', title: 'Data Science', icon: '📊', color: '#388bfd', status: 'soon', desc: 'Exploration, statistics, experimentation and storytelling with data.' },
-    { id: 'cv', title: 'Computer Vision', icon: '👁️', color: '#2f81f7', status: 'soon', desc: 'Teach machines to see: pixels, convolutions, detection, segmentation.' },
+    {
+      id: 'cv', title: 'Computer Vision', icon: '👁️', color: '#2f81f7', status: 'live', href: 'computer-vision.html', curriculum: 'assets/curriculum-cv.js', next: 'nlp',
+      desc: 'Teach machines to see: from pixels and filters to CNNs, transformers, detection, segmentation and deployment — with animated architectures.',
+      tags: ['Convolutions', 'ResNet', 'Vision Transformers', 'Detection', 'Segmentation'],
+    },
     { id: 'nlp', title: 'NLP', icon: '💬', color: '#db6d28', status: 'soon', desc: 'Tokens, embeddings, attention and language understanding.' },
     { id: 'voice', title: 'Voice', icon: '🎙️', color: '#db61a2', status: 'soon', desc: 'Speech recognition, synthesis and real-time voice pipelines.' },
     { id: 'genai', title: 'Generative AI', icon: '✨', color: '#a371f7', status: 'soon', desc: 'Transformers, diffusion, and how models create text, images and code.' },
@@ -36,6 +40,16 @@ window.HUB = {
 
 /* Each page's pipeline: stages animate left→right. Edit text here, not in the lab code. */
 window.PIPELINES = {
+  cv: {
+    stages: [
+      { name: 'Capture', color: '#2f81f7', items: ['Camera / file', 'Decode', 'Frames'], out: 'H×W×3 uint8', compute: 'Sensor + ISP; CPU decode', storage: 'Object store, video segments', desc: 'Light becomes a grid of numbers. Resolution, bit depth and compression decide how much information survives.' },
+      { name: 'Preprocessing', color: '#39c5cf', items: ['Resize / crop', 'Normalise', 'HWC → CHW'], out: '1×3×224×224 float', compute: 'CPU or GPU kernels', storage: 'Cached tensors, TFRecords', desc: 'Resize to the network input, scale values (mean/std) and arrange the tensor layout. Must match training exactly.' },
+      { name: 'Backbone', color: '#a371f7', items: ['Conv / attention blocks', 'Downsample', 'Feature maps'], out: 'C×H/32×W/32 features', compute: 'GPU/NPU: conv + matmul', storage: 'Weights (≈100 MB), activations in VRAM', desc: 'Stacked blocks turn pixels into features: edges, textures, parts, objects — shrinking space and growing channels.' },
+      { name: 'Head', color: '#db6d28', items: ['Classify / detect / segment', 'Decode outputs'], out: 'logits · boxes · masks', compute: 'GPU, light', storage: 'Task weights', desc: 'A small task-specific head converts features into class scores, box offsets or per-pixel labels.' },
+      { name: 'Post-processing', color: '#db61a2', items: ['Softmax / threshold', 'NMS', 'Resize masks'], out: 'final detections', compute: 'CPU, cheap', storage: 'Config, class names', desc: 'Raw numbers become decisions: suppress duplicate boxes, apply confidence thresholds, map coordinates back to the original image.' },
+      { name: 'Storage & monitoring', color: '#3fb950', items: ['Log results', 'Sample hard cases', 'Drift'], out: 'labelled data', compute: 'Stream / batch', storage: 'Warehouse, review queue', desc: 'Store predictions with images, watch confidence and drift, and send hard cases back for labelling.' },
+    ],
+  },
   hub: {
     stages: [
       { name: 'Data', color: '#2f81f7', items: ['Collect', 'Label'], out: 'raw rows', compute: 'I/O bound, CPU', storage: 'Object store / data lake', desc: 'Everything starts as messy real-world data: files, sensors, logs, images.' },

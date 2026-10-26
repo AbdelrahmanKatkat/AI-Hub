@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 · Generative &amp; video vision · Computer Vision</title>
+<meta name="description" content="Autoencoders, GANs, diffusion, image translation and super-resolution, NeRF, video models and tracking, taught as animated architecture blueprints.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-generative.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="8">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 8</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">🎨</div>
+      <div style="flex:1">
+        <h1>Module 8 · Generative &amp; video vision</h1>
+        <p>Until now the model looked at an image and answered a question. Here it <b>makes</b> images: compressing them, forging them, growing them out of noise, sharpening them, rebuilding 3-D scenes from photos, and following moving things through time. You will watch noise turn into a picture, a generator and a discriminator play their game, and a Kalman filter chase a moving box, and you will draw each blueprint with its tensor shapes.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">7 animated labs</span><span class="chip">Blueprints with shapes &amp; parameters</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 8.1 ===================== -->
+    <section class="lesson" id="autoencoders" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.1</span><h2>Autoencoders</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A 32×32 colour image is 3,072 numbers, yet the set of <i>sensible</i> images is a tiny sliver of all 3,072-number lists (random numbers look like static, not like anything). Could a network find a short description, perhaps 512 numbers or even 2, from which the picture can be rebuilt, and what would those few numbers mean?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine describing a face to a friend over the phone so they can draw it. You do not read out every pixel; you say "round, glasses, smiling, dark hair". A short list of properties is a <b>code</b>. An autoencoder learns both halves of this game at once: an <b>encoder</b> that turns an image into a short code, and a <b>decoder</b> that turns the code back into an image. It is trained by one simple rule: the output should look like the input.</p>
+        <p>The trick is the <b>bottleneck</b>, the narrow middle. If the code were as big as the image, the network could just copy it and learn nothing. Because the code is small, the network must discover what matters: shapes, positions, textures. The code space is called the <b>latent space</b> ("latent" = hidden), and nearby codes decode to similar images, so you can walk through it and watch one picture morph into another.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Blueprint.</b> The encoder is an ordinary CNN that halves the resolution and increases channels (you met this pattern in Module 3). The decoder mirrors it with transposed convolutions that double the resolution. Below is a small convolutional autoencoder for 32×32 RGB images; the bottleneck is a 8×8×8 tensor.</p>
+        <div data-lab="archviz" data-title="Convolutional autoencoder (32×32 RGB)" data-height="300"><script type="text/plain">input 3 32 32
+conv 32 k3 s2 p1
+relu
+conv 64 k3 s2 p1
+relu
+conv 8 k1
+up 64
+relu
+up 32
+relu
+conv 3 k1</script></div>
+        <table class="tbl"><tr><th>stage</th><th>layer</th><th>output shape</th><th>weights + biases</th></tr>
+          <tr><td>input</td><td>image</td><td>3×32×32 = 3,072</td><td>0</td></tr>
+          <tr><td>encoder 1</td><td>conv 3×3 /2, 3→32</td><td>32×16×16</td><td>3·9·32 + 32 = 896</td></tr>
+          <tr><td>encoder 2</td><td>conv 3×3 /2, 32→64</td><td>64×8×8</td><td>32·9·64 + 64 = 18,496</td></tr>
+          <tr><td><b>bottleneck</b></td><td>conv 1×1, 64→8</td><td><b>8×8×8 = 512</b></td><td>64·8 + 8 = 520</td></tr>
+          <tr><td>decoder 1</td><td>up-conv 2×2 ×2, 8→64</td><td>64×16×16</td><td>8·4·64 + 64 = 2,112</td></tr>
+          <tr><td>decoder 2</td><td>up-conv 2×2 ×2, 64→32</td><td>32×32×32</td><td>64·4·32 + 32 = 8,224</td></tr>
+          <tr><td>output</td><td>conv 1×1, 32→3</td><td>3×32×32</td><td>32·3 + 3 = 99</td></tr></table>
+        <p>Total: 896 + 18,496 + 520 + 2,112 + 8,224 + 99 = <b>30,347 parameters</b>. <b>Compression ratio</b> = input numbers ÷ code numbers = 3,072 ÷ 512 = <b>6 : 1</b>.</p>
+        <div class="worked"><b>Worked example · a fully connected autoencoder for 28×28 digits</b>
+          <p>784 → 128 → 32 → 128 → 784. Weights plus biases per layer: 784·128+128 = 100,480; 128·32+32 = 4,128; 32·128+128 = 4,224; 128·784+784 = 101,136. Total <b>209,968</b>. The bottleneck stores 32 numbers for 784 pixels: ratio 784/32 = <b>24.5 : 1</b>. Reconstruction loss for one image is the mean squared error over its pixels: if a pixel is 0.80 and the output is 0.65, that pixel contributes (0.15)² = 0.0225; the loss is the average over all 784.</p></div>
+
+        <h3 class="sec">Three flavours</h3>
+        <ul>
+          <li><b>Plain autoencoder</b>: minimise reconstruction error. Good for compression and features, but its latent space has holes: a random code often decodes to garbage.</li>
+          <li><b>Denoising autoencoder</b>: feed a <i>corrupted</i> image (noise, masked patches), ask for the <i>clean</i> original. The network can no longer copy; it must learn what clean images look like. This idea is the seed of diffusion (lesson 8.3) and of masked autoencoders (Module 5).</li>
+          <li><b>Variational autoencoder (VAE)</b>: the encoder outputs a mean <span class="tex">\mu</span> and spread <span class="tex">\sigma</span>, the code is sampled as <span class="tex">z=\mu+\sigma\epsilon</span> with <span class="tex">\epsilon\sim\mathcal N(0,1)</span>, and a penalty keeps these distributions close to <span class="tex">\mathcal N(0,1)</span>. The latent space then has no holes, so sampling <span class="tex">z\sim\mathcal N(0,1)</span> and decoding gives a new image. Derivation: <a href="math-advanced.html#vae-elbo">the ELBO lesson</a>.</li></ul>
+        <div class="worked"><b>Worked example · the VAE penalty for one latent number</b>
+          <p>The encoder says <span class="tex">\mu=1,\ \sigma=0.5</span>. The KL penalty against <span class="tex">\mathcal N(0,1)</span> is <span class="tex">\tfrac12(\mu^2+\sigma^2-\ln\sigma^2-1)=\tfrac12(1+0.25+1.386-1)=0.818</span>. If the encoder instead said <span class="tex">\mu=0,\sigma=1</span> the penalty is 0, but the code would carry no information about the image. The two terms (reconstruction vs KL) pull in opposite directions, and training finds the compromise. Reparameterisation: with <span class="tex">\epsilon=0.8</span>, <span class="tex">z=1+0.5\cdot0.8=1.4</span>; randomness sits in <span class="tex">\epsilon</span>, so gradients flow through <span class="tex">\mu,\sigma</span>.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">z=f_\phi(x),\quad \hat x=g_\theta(z),\quad \mathcal L_{AE}=\frac1{HWC}\lVert x-\hat x\rVert_2^2,\quad \mathcal L_{VAE}=\lVert x-\hat x\rVert^2+\beta\,D_{KL}\big(\mathcal N(\mu,\sigma^2)\,\Vert\,\mathcal N(0,I)\big)</div>
+        <table class="sym">
+          <tr><td>x, x̂</td><td>input image and its reconstruction</td></tr>
+          <tr><td>f<sub>φ</sub></td><td>encoder network with weights φ</td></tr>
+          <tr><td>g<sub>θ</sub></td><td>decoder network with weights θ</td></tr>
+          <tr><td>z</td><td>latent code (the bottleneck tensor, flattened)</td></tr>
+          <tr><td>μ, σ</td><td>the encoder's predicted mean and standard deviation for each latent number (VAE)</td></tr>
+          <tr><td>β</td><td>weight of the KL term; larger β gives a smoother latent space but blurrier images</td></tr></table>
+
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Block diagram: <b>image → [conv /2] → [conv /2] → [1×1 conv] → code → [up ×2] → [up ×2] → [1×1 conv] → image</b>. Shapes 3×32×32 → 32×16×16 → 64×8×8 → 8×8×8 → 64×16×16 → 32×32×32 → 3×32×32. A transposed 2×2 convolution with stride 2 has <span class="tex">C_{in}\cdot4\cdot C_{out}</span> weights, for example 64·4·32 = 8,192, plus 32 biases.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · the latent space and the bottleneck</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the white latent point across the plane. Each position decodes into an image; between two clusters you get a smooth <i>morph</i> (circle turning into square). The point wanders by itself while playing.</li>
+        <li>Pause and park the point exactly in a gap far from every cluster. Notice the blur: a plain autoencoder was never trained there. This is the hole a VAE fixes.</li>
+        <li>In the lower panel shrink the bottleneck from 576 numbers down to 1. Watch the reconstruction lose detail first, shape last, and watch the compression ratio and error change.</li></ol></div>
+      <div data-lab="aeLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>A big bottleneck makes a perfect copier that has learned nothing useful. The narrowness is the point.</li>
+          <li>Low reconstruction error does not mean a good <i>generator</i>: sampling a random code from a plain autoencoder usually gives junk.</li>
+          <li>MSE averages over plausible answers, so reconstructions look blurry. That blur is not a bug but the mean of the possibilities, and it motivates GANs and diffusion.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Stable Diffusion's VAE</b> compresses 512×512×3 images to 64×64×4 latents so the diffusion model can work 48× cheaper (lesson 8.3).</li>
+          <li>Anomaly detection in factories: train on good parts only; a defect reconstructs badly, so the error map highlights it.</li>
+          <li>Learned image compression and denoising; masked autoencoders (MAE) pretrain ViTs by reconstructing hidden patches.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why must the bottleneck be smaller than the input?</summary><div class="ans">Otherwise the network can learn the identity mapping and never has to find structure. A narrow code forces it to keep only what is needed to rebuild the image.</div></details>
+        <details class="check"><summary>2. For the 3×32×32 autoencoder above, what is the compression ratio and how many weights does the 2×2 up-conv 8→64 have?</summary><div class="ans">3,072/512 = 6:1. Weights 8·4·64 = 2,048, plus 64 biases = 2,112.</div></details>
+        <details class="check"><summary>3. Why does a VAE sample <span class="tex">z=\mu+\sigma\epsilon</span> rather than sampling z directly?</summary><div class="ans">Sampling directly is not differentiable. Moving the randomness into ε makes z a smooth function of μ and σ, so backpropagation can train the encoder.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Encoder squeezes, decoder expands; the bottleneck forces useful features.</li><li>Compression ratio = input values ÷ code values (6:1 and 24.5:1 above).</li><li>Denoising and variational versions turn it into the seed of modern generators.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.2 ===================== -->
+    <section class="lesson" id="gans" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.2</span><h2>GANs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We want a network that produces <i>new</i> realistic images, but nobody can write down a formula for "realistic". Averaging errors gives blur (lesson 8.1). How can we train a generator when the only judge of quality is another network?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A forger and a detective. The <b>generator</b> G turns random noise into fake paintings. The <b>discriminator</b> D looks at a painting and says "real" or "fake". The detective improves by catching forgeries; the forger improves by studying what gave the fake away. Neither is told what a good painting looks like; the realism emerges from their competition. If the forger gets so good that the detective can only guess (50 / 50), the game has reached its equilibrium.</p>
+
+        <h3 class="sec">Build it up: the blueprints</h3>
+        <p>The DCGAN (2015) made this work for images with a simple recipe: no pooling, batch norm, ReLU in G, LeakyReLU in D. The generator takes a <b>100-number noise vector</b>, projects it with one fully connected layer to 4×4×512 (that is 8,192 numbers), then repeatedly doubles the resolution while halving the channels: 4×4×512 → 8×8×256 → 16×16×128 → 32×32×64 → 64×64×3.</p>
+        <div data-lab="archviz" data-title="DCGAN generator (from the 4×4×512 projection)" data-height="300"><script type="text/plain">input 512 4 4
+up 256
+bn
+relu
+up 128
+bn
+relu
+up 64
+bn
+relu
+up 3</script></div>
+        <p>The projection from noise is a dense layer: 100·8,192 + 8,192 = <b>827,392</b> parameters. The explorer uses compact 2×2 up-convolutions (e.g. 512·4·256+256 = 524,544, plus 512 for batch norm = 525,056). The original DCGAN uses 4×4 kernels, so each up-conv has four times as many weights (512·16·256 = 2,097,152).</p>
+        <p>The discriminator is a mirror image: a strided CNN that shrinks the picture and ends in one number, the probability of "real".</p>
+        <div data-lab="archviz" data-title="DCGAN discriminator (64×64 RGB → one number)" data-height="300"><script type="text/plain">input 3 64 64
+conv 64 k4 s2 p1
+conv 128 k4 s2 p1
+bn
+conv 256 k4 s2 p1
+bn
+conv 512 k4 s2 p1
+bn
+flatten
+fc 1</script></div>
+        <table class="tbl"><tr><th>layer</th><th>output</th><th>params</th></tr>
+          <tr><td>conv 4×4 /2, 3→64</td><td>64×32×32</td><td>3·16·64+64 = 3,136</td></tr>
+          <tr><td>conv 4×4 /2, 64→128 + BN</td><td>128×16×16</td><td>64·16·128+256 = 131,328</td></tr>
+          <tr><td>conv 4×4 /2, 128→256 + BN</td><td>256×8×8</td><td>524,800</td></tr>
+          <tr><td>conv 4×4 /2, 256→512 + BN</td><td>512×4×4</td><td>2,098,176</td></tr>
+          <tr><td>flatten + fc → 1</td><td>1</td><td>8,192+1 = 8,193</td></tr></table>
+        <p>Discriminator total: <b>2,765,633</b> parameters.</p>
+
+        <h3 class="sec">The game and its loss</h3>
+        <p>D wants <span class="tex">D(x)\to1</span> on real images and <span class="tex">D(G(z))\to0</span> on fakes. G wants the opposite for its fakes. One equation expresses both:</p>
+        <div class="eq">\min_G\max_D\;V(D,G)=\mathbb E_{x\sim p_{data}}[\log D(x)]+\mathbb E_{z\sim p_z}[\log(1-D(G(z)))]</div>
+        <table class="sym">
+          <tr><td>x ~ p<sub>data</sub></td><td>a real training image</td></tr>
+          <tr><td>z ~ p<sub>z</sub></td><td>random noise (for example 100 numbers, each from a normal distribution)</td></tr>
+          <tr><td>D(·)</td><td>discriminator output, a probability between 0 and 1</td></tr>
+          <tr><td>G(z)</td><td>the generator's fake image</td></tr>
+          <tr><td>min<sub>G</sub> max<sub>D</sub></td><td>D tries to make V large, G tries to make it small</td></tr></table>
+        <div class="worked"><b>Worked example · numbers for the loss</b>
+          <p>Suppose D gives 0.9 on a real image and 0.1 on a fake. D's objective: ln 0.9 + ln(1−0.1) = −0.105 − 0.105 = <b>−0.211</b> (best possible is 0). At the perfect-forger equilibrium, D = 0.5 everywhere and V = 2·ln 0.5 = <b>−1.386</b>.</p>
+          <p><b>Why the original G loss fails early.</b> Early on, fakes are obvious: D(G(z)) = 0.01. Write D = σ(a) with logit a. The minimax generator loss is log(1−D); its gradient wrt the logit is −σ(a) = <b>−0.01</b>, tiny, so G barely learns exactly when it is worst (<i>saturation</i>). The <b>non-saturating</b> loss <span class="tex">-\log D(G(z))</span> has value 4.605 and gradient wrt the logit −(1−σ(a)) = <b>−0.99</b>, 99 times larger. At D = 0.5 both gradients have size 0.5. Same goal, same fixed point, healthy learning signal.</p>
+          <p><b>The ideal detective.</b> With <span class="tex">p_{data}(x)=0.6</span> and <span class="tex">p_g(x)=0.2</span> at some x, the best D is <span class="tex">D^*(x)=\dfrac{p_{data}}{p_{data}+p_g}=\dfrac{0.6}{0.8}=0.75</span>. Plugging D* back in shows G is minimising the Jensen-Shannon divergence between the real and fake distributions.</p></div>
+
+        <h3 class="sec">Training dynamics and mode collapse</h3>
+        <p>Training alternates: a few D steps (tilt the decision boundary), one G step (move fakes up the slope of D). It is a <b>moving target</b>: each side's best move changes as the other improves, so curves oscillate and the loss value does not tell you image quality. The classic failure is <b>mode collapse</b>: G finds one output (or a few) that fools the current D, and produces only that. D then learns to reject that mode, G hops to another, and the game chases itself without ever covering all the real modes. Remedies: Wasserstein loss with gradient penalty, spectral normalisation, minibatch statistics, and careful learning rates.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · the GAN game in one dimension</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play on the two-mode setting. The orange fakes start near 0. The blue curve is D's belief that a point is real; watch it tilt, then watch the fakes slide up the slope toward the green real density.</li>
+        <li>Switch the generator loss to <b>minimax (saturating)</b> and reset: the fakes move less eagerly at the start when D is confident (see the arrow lengths).</li>
+        <li>Tick <b>mode collapse</b>: the generator can only shift all fakes together, so it parks on one hump. Notice D(x) then dips on that hump and the fakes jump across: whack-a-mole.</li></ol></div>
+      <div data-lab="ganGame"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>The loss is not a quality score. Both losses can look flat while images improve, or look fine while G has collapsed. Look at samples.</li>
+          <li>If D wins too completely, G's gradient vanishes; if G wins, D stops giving information. Balance matters.</li>
+          <li>GANs only judge realism of samples; they give no density, so you cannot easily say "how likely is this image".</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>StyleGAN</b>: photorealistic faces; its generator uses a style code at every resolution. <b>BigGAN</b>: class-conditional ImageNet.</li>
+          <li>The <b>discriminator idea lives on</b> inside pix2pix, CycleGAN, super-resolution (lesson 8.4) and as an adversarial loss in the Stable Diffusion VAE.</li>
+          <li>Deepfakes, data augmentation, face editing, texture synthesis.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A real image gets D = 0.8 and a fake gets D = 0.3. What is D's objective ln D(x) + ln(1−D(G(z)))?</summary><div class="ans">ln 0.8 + ln 0.7 = −0.223 − 0.357 = −0.580.</div></details>
+        <details class="check"><summary>2. If D(G(z)) = 0.02, compare the logit gradients of the saturating and non-saturating G losses.</summary><div class="ans">Saturating: magnitude σ(a) = 0.02. Non-saturating: 1 − σ(a) = 0.98, which is 49 times larger.</div></details>
+        <details class="check"><summary>3. What does mode collapse look like in the generated samples?</summary><div class="ans">Little diversity: many different noise vectors give almost the same image (or a handful of them), even though the real data has many varieties.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>G maps noise to images (100 → 4×4×512 → … → 64×64×3), D maps images to one probability.</li><li>Minimax loss; the non-saturating trick gives G a strong gradient early.</li><li>Training is a moving target; mode collapse is the characteristic failure.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.3 ===================== -->
+    <section class="lesson" id="diffusion-images" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.3</span><h2>Diffusion for images</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>GANs are hard to train and can collapse. Destroying an image is easy: keep adding noise and it becomes static. Could we train a network to <i>undo one small step</i> of destruction, and then generate by starting from pure static and undoing step after step?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a sculptor with a block of marble who does not know the statue in advance but, at every moment, can tell which flecks of stone are "not part of the statue". Chip away a little and repeat. A diffusion model starts from noise and, in about 20 to 50 steps, repeatedly asks: "what part of this picture is noise?" and removes a bit of it. Early steps decide the big layout (a dark blob here, a bright blob there); late steps add fine detail.</p>
+        <p>Training is surprisingly simple. Take a real image, add a random amount of noise, and ask the network to <b>predict the noise that was added</b>. That is a plain regression problem with a clear target, with none of the game of lesson 8.2.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Forward process</b> (no learning). With a schedule of numbers <span class="tex">\bar\alpha_t</span> falling from nearly 1 to nearly 0, mix the image with noise:</p>
+        <div class="eq">x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon,\qquad \epsilon\sim\mathcal N(0,I)</div>
+        <div class="worked"><b>Worked example · one pixel</b>
+          <p>At step t, <span class="tex">\bar\alpha_t=0.64</span>, so <span class="tex">\sqrt{\bar\alpha_t}=0.8</span> and <span class="tex">\sqrt{1-\bar\alpha_t}=0.6</span>. A pixel with <span class="tex">x_0=1.0</span> gets noise <span class="tex">\epsilon=0.5</span>: <span class="tex">x_t=0.8\cdot1.0+0.6\cdot0.5=1.1</span>. The network sees 1.1 and must output the noise, 0.5. If it does, we recover the clean pixel: <span class="tex">\hat x_0=(x_t-\sqrt{1-\bar\alpha_t}\,\hat\epsilon)/\sqrt{\bar\alpha_t}=(1.1-0.3)/0.8=1.0</span>. The weights 0.8 and 0.6 satisfy 0.8²+0.6² = 1, so the signal-plus-noise keeps a steady overall scale.</p></div>
+        <p><b>Reverse process</b> (the learned part). A network <span class="tex">\epsilon_\theta(x_t,t)</span> predicts the noise. Training loss: <span class="tex">\mathbb E\,\lVert\epsilon-\epsilon_\theta(x_t,t)\rVert^2</span>. Sampling (DDIM style, deterministic): estimate the clean image, then re-noise it to the previous, slightly cleaner level:</p>
+        <div class="eq">\hat x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\hat\epsilon}{\sqrt{\bar\alpha_t}},\qquad x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,\hat x_0+\sqrt{1-\bar\alpha_{t-1}}\,\hat\epsilon</div>
+        <p>Derivations and why predicting noise is the same as following the gradient of the log-density: <a href="math-advanced.html#diffusion">the diffusion maths lesson</a>.</p>
+
+        <h3 class="sec">The denoiser blueprint: a U-Net</h3>
+        <p>The noise predictor must output an image-shaped tensor from an image-shaped input, with fine detail preserved, so it is a <b>U-Net</b>: an encoder that halves resolution while raising channels, a bottleneck, a decoder that doubles resolution, and <b>skip connections</b> that concatenate encoder features into the decoder. Here is a small one working on a 64×64×4 latent:</p>
+        <div data-lab="archviz" data-title="Small U-Net denoiser (64×64×4 latent)" data-height="320"><script type="text/plain">input 4 64 64
+conv 64 k3
+relu
+conv 64 k3 @e1
+relu
+maxpool k2
+conv 128 k3
+relu
+conv 128 k3 @e2
+relu
+maxpool k2
+conv 256 k3
+relu
+conv 256 k3
+relu
+up 128
+concat @e2
+conv 128 k3
+relu
+up 64
+concat @e1
+conv 64 k3
+relu
+conv 4 k1</script></div>
+        <p>This toy has <b>1,679,108</b> parameters and 1.29 GMACs. Notice the concat blocks: after <i>up 128</i> (128 channels) concatenating @e2 (128 channels) gives 256, and the next 3×3 conv, 256→128, has 256·9·128+128 = <b>295,040</b> weights. Two additions turn it into the real thing:</p>
+        <ul>
+          <li><b>Time embedding.</b> The network must know <i>how noisy</i> the input is. The step t becomes a vector (sinusoidal features then a small MLP) that is injected into every residual block, usually as a per-channel scale and shift.</li>
+          <li><b>Cross-attention to text.</b> A text encoder (CLIP in Stable Diffusion v1) turns the prompt into 77 tokens × 768 numbers. In attention layers the image positions are the <i>queries</i> and the text tokens are the <i>keys and values</i>, so each location can ask "which words matter for me".</li></ul>
+
+        <h3 class="sec">Latent diffusion (Stable Diffusion)</h3>
+        <p>Denoising 512×512×3 directly is expensive (786,432 values, and attention over 262,144 positions). Latent diffusion first compresses with a pretrained VAE (lesson 8.1) and diffuses in the small space:</p>
+        <table class="tbl"><tr><th>stage</th><th>shape</th><th>role</th></tr>
+          <tr><td>text prompt → CLIP text encoder</td><td>77×768</td><td>conditioning tokens (≈123 M parameters)</td></tr>
+          <tr><td>VAE encoder (training only)</td><td>512×512×3 → <b>64×64×4</b></td><td>8× smaller each side: 786,432 → 16,384 values, <b>48× fewer</b></td></tr>
+          <tr><td>start sampling: pure noise</td><td>64×64×4</td><td>x<sub>T</sub></td></tr>
+          <tr><td>U-Net denoiser ×(20–50 steps)</td><td>64×64×4 → 64×64×4</td><td>time embedding + cross-attention to text (≈860 M parameters)</td></tr>
+          <tr><td>VAE decoder</td><td>64×64×4 → 512×512×3</td><td>latent to pixels (≈84 M for the whole VAE)</td></tr></table>
+        <p>Attention in the U-Net at 64×64 has 4,096 positions, so a score matrix of 4,096² ≈ 16.8 M entries, instead of 262,144² ≈ 6.9·10¹⁰ in pixel space.</p>
+
+        <h3 class="sec">Classifier-free guidance</h3>
+        <p>We want the image to obey the prompt. During training the prompt is dropped (replaced by an empty prompt) about 10 % of the time, so one network learns both an <b>unconditional</b> noise prediction <span class="tex">\epsilon_u</span> and a <b>conditional</b> one <span class="tex">\epsilon_c</span>. At sampling time we run both and <i>extrapolate</i> away from the unconditional one, in the direction the prompt adds:</p>
+        <div class="eq">\hat\epsilon=\epsilon_u+w\,(\epsilon_c-\epsilon_u)</div>
+        <table class="sym">
+          <tr><td>ε<sub>u</sub></td><td>noise prediction without the prompt</td></tr>
+          <tr><td>ε<sub>c</sub></td><td>noise prediction with the prompt</td></tr>
+          <tr><td>w</td><td>guidance scale; w = 0 ignores the prompt, w = 1 is plain conditional, 5 to 8 is typical</td></tr></table>
+        <div class="worked"><b>Worked example · by hand</b>
+          <p>For one pixel <span class="tex">\epsilon_u=0.20</span> and <span class="tex">\epsilon_c=0.50</span>. The prompt's push is 0.50 − 0.20 = 0.30. With <span class="tex">w=7.5</span>: <span class="tex">\hat\epsilon=0.20+7.5\cdot0.30=2.45</span>. With w = 1 you get 0.50; with w = 0 you get 0.20. Using <span class="tex">\bar\alpha=0.64,\ x_t=1.1</span> from before, <span class="tex">\hat x_0=(1.1-0.6\cdot2.45)/0.8=-0.4625</span>: strong guidance pushes the image prediction far from what plain conditioning would say (<span class="tex">(1.1-0.3)/0.8=1.0</span>). That is why high guidance gives vivid, prompt-obeying but less diverse, over-saturated images. The cost: two network evaluations per step.</p></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · noise in, picture out</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In <b>Forward</b> mode watch a clean picture dissolve into static as t grows. Read the numbers: at the end almost none of x<sub>0</sub> is left.</li>
+        <li>Switch to <b>Reverse</b>. Each step shows four moments: predict noise without the prompt (ε<sub>u</sub>), predict it with the prompt (ε<sub>c</sub>), combine them with the guidance scale, then step to a cleaner image. Orange/blue tiles are positive/negative noise.</li>
+        <li>Set the guidance to 0 and run several times with "new noise": the image becomes any of the four shapes. Set it to 5: it always draws the prompted shape. Reduce the steps to 5 and see how rough the result gets.</li></ol></div>
+      <div data-lab="diffLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>The network predicts <i>noise</i> (or equivalently the clean image or a velocity), not the image directly in one shot; one-shot prediction would be a blurry average.</li>
+          <li>High guidance is not "better": it reduces diversity and can burn colours.</li>
+          <li>Latent diffusion's "512×512" quality is capped by the VAE: tiny text and fine faces can be lost in the 64×64×4 code.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Stable Diffusion, DALL·E 2/3, Imagen, Midjourney: text to image. Inpainting and ControlNet: the same U-Net with extra conditions.</li>
+          <li>Faster samplers (DDIM, DPM-solver) and distillation reduce 50 steps to 1–4. Video generators run the same idea over time (lesson 8.6).</li>
+          <li>Diffusion transformers (DiT) replace the U-Net by a transformer on latent patches (Module 5 ideas).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With ᾱ = 0.36, x₀ = 1, ε = −0.5, compute x_t.</summary><div class="ans">√0.36 = 0.6, √0.64 = 0.8. x_t = 0.6·1 + 0.8·(−0.5) = 0.2.</div></details>
+        <details class="check"><summary>2. ε_u = 0.1, ε_c = 0.4, w = 3. What is the guided noise?</summary><div class="ans">0.1 + 3·0.3 = 1.0.</div></details>
+        <details class="check"><summary>3. How many times fewer values does the 64×64×4 latent have than a 512×512×3 image?</summary><div class="ans">786,432 / 16,384 = 48.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Forward noising is a fixed formula; the network learns to predict the noise.</li><li>The denoiser is a U-Net with a time embedding and cross-attention to text; latent diffusion runs it on a 64×64×4 code between a VAE encoder and decoder.</li><li>Guidance ε = ε<sub>u</sub> + w(ε<sub>c</sub> − ε<sub>u</sub>) trades diversity for prompt obedience.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.4 ===================== -->
+    <section class="lesson" id="image-translation-sr" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.4</span><h2>Image-to-image &amp; super-resolution</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have a blurry 64×64 photo, or a sketch, or a summer scene that should be winter. The output is itself an image, tied pixel by pixel to the input. Which networks and losses do this, and why does the "most accurate" answer often look worse than a sharper one?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Image-to-image translation</b> means learning a mapping from one picture type to another: edges → photo, day → night, segmentation map → street scene, noisy → clean. The network sees the input in full, so the structure comes from the input; the network only has to invent <i>appearance</i>.</p>
+        <p><b>Super-resolution (SR)</b> is the special case "small → big". Making a 4× larger image from 1 pixel per 16 means inventing 15 of every 16 pixels. Many sharp images shrink to the same blurry one, so the task is ambiguous: a model trained to minimise average error returns the <i>average</i> of all plausible sharp images, which is blurry. Sharp results need a loss that rewards <i>realism</i>, not only closeness.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>pix2pix (paired data).</b> A U-Net generator (skips carry the input's edges straight to the output) plus a <b>PatchGAN</b> discriminator that classifies each 70×70 patch of the pair (input, output) as real or fake. The loss combines adversarial and pixel terms:</p>
+        <div class="eq">\mathcal L=\mathcal L_{cGAN}(G,D)+\lambda\,\mathbb E\,\lVert y-G(x)\rVert_1,\qquad\lambda=100</div>
+        <p>The L1 term keeps the output close to the target (structure, colours), the GAN term supplies sharp texture.</p>
+        <p><b>CycleGAN (unpaired data).</b> There are no matched pairs of horse and zebra photos. Train two generators, <span class="tex">G:X\to Y</span> and <span class="tex">F:Y\to X</span>, with a discriminator for each domain, and add a <b>cycle-consistency</b> loss: translating there and back must return the start, <span class="tex">\lVert F(G(x))-x\rVert_1</span>. Without it G could output any plausible zebra that ignores the horse.</p>
+        <p><b>SR networks.</b> SRCNN (2014) was three convolutions: 9×9, 64 filters; 1×1, 32; 5×5, 1, working on a bicubic-upsampled image. Weights: 9·9·1·64 = 5,184; 1·1·64·32 = 2,048; 5·5·32·1 = 800; total <b>8,032</b> (8,129 with biases). Later nets (EDSR, ESRGAN) work at low resolution and upscale at the end with <b>sub-pixel convolution</b> (pixel shuffle): a conv outputs <span class="tex">C\,r^2</span> channels and these are rearranged into an <span class="tex">r</span> times bigger image. For 4× colour SR the last conv outputs 3·16 = 48 channels at H×W which become 3 channels at 4H×4W.</p>
+        <div class="worked"><b>Worked example · PSNR and what it misses</b>
+          <p>Peak signal-to-noise ratio for 8-bit images: <span class="tex">\text{PSNR}=10\log_{10}(255^2/\text{MSE})</span>. With MSE = 100: 10·log₁₀(650.25) = <b>28.13 dB</b>. Halving the MSE adds only 3 dB. A blurry average and a sharp-but-slightly-shifted result can have the same PSNR, but people prefer the sharp one.</p>
+          <p><b>Perceptual loss.</b> Instead of comparing pixels, compare <i>features</i> of a pretrained network (for example VGG at some layer): <span class="tex">\lVert\phi(y)-\phi(\hat y)\rVert^2</span>. Two images with the same edges and textures give similar features even if pixels differ slightly. SR GANs use perceptual + adversarial + small pixel loss.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L_{SR}=\lambda_{pix}\lVert y-\hat y\rVert_1+\lambda_{perc}\lVert\phi(y)-\phi(\hat y)\rVert_2^2+\lambda_{adv}\,(-\log D(\hat y))</div>
+        <table class="sym">
+          <tr><td>y, ŷ</td><td>true high-resolution image and the network's output</td></tr>
+          <tr><td>φ</td><td>frozen feature extractor, for example some layers of VGG-19</td></tr>
+          <tr><td>D</td><td>discriminator that judges realism of ŷ</td></tr>
+          <tr><td>λ<sub>pix</sub>, λ<sub>perc</sub>, λ<sub>adv</sub></td><td>weights of the three terms</td></tr></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · low-res to learned sharpening</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. A 5×5 filter is <i>trained</i> (real gradient descent on this one image) to map the smooth bilinear upsample toward the true high-resolution picture. Watch the filter weights develop a centre-positive, ring-negative "sharpening" pattern and the PSNR rise.</li>
+        <li>Increase the scale factor to 5: much more must be invented and the learned result gains less, because information is gone.</li>
+        <li>Tick <b>show error</b> to see where each method fails (edges). Compare nearest, bilinear and learned on the digit and on the house.</li></ol></div>
+      <div data-lab="srLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Higher PSNR is not "looks better". Models optimised for PSNR look soft; GAN-based models look sharp but may invent details (a wrong letter, a different face). Never use SR output as evidence.</li>
+          <li>Training on bicubic-downsampled pairs and testing on real blurry photos fails: the degradation differs. Real-ESRGAN synthesises complex degradations for this reason.</li>
+          <li>Cycle consistency does not guarantee a <i>meaningful</i> translation, only a reversible one.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Phone cameras (night mode, zoom), medical and satellite enhancement, old-film restoration, video upscaling (DLSS-style game upscalers).</li>
+          <li>pix2pix and its descendants: sketch-to-photo, map-to-aerial, colourisation. ControlNet gives diffusion models the same input-conditioned control.</li>
+          <li>Diffusion SR (for example SR3) now often replaces GAN SR.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why does an L2/L1-only SR network produce blurry output?</summary><div class="ans">Many different sharp images downscale to the same input. The error-minimising answer is the average of those possibilities, which has no sharp edges.</div></details>
+        <details class="check"><summary>2. How many output channels must the last conv have for 3× colour super-resolution with pixel shuffle?</summary><div class="ans">3·3² = 27.</div></details>
+        <details class="check"><summary>3. MSE = 25 on 8-bit images: PSNR?</summary><div class="ans">10·log₁₀(65025/25) = 10·log₁₀(2601) = 34.15 dB.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>pix2pix = U-Net + PatchGAN + λ·L1; CycleGAN adds cycle consistency for unpaired data.</li><li>SR: SRCNN (8,032 weights) to sub-pixel convolution networks to GAN and diffusion SR.</li><li>Perceptual and adversarial losses give sharpness that pixel losses cannot.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.5 ===================== -->
+    <section class="lesson" id="nerf-3d" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.5</span><h2>3-D from images</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You walk around a statue taking 50 photos. Can a program build a 3-D model so that it renders the statue correctly from a viewpoint you never photographed, including shiny highlights that move as you move?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>Neural Radiance Field (NeRF)</b> stores the scene as a function, not a mesh: give it any 3-D point and a viewing direction, and it answers "how dense is the matter here, and what colour does it emit toward that direction?" To make a photo, shoot a <b>ray</b> through each pixel, ask the function at points along the ray, and blend the answers like looking through layers of fog and coloured glass: nearby opaque stuff hides what is behind it.</p>
+
+        <h3 class="sec">Build it up: volume rendering on four samples</h3>
+        <p>Pick N points along the ray, spaced δ apart. At sample i the network gives a density <span class="tex">\sigma_i\ge0</span> and colour <span class="tex">c_i</span>.</p>
+        <ul>
+          <li><b>Opacity of the segment</b>: <span class="tex">\alpha_i=1-e^{-\sigma_i\delta}</span> (how much light this slab blocks).</li>
+          <li><b>Transmittance</b>: <span class="tex">T_i=\prod_{j<i}(1-\alpha_j)</span> (how much light survives to reach sample i).</li>
+          <li><b>Weight</b>: <span class="tex">w_i=T_i\alpha_i</span>; pixel colour <span class="tex">C=\sum_i w_ic_i</span> (plus <span class="tex">T_{N+1}</span> times the background colour).</li></ul>
+        <div class="worked"><b>Worked example · four samples</b>
+          <p>δ = 0.5, densities σ = (0.5, 2, 4, 0.1), grey colours c = (0.9, 0.2, 0.6, 0.1).</p>
+          <table class="tbl"><tr><th>i</th><th>σδ</th><th>α = 1−e<sup>−σδ</sup></th><th>T</th><th>w = Tα</th><th>w·c</th></tr>
+            <tr><td>1</td><td>0.25</td><td>0.2212</td><td>1.0000</td><td>0.2212</td><td>0.1991</td></tr>
+            <tr><td>2</td><td>1.00</td><td>0.6321</td><td>0.7788</td><td>0.4923</td><td>0.0985</td></tr>
+            <tr><td>3</td><td>2.00</td><td>0.8647</td><td>0.2865</td><td>0.2477</td><td>0.1486</td></tr>
+            <tr><td>4</td><td>0.05</td><td>0.0488</td><td>0.0388</td><td>0.0019</td><td>0.0002</td></tr></table>
+          <p>Pixel colour <b>C = 0.1991+0.0985+0.1486+0.0002 = 0.446</b>. Sample 2 dominates despite lower colour brightness because it is both dense and unobstructed. Transmittance left after the ray: 0.0388·(1−0.0488) = 0.037, so with a mid-grey background (0.5) add 0.037·0.5 = 0.018 and the final value is 0.465. Notice sample 4 has almost no say: the ray was already blocked. That is occlusion emerging from one formula.</p></div>
+        <p><b>Blueprint of the NeRF network.</b> A plain MLP (no convolutions!). Positions go through <b>positional encoding</b> (sin and cos at 10 frequencies per coordinate, so 3·2·10 + 3 = 63 inputs; directions use 4 frequencies, 27 inputs) because MLPs on raw coordinates produce blurry results. Eight layers of 256 units (a skip re-injects the 63 input numbers at layer 5) output density σ and a 256-feature vector; the feature plus the encoded direction goes through one 128-unit layer to RGB. Weights: 63·256+256 = 16,384; three 256→256 layers 3·65,792 = 197,376; layer 5 (319→256) 81,920; three more 197,376; density head 257; feature layer 65,792; view layer (283→128) 36,352; RGB head 387. Total <b>≈ 595,844 parameters</b>, small compared to a ResNet-50, but one image needs 640,000 rays × (64+128 samples) ≈ 123 million network evaluations at 800×800. Training: render the pixel, compare with the photo's pixel (MSE), backpropagate through the sum above into the MLP; the camera poses come from structure-from-motion (Module 2).</p>
+        <p>The cost of NeRF motivated <b>3-D Gaussian splatting</b>: represent the scene as millions of explicit 3-D Gaussian blobs, each with position (3), scale (3), rotation quaternion (4), opacity (1) and colour as spherical harmonics (48): 59 numbers each. Rendering projects ("splats") the blobs onto the image and alpha-blends them front to back, which is the same transmittance sum but without a network call per sample, so it runs in real time (100+ frames per second) and trains in minutes.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · marching along a ray</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and follow the white sample marching along the ray. Read the table: α, T, w and the running colour change per step.</li>
+        <li>Raise the first blob's density to the maximum: it becomes opaque and the objects behind it vanish from the result (transmittance collapses).</li>
+        <li>Increase the number of samples from 4 to 24: the sum gets smoother and closer to the true integral. Try 4 samples and a thin blob: a sample may miss it entirely.</li></ol></div>
+      <div data-lab="nerfLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>NeRF needs <b>known camera poses</b>; garbage poses give blurry scenes. It is per-scene: each scene trains its own network (minutes to hours).</li>
+          <li>Too few samples along a ray cause thin objects to flicker or vanish; NeRF uses a coarse pass to choose where to place fine samples.</li>
+          <li>It reconstructs only what the photos saw; unseen regions are hallucinated by smoothness, not knowledge.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>3-D capture for VR/AR, film and real estate; Google Maps immersive views; digital twins; robot mapping.</li>
+          <li>Faster variants (Instant-NGP hash grids, Gaussian splatting); text-to-3-D (DreamFusion) uses a diffusion model to supervise a NeRF.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A segment has σ = 3 and δ = 0.2. What is α?</summary><div class="ans">1 − e^(−0.6) = 1 − 0.5488 = 0.4512.</div></details>
+        <details class="check"><summary>2. If α₁ = 0.5 and α₂ = 0.5, what are T₃ and w₂?</summary><div class="ans">T₂ = 0.5, T₃ = 0.5·0.5 = 0.25; w₂ = T₂α₂ = 0.25.</div></details>
+        <details class="check"><summary>3. Why positional encoding?</summary><div class="ans">An MLP is biased towards smooth functions of its input; sines and cosines of many frequencies let it represent sharp detail.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>C = Σ T<sub>i</sub> α<sub>i</sub> c<sub>i</sub> with T<sub>i</sub> = Π(1−α<sub>j</sub>): occlusion falls out of the formula.</li><li>NeRF is a ≈0.6 M-parameter MLP queried on ~10⁸ points per image.</li><li>Gaussian splatting keeps the same blend but with explicit blobs, for real-time speed.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.6 ===================== -->
+    <section class="lesson" id="video-models" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.6</span><h2>Video models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>One frame of a person with a raised arm could be waving, stretching or hailing a taxi. What tells them apart is <i>how the pixels change over time</i>. How do we give a network the time axis without making it a thousand times more expensive?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A video is a stack of images: a tensor of shape <b>T × H × W × 3</b>. A 2-D kernel slides over height and width. A <b>3-D kernel</b> also slides over <b>time</b>: a 3×3×3 cube looks at a 3×3 patch in three consecutive frames, so it can respond to <i>change</i>, such as an edge moving right. Alternatives avoid the cost of the cube: compute motion explicitly (optical flow) and feed it to a second network, or let a transformer's attention connect patches across frames.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Clips and frame sampling.</b> You cannot feed a whole movie. Sample a <b>clip</b>: for example 32 frames spaced 2 apart from a 30 fps video covers 64 frames ≈ 2.1 s. At test time average predictions over several clips. Sparse sampling (a few frames spread over the video) captures the whole action cheaply.</p>
+        <p><b>3-D convolutions (C3D, I3D).</b> A 3-D conv with kernel <span class="tex">k_t\times k\times k</span> has <span class="tex">C_{in}\,k_t\,k^2\,C_{out}</span> weights.</p>
+        <div class="worked"><b>Worked example · cost of the time axis</b>
+          <p>2-D conv 3×3, 64→64: 64·9·64 = <b>36,864</b> weights. The 3-D version 3×3×3: 64·27·64 = <b>110,592</b>, three times as many, and it is applied at every position of every frame as well. I3D "inflates" an ImageNet 2-D kernel by repeating it along time and dividing by 3, so pretrained knowledge is reused.</p>
+          <p><b>Two-stream</b> (Simonyan &amp; Zisserman): one CNN on a single RGB frame (appearance) and one on a stack of 10 optical-flow fields (2 channels each, so 20 input channels; motion). The first layer of a ResNet-style 7×7 conv with 64 filters has 3·49·64 = 9,408 weights on RGB but 20·49·64 = <b>62,720</b> on the flow stack. Predictions are fused at the end.</p>
+          <p><b>Video transformers.</b> Cut a clip of 8 frames at 224×224 into 16×16 patches: 14×14 = 196 tokens per frame, <b>8·196 = 1,568 tokens</b>. Joint space-time attention compares every token with every other: 1,568² = 2,458,624 pairs per head. TimeSformer's <b>divided attention</b> does spatial attention within each frame (8·196² = 307,328 pairs) and temporal attention across the 8 frames at each location (196·8² = 12,544 pairs): 319,872, about 7.7 times fewer. ViViT's "tubelet" embedding cuts 2×16×16 blocks, so 16 frames also give 8·196 = 1,568 tokens.</p></div>
+        <p>SlowFast uses two pathways on the same clip: a slow one (few frames, many channels, appearance) and a fast one (many frames, few channels, motion), joined by lateral connections.</p>
+        <p><b>Optical flow</b> is a motion vector for each pixel between two frames. The classic estimate, block matching, searches a small neighbourhood for the shift that best aligns a patch: the lab shows it.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · a 3-D kernel in space and time</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the blue cube (3×3 in each of 3 frames) scan every position, slice by slice, in the stack. The output panel fills in one time slice at a time.</li>
+        <li>Choose <b>static blur</b>: output ignores time (a 2-D conv in disguise). Choose <b>moving right</b>: only the bright square lights up and the stationary dot does not, because the kernel's weights lie along a space-time diagonal.</li>
+        <li>Edit the 27 weights to build a "moving left" detector (mirror the diagonal). Notice the arrows: block-matching flow found on the right.</li></ol></div>
+      <div data-lab="videoLab"></div>
+      <div data-lab="calc" data-title="Parameters: 2-D vs 3-D convolution" data-params="cin=64:1..256:1; cout=64:1..256:1; k=3:1..7:2; kt=3:1..7:2" data-rows="2-D weights = cin*k*k*cout; 3-D weights = cin*kt*k*k*cout; ratio = kt"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Video datasets are scene-biased: a model may recognise "swimming" from the blue water, not the motion. Test with frames shuffled; a model that does not care about order is not using time.</li>
+          <li>Memory scales with frames: batch size shrinks drastically, so clip length and resolution are always a trade-off.</li>
+          <li>Frame sampling that misses the key moment (a short event) gives wrong labels.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Action recognition on Kinetics (SlowFast, TimeSformer, VideoMAE), sports analytics, sign language, gesture control, surveillance triage.</li>
+          <li>Video generation (Sora-like models) use spacetime patches, the same tokens as above, with diffusion (lesson 8.3).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many weights does a 3×3×3 conv, 32→32, have (no bias)?</summary><div class="ans">32·27·32 = 27,648.</div></details>
+        <details class="check"><summary>2. 16 frames, 224×224, patches 16×16, tubelets spanning 2 frames: how many tokens?</summary><div class="ans">(16/2)·14·14 = 8·196 = 1,568.</div></details>
+        <details class="check"><summary>3. Why does divided attention save compute?</summary><div class="ans">It replaces one (T·N)² comparison by T·N² (space) plus N·T² (time), which is far smaller when T and N are large.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>3-D kernels add a time axis at k<sub>t</sub> times the weights; two-stream adds explicit motion; transformers tokenise space-time.</li><li>Token count and attention pairs decide the cost; divided attention cuts it about 8 times here.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.7 ===================== -->
+    <section class="lesson" id="tracking" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.7</span><h2>Tracking</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A detector says "car at (310, 120)" in frame 7 and "car at (322, 118)" and "car at (88, 200)" in frame 8. Which detection is the same car as before? What if the detector misses the car for one frame, or jitters by a few pixels, or two cars cross?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Tracking-by-detection</b> splits the problem in two. A detector finds objects in every frame independently (Module 6). A tracker links detections over time and gives each object a persistent ID. Linking uses two ideas: <b>predict</b> where each known object should be now (a motion model), then <b>associate</b> the predictions to the new detections by overlap. A Kalman filter provides the prediction and also keeps a calibrated sense of its own uncertainty.</p>
+
+        <h3 class="sec">Build it up: the Kalman filter in one dimension</h3>
+        <p>State = (position p, velocity v). Each frame we <b>predict</b> with constant velocity, which grows our doubt, then <b>update</b> with a noisy measurement, which shrinks it. The balance is set by the <b>Kalman gain</b> K: trust the measurement if the prediction is uncertain, trust the prediction if the measurement is noisy.</p>
+        <div class="eq">\text{predict: }\ x^-=Fx,\ P^-=FPF^\top+Q\qquad\text{update: }\ K=P^-H^\top(HP^-H^\top+R)^{-1},\ x=x^-+K(z-Hx^-),\ P=(I-KH)P^-</div>
+        <table class="sym">
+          <tr><td>x = (p, v)</td><td>state estimate: position and velocity</td></tr>
+          <tr><td>F</td><td>motion model; for dt = 1: p ← p + v, v ← v</td></tr>
+          <tr><td>P</td><td>covariance: how unsure we are (diagonal = variances, off-diagonal = position and velocity uncertainty move together)</td></tr>
+          <tr><td>Q</td><td>process noise: the world is not exactly constant velocity</td></tr>
+          <tr><td>H = [1 0]</td><td>we measure only position</td></tr>
+          <tr><td>R</td><td>measurement noise variance</td></tr>
+          <tr><td>z</td><td>the measurement (a detection)</td></tr>
+          <tr><td>K</td><td>Kalman gain: how much of the surprise z − Hx⁻ to believe</td></tr></table>
+        <div class="worked"><b>Worked example · one cycle</b>
+          <p>Previous estimate: p = 10, v = 2, P = diag(1, 1). Q = diag(0.1, 0.1), R = 1, dt = 1.</p>
+          <p><b>Predict.</b> p⁻ = 10 + 2 = 12, v⁻ = 2. <span class="tex">FPF^\top=\begin{pmatrix}2&1\\1&1\end{pmatrix}</span> (position variance 1 + velocity variance 1), so <span class="tex">P^-=\begin{pmatrix}2.1&1\\1&1.1\end{pmatrix}</span>: uncertain position grew from 1 to 2.1.</p>
+          <p><b>Update.</b> Detection z = 13.5. Surprise y = 13.5 − 12 = 1.5. S = 2.1 + 1 = 3.1. Gain K = (2.1/3.1, 1/3.1) = (0.677, 0.323). p = 12 + 0.677·1.5 = <b>13.016</b>; v = 2 + 0.323·1.5 = <b>2.484</b> (the filter learned the object is a bit faster, from position evidence alone). New variances: P₁₁ = (1−0.677)·2.1 = 0.677, P₁₂ = 0.323, P₂₂ = 1.1 − 0.323·1 = 0.777. The position doubt shrank from 2.1 to 0.68, which is less than both the prediction (2.1) and the measurement (1.0).</p></div>
+        <p><b>Data association.</b> Boxes of predicted tracks vs boxes of detections. Overlap measure <b>IoU</b> = area of intersection ÷ area of union. For A = [0,0,10,10] and B = [5,0,15,10]: intersection 5·10 = 50, union 100+100−50 = 150, IoU = <b>0.333</b>. Cost = 1 − IoU. We need the <i>one-to-one</i> assignment with smallest total cost, solved by the <b>Hungarian algorithm</b>.</p>
+        <div class="worked"><b>Worked example · why not greedy</b>
+          <p>IoU matrix, tracks T1, T2 against detections D1, D2: T1: (0.6, 0.3); T2: (0.5, 0.1). Greedy takes the biggest first: T1-D1 (0.6), then T2 is left with D2 (0.1): total 0.7. The Hungarian optimum is T1-D2 + T2-D1 = 0.3 + 0.5 = <b>0.8</b>. Greedy gave T2 a nearly non-overlapping box, a likely ID swap. Pairs below an IoU threshold (SORT: 0.3) are rejected: the detection starts a new track and the track is marked missed.</p></div>
+        <p><b>SORT</b> (2016) = Kalman filter on box state (centre, area, aspect ratio and their velocities) + IoU + Hungarian, running at hundreds of frames per second; tracks are born tentative, confirmed after a few hits, and deleted after some missed frames. <b>DeepSORT</b> adds an appearance embedding (a 128-number re-identification vector from a small CNN) and uses cosine distance and a Mahalanobis gate (a 95 % chi-squared gate of 9.49 for 4 degrees of freedom), so identities survive occlusions. ByteTrack also uses low-confidence detections for a second matching round.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab · a Kalman tracker watching moving boxes</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and follow the four-beat cycle: dashed ellipse grows (predict), grey detections appear (noisy measurements), coloured lines link track to detection (associate), solid ellipse shrinks (update).</li>
+        <li>Increase measurement noise: the ellipse stays larger and the filter trusts its prediction more. Raise process noise: it trusts new detections more.</li>
+        <li>Choose the <b>two objects crossing</b> scenario with high noise, with and without Hungarian matching, and count ID switches. Raise miss probability to see tracks coast on the prediction.</li></ol></div>
+      <div data-lab="trackLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Constant-velocity prediction fails for sudden turns; a high Q fixes this at the cost of noisier tracks.</li>
+          <li>A camera moving fast breaks IoU association; compensate camera motion first.</li>
+          <li>IDs, not boxes, are the product: report ID switches and fragmentation (MOTA, IDF1, HOTA), not only detection accuracy.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Traffic counting, sports analytics (player and ball tracking), retail footfall, drones, self-driving perception (a tracker feeds prediction and planning).</li>
+          <li>Modern research: transformer trackers (MOTR, TrackFormer) learn association end to end, but SORT-style baselines remain in most production systems.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Boxes [0,0,4,4] and [2,2,6,6]: IoU?</summary><div class="ans">Intersection 2·2 = 4; union 16+16−4 = 28; IoU = 1/7 = 0.143.</div></details>
+        <details class="check"><summary>2. If measurement noise R becomes huge, what happens to K and to the estimate?</summary><div class="ans">K → 0: the filter nearly ignores detections and follows its own prediction.</div></details>
+        <details class="check"><summary>3. Why does the Kalman estimate of position variance after the update fall below both P⁻ and R?</summary><div class="ans">Two independent pieces of evidence combine; their combined information is the sum, so uncertainty drops (in 1-D: 1/(1/2.1+1/1) = 0.68).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Predict (uncertainty grows), then update (uncertainty shrinks); K balances prediction and measurement.</li><li>IoU cost plus Hungarian gives the optimal one-to-one matching; greedy can be worse.</li><li>SORT is the lightweight baseline; DeepSORT adds appearance to survive occlusion.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Module complete.</b> You can now draw the blueprints of autoencoders, GANs, latent diffusion, NeRF and video models and run a tracker by hand. Next: <a href="cv-production.html">Module 9 · Training, deployment &amp; the full pipeline</a>, where everything becomes a real system.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

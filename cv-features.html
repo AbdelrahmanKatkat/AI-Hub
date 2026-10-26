@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Features &amp; geometry · Computer Vision</title>
+<meta name="description" content="Corners, descriptors, matching, RANSAC, homography, the pinhole camera, stereo depth and optical flow: how classical vision finds structure and geometry in images.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-features.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Features &amp; geometry</h1>
+        <p>Before deep networks, vision was geometry plus careful measurement. You will learn to find <b>distinctive points</b>, describe and <b>match</b> them across photos, fit models despite wrong matches with <b>RANSAC</b>, understand how a 3-D point becomes a pixel (<b>pinhole camera</b>), recover <b>depth</b> from two eyes, and measure <b>motion</b> between frames. These ideas still run SLAM, AR, stitching and robotics, and they explain why modern networks are built the way they are.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Animated labs</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="corners-keypoints" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.1</span><h2>Corners &amp; keypoints</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You photograph a building from the left, then from a few steps to the right. A computer must say "this spot in photo 1 is <i>that</i> spot in photo 2". Where should it even look? A patch of blue sky matches a thousand other patches of blue sky. Which points in an image are worth tracking at all?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine you are handed a small square window cut out of an image, and you are allowed to slide the window a tiny bit in any direction and compare what you see before and after. Three things can happen.</p>
+        <ul>
+          <li><b>Flat region</b> (clear sky, a white wall): slide in any direction and the content looks identical. The window could be anywhere; it tells you nothing about <i>where</i> you are.</li>
+          <li><b>Edge</b> (the side of a building): slide <i>across</i> the edge and the content changes a lot; slide <i>along</i> the edge and nothing changes. You know your position in one direction only. This is the <b>aperture problem</b>, and it returns in the optical-flow lesson.</li>
+          <li><b>Corner</b> (the corner of a window frame): slide in <i>any</i> direction and the content changes. You can pin down your position in both directions.</li>
+        </ul>
+        <p>A good <b>keypoint</b> (also called an interest point or feature) is therefore a place where the image changes in every direction. Corners, blob centres and the tips of thin structures all qualify. That is the entire idea; the rest of the lesson is making it measurable.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: measure change.</b> Take a window <span class="tex">W</span> around pixel <span class="tex">(x,y)</span>. Shift it by <span class="tex">(u,v)</span> and add up the squared brightness differences:</p>
+        <div class="eq">E(u,v)=\sum_{(x,y)\in W}\big[I(x+u,\,y+v)-I(x,y)\big]^2</div>
+        <p>A corner is a point where <span class="tex">E</span> is large for <i>every</i> small shift <span class="tex">(u,v)\neq 0</span>.</p>
+        <p><b>Step 2: replace the image by its slope.</b> For a tiny shift, brightness changes like a straight line: <span class="tex">I(x+u,y+v)\approx I(x,y)+I_x u+I_y v</span>, where <span class="tex">I_x,I_y</span> are the horizontal and vertical <i>gradients</i> (how fast brightness rises per pixel; you met them as Sobel kernels in module 1). Substituting, the difference is <span class="tex">I_xu+I_yv</span>, so</p>
+        <div class="eq">E(u,v)\approx\begin{pmatrix}u&amp;v\end{pmatrix}M\begin{pmatrix}u\\v\end{pmatrix},\qquad M=\sum_{W}\begin{pmatrix}I_x^2&amp;I_xI_y\\ I_xI_y&amp;I_y^2\end{pmatrix}</div>
+        <p>The 2×2 matrix <span class="tex">M</span> is the <b>structure tensor</b> (or second-moment matrix). It summarises the gradients inside the window. Its two <b>eigenvalues</b> <span class="tex">\lambda_1\ge\lambda_2\ge 0</span> are exactly the amount of change along the best and the worst shift direction (that is what an eigenvalue means: the stretch factor along a special direction). So:</p>
+        <ul>
+          <li>both λ tiny → flat; </li><li>one λ large, one tiny → edge; </li><li>both λ large → corner.</li>
+        </ul>
+        <p><b>Step 3: avoid computing eigenvalues.</b> Harris and Stephens (1988) noticed that <span class="tex">\det M=\lambda_1\lambda_2</span> and <span class="tex">\operatorname{tr}M=\lambda_1+\lambda_2</span> carry the same information and are cheap. The <b>Harris response</b> is</p>
+        <div class="eq">R=\det M-k\,(\operatorname{tr}M)^2=\lambda_1\lambda_2-k(\lambda_1+\lambda_2)^2</div>
+        <p>with <span class="tex">k\approx0.04\text{–}0.06</span>. Large positive <span class="tex">R</span> means corner; negative <span class="tex">R</span> means edge (one λ dominates, so the trace term wins); near zero means flat.</p>
+
+        <div class="worked"><b>Worked example: three windows, three verdicts</b>
+          <p>Take <span class="tex">k=0.05</span> and three structure tensors written as <span class="tex">(\sum I_x^2,\ \sum I_xI_y,\ \sum I_y^2)</span>.</p>
+          <p><b>Corner:</b> <span class="tex">M=\begin{pmatrix}9&amp;3\\3&amp;5\end{pmatrix}</span>. <span class="tex">\det=9\cdot5-3\cdot3=36</span>, <span class="tex">\operatorname{tr}=14</span>, so <span class="tex">R=36-0.05\cdot14^2=36-9.8=\mathbf{26.2}</span>. Eigenvalues: <span class="tex">7\pm\sqrt{4+9}=10.61,\ 3.39</span>. Both are large: corner.</p>
+          <p><b>Edge:</b> <span class="tex">M=\begin{pmatrix}16&amp;0\\0&amp;0.5\end{pmatrix}</span> (all gradients point in x: a vertical edge). <span class="tex">\det=8</span>, <span class="tex">\operatorname{tr}=16.5</span>, <span class="tex">R=8-0.05\cdot272.25=\mathbf{-5.6}</span>. λ = 16 and 0.5: negative R, edge.</p>
+          <p><b>Flat:</b> <span class="tex">M=\begin{pmatrix}0.4&amp;0.1\\0.1&amp;0.3\end{pmatrix}</span>. <span class="tex">\det=0.11</span>, <span class="tex">\operatorname{tr}=0.7</span>, <span class="tex">R=0.11-0.0245=\mathbf{0.0855}</span>: close to zero compared with 26.2, so flat.</p></div>
+
+        <h3 class="sec">Scale: how big is the corner?</h3>
+        <p>A fixed 5×5 window sees a corner at one zoom level only. Zoom into a rounded corner and it becomes an edge; zoom out and a whole building's outline becomes a "corner". If photo 2 is taken closer than photo 1, the same point looks bigger. The fix is <b>scale space</b>: blur the image with Gaussians of increasing width <span class="tex">\sigma</span> (like looking from further away) and search for keypoints in <i>(x, y, σ)</i>. SIFT subtracts neighbouring blur levels (a difference of Gaussians, DoG, which approximates the Laplacian of Gaussian) and keeps points that are extreme among their 26 neighbours in space and scale. The winning σ is the keypoint's <b>scale</b>, and it later sets the size of the patch to describe.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">R(x,y)=\det M-k\,\operatorname{tr}(M)^2,\qquad M(x,y)=\sum_{(i,j)\in W}w_{ij}\begin{pmatrix}I_x^2&amp;I_xI_y\\ I_xI_y&amp;I_y^2\end{pmatrix}</div>
+        <table class="sym">
+          <tr><td><span class="tex">I(x,y)</span></td><td>image brightness at a pixel</td></tr>
+          <tr><td><span class="tex">I_x,I_y</span></td><td>horizontal / vertical brightness gradient (finite differences or Sobel)</td></tr>
+          <tr><td><span class="tex">W,\ w_{ij}</span></td><td>the window around the pixel and optional weights (a Gaussian puts more weight on the centre)</td></tr>
+          <tr><td><span class="tex">M</span></td><td>structure tensor: sums of gradient products over the window</td></tr>
+          <tr><td><span class="tex">\lambda_1,\lambda_2</span></td><td>eigenvalues of M: change along the strongest / weakest direction</td></tr>
+          <tr><td><span class="tex">\det M,\ \operatorname{tr}M</span></td><td><span class="tex">\lambda_1\lambda_2</span> and <span class="tex">\lambda_1+\lambda_2</span></td></tr>
+          <tr><td><span class="tex">k</span></td><td>small constant (0.04–0.06) that penalises edges</td></tr>
+          <tr><td><span class="tex">R</span></td><td>corner response: threshold it and keep local maxima (non-maximum suppression)</td></tr>
+        </table>
+        <p>The practical recipe: compute <span class="tex">I_x,I_y</span>; form the three products; blur them (that is the window sum); compute <span class="tex">R</span> everywhere; keep pixels where <span class="tex">R</span> is above a threshold <i>and</i> a local maximum.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Let the tour run. Watch the three panels as the window visits sky, an edge and a corner. In the right panel the shape of <span class="tex">E(\theta)</span> is a dot, a two-lobed dumbbell, or a fat round blob.</li>
+          <li>Drag the window onto the straight wall edge. Why is <i>R</i> negative there? (One eigenvalue dominates, so the squared-trace term is larger than the determinant.)</li>
+          <li>Raise <i>k</i> from 0.03 to 0.12. Corners that are almost edges disappear first.</li>
+          <li>Increase the window size. Detections become fewer and blurrier: bigger windows see coarser structure, the scale idea in miniature.</li>
+        </ol></div>
+        <div data-lab="cvCorner"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li>A corner response is <i>not</i> invariant to scale. Harris alone fails if photo 2 is zoomed; SIFT's scale space solves that.</li>
+          <li>Pixel gradients are noisy. Without the window sum (or Gaussian weights) the tensor has rank 1 everywhere and every pixel looks like an edge.</li>
+          <li>Thresholds depend on the image's contrast. Normalise (e.g. a fraction of the maximum <i>R</i>) instead of a fixed number.</li>
+          <li>A strong response in a textured patch (grass, noise) is not a stable landmark: it moves if lighting changes. Distinctive and <i>repeatable</i> are two different requirements.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>SLAM and visual odometry</b> (ORB-SLAM, phone AR) track hundreds of corner keypoints per frame (FAST/Harris/ORB) to estimate where the camera is.</li>
+          <li><b>Trackers</b> such as KLT pick "good features to track" with the same <span class="tex">\lambda_{\min}</span> test.</li>
+          <li><b>Learned keypoints</b> (SuperPoint, R2D2, DISK) are CNNs trained to output a heatmap like this <i>R</i>; the idea of a response map plus non-maximum suppression is identical.</li>
+          <li>The edge/corner/flat reasoning explains what the first convolutional layers of every CNN learn (oriented edges, corner-like detectors).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A window has M = [[4,0],[0,4]]. With k = 0.05, what is R, and what is the verdict?</summary><div class="ans">det = 16, tr = 8, R = 16 − 0.05·64 = 12.8 &gt; 0, and λ₁ = λ₂ = 4: a corner (gradients in every direction).</div></details>
+        <details class="check"><summary>2. Why does a perfectly straight edge give a negative R?</summary><div class="ans">Gradients are all parallel, so λ₂ ≈ 0 and det ≈ 0, while tr = λ₁ is large. R = λ₁λ₂ − k(λ₁+λ₂)² ≈ −kλ₁² &lt; 0.</div></details>
+        <details class="check"><summary>3. You zoom the camera in 2× between two photos. Which part of SIFT handles that and how?</summary><div class="ans">Scale space: keypoints are detected as extrema over (x, y, σ) of a difference-of-Gaussians pyramid. The same physical point is found at σ in one photo and about 2σ in the other, so patch sizes scale together.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Distinctive = the window changes when shifted in <i>every</i> direction.</li>
+          <li>Structure tensor M summarises gradients; its eigenvalues classify flat / edge / corner.</li>
+          <li>Harris R = det − k·tr² avoids eigen-decomposition; threshold + non-maximum suppression gives keypoints.</li>
+          <li>Scale space (DoG) makes detection work across zoom levels.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="descriptors-matching" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.2</span><h2>Descriptors &amp; matching</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You found 500 corners in photo 1 and 480 in photo 2. A corner is just a coordinate: <span class="tex">(212,87)</span> says nothing about what the surroundings look like. How can the computer decide which corner in photo 2 is the <i>same physical point</i>, even if the camera has rotated, zoomed or the light has changed?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of describing a person to a friend who must pick them out of a crowd. You do not give coordinates; you give a short description ("tall, red coat, glasses"). A <b>descriptor</b> is that description for an image patch: a short list of numbers computed from the pixels around a keypoint, designed so that the <i>same</i> physical point gives <i>similar</i> numbers in both photos, and <i>different</i> points give different numbers.</p>
+        <p>Raw pixel values make poor descriptors: brighten the photo and every number changes. So descriptors use quantities that survive such changes: <b>gradient directions</b> (insensitive to overall brightness), <b>histograms</b> (insensitive to tiny shifts) and <b>comparisons</b> ("is pixel A brighter than pixel B?").</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>SIFT</b> (Lowe, 1999/2004) in four moves:</p>
+        <ol>
+          <li><b>Orientation.</b> Find the dominant gradient direction around the keypoint (a histogram of gradient angles; take the peak). Rotate the patch so that direction points "up". Now a rotated photo gives the same patch.</li>
+          <li><b>Scale.</b> Cut the patch with a size proportional to the keypoint's scale σ, so zoom changes do not matter.</li>
+          <li><b>Grid of histograms.</b> Split the 16×16 patch into 4×4 cells. In each cell, make an 8-bin histogram of gradient orientations weighted by gradient strength.</li>
+          <li><b>Normalise.</b> 4×4 cells × 8 bins = <b>128 numbers</b>; scale the vector to unit length (and clip large entries) to cancel contrast changes.</li>
+        </ol>
+        <p><b>ORB</b> is the fast, free, binary cousin: take 256 pairs of pixels in a (rotated) patch, record 1 if the first is brighter than the second, else 0. The descriptor is 256 bits; comparing two uses the <b>Hamming distance</b> (the number of differing bits), computed with one XOR and a bit-count, hundreds of times faster than floating-point distances.</p>
+        <p><b>Matching.</b> Two descriptors <span class="tex">\mathbf p,\mathbf q</span> are "similar" when their distance is small:</p>
+        <div class="eq">d(\mathbf p,\mathbf q)=\lVert\mathbf p-\mathbf q\rVert_2=\sqrt{\sum_{i}(p_i-q_i)^2}</div>
+        <p>For each descriptor in photo 1, the <b>nearest neighbour</b> in photo 2 is the candidate match. Brute-force search checks all of them; large databases use approximate search (k-d trees, FLANN, HNSW, product quantisation).</p>
+        <p><b>But is the nearest neighbour <i>correct</i>?</b> If the keypoint's true partner was occluded or missed by the detector, the nearest neighbour is some unrelated point, and its distance can still be small. A fixed distance threshold cannot distinguish a good match from a lucky wrong one, because "small" depends on how crowded that region of descriptor space is. Lowe's insight: compare the best match with the <i>second</i> best. A true match is clearly better than every other candidate; a wrong or repetitive match has several equally plausible competitors. Accept only if</p>
+        <div class="eq">\frac{d_1}{d_2}&lt;\rho\qquad(\rho\approx0.7\text{–}0.8)</div>
+        <p>where <span class="tex">d_1</span> is the distance to the nearest and <span class="tex">d_2</span> to the second-nearest descriptor. Lowe reported that <span class="tex">\rho=0.8</span> removes about 90% of the false matches while losing under 5% of the correct ones.</p>
+
+        <div class="worked"><b>Worked example: distances and the ratio test</b>
+          <p>Use tiny 4-number descriptors. Query <span class="tex">\mathbf q=(4,1,0,3)</span>. Candidates in photo 2:</p>
+          <p><b>Case A (distinctive point).</b> <span class="tex">\mathbf a=(3,1,1,3)</span>: <span class="tex">\mathbf q-\mathbf a=(1,0,-1,0)</span>, <span class="tex">d_1=\sqrt{1+0+1+0}=1.414</span>. Next best <span class="tex">\mathbf b=(0,5,4,1)</span>: <span class="tex">(4,-4,-4,2)</span>, <span class="tex">d_2=\sqrt{16+16+16+4}=\sqrt{52}=7.211</span>. Ratio <span class="tex">1.414/7.211=0.196&lt;0.8</span>: <b>accept</b>.</p>
+          <p><b>Case B (repetitive texture, e.g. two identical windows).</b> Nearest <span class="tex">\mathbf c=(4,1,2,3)</span>: <span class="tex">(0,0,-2,0)</span>, <span class="tex">d_1=2.000</span>. Runner-up <span class="tex">\mathbf d=(3,3,0,3)</span>: <span class="tex">(1,-2,0,0)</span>, <span class="tex">d_2=\sqrt5=2.236</span>. Ratio <span class="tex">2.000/2.236=0.894\ge0.8</span>: <b>reject</b>. The match might be right, but with an almost-as-good rival it is too risky.</p>
+          <p>Note that both nearest distances (1.41 and 2.0) are small. A distance threshold alone could not have told these cases apart.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal M=\Big\{(i,j_1(i)):\ d\big(\mathbf p_i,\mathbf q_{j_1}\big)&lt;\tau\ \ \text{and}\ \ \frac{d(\mathbf p_i,\mathbf q_{j_1})}{d(\mathbf p_i,\mathbf q_{j_2})}&lt;\rho\Big\}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathbf p_i</span></td><td>descriptor of keypoint <i>i</i> in image 1 (e.g. 128 numbers for SIFT, 256 bits for ORB)</td></tr>
+          <tr><td><span class="tex">\mathbf q_j</span></td><td>descriptor of keypoint <i>j</i> in image 2</td></tr>
+          <tr><td><span class="tex">j_1,j_2</span></td><td>indices of the nearest and second-nearest descriptors in image 2</td></tr>
+          <tr><td><span class="tex">d</span></td><td>Euclidean (float descriptors) or Hamming (binary) distance</td></tr>
+          <tr><td><span class="tex">\tau</span></td><td>optional absolute distance threshold</td></tr>
+          <tr><td><span class="tex">\rho</span></td><td>Lowe ratio threshold, typically 0.7–0.8</td></tr>
+        </table>
+        <p>A further filter is the <b>cross-check</b> (mutual nearest neighbours): keep the pair only if <i>i</i> is also the nearest match of <i>j</i> when searching in the opposite direction. The surviving matches still contain wrong ones, which is why the next lesson (RANSAC) exists.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play and follow the first keypoints. Each step shows the nearest (solid) and second-nearest (thin) candidate, the three descriptor bar-charts and the ratio.</li>
+          <li>Set the ratio slider to 1.0 (or switch the ratio test off). Red lines appear: wrong matches, mostly between the two identical-looking windows.</li>
+          <li>Lower the ratio to 0.6. The wrong lines vanish, but so do some correct ones. That is the precision / recall trade-off.</li>
+          <li>Raise the descriptor noise (a darker photo, blur, a different camera). Correct matches get harder and the ratio test has to work harder.</li>
+        </ol></div>
+        <div data-lab="cvMatch"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li>A smaller distance is not the same as a correct match. Repetitive scenes (windows, tiles, fences) produce confident wrong matches; the ratio test is the cure.</li>
+          <li>Never apply Euclidean distance to binary descriptors or Hamming to floats.</li>
+          <li>The ratio test needs <i>two</i> candidates; with one candidate you cannot compute it.</li>
+          <li>Descriptors are invariant only to the transformations they were designed for (SIFT: rotation, scale, brightness; not large viewpoint changes or day/night).</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Image retrieval and place recognition:</b> bag-of-visual-words clusters millions of SIFT descriptors; Google Lens-style search and loop closing in SLAM match descriptors against a database with approximate nearest-neighbour search.</li>
+          <li><b>AR and 3-D reconstruction</b> (COLMAP, photogrammetry) start by matching SIFT or learned features across thousands of photos.</li>
+          <li><b>Learned descriptors:</b> SuperPoint+SuperGlue/LightGlue replace hand-built histograms with CNN features and replace the ratio test with an attention network that reasons about all matches jointly.</li>
+          <li>The same "embed, then nearest neighbour" idea is how face recognition, CLIP image search and retrieval-augmented generation work.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Two ORB descriptors of 256 bits differ in 20 positions. What is their distance, and why use it instead of Euclidean?</summary><div class="ans">Hamming distance = 20. It is one XOR plus a popcount, extremely fast, and for binary vectors it is the natural count of disagreements.</div></details>
+        <details class="check"><summary>2. d₁ = 0.30 and d₂ = 0.33. Accept at ρ = 0.8? What does that say about the point?</summary><div class="ans">Ratio = 0.909, so reject. Two descriptors are almost equally close: the point is ambiguous (repeated texture or a crowded part of descriptor space).</div></details>
+        <details class="check"><summary>3. Why does SIFT rotate each patch to its dominant orientation before building histograms?</summary><div class="ans">So the descriptor describes the patch relative to its own orientation. If the camera rolls, the dominant direction rolls with it and the rotated patch (and therefore the 128 numbers) stays the same.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A descriptor is a short vector computed from a keypoint's neighbourhood that stays stable under rotation, scale and brightness.</li>
+          <li>SIFT: 4×4 cells × 8 orientation bins = 128 numbers. ORB: 256 comparison bits, Hamming distance.</li>
+          <li>Match by nearest neighbour, accept with the Lowe ratio d₁/d₂ &lt; ~0.8, optionally cross-check.</li>
+          <li>Some wrong matches always survive; robust model fitting (RANSAC) removes them.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="ransac-homography" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.3</span><h2>RANSAC &amp; homography</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 200 matches between two photos of a street, and 40% of them are wrong. You want the geometric relationship between the photos (so you can stitch them into a panorama). Ordinary least squares uses <i>every</i> point, so a few wildly wrong matches drag the answer far from the truth. How can you fit a model when you do not know which points to trust?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Suppose you want the line through a cloud of points, and a third of the points are garbage. Least squares averages the garbage in. Here is a cleverer idea: <b>guess, then check</b>. Pick the <i>smallest</i> set of points that defines a line (two). Draw the line through them. Count how many other points agree with it. If you were unlucky and picked a garbage point, almost nobody agrees. If you got two good points, most of the good points agree. Repeat many times and keep the line that gathered the most support. <b>Random sample consensus</b> (RANSAC, Fischler and Bolles 1981) is exactly this vote.</p>
+        <p>Why does it work? Garbage points do not agree with each other, but good points all agree with the <i>same</i> model. Votes pile up only for the truth.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The loop.</b> Repeat <i>N</i> times:</p>
+        <ol>
+          <li>Pick a <b>minimal sample</b> of <i>s</i> data points at random (s = 2 for a line, 4 for a homography).</li>
+          <li>Fit the model to that sample exactly.</li>
+          <li>Count <b>inliers</b>: points whose error to the model is below a threshold <i>t</i>.</li>
+          <li>If this model has more inliers than the best so far, keep it.</li>
+        </ol>
+        <p>At the end, <b>refit</b> the model by least squares using only the best model's inliers (now clean, so least squares is exactly right).</p>
+        <p><b>How many iterations?</b> Let <span class="tex">w</span> be the fraction of inliers (so <span class="tex">1-w</span> are outliers). One random point is an inlier with probability <i>w</i>; <i>s</i> points are all inliers with probability <span class="tex">w^s</span> (if you ignore tiny corrections for sampling without replacement). So one iteration fails with probability <span class="tex">1-w^s</span>, and <i>N</i> iterations all fail with probability <span class="tex">(1-w^s)^N</span>. The probability that at least one sample was clean is</p>
+        <div class="eq">P_{\text{success}}=1-\big(1-w^{s}\big)^{N}\quad\Longrightarrow\quad N=\left\lceil\frac{\ln(1-P)}{\ln(1-w^{s})}\right\rceil</div>
+        <p>Notice how brutal the exponent <i>s</i> is: needing 4 good points instead of 2 squares the pain.</p>
+
+        <div class="worked"><b>Worked example: how many iterations?</b>
+          <p><b>Line, w = 0.5, s = 2.</b> <span class="tex">w^s=0.25</span>, so one try fails with probability 0.75. After 10 tries: <span class="tex">1-0.75^{10}=0.944</span>. For 99%: <span class="tex">N=\ln0.01/\ln0.75=16.01</span>, so <b>17</b> iterations.</p>
+          <p><b>Homography, w = 0.5, s = 4.</b> <span class="tex">w^s=0.0625</span>. After 10 tries: <span class="tex">1-0.9375^{10}=0.476</span>. For 99%: <span class="tex">N=\ln0.01/\ln0.9375=71.36</span> so <b>72</b> iterations.</p>
+          <p><b>Homography, w = 0.3 (70% outliers).</b> <span class="tex">w^4=0.0081</span>, <span class="tex">N=\ln0.01/\ln0.9919=566.2</span> so <b>567</b> iterations. Still cheap per iteration (one 8×8 solve), which is why RANSAC is practical. In real code <i>w</i> is unknown, so it is estimated from the best inlier ratio found so far and <i>N</i> is shrunk adaptively.</p></div>
+
+        <h3 class="sec">The homography</h3>
+        <p>When two photos see a <b>flat surface</b> (a wall, a poster, the ground), or when the camera only <b>rotates</b> about its centre (a panorama sweep), the mapping from a pixel in photo 1 to photo 2 is a <b>homography</b>: a 3×3 matrix <span class="tex">H</span> acting on homogeneous coordinates.</p>
+        <div class="eq">\begin{pmatrix}x'\\y'\\w\end{pmatrix}\sim H\begin{pmatrix}x\\y\\1\end{pmatrix},\qquad u=\frac{x'}{w},\ \ v=\frac{y'}{w}</div>
+        <p>Homogeneous coordinates add a third coordinate "1" so that the perspective division (dividing by <i>w</i>) can be written as a matrix product. <i>H</i> is defined only up to scale (multiplying all nine numbers by 3 gives the same mapping), so it has <b>8 degrees of freedom</b>. Each point correspondence <span class="tex">(x,y)\to(u,v)</span> gives <b>two</b> equations (one for u, one for v), hence <b>4 correspondences</b> are the minimal sample: <i>s</i> = 4. Fixing <span class="tex">h_{33}=1</span> turns the 8 equations into an 8×8 linear system (the Direct Linear Transform).</p>
+        <p>Panorama pipeline: detect keypoints, describe, match with ratio test, <b>RANSAC-fit H</b> (inlier test: reprojection error <span class="tex">\lVert H\mathbf x-\mathbf x'\rVert&lt;t</span>, usually 1–3 px), refit on inliers, warp photo 1 into photo 2's frame and blend the overlap.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Mode <b>line</b>, outliers 40%. Press play and read the four captions per iteration: pick, fit, count, keep or discard. Tick "least squares on all points" and see how far it is from the truth.</li>
+          <li>Raise the outlier ratio to 70% and watch the "iterations needed" number in the readout explode. Use <b>Run 50 fast</b> and see if the best model still finds the truth.</li>
+          <li>Make the threshold tiny: even the best model has few inliers. Make it huge: everything is an inlier and the vote means nothing.</li>
+          <li>Switch to <b>homography</b>. Four points in the left photo define a warped quadrilateral in the right one. Press <b>Refit on inliers</b> at the end.</li>
+        </ol></div>
+        <div data-lab="cvRansac"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Degenerate samples: three collinear points cannot define a homography. Good implementations reject such samples.</li>
+          <li>The threshold <i>t</i> is in pixels of your geometry, not a magic number; set it from the expected noise (about 2σ–3σ of a good match).</li>
+          <li>RANSAC is random: the same data gives slightly different answers. Fix a seed if you need repeatability.</li>
+          <li>A homography is exact only for a plane or a pure rotation. For general 3-D scenes use the fundamental matrix (stereo lesson), s = 7 or 8, the same loop.</li>
+          <li>Counting inliers is not always the best score; MSAC/MAGSAC use soft scores and fewer parameters to tune.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Panorama stitching</b> (phone cameras, OpenCV Stitcher) and <b>document scanning</b> (rectifying a photographed page).</li>
+          <li><b>Structure from motion</b> and SLAM (COLMAP, ORB-SLAM) run RANSAC for every image pair to estimate relative pose from matches.</li>
+          <li><b>Learned matchers</b> (SuperGlue, LoFTR) still pass their matches to RANSAC (usually MAGSAC++) for the final geometry.</li>
+          <li>The idea, "fit on random minimal subsets and vote", is general: line, plane and cylinder fitting in LiDAR point clouds, 3-D object registration and robust regression.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With 50% inliers, how many RANSAC iterations give 99% confidence for a line (s = 2)?</summary><div class="ans">w^s = 0.25; N = ln 0.01 / ln 0.75 = 16.01, so 17 iterations.</div></details>
+        <details class="check"><summary>2. Why are four point correspondences exactly enough to determine a homography?</summary><div class="ans">H has 9 numbers but only 8 degrees of freedom (scale is irrelevant). Each correspondence gives 2 independent equations (x' and y'), so 4 correspondences give 8 equations for 8 unknowns.</div></details>
+        <details class="check"><summary>3. You have 90% outliers (w = 0.1) and want a homography. Roughly what happens to N?</summary><div class="ans">w^4 = 0.0001; N = ln 0.01 / ln 0.9999 ≈ 46,000 iterations. Better to improve the matcher (tighter ratio test) or use a smaller model (e.g. rotation only, s = 2 or 3).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>RANSAC: sample a minimal set, fit, count inliers within a threshold, keep the best, then refit on the inliers.</li>
+          <li>P(success) = 1 − (1 − w^s)^N; fewer parameters (smaller s) and more inliers need far fewer iterations.</li>
+          <li>A homography (8 DOF, s = 4) relates two views of a plane or a rotating camera: the basis of panoramas.</li>
+          <li>Least squares is only safe after outliers have been removed.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="camera-model" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.4</span><h2>The pinhole camera</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot sees a red cone at pixel <span class="tex">(412,300)</span>. Where is the cone in the room, in metres? And the other way round: if you know a cone stands 5 m in front of the camera, 0.5 m to the right, at which pixel will it appear? To answer either question you need the exact rule that turns a 3-D point into a 2-D pixel.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The simplest camera is a dark box with a tiny hole in one face. Each point of the world sends light in all directions, but only the ray that passes through the hole reaches the back wall, so each world point lights exactly one spot on the wall. The image is upside-down. We usually draw the "virtual" image plane <i>in front</i> of the hole so the picture is upright, with the same geometry.</p>
+        <p>Two facts follow. First, <b>everything on one ray through the hole lands on the same pixel</b>, so one image cannot tell you depth (the next lesson fixes this with two cameras). Second, <b>far things look smaller</b>: the same 1 m object subtends a smaller angle at 10 m than at 2 m. The size on the sensor is object size × <i>f</i> / distance, where <i>f</i> is the distance from the hole to the sensor, the focal length.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: camera coordinates.</b> Put the origin at the hole (the optical centre). The <i>z</i>-axis points forward along the viewing direction, <i>x</i> to the right, <i>y</i> down (the convention of OpenCV and of pixel rows). A point <span class="tex">(X_c,Y_c,Z_c)</span> with <span class="tex">Z_c&gt;0</span> is in front of the camera. Similar triangles (a ray at slope <span class="tex">X_c/Z_c</span> hits the plane at distance <i>f</i> at height <span class="tex">fX_c/Z_c</span>) give the <b>perspective division</b>:</p>
+        <div class="eq">x=f\,\frac{X_c}{Z_c},\qquad y=f\,\frac{Y_c}{Z_c}</div>
+        <p><b>Step 2: to pixels.</b> The sensor is a grid of pixels with the origin at a corner, not at the centre. If <i>f</i> is expressed in pixels (focal length in mm divided by pixel size in mm) and <span class="tex">(c_x,c_y)</span> is the principal point (where the optical axis hits the sensor, usually near the image centre):</p>
+        <div class="eq">u=f_x\frac{X_c}{Z_c}+c_x,\qquad v=f_y\frac{Y_c}{Z_c}+c_y</div>
+        <p>In matrix form with homogeneous coordinates, the <b>intrinsic matrix</b> <i>K</i> packs these numbers, and the division by <span class="tex">Z_c</span> happens at the end:</p>
+        <div class="eq">\begin{pmatrix}u\\v\\1\end{pmatrix}\sim K\begin{pmatrix}X_c\\Y_c\\Z_c\end{pmatrix},\qquad K=\begin{pmatrix}f_x&amp;s&amp;c_x\\0&amp;f_y&amp;c_y\\0&amp;0&amp;1\end{pmatrix}</div>
+        <p><b>Step 3: where is the camera?</b> The world has its own coordinates <span class="tex">\mathbf X_w</span> (a room, a map). The camera sits somewhere and points somewhere: a rotation <i>R</i> (3×3, orthonormal) and translation <i>t</i> (3-vector), the <b>extrinsics</b>, move world coordinates into camera coordinates:</p>
+        <div class="eq">\mathbf X_c=R\,\mathbf X_w+\mathbf t,\qquad \lambda\begin{pmatrix}u\\v\\1\end{pmatrix}=K\,[R\,|\,\mathbf t]\begin{pmatrix}\mathbf X_w\\1\end{pmatrix}</div>
+        <p>(If the camera centre is at <span class="tex">\mathbf C</span> in world coordinates, then <span class="tex">\mathbf t=-R\mathbf C</span>.) The 3×4 matrix <span class="tex">P=K[R|\mathbf t]</span> is the complete camera.</p>
+        <p><b>Step 4: real lenses bend straight lines.</b> A lens adds <b>radial distortion</b>: with normalised coordinates <span class="tex">x_n=X_c/Z_c</span>, <span class="tex">y_n=Y_c/Z_c</span> and <span class="tex">r^2=x_n^2+y_n^2</span>, the lens moves points to <span class="tex">(x_n,y_n)(1+k_1r^2+k_2r^4)</span> before <i>K</i> is applied. <span class="tex">k_1&lt;0</span> gives barrel distortion (fish-eye bulge), <span class="tex">k_1&gt;0</span> pincushion. Calibration estimates <i>K</i> and the <i>k</i>'s from photos of a chessboard (Zhang's method), and then images can be undistorted.</p>
+
+        <div class="worked"><b>Worked example: projecting a point</b>
+          <p>Let <span class="tex">f_x=f_y=800</span> px, <span class="tex">(c_x,c_y)=(320,240)</span> (a 640×480 image), no skew.</p>
+          <p><b>(a) Camera at the origin, R = I, t = 0.</b> Point <span class="tex">\mathbf X=(0.5,\,-0.25,\,5)</span>: <span class="tex">u=800\cdot0.5/5+320=400</span>, <span class="tex">v=800\cdot(-0.25)/5+240=200</span>. The point is 0.5 m right of the axis and 0.25 m above it (y is down), so it lands right of and above the centre: pixel (400, 200).</p>
+          <p><b>(b) With extrinsics.</b> Rotate 30° about the vertical axis: <span class="tex">R=\begin{pmatrix}0.866&amp;0&amp;-0.5\\0&amp;1&amp;0\\0.5&amp;0&amp;0.866\end{pmatrix}</span>, <span class="tex">\mathbf t=(0.2,0,1)</span>, world point <span class="tex">\mathbf X_w=(1,\,0.5,\,4)</span>.</p>
+          <p>Rotate: <span class="tex">R\mathbf X_w=(0.866-2,\ 0.5,\ 0.5+3.464)=(-1.134,\ 0.5,\ 3.964)</span>. Add t: <span class="tex">\mathbf X_c=(-0.934,\ 0.5,\ 4.964)</span>. Now project: <span class="tex">u=800\cdot(-0.934)/4.964+320=-150.5+320=\mathbf{169.5}</span>, <span class="tex">v=800\cdot0.5/4.964+240=80.6+240=\mathbf{320.6}</span>.</p>
+          <p>Depth is 4.964 &gt; 0, so the point is in front of the camera. Pixel (169.5, 320.6) is inside the 640×480 image.</p>
+          <p><b>(c) Field of view.</b> <span class="tex">\text{FoV}_x=2\arctan\frac{W/2}{f}=2\arctan\frac{320}{800}=2\cdot21.8^\circ=43.6^\circ</span>. Doubling <i>f</i> to 1600 gives 22.6°: zooming in.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\tilde{\mathbf u}\sim K\,[R\,|\,\mathbf t]\,\tilde{\mathbf X}_w,\qquad u=\frac{p_1\cdot\tilde{\mathbf X}_w}{p_3\cdot\tilde{\mathbf X}_w},\ \ v=\frac{p_2\cdot\tilde{\mathbf X}_w}{p_3\cdot\tilde{\mathbf X}_w}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathbf X_w=(X,Y,Z)</span></td><td>a 3-D point in world coordinates (metres)</td></tr>
+          <tr><td><span class="tex">\tilde{\mathbf X}_w</span></td><td>the same point in homogeneous form <span class="tex">(X,Y,Z,1)</span></td></tr>
+          <tr><td><span class="tex">R,\ \mathbf t</span></td><td>extrinsics: rotation (3 DOF) and translation (3 DOF) from world to camera frame</td></tr>
+          <tr><td><span class="tex">K</span></td><td>intrinsics: <span class="tex">f_x,f_y</span> focal lengths in pixels, <span class="tex">c_x,c_y</span> principal point, <i>s</i> skew (almost always 0)</td></tr>
+          <tr><td><span class="tex">P=K[R|\mathbf t]</span></td><td>3×4 projection matrix; rows <span class="tex">p_1,p_2,p_3</span></td></tr>
+          <tr><td><span class="tex">(u,v)</span></td><td>pixel coordinates (u to the right, v down)</td></tr>
+          <tr><td><span class="tex">k_1,k_2</span></td><td>radial distortion coefficients applied to normalised coordinates</td></tr>
+        </table>
+        <p>Intrinsics: 4 numbers (5 with skew). Extrinsics: 6 numbers. A calibrated camera therefore has just a handful of unknowns, which is why a few chessboard photos are enough.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the orange pulses travel along the rays from the cube, through the image plane, into the pinhole. The dot where each ray crosses the plane is that vertex's pixel.</li>
+          <li>Increase the focal length <i>f</i>: the field-of-view wedge narrows, the plane in the top view shrinks and the cube fills more of the image (zoom).</li>
+          <li>Move the cube nearer (distance slider) and see the cube grow: size ∝ 1/Z. Move the camera sideways or yaw it and watch the image slide.</li>
+          <li>Set <i>k</i>₁ to −0.25: straight cube edges bend outward (barrel distortion). Choose a vertex and read the full arithmetic in the readout.</li>
+        </ol></div>
+        <div data-lab="cvPinhole"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Coordinate conventions differ: OpenCV uses y down and z forward; OpenGL uses y up and z <i>backward</i>; robotics often uses x forward. Always check before copying formulas.</li>
+          <li>Points with <span class="tex">Z_c\le0</span> are behind the camera: the formula still gives numbers but they are meaningless. Test depth first.</li>
+          <li>The extrinsic <span class="tex">\mathbf t</span> is <i>not</i> the camera position: <span class="tex">\mathbf C=-R^{\top}\mathbf t</span>.</li>
+          <li>Focal length in mm and in pixels differ by the pixel size; a zoom changes <i>f</i>, a crop changes <span class="tex">(c_x,c_y)</span>, a resize scales <i>f</i> and <i>c</i> by the same factor.</li>
+          <li>Depth is lost in projection: <span class="tex">(u,v)</span> alone gives a ray, not a point.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Calibration</b> is the first step of any robotics or driving stack; every multi-camera and camera+LiDAR fusion pipeline uses <i>K</i>, <i>R</i>, <i>t</i> to project 3-D points into images.</li>
+          <li><b>AR</b> (ARKit, ARCore) estimates the camera's <i>R</i>, <i>t</i> every frame so virtual objects are drawn with the same projection.</li>
+          <li><b>3-D vision networks</b>: monocular depth, NeRF and 3-D Gaussian splatting render by projecting rays through pixels with exactly this model; <b>detection in 3-D</b> (BEVFormer, DETR3D) uses <i>K</i> to lift image features into the world.</li>
+          <li>Data augmentation must respect it: random crops and zooms change <i>K</i>, so geometry-aware models need the adjusted <i>K</i>.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. K has f = 500, c = (320, 240). Where does the camera-frame point (1, 0, 10) project?</summary><div class="ans">u = 500·1/10 + 320 = 370, v = 500·0/10 + 240 = 240. Pixel (370, 240).</div></details>
+        <details class="check"><summary>2. Why can a single image not tell you the depth of a point?</summary><div class="ans">Every point on the ray (kX, kY, kZ), for any k &gt; 0, projects to the same pixel because the division by Z cancels k. A second view (or a known size, or a learned prior) is needed.</div></details>
+        <details class="check"><summary>3. The camera centre is C = (2, 0, 0) with R = I. What is t, and where is the world origin in camera coordinates?</summary><div class="ans">t = −R C = (−2, 0, 0). The world origin maps to X_c = R·0 + t = (−2, 0, 0): two metres to the left of the camera.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>u = f·X/Z + c: perspective division by depth makes far things small.</li>
+          <li>K (intrinsics) turns camera coordinates into pixels; [R|t] (extrinsics) turns world coordinates into camera coordinates.</li>
+          <li>One pixel is a ray; depth needs another view or extra knowledge.</li>
+          <li>Real lenses add radial distortion that calibration estimates and removes.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="stereo-depth" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.5</span><h2>Stereo &amp; depth</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A self-driving car must know how far the car ahead is, using only cameras. One image gives a ray, not a distance. Humans manage with two eyes. How exactly does a small difference between the left and right pictures reveal metres?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Hold a finger at arm's length and close one eye, then the other: the finger jumps sideways against the background. Now bring the finger close to your nose: it jumps much more. The size of the jump is the <b>disparity</b>, and it is bigger for near objects. Distant mountains hardly jump at all. So disparity measures closeness; the job is to turn it into a number of metres.</p>
+        <p>Where do you look for the match? Not anywhere in the other image. Because both cameras sit at the same height, a point seen on row 200 in the left image must be on row 200 in the right image: it can only have moved <i>horizontally</i>. The search shrinks from a 2-D area to a 1-D line (the <b>epipolar line</b>).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Setup.</b> Two identical cameras, focal length <i>f</i> (pixels), looking the same way, separated by the <b>baseline</b> <i>B</i> (metres) along x. A point is at depth <i>Z</i> and lateral position <i>X</i> (measured from the midpoint). From the pinhole model of the last lesson:</p>
+        <div class="eq">x_L=f\,\frac{X+B/2}{Z},\qquad x_R=f\,\frac{X-B/2}{Z}</div>
+        <p>(measured from each image's principal point). Subtract:</p>
+        <div class="eq">d=x_L-x_R=\frac{f\,B}{Z}\quad\Longleftrightarrow\quad Z=\frac{f\,B}{d}</div>
+        <p>Three consequences to remember: depth is <b>inversely</b> proportional to disparity; a longer baseline or longer focal length gives more disparity (more resolution in depth); and a disparity of 0 means infinitely far.</p>
+        <p><b>Epipolar geometry.</b> For general camera poses, a pixel in image 1 constrains its match in image 2 to lie on a line. This is encoded in the 3×3 <b>fundamental matrix</b> <i>F</i>: the match <span class="tex">\mathbf x'</span> of <span class="tex">\mathbf x</span> satisfies <span class="tex">\mathbf x'^{\top}F\,\mathbf x=0</span>. With calibrated cameras it becomes the <b>essential matrix</b> <span class="tex">E=[\mathbf t]_\times R</span>. <b>Rectification</b> warps both images so the epipolar lines become horizontal image rows, giving the simple setup above.</p>
+        <p><b>Finding disparity.</b> For each pixel in the left image, slide a small window along the same row in the right image, compute a matching cost (sum of absolute differences, or a learned cost), and take the shift with the lowest cost. Doing this for all pixels gives a <b>disparity map</b>. Semi-global matching (SGM) and modern networks (RAFT-Stereo, PSMNet) add smoothness so that textureless regions get sensible values.</p>
+
+        <div class="worked"><b>Worked example: disparity to depth (and its error)</b>
+          <p>A stereo rig has <span class="tex">f=700</span> px and <span class="tex">B=0.12</span> m, so <span class="tex">fB=84</span> px·m. A pixel has disparity <span class="tex">d=21</span> px.</p>
+          <p><span class="tex">Z=fB/d=84/21=\mathbf{4.0}</span> m.</p>
+          <p><b>Sensitivity.</b> If the disparity estimate is off by one pixel: <span class="tex">d=20\Rightarrow Z=4.2</span> m (+0.2); <span class="tex">d=22\Rightarrow Z=3.82</span> m (−0.18). For small errors, <span class="tex">\Delta Z\approx\frac{Z^2}{fB}\Delta d=\frac{16}{84}\cdot1=0.19</span> m.</p>
+          <p>Now put the same object at 20 m: <span class="tex">d=84/20=4.2</span> px, and the same one-pixel error gives <span class="tex">\Delta Z\approx400/84=4.8</span> m. Depth error grows with the <i>square</i> of distance: stereo is precise near the camera and weak far away. To see 100 m reliably you need a long baseline (trucks use 0.3–1 m) or high resolution.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">Z=\frac{f\,B}{d},\qquad \Delta Z\approx\frac{Z^{2}}{f\,B}\,\Delta d</div>
+        <table class="sym">
+          <tr><td><span class="tex">Z</span></td><td>depth: distance along the optical axis (not the straight-line range)</td></tr>
+          <tr><td><span class="tex">f</span></td><td>focal length in pixels</td></tr>
+          <tr><td><span class="tex">B</span></td><td>baseline: distance between the two camera centres, in metres</td></tr>
+          <tr><td><span class="tex">d=x_L-x_R</span></td><td>disparity in pixels (positive for points in front of the rig)</td></tr>
+          <tr><td><span class="tex">\Delta d</span></td><td>disparity error (matching accuracy, often 0.1–1 px)</td></tr>
+          <tr><td><span class="tex">F,\ E</span></td><td>fundamental / essential matrix describing epipolar geometry</td></tr>
+        </table>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave "auto-move" on: the orange point drifts toward and away from the cameras. Watch the gap between its left and right image positions grow as it comes closer, and the dot ride the 1/Z curve.</li>
+          <li>Double the baseline. Every disparity doubles; the curve steepens and the grey one-pixel error band narrows: more depth precision.</li>
+          <li>Untick auto-move and drag the depth slider to 20 m. Read the depth range implied by ±1 px of disparity in the readout.</li>
+          <li>Look at the three fixed poles: the nearest has the biggest disparity. A depth map is just this number for every pixel.</li>
+        </ol></div>
+        <div data-lab="cvStereo"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Disparity is measured in pixels, depth in metres: <i>f</i> must be in pixels and <i>B</i> in the unit you want the answer in.</li>
+          <li>Texture-less walls, repeating patterns, reflections and occlusions (a point visible to one camera only) break matching: those pixels need filling in.</li>
+          <li>Rectification quality matters: if rows do not align (a 2-pixel vertical error), matching fails silently.</li>
+          <li>Depth resolution is not uniform: it is fine near and coarse far; do not average depths without thinking about this.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Self-driving and ADAS:</b> Subaru EyeSight, Tesla-style multi-camera rigs and Mobileye use stereo or multi-view depth next to deep networks.</li>
+          <li><b>Depth cameras:</b> Intel RealSense (active stereo), many robot vacuums and drones.</li>
+          <li><b>Deep stereo networks</b> (PSMNet, GwcNet, RAFT-Stereo) build a 3-D cost volume over (x, y, disparity) and process it with 3-D convolutions, exactly the sliding comparison above, but learned.</li>
+          <li><b>Monocular depth models</b> (MiDaS, Depth Anything) are trained with stereo or LiDAR depth as targets so one image can approximate the same output.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. f = 1000 px, B = 0.5 m, d = 25 px. What is Z?</summary><div class="ans">Z = 1000·0.5/25 = 20 m.</div></details>
+        <details class="check"><summary>2. Which gives more precise depth at 30 m: B = 0.1 m or B = 0.4 m (same f, same Δd)? By what factor?</summary><div class="ans">B = 0.4 m. ΔZ ∝ 1/B, so the error is 4× smaller.</div></details>
+        <details class="check"><summary>3. Why is the correspondence search 1-D after rectification?</summary><div class="ans">Both cameras have the same orientation and are displaced along x only, so the viewing ray of a left pixel projects onto the same row of the right image: the epipolar lines are the image rows.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Disparity d = x_L − x_R; depth Z = f·B/d.</li>
+          <li>Matching is searched along the epipolar line (a row after rectification).</li>
+          <li>Depth error grows with Z²; longer baselines and higher resolution help.</li>
+          <li>Occlusions and textureless areas need smoothness priors, which networks now learn.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.6 ===================== -->
+    <section class="lesson" id="optical-flow" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.6</span><h2>Motion &amp; optical flow</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two consecutive video frames: a pedestrian has moved a little. For <i>every pixel</i>, how far and in which direction did the content move? That field of arrows is the <b>optical flow</b>, and it drives video stabilisation, action recognition and collision warnings.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Assume that a small patch of the world keeps its brightness as it moves: a red sweater stays red from one frame to the next, it just shifts a few pixels. This is the <b>brightness constancy</b> assumption. If a pixel at <span class="tex">(x,y)</span> in frame 1 reappears at <span class="tex">(x+u,y+v)</span> in frame 2, then <span class="tex">I(x+u,y+v,t+1)=I(x,y,t)</span>.</p>
+        <p>The trouble is that this is <i>one</i> equation for <i>two</i> unknowns (u and v). Look through a small round hole at a long straight edge sliding to the right-and-up: you can only see the part of the motion perpendicular to the edge, because sliding <i>along</i> the edge changes nothing you can see. This is the <b>aperture problem</b>, the same flat/edge/corner story of lesson 2.1. Corners and texture, where gradients point in several directions, fix it.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Linearise.</b> For small motion, expand the shifted image to first order: <span class="tex">I(x+u,y+v,t+1)\approx I(x,y,t)+I_xu+I_yv+I_t</span>, where <span class="tex">I_t</span> is the change at a fixed pixel between frames; with brightness constancy this means <span class="tex">I_xu+I_yv+I_t=0</span>, the <b>optical-flow constraint</b></p>
+        <div class="eq">I_x\,u+I_y\,v+I_t=0,\qquad I_t=I(\cdot,t+1)-I(\cdot,t)</div>
+        <p>One equation per pixel. <b>Lucas and Kanade (1981)</b> add the assumption that <i>all pixels in a small window move together</i>. A 5×5 window gives 25 equations for 2 unknowns, solved by least squares: minimise <span class="tex">\sum_W(I_xu+I_yv+I_t)^2</span>. Setting the derivatives to zero gives the 2×2 normal equations</p>
+        <div class="eq">\underbrace{\begin{pmatrix}\sum I_x^2&amp;\sum I_xI_y\\ \sum I_xI_y&amp;\sum I_y^2\end{pmatrix}}_{M}\begin{pmatrix}u\\v\end{pmatrix}=-\begin{pmatrix}\sum I_xI_t\\ \sum I_yI_t\end{pmatrix}</div>
+        <p>The matrix <i>M</i> is the <b>same structure tensor</b> as Harris! It is solvable exactly when <i>M</i> is invertible, i.e. when the window is a corner or texture (<span class="tex">\lambda_{\min}</span> large). On an edge <i>M</i> is nearly singular (aperture problem); on a flat patch it is almost zero. That is why "good features to track" are Harris corners.</p>
+
+        <div class="worked"><b>Worked example: a Lucas-Kanade solve</b>
+          <p>A tiny window with three pixels, with measured <span class="tex">(I_x,I_y,I_t)</span>:</p>
+          <table class="tbl"><tr><th>pixel</th><th>I<sub>x</sub></th><th>I<sub>y</sub></th><th>I<sub>t</sub></th></tr>
+          <tr><td>A</td><td>1</td><td>1</td><td>−3</td></tr><tr><td>B</td><td>1</td><td>0</td><td>−1</td></tr><tr><td>C</td><td>0</td><td>1</td><td>−2</td></tr></table>
+          <p>Sums: <span class="tex">\sum I_x^2=1+1+0=2</span>, <span class="tex">\sum I_xI_y=1+0+0=1</span>, <span class="tex">\sum I_y^2=1+0+1=2</span>, <span class="tex">\sum I_xI_t=-3-1+0=-4</span>, <span class="tex">\sum I_yI_t=-3+0-2=-5</span>.</p>
+          <p>Solve <span class="tex">\begin{pmatrix}2&amp;1\\1&amp;2\end{pmatrix}\begin{pmatrix}u\\v\end{pmatrix}=\begin{pmatrix}4\\5\end{pmatrix}</span>. <span class="tex">\det M=4-1=3</span>. <span class="tex">u=\frac{2\cdot4-1\cdot5}{3}=1</span>, <span class="tex">v=\frac{2\cdot5-1\cdot4}{3}=2</span>.</p>
+          <p>Check each pixel: <span class="tex">I_xu+I_yv=1+2=3=-I_t</span> for A; <span class="tex">1=-(-1)</span> for B; <span class="tex">2=-(-2)</span> for C. The flow is <b>(u, v) = (1, 2)</b> pixels per frame. The eigenvalues of <i>M</i> are 3 and 1: well conditioned. If all three pixels had <span class="tex">I_x=I_y</span> (a diagonal edge), <i>M</i> would be singular and only <span class="tex">u+v</span> could be found.</p></div>
+
+        <h3 class="sec">Beyond small motions: dense flow</h3>
+        <p>Linearisation holds only for shifts of about a pixel or less. Fixes: (1) <b>image pyramids</b>: estimate motion on a blurred, quarter-size image where a 8-pixel motion is 2 pixels, then refine at each finer level (<i>coarse to fine</i>); (2) <b>iterate</b>: warp frame 2 back by the current estimate and solve again. <b>Dense</b> flow gives an arrow at every pixel. Horn-Schunck (1981) adds a smoothness penalty over the whole image so textureless areas inherit motion from neighbours; Farnebäck fits polynomials. Deep networks (FlowNet, PWC-Net, RAFT) learn the whole thing: RAFT builds a 4-D <i>correlation volume</i> of all pixel pairs and iteratively updates the flow with a recurrent unit.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\min_{u,v}\ \sum_{(x,y)\in W}\big(I_x u+I_y v+I_t\big)^2\ \Longrightarrow\ \begin{pmatrix}u\\v\end{pmatrix}=-M^{-1}\mathbf b,\quad \mathbf b=\begin{pmatrix}\sum I_xI_t\\ \sum I_yI_t\end{pmatrix}</div>
+        <table class="sym">
+          <tr><td><span class="tex">(u,v)</span></td><td>flow vector: pixels moved horizontally and vertically between frames</td></tr>
+          <tr><td><span class="tex">I_x,I_y</span></td><td>spatial gradients of frame 1</td></tr>
+          <tr><td><span class="tex">I_t</span></td><td>temporal difference: frame 2 minus frame 1</td></tr>
+          <tr><td><span class="tex">W</span></td><td>window (e.g. 5×5) assumed to move rigidly together</td></tr>
+          <tr><td><span class="tex">M</span></td><td>structure tensor (same as Harris); invertible only for corners/texture</td></tr>
+          <tr><td><span class="tex">\mathbf b</span></td><td>right-hand side from the temporal change</td></tr>
+        </table>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the object slide between frame <i>t</i> and frame <i>t</i>+1 (loop). Then look at the flow field: green arrows are full Lucas-Kanade solutions; orange arrows are only the motion perpendicular to an edge.</li>
+          <li>Tick <b>peek through an aperture</b> and drag the circle onto a straight edge: you cannot tell which way the object really moves. Drag it to a corner and the ambiguity disappears.</li>
+          <li>Untick <b>texture inside</b>: the interior becomes flat and has no arrows; only edges and corners carry information.</li>
+          <li>Raise the true motion above 2.5 px: the linearisation fails and the estimate shrinks. This is why pyramids exist.</li>
+        </ol></div>
+        <div data-lab="cvFlow"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Brightness constancy fails with lighting changes, shadows, specular highlights and auto-exposure; flow gets noisy.</li>
+          <li>Flow is the motion of <i>apparent brightness patterns</i>, not necessarily the real 3-D motion (a rotating barber pole shows flow up while the pole turns sideways).</li>
+          <li>Large motions need pyramids; fast cameras or low frame rates break single-scale methods.</li>
+          <li>Flow is undefined at occlusions: pixels that appear or disappear have no partner.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Video models:</b> two-stream action recognition feeds optical flow into a second CNN; optical flow supervises or warps features in video object segmentation, frame interpolation and video super-resolution.</li>
+          <li><b>Stabilisation and tracking:</b> phone video stabilisers and KLT trackers use sparse Lucas-Kanade on corner points.</li>
+          <li><b>Autonomy:</b> flow gives time-to-collision and ego-motion; drones and optical mouse sensors are flow sensors.</li>
+          <li><b>RAFT</b> and its successors are standard building blocks in diffusion-based video generation and scene-flow models.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With ΣIx²=4, ΣIxIy=0, ΣIy²=1, ΣIxIt=−8, ΣIyIt=−3, what is (u, v)?</summary><div class="ans">M is diagonal: u = 8/4 = 2, v = 3/1 = 3. The flow is (2, 3) px.</div></details>
+        <details class="check"><summary>2. Why does Lucas-Kanade fail on a blank white wall and on a long straight edge?</summary><div class="ans">Wall: gradients are zero, so M ≈ 0 (no information). Edge: all gradients are parallel, so M has one tiny eigenvalue and the motion along the edge is undetermined (aperture problem).</div></details>
+        <details class="check"><summary>3. A car moves 12 px between frames. How does a pyramid help?</summary><div class="ans">At 1/4 resolution the motion is 3 px, and at 1/8 it is 1.5 px, small enough for the linear approximation. Estimate there, upscale and refine at each finer level.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Brightness constancy gives I_x·u + I_y·v + I_t = 0: one equation, two unknowns.</li>
+          <li>Lucas-Kanade assumes a window moves together and solves a 2×2 system with the Harris structure tensor.</li>
+          <li>Edges give only normal flow (aperture problem); corners and texture give full flow.</li>
+          <li>Large motion: pyramids and iteration; deep nets (RAFT) learn dense flow end to end.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now find, describe and match keypoints, fit geometry robustly, project 3-D points to pixels, recover depth from two views and measure motion. These classical tools still run robotics and AR. Next, <b>Module 3</b> builds the convolutional network from first principles: the learned replacement for hand-designed filters like the ones you just used.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

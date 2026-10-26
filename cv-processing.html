@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Classical image processing · Computer Vision</title>
+<meta name="description" content="Point operations, filtering, edges, morphology, resizing, geometric transforms and the frequency view — the classical toolkit that CNN layers grew out of.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-processing.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">1</div>
+      <div style="flex:1">
+        <h1>Module 1 · Classical image processing</h1>
+        <p>Before neural networks, people processed images with small, hand-designed operations: change each pixel, slide a window, find edges, clean up shapes, resize, warp, look at frequencies. Every one of them is still alive inside modern pipelines — and several are the direct ancestors of CNN layers. You will watch each one run, pixel by pixel, and compute it by hand.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">11 animated labs</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 1.1 ===================== -->
+    <section class="lesson" id="point-ops" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.1</span><h2>Point operations</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A photo taken at dusk is dull: all its pixels sit between 60 and 130 out of 255. What single rule, applied to each pixel on its own, could make it look right? And how do we know which rule is "right" without a human choosing sliders?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>point operation</b> looks at one pixel at a time, ignores its neighbours, and replaces its brightness with a new value computed from the old one alone. Picture a mail-sorting machine: each letter (pixel) goes in, a stamp is applied that depends only on the letter itself, and it comes out. The machine never reads the other letters.</p>
+        <p>Because the new value depends only on the old value, the whole operation can be written as a table with 256 rows: "old brightness 0 → new 0; 1 → 1; 2 → 3 …". This table is a <b>look-up table</b> (LUT). Applying it to a 12-megapixel photo costs 12 million table look-ups, which is why cameras do it in real time.</p>
+        <p>The everyday controls are all LUTs. <b>Brightness</b> adds a constant. <b>Contrast</b> stretches values away from the middle. <b>Gamma</b> bends the curve: it brightens shadows without clipping highlights. <b>Threshold</b> turns the picture into black and white at a chosen level.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Write the old value as <span class="tex">x</span> and the new as <span class="tex">y=f(x)</span>, both in 0…255. Linear controls: <span class="tex">y=a x+b</span> (gain <i>a</i> = contrast, bias <i>b</i> = brightness). Results are clipped to [0, 255], because a pixel cannot be brighter than white.</p>
+        <p>Gamma first rescales to 0…1, raises to a power, and rescales back: <span class="tex">y=255\,(x/255)^{\gamma}</span>. With γ&lt;1 dark values are lifted a lot (the curve rises steeply near 0); with γ&gt;1 they are pushed down.</p>
+        <div class="worked"><b>Worked example — gamma</b>
+          <p>Take a dark pixel x = 64. With γ = 0.5: x/255 = 0.251, raised to 0.5 is 0.501, times 255 = <b>127.7 ≈ 128</b> — the pixel doubled in brightness. With γ = 2: 0.251² = 0.063, times 255 = <b>16.1 ≈ 16</b> — it got much darker. A mid-grey x = 128 under γ = 0.5 becomes 255·0.502^0.5 = 180.7 ≈ 181, so the lift is strong in shadows and fades towards white.</p></div>
+        <p><b>Choosing automatically: the histogram.</b> The histogram <span class="tex">h(v)</span> counts how many pixels have brightness <i>v</i>. A dull photo has all its mass in a narrow band. We want a LUT that spreads that band over the full range. The recipe is <b>histogram equalisation</b>: let the <b>cumulative distribution</b> <span class="tex">\mathrm{cdf}(v)=\sum_{u\le v}h(u)</span> (how many pixels are at most as bright as <i>v</i>) decide the mapping. Where many pixels live, the CDF climbs steeply, so those values get spread far apart; where few live, they are squeezed together.</p>
+        <div class="eq">T(v)=\operatorname{round}\!\Big(\frac{\mathrm{cdf}(v)-\mathrm{cdf}_{\min}}{N-\mathrm{cdf}_{\min}}\,(L-1)\Big)</div>
+        <table class="sym">
+          <tr><td>v</td><td>old brightness (0 … L−1)</td></tr>
+          <tr><td>h(v)</td><td>number of pixels with brightness exactly v</td></tr>
+          <tr><td>cdf(v)</td><td>running total of h up to and including v</td></tr>
+          <tr><td>cdf<sub>min</sub></td><td>cdf at the darkest value that actually occurs (so the darkest pixel maps to 0)</td></tr>
+          <tr><td>N</td><td>total number of pixels</td></tr>
+          <tr><td>L</td><td>number of brightness levels (256 for 8 bit)</td></tr>
+          <tr><td>T(v)</td><td>new brightness for every pixel that had brightness v</td></tr>
+        </table>
+        <div class="worked"><b>Worked example — equalising a tiny image</b>
+          <p>A 4×4 image with 3-bit pixels (L = 8, values 0…7) contains: value 1 three times, value 2 five times, value 3 six times, value 4 twice (N = 16). The cumulative counts are cdf(1) = 3, cdf(2) = 8, cdf(3) = 14, cdf(4) = 16; cdf<sub>min</sub> = 3.</p>
+          <p>T(1) = round(0/13 · 7) = <b>0</b>. T(2) = round(5/13 · 7) = round(2.69) = <b>3</b>. T(3) = round(11/13 · 7) = round(5.92) = <b>6</b>. T(4) = round(13/13 · 7) = <b>7</b>.</p>
+          <p>The squeezed band 1…4 became 0, 3, 6, 7: spread over the whole range.</p></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: write your own formula</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Keep the gamma preset on "house, low contrast". Slide <b>g</b> from 1 down to 0.4: the histogram on the left stays, the one on the right slides toward white, and the look-up curve bows upward.</li>
+        <li>Click "threshold" and drag <b>t</b>: the LUT becomes a step, the after-histogram collapses into two bars.</li>
+        <li>Type your own formula, for example <code>255*sin(x/255*pi/2)</code>. Watch the white scan dot read one table row at a time.</li></ol></div>
+      <div data-lab="pointops"></div>
+      <h3 class="sec" style="max-width:780px">Lab 2: histogram equalisation in four stages</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Let it play once, slowly. In stage 2 the orange CDF curve rises fastest where the blue bars are tall.</li>
+        <li>In stage 3 pause: the dashed guide shows input v → CDF height → new value. Compare with the hand example above.</li>
+        <li>Switch to "overexposed": everything piles up on the right and the same recipe stretches it back.</li></ol></div>
+      <div data-lab="histeq"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Clipping destroys information.</b> Brighten a bright photo and many values saturate at 255; no later operation can separate them again. A LUT that sends several inputs to one output cannot be inverted.</li>
+          <li><b>Equalisation is not "always better".</b> It also amplifies noise in flat regions and can look harsh. CLAHE (equalise in small tiles, with a limit on stretching) is the safer variant used in practice.</li>
+          <li><b>Gamma operates on 0…1.</b> Applying <span class="tex">x^\gamma</span> directly to 0…255 gives wildly wrong values.</li>
+          <li>Colour images: equalise the brightness channel, not R, G, B separately, or the colours shift.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Preprocessing:</b> subtracting the mean and dividing by the standard deviation per channel — <span class="tex">y=(x-\mu)/\sigma</span> — is a point operation applied to every image before a CNN sees it.</li>
+          <li><b>Augmentation:</b> random brightness, contrast, gamma, and solarise/posterise in training pipelines (torchvision, Albumentations) are random LUTs.</li>
+          <li><b>Medical and satellite imaging:</b> CLAHE is a standard first step before segmentation networks.</li>
+          <li>A ReLU activation <span class="tex">\max(0,x)</span> is literally a point operation on feature maps.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why can a point operation be stored as 256 numbers?</summary><div class="ans">The new value depends only on the old value, which has just 256 possibilities in 8 bit. So a table of 256 entries describes the operation completely, regardless of image size.</div></details>
+        <details class="check"><summary>2. Pixel x = 100, gain a = 1.5, bias b = −20. What is y?</summary><div class="ans">y = 1.5·100 − 20 = 130 (inside 0…255, so no clipping).</div></details>
+        <details class="check"><summary>3. An image has cdf(5) = 40 pixels out of N = 100, cdf<sub>min</sub> = 10 and L = 256. What is T(5)?</summary><div class="ans">T = round((40 − 10)/(100 − 10) · 255) = round(0.3333 · 255) = round(85) = 85.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A point operation transforms each pixel by itself: a 256-row look-up table.</li><li>Gain/bias = contrast/brightness; gamma bends the curve; threshold makes it a step.</li><li>Histogram equalisation uses the CDF as the LUT to spread crowded brightness bands.</li><li>Input normalisation and colour augmentation in deep learning are point operations.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 ===================== -->
+    <section class="lesson" id="convolution-filters" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.2</span><h2>Convolution &amp; filtering</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A photo is grainy: each pixel is its true value plus random noise. How can a pixel's neighbours help us recover it? And can one small table of numbers, reused everywhere, blur, sharpen or find edges simply by changing its entries?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Noise is independent from pixel to pixel, while the scene is usually smooth. So average a pixel with its neighbours: the noise tends to cancel (up and down kicks offset each other) and the smooth part survives. That is a blur. Now generalise: instead of an equal average, use <i>weighted</i> sums with weights you choose. Positive weights in the middle and negative around them make a pixel stand out from its surroundings (sharpening). Negative on the left and positive on the right measure "how much brighter is the right side" (an edge detector).</p>
+        <p>Imagine a small <b>stencil</b> of 9 numbers laid over a 3×3 patch of the image. Multiply each pixel under it by the stencil number above it, add the nine products, write the total into the output at the centre, slide the stencil one pixel, and repeat. The stencil is the <b>kernel</b>; the sliding is the <b>convolution</b> (more precisely a correlation; see below).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — one output pixel, pixel by pixel</b>
+          <p>Patch (rows top to bottom): <code>12 20 28 / 16 24 32 / 40 48 56</code>.</p>
+          <p><b>Box blur</b> kernel (all weights 1/9): (12+20+28+16+24+32+40+48+56)/9 = 276/9 = <b>30.67</b>.</p>
+          <p><b>Gaussian</b> kernel <code>1 2 1 / 2 4 2 / 1 2 1</code> divided by 16: (12·1 + 20·2 + 28·1 + 16·2 + 24·4 + 32·2 + 40·1 + 48·2 + 56·1)/16 = (12+40+28+32+96+64+40+96+56)/16 = 464/16 = <b>29</b>. Closer to the centre value 24 than the box blur is, because the middle gets the largest weight.</p>
+          <p><b>Sharpen</b> kernel <code>0 −1 0 / −1 5 −1 / 0 −1 0</code>: 5·24 − (20 + 16 + 32 + 48) = 120 − 116 = <b>4</b>. The centre pixel is almost equal to its neighbours' average, so sharpening subtracts the "average part" and exaggerates the rest.</p></div>
+        <p><b>Padding.</b> At the border the stencil hangs outside the image. Choices: pad with zeros (darkens borders), replicate the edge pixel, or reflect. "Valid" convolution skips border positions and shrinks the output: an N×N image with a k×k kernel gives (N−k+1)×(N−k+1). Run the sliding-window lab to see each step.</p>
+        <div data-lab="convolve" data-kernel="box blur"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Pick "gaussian", pause, and press Step a few times. Verify one output number against the displayed arithmetic.</li>
+          <li>Switch to "sobel x" and watch the output centre on grey: positive where brightness rises to the right.</li>
+          <li>Tick "zero padding" and compare the output size and the border values.</li>
+          <li>Edit one weight and see the output change after one step. The kernel is a program you can write.</li></ol></div>
+        <p><b>Separable kernels.</b> A 2-D Gaussian is an outer product of a 1-D column and a 1-D row: <code>[1 2 1]ᵀ · [1 2 1] = [1 2 1 / 2 4 2 / 1 2 1]</code>. So blurring in two passes (rows, then columns) gives the same result with 2k multiplications per pixel instead of k². For k = 15 that is 30 versus 225, a 7.5× saving.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">(I\star K)(x,y)=\sum_{i=-r}^{r}\sum_{j=-r}^{r}K(i,j)\,I(x+i,\,y+j)</div>
+        <p>True <i>convolution</i> flips the kernel first: <span class="tex">(I*K)(x,y)=\sum K(i,j)\,I(x-i,y-j)</span>. Deep learning libraries compute the unflipped version (cross-correlation) and still call it convolution: since the weights are learned, flipping changes nothing.</p>
+        <table class="sym">
+          <tr><td>I(x, y)</td><td>input pixel at column x, row y</td></tr>
+          <tr><td>K(i, j)</td><td>kernel weight at offset (i, j) from the centre</td></tr>
+          <tr><td>r</td><td>kernel radius; kernel size k = 2r + 1</td></tr>
+          <tr><td>⋆</td><td>sliding-window sum (correlation); ∗ means the flipped version</td></tr>
+          <tr><td>Σ weights</td><td>1 for blurs (keeps brightness), 0 for derivative/edge kernels</td></tr>
+        </table>
+        <p>Cost: an H×W image with a k×k kernel needs H·W·k² multiply-adds.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: filtering a real picture</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Gaussian blur: raise the kernel size from 3 to 15 while σ stays 1.5. After a point the kernel looks the same: weights beyond about 3σ are ~0.</li>
+        <li>Switch to sharpen and increase "amount": edges get halos. Then "high-pass": it shows exactly what blur removed (details), centred on grey.</li>
+        <li>Choose "zero padding" and a large kernel: dark borders appear. Compare with "replicate".</li>
+        <li>Watch the readout: separable kernels need 2k instead of k² multiplications.</li></ol></div>
+      <div data-lab="filterlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Blur kernels must sum to 1</b>, or the picture gets brighter/darker. Edge kernels sum to 0, so flat areas map to 0 (shown as mid-grey).</li>
+          <li><b>Border artefacts:</b> zero padding makes dark frames around blurred images.</li>
+          <li><b>Correlation vs convolution:</b> for symmetric kernels they coincide; for asymmetric ones (Sobel, emboss) the sign of the result flips.</li>
+          <li><b>Order of operations:</b> filtering is linear, so "blur then brighten" ≠ "brighten (with clipping) then blur" near saturation.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>This is the operation inside every CNN.</b> A convolutional layer is exactly this sliding sum, but the kernel weights are <i>learned</i> instead of designed, and there are many kernels at once (one per output channel), each also summing over all input channels.</li>
+          <li>A 3×3 kernel has 9 numbers; reusing them at every position is <b>weight sharing</b>, the reason CNNs need far fewer parameters than fully connected networks.</li>
+          <li>Depthwise-separable convolutions (MobileNet) are the learned cousin of the separable-kernel trick.</li>
+          <li>Gaussian blur appears in data augmentation and in denoising, anti-aliasing before resizing and SIFT/Canny pipelines.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Apply the kernel <code>0 0 0 / 0 1 0 / 0 0 0</code> to any patch. What happens?</summary><div class="ans">Every output equals the centre pixel: the identity kernel returns the image unchanged.</div></details>
+        <details class="check"><summary>2. A 100×100 image, 5×5 kernel, no padding, stride 1: output size and multiplications?</summary><div class="ans">Output 96×96 = 9216 pixels; 25 multiplications each = 230,400.</div></details>
+        <details class="check"><summary>3. Why is a separable 7×7 filter cheaper than the full one, and by how much?</summary><div class="ans">Two 1-D passes cost 7 + 7 = 14 multiplications per pixel instead of 49: 3.5× fewer.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Convolution slides a small weight table over the image: weighted sum of each neighbourhood.</li><li>The weights decide the effect: average = blur, centre-minus-surround = sharpen, left-vs-right = edges.</li><li>Padding decides border behaviour and output size; separable kernels cut cost from k² to 2k.</li><li>A CNN layer is this operation with learned kernels.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 ===================== -->
+    <section class="lesson" id="edges" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.3</span><h2>Gradients &amp; edges</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A self-driving car must find lane markings. A lane line is a place where brightness changes quickly. How do we measure "how quickly brightness changes" at every pixel, in which direction, and how do we turn a fuzzy band of change into one clean line?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Walk across the image along a row of pixels and write down the brightness. On a flat wall the numbers hardly change. Crossing a door frame they jump. The <b>gradient</b> is just that rate of change: the difference between neighbouring pixels. In a picture you can walk in two directions, so there are two numbers per pixel: <b>G<sub>x</sub></b> (how fast brightness changes going right) and <b>G<sub>y</sub></b> (going down). Together they are an arrow that points toward steepest brightening, whose length is the <b>edge strength</b>. An edge line runs perpendicular to that arrow.</p>
+        <p>A plain difference <span class="tex">I(x+1)-I(x-1)</span> is noisy, so Sobel adds smoothing in the other direction: the row above and below count once, the middle row twice. That is a derivative kernel times a tiny blur, in one 3×3 stencil.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="eq">S_x=\begin{bmatrix}-1&amp;0&amp;1\\-2&amp;0&amp;2\\-1&amp;0&amp;1\end{bmatrix},\qquad S_y=\begin{bmatrix}-1&amp;-2&amp;-1\\0&amp;0&amp;0\\1&amp;2&amp;1\end{bmatrix}</div>
+        <div class="worked"><b>Worked example — Sobel on a 3×3 patch</b>
+          <p>Patch: <code>10 40 90 / 10 50 100 / 10 10 60</code>.</p>
+          <p>G<sub>x</sub> = (−10 + 90) + (−2·10 + 2·100) + (−10 + 60) = 80 + 180 + 50 = <b>310</b>.</p>
+          <p>G<sub>y</sub> = (−10 − 2·40 − 90) + 0 + (10 + 2·10 + 60) = −180 + 90 = <b>−90</b>.</p>
+          <p>Magnitude = √(310² + 90²) = √(96,100 + 8,100) = √104,200 = <b>322.8</b>. Angle = atan2(−90, 310) = <b>−16.2°</b>: brightness rises mostly to the right and slightly upward (image rows count downward, so negative G<sub>y</sub> means "brighter above"). The edge runs almost vertically.</p></div>
+        <div class="eq">|G|=\sqrt{G_x^2+G_y^2},\qquad \theta=\operatorname{atan2}(G_y,G_x)</div>
+        <table class="sym">
+          <tr><td>G<sub>x</sub>, G<sub>y</sub></td><td>horizontal and vertical derivative estimates (Sobel outputs)</td></tr>
+          <tr><td>|G|</td><td>gradient magnitude = edge strength</td></tr>
+          <tr><td>θ</td><td>gradient direction; the edge itself is at θ ± 90°</td></tr>
+          <tr><td>atan2(y, x)</td><td>angle of the vector (x, y) in the correct quadrant</td></tr>
+        </table>
+        <p><b>From gradient to a clean edge map: Canny.</b></p>
+        <ol>
+          <li><b>Blur</b> with a Gaussian, so noise does not look like edges.</li>
+          <li><b>Gradient</b> with Sobel: |G| and θ.</li>
+          <li><b>Non-maximum suppression:</b> round θ to 0°, 45°, 90° or 135°; keep a pixel only if its |G| is at least that of both neighbours along that direction. In our patch the centre has |G| = 322.8; if the right neighbour is 200 and the left 150, it survives and they are erased. A thick ridge becomes a line one pixel wide.</li>
+          <li><b>Double threshold:</b> |G| ≥ high → strong edge; between low and high → weak; below low → discarded.</li>
+          <li><b>Hysteresis:</b> keep a weak pixel only if it is connected (8 neighbours) to a strong one, repeatedly. A chain of magnitudes 120, 90, 60, 30, 70 with low = 40 and high = 100: the 120 is strong; 90 and 60 are weak but connected, so they survive; 30 is dropped; the final 70 is weak and disconnected from any strong pixel through the dropped 30, so it is discarded as well.</li>
+        </ol>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: Sobel to Canny in nine stages</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Let it play once at speed 1. Notice G<sub>x</sub> lights up vertical edges only and G<sub>y</sub> horizontal ones.</li>
+        <li>Hover the big image on stage 5 and read G<sub>x</sub>, G<sub>y</sub>, |G|, θ: check one against the formula.</li>
+        <li>Lower the blur σ to 0 and the high threshold to 10: noise edges appear. Raise σ to 2: small details vanish.</li>
+        <li>On stage 9, raise the low threshold and watch weak chains lose their connection to strong ones.</li></ol></div>
+      <div data-lab="cannylab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Edges are not object boundaries.</b> Shadows, texture and reflections all produce gradients; a real boundary can be low-contrast and produce none.</li>
+          <li><b>Thresholds are image-dependent.</b> Values that work in daylight fail at dusk; many systems set them from the median gradient.</li>
+          <li><b>Angle conventions:</b> image y points down, so "up" angles are negative. Mixing conventions flips the 45° and 135° bins.</li>
+          <li>Forgetting to blur first: Sobel on a noisy image returns mostly noise.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Early CNN filters.</b> The first layer of AlexNet learned, on its own, oriented edge and colour-contrast detectors that look like Sobel/Gabor kernels. Training rediscovers the gradient.</li>
+          <li><b>Lane and road-edge detection</b> pipelines combine Canny with a Hough line transform; deep networks now do it end to end, but edge maps are still used as extra input channels.</li>
+          <li><b>Edge-aware losses</b> (gradient losses in depth estimation, segmentation boundary losses) compute Sobel responses of predictions and targets.</li>
+          <li><b>HOG features</b> (histograms of gradient orientations) powered pedestrian detection before deep learning.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Sobel-x on the patch <code>0 0 100 / 0 0 100 / 0 0 100</code>: G<sub>x</sub>, G<sub>y</sub>, angle?</summary><div class="ans">G<sub>x</sub> = (100) + 2·100 + 100 = 400; G<sub>y</sub> = (−0 −0 −100) + (0+0+100) = 0. Magnitude 400, angle 0°: a vertical edge, gradient pointing right.</div></details>
+        <details class="check"><summary>2. Why does non-maximum suppression compare neighbours along the gradient direction rather than all 8?</summary><div class="ans">The ridge of high magnitude is thick <i>across</i> the edge, so the true edge is the maximum in that across direction. Along the edge, neighbours naturally have similar values and must not suppress each other.</div></details>
+        <details class="check"><summary>3. What problem does hysteresis solve compared with one threshold?</summary><div class="ans">A single high threshold breaks edges where strength dips; a single low threshold admits noise. Hysteresis keeps weak pixels only when they continue a confident edge.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Gradient = (G<sub>x</sub>, G<sub>y</sub>) per pixel; magnitude is edge strength, angle points across the edge.</li><li>Sobel is a derivative plus smoothing in one 3×3 kernel.</li><li>Canny = blur, gradient, thin by non-max suppression, double threshold, hysteresis.</li><li>CNNs learn edge detectors in their first layer automatically.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 ===================== -->
+    <section class="lesson" id="morphology" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.4</span><h2>Morphology &amp; components</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model outputs a black-and-white mask of "road". It is full of specks, has tiny holes inside the road and a thin bridge between two separate objects. How do we clean it using shape alone, and then count the separate objects?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a binary image as a landscape of "land" (1) and "water" (0), and a <b>structuring element</b> (SE) as a small stamp of some shape, say 3×3. <b>Erosion</b> asks of each position: "does my stamp fit entirely inside the land here?" If yes the pixel stays land, otherwise it becomes water. Land shrinks, thin bridges and specks vanish. <b>Dilation</b> asks: "does my stamp touch any land here?" If yes, the pixel becomes land. Land grows, small holes fill.</p>
+        <p>Combine them. <b>Opening</b> = erode then dilate: specks disappear (erosion kills them) but surviving shapes regain their size (dilation). <b>Closing</b> = dilate then erode: holes and gaps close while the outer size is kept.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — erode then dilate</b>
+          <p>A 6-wide, 5-tall image (rows top to bottom):</p>
+          <pre><code>0 0 0 0 0 0
+0 1 1 1 0 0
+0 1 1 1 0 1
+0 1 1 1 0 0
+0 0 0 0 0 0</code></pre>
+          <p>SE = 3×3 square. <b>Erosion:</b> a pixel stays 1 only if all nine pixels around it are 1. Only the centre of the block, (x=2, y=2), qualifies; every other block pixel has a 0 within reach. The speck at (5, 2) has no neighbours, so it dies. Result: a single 1.</p>
+          <p><b>Dilation of that result</b> with the 3×3 SE: every pixel within one step of (2, 2) becomes 1 — the full 3×3 block returns. So <b>opening removed the speck and kept the block exactly</b>. Dilation of the <i>original</i> would instead have turned the speck into a 3×3 blob and merged outlines; that is why we open rather than only dilate.</p></div>
+        <p><b>Connected components.</b> After cleaning, count objects: scan the image; whenever you meet an unlabelled foreground pixel, give it a new label and flood-fill all pixels connected to it. <b>4-connectivity</b> counts only up/down/left/right neighbours; <b>8-connectivity</b> also counts diagonals. Two pixels touching only at a corner are two objects under 4-connectivity and one under 8.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">(A\ominus B)(p)=\begin{cases}1&amp;\text{if }B_p\subseteq A\\0&amp;\text{otherwise}\end{cases}\qquad (A\oplus B)(p)=\begin{cases}1&amp;\text{if }B_p\cap A\neq\emptyset\\0&amp;\text{otherwise}\end{cases}</div>
+        <div class="eq">A\circ B=(A\ominus B)\oplus B\quad\text{(opening)},\qquad A\bullet B=(A\oplus B)\ominus B\quad\text{(closing)}</div>
+        <table class="sym">
+          <tr><td>A</td><td>the binary image (set of foreground pixels)</td></tr>
+          <tr><td>B</td><td>structuring element (the stamp)</td></tr>
+          <tr><td>B<sub>p</sub></td><td>the stamp placed with its centre at pixel p</td></tr>
+          <tr><td>⊖, ⊕</td><td>erosion and dilation</td></tr>
+          <tr><td>∘, •</td><td>opening and closing</td></tr>
+        </table>
+        <p>Erosion and dilation are the same sliding-window pattern as convolution, with "all of" (min) or "any of" (max) instead of a weighted sum. On grey images they become a sliding <b>min</b> and <b>max</b>.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: a shape probing the image</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose "blob + noise" and erosion. Watch the SE slide: green covered pixels mean "fits". Specks vanish at once.</li>
+        <li>Switch to "opening": phase 1 erodes, phase 2 dilates the intermediate result. The noise is gone, the blob is back.</li>
+        <li>Use "two touching blobs": try erosion to split them, then find the SE size that separates them.</li>
+        <li>Try "broken ring" with closing. Then draw your own pixels by clicking, and edit the 5×5 SE.</li>
+        <li>Switch to "connected components" and compare 4- vs 8-connectivity.</li></ol></div>
+      <div data-lab="morpho"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Erosion then dilation is not the identity:</b> corners are rounded and features narrower than the SE are lost for good.</li>
+          <li><b>Border handling:</b> treating outside pixels as 0 erodes shapes touching the border.</li>
+          <li><b>Connectivity choice</b> changes object counts; use 8-connectivity for foreground and 4 for background, or vice versa, to avoid paradoxes.</li>
+          <li>An SE too big deletes real objects; choose it from the size of the noise you want to remove.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Mask clean-up:</b> segmentation outputs (road, tumour, cell masks) are routinely opened/closed and filtered by component size before being used.</li>
+          <li><b>Max pooling</b> is a grey-scale dilation followed by subsampling; the "min pool" is erosion.</li>
+          <li><b>Instance counting</b> (cells, cars on a lot) uses connected components on a thresholded prediction.</li>
+          <li><b>OCR and document pipelines</b> use closing to join broken strokes and opening to remove scan specks.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 3×3 foreground square is eroded with a 3×3 square SE. What remains?</summary><div class="ans">Only its centre pixel (the only position where the stamp fits entirely).</div></details>
+        <details class="check"><summary>2. Which removes a one-pixel speck of noise and which fills a one-pixel hole: opening or closing?</summary><div class="ans">Opening removes isolated specks; closing fills small holes and gaps.</div></details>
+        <details class="check"><summary>3. Two foreground pixels touch only diagonally. How many components under 4- and 8-connectivity?</summary><div class="ans">2 under 4-connectivity; 1 under 8-connectivity.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Erosion = "stamp fits", dilation = "stamp touches"; they shrink and grow shapes.</li><li>Opening removes specks, closing fills holes; both keep overall size.</li><li>Connected components label objects by flood fill; connectivity matters.</li><li>Max pooling in CNNs is grey-scale dilation.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 ===================== -->
+    <section class="lesson" id="resizing-interp" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.5</span><h2>Resizing &amp; interpolation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A network wants 224×224 inputs but your photo is 4000×3000, and elsewhere a 64×64 thumbnail must be enlarged to 256×256. When we enlarge, where do the new pixel values come from? When we shrink, why does a striped shirt turn into weird wavy patterns?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A digital image is a set of samples of a smooth picture on a grid. <b>Resampling</b> means reading that picture at new locations. The new pixel centres rarely land on old pixel centres, so we must <i>estimate</i> the picture between samples. That estimate is <b>interpolation</b>.</p>
+        <ul>
+          <li><b>Nearest neighbour:</b> copy the closest old pixel. Fast, blocky.</li>
+          <li><b>Bilinear:</b> blend the 4 surrounding pixels, nearer ones count more. Smooth, slightly soft.</li>
+          <li><b>Bicubic:</b> use 16 surrounding pixels with cubic weights. Sharper, may overshoot (halos).</li>
+        </ul>
+        <p>Shrinking has a different problem. A fine pattern needs many pixels to be described; with fewer pixels the details cannot be stored and masquerade as coarse, false patterns: <b>aliasing</b>. The cure is to blur (average) before sampling so the fine detail is removed honestly.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Where does output pixel <i>x</i> come from? Pixel centres sit at half-integers, so enlarging by factor <i>s</i> gives the source coordinate <span class="tex">x_s=(x+0.5)/s-0.5</span>. If <span class="tex">x_s=1.17</span>, we sit between source pixels 1 and 2, at fraction 0.17 of the way.</p>
+        <div class="worked"><b>Worked example — bilinear by hand</b>
+          <p>Four source pixels: top-left 10, top-right 50, bottom-left 30, bottom-right 90. We want the value at fraction f<sub>x</sub> = 0.25 across and f<sub>y</sub> = 0.5 down.</p>
+          <p>Blend along the top: 10 + 0.25·(50 − 10) = <b>20</b>. Along the bottom: 30 + 0.25·(90 − 30) = <b>45</b>. Blend those vertically: 20 + 0.5·(45 − 20) = <b>32.5</b>.</p>
+          <p>Equivalent weights: (1−0.25)(1−0.5) = 0.375 on 10, 0.25·0.5 = 0.125 on 50, 0.75·0.5 = 0.375 on 30, 0.25·0.5 = 0.125 on 90: 3.75 + 6.25 + 11.25 + 11.25 = 32.5 ✓. Nearest neighbour would have returned 30 or 10.</p></div>
+        <div class="eq">I(x_s,y_s)=\sum_{i,j}w_x(i)\,w_y(j)\,I(\lfloor x_s\rfloor+i,\;\lfloor y_s\rfloor+j)</div>
+        <table class="sym">
+          <tr><td>x<sub>s</sub>, y<sub>s</sub></td><td>real-valued source coordinate that the output pixel maps back to</td></tr>
+          <tr><td>⌊·⌋</td><td>round down (the pixel to the left/above)</td></tr>
+          <tr><td>w<sub>x</sub>, w<sub>y</sub></td><td>1-D weights; bilinear: (1−f, f) on offsets 0, 1; bicubic: four weights, e.g. at f = 0.5 they are (−0.0625, 0.5625, 0.5625, −0.0625)</td></tr>
+          <tr><td>f</td><td>fractional part of the coordinate</td></tr>
+        </table>
+        <p>The sampling theorem says a signal with highest frequency <i>ω</i> (cycles per pixel) can be stored faithfully only if <span class="tex">\omega\le 0.5</span> cycle per pixel (the <b>Nyquist limit</b>). Shrinking by f divides the limit to 0.5/f in the original pixel units. Stripes faster than that fold back to a false lower frequency.</p>
+        <p><b>Gaussian pyramids</b> apply the cure repeatedly: blur, drop every second row and column, repeat. Each level is a quarter of the pixels; together a pyramid costs only 4/3 of the original image.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: enlarge, and follow the sample point</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose bilinear, pause, and press Step: read x<sub>s</sub>, the four weights (green cells) and the arithmetic. Check one value by hand.</li>
+        <li>Switch to nearest, then bicubic, same enlargement: compare blockiness and sharpness. In bicubic some weights are red (negative).</li>
+        <li>Raise "enlarge by" to 8 and use "Show all" to compare methods on a handwritten 7.</li></ol></div>
+      <div data-lab="interp"></div>
+      <h3 class="sec" style="max-width:780px">Lab 2: aliasing and the pyramid</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Moving stripes, shrink factor 4. Raise ω above 0.125 cycles/px (the new Nyquist limit): the middle panel shows slow, false (even backward-moving) stripes; the right panel stays honest (grey blur).</li>
+        <li>Try the zone plate: the middle panel shows rings that do not exist in the original.</li>
+        <li>In the pyramid lab, watch the blur fade in, then the surviving pixels (orange dots) form the next level.</li></ol></div>
+      <div data-lab="alias"></div>
+      <div data-lab="pyramid"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Library defaults differ.</b> OpenCV <code>INTER_LINEAR</code>, PIL <code>BILINEAR</code> and PyTorch <code>align_corners</code> treat pixel centres differently; a model trained with one and deployed with another sees shifted inputs and loses accuracy.</li>
+          <li><b>Shrinking with bilinear/nearest and no prefilter aliases.</b> Use area averaging (<code>INTER_AREA</code>) or antialias=True for downscaling.</li>
+          <li><b>Interpolation invents nothing new:</b> upscaling does not add real detail, only smoother guesses.</li>
+          <li><b>Bicubic can leave 0…255</b>; clip afterwards.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Input resizing:</b> every classifier resizes to 224×224 (or 384, 512); the interpolation method is part of the model's contract.</li>
+          <li><b>Feature pyramids (FPN)</b> in detectors build the pyramid idea into networks: coarse feature maps are upsampled (nearest or bilinear) and added to finer ones.</li>
+          <li><b>Super-resolution</b> networks (SRCNN, ESRGAN) are trained to beat bicubic upscaling; bicubic is the standard baseline and training-data generator.</li>
+          <li><b>Strided convolution and pooling</b> downsample without a proper prefilter — one reason CNNs can be sensitive to small shifts; "anti-aliased CNNs" add a blur before striding.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Enlarging ×2: output pixel x = 3 maps to which source coordinate?</summary><div class="ans">x<sub>s</sub> = (3 + 0.5)/2 − 0.5 = 1.25.</div></details>
+        <details class="check"><summary>2. Four pixels 0, 100 (top) and 100, 200 (bottom); the point is at f<sub>x</sub> = f<sub>y</sub> = 0.5. Bilinear value?</summary><div class="ans">Top: 50. Bottom: 150. Middle: 100.</div></details>
+        <details class="check"><summary>3. Why is averaging before subsampling the correct way to shrink?</summary><div class="ans">Detail finer than the new pixel grid cannot be represented; if left in, it folds into false coarse patterns (aliasing). Averaging removes it first.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Resizing maps each output pixel back to a real-valued source position and interpolates.</li><li>Nearest = copy, bilinear = 4 weighted neighbours, bicubic = 16 with cubic weights.</li><li>Shrinking needs a low-pass first, or aliasing appears (Nyquist: ≤ 0.5 cycle/pixel).</li><li>Pyramids repeat blur-and-halve; FPN and super-resolution build on them.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 ===================== -->
+    <section class="lesson" id="geometric-transforms" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.6</span><h2>Geometric transforms</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A phone photographs a sheet of paper at an angle. We want the flat, rectangular scan. Which formula moves every pixel to where it belongs — and when we implement it, why must we compute it backwards?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A geometric transform moves <i>where</i> pixels are, not what values they hold. Slide the picture (translation), turn it (rotation), zoom it (scale), slant it (shear): these keep parallel lines parallel and are called <b>affine</b>. Tilt the paper away from the camera and parallel lines now converge towards a vanishing point: that is a <b>perspective</b> change, called a <b>homography</b>.</p>
+        <p>Matrices make this tidy. To fold translation into the same matrix as rotation, add a constant 1 to every point: <span class="tex">(x,y)\to(x,y,1)</span>, the <b>homogeneous coordinates</b>. Then everything is one 3×3 matrix multiplication.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="eq">\begin{bmatrix}x'\\y'\\1\end{bmatrix}=\begin{bmatrix}a&amp;b&amp;t_x\\c&amp;d&amp;t_y\\0&amp;0&amp;1\end{bmatrix}\begin{bmatrix}x\\y\\1\end{bmatrix}</div>
+        <p>The top-left 2×2 block (a, b, c, d) does rotation, scale and shear; the right column is the shift. Rotation by θ is <span class="tex">\begin{bmatrix}\cos\theta&amp;-\sin\theta\\\sin\theta&amp;\cos\theta\end{bmatrix}</span>.</p>
+        <div class="worked"><b>Worked example — an affine transform of one point</b>
+          <p>Rotate 30° (cos = 0.866, sin = 0.5) and shift by (10, 5): matrix rows (0.866, −0.5, 10), (0.5, 0.866, 5), (0, 0, 1). Point (20, 10):</p>
+          <p>x′ = 0.866·20 − 0.5·10 + 10 = 17.32 − 5 + 10 = <b>22.32</b>. y′ = 0.5·20 + 0.866·10 + 5 = 10 + 8.66 + 5 = <b>23.66</b>. The bottom row gives 1, so we are done.</p></div>
+        <p><b>Homography.</b> Make the bottom row non-trivial: <span class="tex">(h_{31},h_{32},1)</span>. The product's third entry <i>w</i> is no longer 1 and we must divide: <span class="tex">(x',y')=(X/w,\;Y/w)</span>.</p>
+        <div class="worked"><b>Worked example — a homography</b>
+          <p>H = rows (1, 0, 0), (0, 1, 0), (0.01, 0, 1). Point (50, 20): (X, Y, w) = (50, 20, 0.01·50 + 1 = 1.5). Divide: (50/1.5, 20/1.5) = <b>(33.33, 13.33)</b>. Points farther to the right (larger x) get a larger w, and are pulled closer to the origin: that is perspective foreshortening.</p></div>
+        <p><b>Why compute backwards (inverse warping).</b> If you push every <i>source</i> pixel forward, some output pixels receive none (holes) or several (collisions), because positions land between grid points. Instead, for every <i>output</i> pixel, ask the inverse matrix "where did you come from?" and interpolate the source there (the previous lesson). No holes, every output pixel is filled exactly once.</p>
+        <div class="worked"><b>Worked example — inverse warping</b>
+          <p>Scale by 2: M = diag(2, 2, 1). To fill output pixel (30, 20) compute M⁻¹ = diag(0.5, 0.5, 1): source point (15, 10), read it (interpolating if not at integers). Needs M invertible, i.e. det ≠ 0.</p></div>
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf p'\sim H\,\mathbf p,\qquad (x',y')=\Big(\tfrac{h_{11}x+h_{12}y+h_{13}}{h_{31}x+h_{32}y+1},\;\tfrac{h_{21}x+h_{22}y+h_{23}}{h_{31}x+h_{32}y+1}\Big)</div>
+        <table class="sym">
+          <tr><td>p = (x, y, 1)ᵀ</td><td>homogeneous coordinates of a pixel</td></tr>
+          <tr><td>H</td><td>3×3 matrix; affine if its bottom row is (0, 0, 1) (6 free numbers); homography otherwise (8 free numbers, scale fixed by h₃₃ = 1)</td></tr>
+          <tr><td>w</td><td>third coordinate after multiplying; divide by it to get pixels</td></tr>
+          <tr><td>H⁻¹</td><td>inverse matrix used for inverse warping (exists when det H ≠ 0)</td></tr>
+        </table>
+        <p>Degrees of freedom matter in practice: an affine map is pinned down by 3 point pairs, a homography by 4 (each pair gives 2 equations; 8 unknowns).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: warp with a matrix</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Let the animation run: M blends from the identity. The gold grid is the source grid pushed through M; the picture is filled by inverse lookup (blue dot asks, green dot answers).</li>
+        <li>Rotate by 90° and watch det stay at 1. Set scale x to −1 for a mirror image: det turns negative.</li>
+        <li>Type numbers in the bottom row (h31, h32 in orange): parallel grid lines begin to converge.</li>
+        <li>Set scale x to 0: the matrix is singular and the image collapses; no inverse exists.</li></ol></div>
+      <div data-lab="warp"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Order of matrices:</b> "rotate then translate" ≠ "translate then rotate". The matrix next to the point acts first.</li>
+          <li><b>Rotation about the origin</b> (top-left corner in pixel coordinates) throws the picture out of frame; rotate about the centre by shifting to the centre first.</li>
+          <li><b>Forgetting to divide by w</b> in a homography.</li>
+          <li><b>Forward warping</b> leaves holes; use the inverse mapping.</li>
+          <li>Pixel-centre conventions (0 vs 0.5) shift results by half a pixel, as in resizing.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Data augmentation:</b> random rotation, scale, shear, flip and crop are random affine matrices applied by inverse warping (<code>torchvision.transforms.RandomAffine</code>).</li>
+          <li><b>Spatial Transformer Networks</b> learn the six affine numbers per image and warp the feature map differentiably with bilinear sampling.</li>
+          <li><b>Document scanning and OCR:</b> estimate a homography from the 4 corners of the page and rectify.</li>
+          <li><b>Panorama stitching and AR</b> (Module 2): matched keypoints give a homography between images.</li>
+          <li><b>Face alignment</b> warps every face to a canonical template before recognition.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Translate point (4, 7) by (−1, 3) using a 3×3 matrix. Result?</summary><div class="ans">Rows (1,0,−1), (0,1,3), (0,0,1) applied to (4, 7, 1) give (3, 10, 1).</div></details>
+        <details class="check"><summary>2. Apply H with bottom row (0.02, 0, 1) and identity top rows to (50, 10).</summary><div class="ans">w = 0.02·50 + 1 = 2; (50/2, 10/2) = (25, 5).</div></details>
+        <details class="check"><summary>3. Why must image warping use the inverse matrix?</summary><div class="ans">Forward mapping leaves holes and collisions on the output grid. Looking up each output pixel's source location (and interpolating) fills every pixel exactly once.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Homogeneous coordinates let translation, rotation, scale, shear and perspective be one 3×3 matrix.</li><li>Affine: parallel lines stay parallel (6 numbers). Homography: perspective, divide by w (8 numbers).</li><li>Warp images backwards: output pixel → M⁻¹ → source → interpolate.</li><li>Augmentation, STNs, scanning and stitching all rest on this.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.7 ===================== -->
+    <section class="lesson" id="frequency-domain" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.7</span><h2>The frequency view</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Why does blurring remove fine detail and keep large shapes? Why can a JPEG throw away 90% of its data and still look the same? Is there a way of describing an image where "fine detail" and "coarse structure" are separate numbers we can keep or delete?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A sound can be described in time (pressure at each instant) or as a recipe of pure notes (how much bass, how much treble). Both describe the same sound. Images are the same: besides listing pixels, we can describe them as a sum of <b>waves</b> — stripes of different widths and directions. Wide stripes are <b>low frequencies</b> (slow brightness changes: sky, walls). Narrow stripes are <b>high frequencies</b> (edges, hair, noise). The <b>Fourier transform</b> computes the recipe: how much of each stripe pattern is needed.</p>
+        <p>With this view, "blur" has an exact meaning: remove narrow stripes. "Sharpen" means boost them. Sampling and aliasing become obvious: a stripe too narrow for the pixel grid cannot be stored. JPEG throws away the narrowest stripes because the eye barely notices them.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Start in one dimension. Any repeating signal is a sum of sines. A square wave equals <span class="tex">\tfrac4\pi(\sin x+\tfrac13\sin3x+\tfrac15\sin5x+\dots)</span>: each odd harmonic adds a bit of sharpness to the corners. Try the builder below.</p>
+        <div data-lab="sines"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press "build up one term at a time" on the square wave: with 1 term it is a sine; each added harmonic squares the corners.</li>
+          <li>Pick the triangle: its amplitudes fall like 1/k², so it needs fewer terms than the square (which falls as 1/k) — smooth corners need less high frequency.</li>
+          <li>Pick "single sine" then set A3 to 0.5 by hand: you invent your own waveform from its spectrum.</li></ol></div>
+        <div class="worked"><b>Worked example — a 4-sample DFT</b>
+          <p>Signal x = (2, 4, 2, 0). The discrete Fourier transform is <span class="tex">X_k=\sum_n x_n e^{-2\pi i kn/4}</span> with <span class="tex">e^{-2\pi i/4}=-i</span>.</p>
+          <p>X<sub>0</sub> = 2 + 4 + 2 + 0 = <b>8</b> (the sum: mean = 8/4 = 2).</p>
+          <p>X<sub>1</sub> = 2 + 4(−i) + 2(−1) + 0(i) = 0 − 4i, magnitude <b>4</b>. X<sub>2</sub> = 2 − 4 + 2 − 0 = <b>0</b>. X<sub>3</sub> = +4i (the mirror image of X<sub>1</sub> for real signals).</p>
+          <p>Reading: the signal is a constant 2 plus one sine of amplitude 2|X<sub>1</sub>|/N = 2·4/4 = 2: indeed x<sub>n</sub> = 2 + 2 sin(πn/2) = (2, 4, 2, 0) ✓.</p></div>
+        <p>For an image we do this along rows and columns: a 2-D transform gives a <b>spectrum</b> <span class="tex">F(u,v)</span> where (u, v) is the stripe frequency in x and y. By convention the centre is "zero frequency" (the average brightness, DC); distance from the centre means finer detail; the angle shows the stripes' orientation (a vertical edge makes energy along the horizontal axis of the spectrum).</p>
+        <div class="eq">F(u,v)=\sum_{x=0}^{N-1}\sum_{y=0}^{N-1}I(x,y)\,e^{-2\pi i\,(ux+vy)/N},\qquad I(x,y)=\frac1{N^2}\sum_{u,v}F(u,v)\,e^{+2\pi i\,(ux+vy)/N}</div>
+        <table class="sym">
+          <tr><td>I(x, y)</td><td>pixel brightness at column x, row y</td></tr>
+          <tr><td>F(u, v)</td><td>complex amount of the stripe pattern with u cycles across and v cycles down the image</td></tr>
+          <tr><td>|F|</td><td>how strong that pattern is (shown, log-scaled, as the spectrum)</td></tr>
+          <tr><td>e<sup>iφ</sup></td><td>cos φ + i sin φ: a wave; the angle of F encodes the stripe position (phase)</td></tr>
+          <tr><td>N</td><td>image side length in pixels</td></tr>
+        </table>
+        <p><b>The convolution theorem</b> ties it together: convolving an image with a kernel equals multiplying their spectra, point by point. A Gaussian blur kernel has a Gaussian spectrum: it multiplies high frequencies by numbers near 0. That is why "blur removes detail" and why a big spatial kernel can be applied cheaply with an FFT.</p>
+        <p><b>Link to JPEG.</b> JPEG cuts the image into 8×8 blocks, takes a cousin of the Fourier transform (the DCT), divides the coefficients by a quality table that is large for high frequencies, and rounds. Most high-frequency coefficients become zero and cost nothing to store.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: filter in the frequency domain</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Keep "low frequencies" and let the radius sweep slowly. At radius 3 only blobs remain; by about 15 the picture is nearly complete. Read "energy kept" — a few coefficients carry most of it.</li>
+        <li>Switch to "high frequencies": only outlines remain, centred on grey.</li>
+        <li>Use the checkerboard: its spectrum is a few isolated bright dots, because it is a few pure stripe patterns.</li>
+        <li>With a hard circle, look near edges for ripples (ringing). Tick "soft Gaussian mask": the ripples disappear.</li></ol></div>
+      <div data-lab="freq"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Hard cut-offs ring.</b> A sharp mask in frequency means a sinc-shaped kernel in space, which has ripples. Use smooth masks (Gaussian).</li>
+          <li><b>The spectrum picture is log-scaled.</b> Without the log you would see only the DC dot.</li>
+          <li><b>Phase matters more than magnitude for structure.</b> Swap two images' phases and the result looks like the phase donor.</li>
+          <li><b>FFT assumes the image repeats</b> at its borders; sharp mismatches create a bright cross in the spectrum (fix: window the image).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Compression:</b> JPEG, video codecs and the DCT underlie most training data; compression artefacts are a form of domain shift. Networks can also learn directly on DCT coefficients.</li>
+          <li><b>Texture bias.</b> CNNs often rely on high-frequency texture; low-pass filtering the input exposes how a model's accuracy depends on frequency bands, and "shape-biased" training reduces it.</li>
+          <li><b>Anti-aliasing:</b> blurring before strided downsampling (BlurPool) makes CNNs more shift-stable.</li>
+          <li><b>Frequency-domain layers and losses:</b> Fourier Neural Operators, FFT-based fast convolutions, and focal-frequency losses in image generation; adversarial perturbations often live in high frequencies; diffusion models corrupt high frequencies first.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What does the centre pixel of the spectrum represent?</summary><div class="ans">The zero-frequency (DC) component: the average brightness of the whole image (times N² in the unnormalised formula).</div></details>
+        <details class="check"><summary>2. Why does a Gaussian blur remove fine detail, in frequency terms?</summary><div class="ans">By the convolution theorem its spectrum multiplies the image spectrum; a Gaussian's spectrum is near 1 at low frequencies and near 0 at high ones, so fine stripes (high frequencies) are scaled to nearly nothing.</div></details>
+        <details class="check"><summary>3. DFT of x = (1, 1, 1, 1)?</summary><div class="ans">X<sub>0</sub> = 4; X<sub>1</sub> = 1 − i − 1 + i = 0; X<sub>2</sub> = 1 − 1 + 1 − 1 = 0; X<sub>3</sub> = 0. A constant signal has only the DC term.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Any image is a sum of stripe waves; the spectrum says how much of each frequency.</li><li>Low frequencies = coarse structure; high = edges, texture, noise.</li><li>Blur = multiply spectrum by a low-pass; convolution in space = multiplication in frequency.</li><li>JPEG, anti-aliasing and texture-bias research all use this view.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now change pixel values, slide kernels, find edges, clean masks, resize without aliasing, warp with matrices and think in frequencies — and you have seen that each one is a piece of what a CNN does. Next, <b>Module 2 · Features &amp; geometry</b> finds distinctive keypoints, matches them across images and recovers 3-D structure.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

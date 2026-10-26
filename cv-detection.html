@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 6 · Object detection · Computer Vision</title>
+<meta name="description" content="Boxes and IoU, sliding windows to Faster R-CNN, anchors and focal loss, YOLO/SSD/FPN, NMS, DETR and Hungarian matching, and detection metrics (AP, mAP) — with animated architecture blueprints.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-cv-detection.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="cv" data-module="6">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="computer-vision.html">Computer Vision</a> › Module 6</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">6</div>
+      <div style="flex:1">
+        <h1>Module 6 · Object detection</h1>
+        <p>Classification says <i>what</i> is in a picture; detection says <i>what and where</i>, for any number of objects. You will watch boxes being proposed, scored and suppressed, cells of a grid each making a prediction, and a transformer matching queries to objects — and you will be able to draw Faster R-CNN, YOLO and DETR as blueprints with their tensor shapes.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">Animated labs</span><span class="chip">Blueprints: Faster R-CNN · YOLO · DETR</span><span class="chip">Needs Modules 3–5</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 6.1 ===================== -->
+    <section class="lesson" id="boxes-iou" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.1</span><h2>Boxes &amp; IoU</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A detector draws a box and the ground truth says another box is correct. They are not identical — one is a bit to the right and a bit too tall. Is the detector right? "Roughly" is not a number. How do we turn "how well do two rectangles agree?" into one value between 0 and 1 that a computer can threshold, and that a network can even be trained to maximise?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Cut two rectangles out of paper and lay them on a table. Two things matter: how much area they <i>share</i> and how much area they <i>cover together</i>. If they are the same rectangle, shared = covered together. If they are far apart, shared = nothing. The ratio "shared ÷ covered together" is a perfect score: 1 for identical, 0 for disjoint, and smoothly in between. That ratio is <b>Intersection over Union</b>.</p>
+        <p>Before that we need a vocabulary for a box. Detectors store a box in one of three ways, and converting between them is daily work:</p>
+        <ul>
+          <li><b>Corners</b> <span class="tex">(x_1,y_1,x_2,y_2)</span>: top-left and bottom-right (PASCAL VOC, torchvision, most NMS code).</li>
+          <li><b>Corner + size</b> <span class="tex">(x,y,w,h)</span>: top-left corner and width/height (COCO annotations).</li>
+          <li><b>Centre + size</b> <span class="tex">(c_x,c_y,w,h)</span>: used by anchors, YOLO and DETR, because a box's centre and size are the natural things to <i>predict</i>.</li>
+        </ul>
+        <p>Image coordinates start at the top-left with <b>y growing downward</b>. Some detectors also normalise to 0…1 by dividing by the image width and height, so the numbers do not depend on resolution.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Two boxes A and B. The intersection is itself a rectangle (or empty). Its left edge is the <i>larger</i> of the two left edges, its right edge the <i>smaller</i> of the two right edges, and the same for top and bottom. If that width or height comes out negative, there is no overlap, so we clip it at 0.</p>
+        <div class="worked"><b>Worked example: IoU with real coordinates</b>
+          <p>A = (100, 100, 300, 260), B = (180, 150, 380, 330), in pixels.</p>
+          <ol>
+            <li>Areas: A = (300−100)·(260−100) = 200·160 = <b>32,000</b>. B = (380−180)·(330−150) = 200·180 = <b>36,000</b>.</li>
+            <li>Intersection edges: left = max(100,180) = 180; right = min(300,380) = 300; top = max(100,150) = 150; bottom = min(260,330) = 260. Width = 300−180 = 120, height = 260−150 = 110, so <b>I = 13,200</b>.</li>
+            <li>Union = A + B − I = 32,000 + 36,000 − 13,200 = <b>54,800</b> (we subtract I once because the sum counted the overlap twice).</li>
+            <li><b>IoU = 13,200 / 54,800 = 0.241.</b> The boxes look clearly "on the same object" to the eye, yet IoU is low — a hint of how strict 0.5 is.</li>
+          </ol></div>
+        <p><b>The flaw of IoU.</b> When boxes do not overlap, IoU = 0, whether they are 1 pixel or 1000 pixels apart. As a <i>loss</i> (1 − IoU) it has zero gradient there: the network gets no hint which way to move the box. <b>GIoU</b> (Generalised IoU) repairs this by also looking at the <b>smallest box C that encloses both</b>. The empty space inside C that belongs to neither box is penalised:</p>
+        <div class="worked"><b>Worked example: GIoU</b>
+          <p>Same A and B. The enclosing box C = (100,100,380,330) has area 280·230 = <b>64,400</b>. Wasted area C − (A∪B) = 64,400 − 54,800 = 9,600.</p>
+          <p>GIoU = 0.241 − 9,600/64,400 = 0.241 − 0.149 = <b>0.092</b>.</p>
+          <p>Now a disjoint pair: P = (100,100,200,200) and Q = (420,100,520,200), each 100×100, IoU = 0. C = (100,100,520,200) has area 420·100 = 42,000, union = 20,000, so GIoU = 0 − 22,000/42,000 = <b>−0.524</b>. Move Q to (300,100,400,200): C = 300·100 = 30,000, GIoU = −10,000/30,000 = <b>−0.333</b>. Closer boxes score higher even with zero overlap — a usable gradient.</p></div>
+        <p><b>DIoU / CIoU</b> go further: DIoU subtracts the squared distance between box centres relative to the squared diagonal of C; CIoU adds a term that compares aspect ratios. Both make boxes converge faster. (For our A and B: centres 100 px apart horizontally and 60 apart vertically, d² = 10,000, c² = 280²+230² = 131,300, so DIoU = 0.241 − 0.076 = 0.165.)</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{IoU}(A,B)=\frac{|A\cap B|}{|A\cup B|}=\frac{|A\cap B|}{|A|+|B|-|A\cap B|},\qquad \mathrm{GIoU}(A,B)=\mathrm{IoU}(A,B)-\frac{|C\setminus(A\cup B)|}{|C|}</div>
+        <table class="sym">
+          <tr><td>|A|</td><td>area of box A (width × height; 0 if the box is degenerate)</td></tr>
+          <tr><td>A ∩ B</td><td>the intersection: the shared rectangle, empty if the boxes do not overlap</td></tr>
+          <tr><td>A ∪ B</td><td>the union: everything covered by at least one box</td></tr>
+          <tr><td>C</td><td>the smallest axis-aligned box that contains both A and B</td></tr>
+          <tr><td>C \ (A ∪ B)</td><td>the part of C that is in neither box (the "wasted" area)</td></tr>
+          <tr><td>IoU ∈ [0,1], GIoU ∈ (−1,1]</td><td>GIoU equals IoU when the boxes fill C exactly and tends to −1 as they drift apart</td></tr>
+        </table>
+        <p>As a regression loss, <span class="tex">\mathcal L_{\mathrm{GIoU}}=1-\mathrm{GIoU}</span> is used by DETR and many YOLO versions, usually next to an L1 loss on the coordinates.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <i>worked example</i> and check the numbers in the readout against the hand calculation above.</li>
+        <li>Press <i>far apart</i>, then <i>Slide B across A</i>. In the lower plot the blue IoU curve is flat at 0 for a long stretch, but the orange GIoU curve keeps changing — that slope is what a loss can follow.</li>
+        <li>Use <i>B inside A</i>: IoU is just the ratio of the areas. Drag a corner to grow B and watch IoU rise to 1 when the boxes coincide.</li>
+        <li>Make two boxes that overlap by half of each: is the IoU really 0.5? (Hint: no — work out why from the formula.)</li></ol></div>
+      <div data-lab="detiou"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Off-by-one and format mix-ups.</b> Feeding (x,y,w,h) to code that expects (x1,y1,x2,y2) gives plausible-looking but wrong IoUs. Convert explicitly, and check one box by hand.</li>
+          <li><b>Forgetting to clip at zero.</b> Two disjoint boxes give a negative "width"; multiplying two negatives gives a positive fake intersection. Always <code>max(0, …)</code>.</li>
+          <li><b>IoU is not "percent overlap".</b> Overlapping by half of each box gives IoU = 1/3, not 1/2, because the union is 1.5 boxes. Half-and-half agreement is already below the usual 0.5 threshold.</li>
+          <li><b>Axis-aligned only.</b> This IoU is for upright rectangles. Rotated boxes and masks need polygon or pixel IoU.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Evaluation:</b> a detection counts as correct if IoU with a ground-truth box exceeds a threshold (0.5 for PASCAL VOC; 0.5…0.95 averaged for COCO) — lesson 6.7.</li>
+          <li><b>Training targets:</b> anchors are labelled positive or negative by their IoU with ground truth (lesson 6.3).</li>
+          <li><b>Post-processing:</b> NMS compares IoU between predictions (lesson 6.5).</li>
+          <li><b>Loss:</b> GIoU/DIoU/CIoU losses in YOLOv5–v8, DETR, FCOS.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Boxes (0,0,10,10) and (5,0,15,10). Compute IoU.</summary><div class="ans">Intersection x from 5 to 10 = 5, y 10, so I = 50. Areas 100 + 100, union = 150. IoU = 50/150 = 0.333.</div></details>
+        <details class="check"><summary>2. Why can a model not be trained with 1 − IoU as a loss when the predicted box misses the target entirely?</summary><div class="ans">With no overlap IoU is exactly 0 and constant in a neighbourhood, so its gradient is zero: nothing tells the box which way to move. GIoU adds the enclosing-box term, which changes as the boxes approach each other.</div></details>
+        <details class="check"><summary>3. A = (0,0,2,2) and B = (0,0,4,4). Find IoU and GIoU.</summary><div class="ans">I = 4, union = 16, IoU = 0.25. The enclosing box is B itself (area 16) so the penalty is (16−16)/16 = 0 and GIoU = 0.25. For nested boxes GIoU equals IoU.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A box is four numbers; know which of the three formats you are holding.</li>
+          <li>IoU = shared area / covered area; 1 = identical, 0 = disjoint.</li>
+          <li>IoU gives no gradient without overlap; GIoU/DIoU/CIoU fix this for losses.</li>
+          <li>IoU thresholds define "correct" in training, post-processing and evaluation alike.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.2 ===================== -->
+    <section class="lesson" id="sliding-windows-rcnn" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.2</span><h2>From sliding windows to Faster R-CNN</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You already have a good image classifier. A photo contains a dog somewhere, size unknown, plus a cat, plus a bicycle. How do you turn "classify the whole image" into "find every object and draw a box around it" — without running a network a million times?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The most obvious plan: cut the image into small crops, ask the classifier "what is in this crop?" for every crop, and keep the confident ones. It works, and it is how detection began. The trouble is <b>counting crops</b>. Objects can be small or large, tall or wide, so you must try several window sizes and shapes; and the object can be anywhere, so you must slide each window across the whole picture. Each placement is a full network pass.</p>
+        <p>The history of detection is the story of removing wasted work from this loop, in three moves: <b>(1)</b> don't look everywhere, only at promising regions (proposals); <b>(2)</b> don't run the whole CNN again for each region — run it <i>once</i> and cut the regions out of the feature map; <b>(3)</b> don't use a hand-made proposal algorithm — let a small network propose regions from those same features.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: how many windows?</b>
+          <p>A 640×480 photo, three window sizes 64, 128, 256 (square), stride 8 px. For a w×w window the number of positions is <span class="tex">(\lfloor(640-w)/8\rfloor+1)\cdot(\lfloor(480-w)/8\rfloor+1)</span>:</p>
+          <p>w = 64: (72+1)·(52+1) = 73·53 = 3,869 · w = 128: (64+1)·(44+1) = 65·45 = 2,925 · w = 256: (48+1)·(28+1) = 49·29 = 1,421.</p>
+          <p>Total = <b>8,215 windows</b>. Allow three aspect ratios and it is ≈ 25,000. At 15 ms per classifier pass that is 123 s for one photo — and the boxes are still only as precise as the stride.</p></div>
+        <p>The four stages in order:</p>
+        <ol>
+          <li><b>R-CNN (2014).</b> A classical algorithm, <i>selective search</i>, merges similar-looking pixel regions into ≈ 2,000 region proposals (≈ 2 s per image). Each region is cropped, warped to a fixed size, and sent through a CNN; an SVM classifies the features and a linear regressor refines the box. Accurate for its time, but <b>2,000 separate CNN passes</b> ≈ 47 s per image, and training was a multi-stage mess.</li>
+          <li><b>Fast R-CNN (2015).</b> Run the backbone <b>once</b> on the whole image to get a feature map. Project every proposal onto that map (divide coordinates by the stride, e.g. 16) and apply <b>RoI pooling</b>: split the projected rectangle into a 7×7 grid and max-pool each bin, so every region becomes the same 256×7×7 block regardless of size. Two small FC layers then output class scores and box refinements — one network, trained end to end. ≈ 0.3 s plus the 2 s of selective search.</li>
+          <li><b>Faster R-CNN (2015).</b> Replace selective search with a <b>Region Proposal Network (RPN)</b>: a tiny conv head that slides over the shared feature map and, for each location, scores a set of anchor boxes as object / not-object and refines them. Proposals become nearly free: ≈ 0.2 s per image in total, 5 fps.</li>
+          <li><b>Modern two-stage detectors</b> add an FPN (feature pyramid) so that small and large objects are handled on different levels, and replace RoI pooling by <b>RoIAlign</b> (Mask R-CNN).</li>
+        </ol>
+        <p><b>RoI pooling vs RoI Align.</b> Pooling <i>rounds</i> the projected box to whole feature cells, which shifts it: a box x ∈ [100,300] at stride 16 is x ∈ [6.25, 18.75] on the map; rounding to [6,18] and then to integer bins loses up to a quarter cell ≈ 4 px of the original image. For classification that hardly matters; for tight boxes and masks it does. <b>RoIAlign</b> never rounds: it divides the exact rectangle into 7×7 bins of width 12.5/7 = 1.786 cells, places a few sample points inside each bin, and reads each value by <b>bilinear interpolation</b> from the four nearest cells, then averages.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: counting the cost</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with <i>Sliding window</i>. Watch the blue window crawl; the counter in the corner shows how many CNN passes have happened. Reduce the stride to 16 and 8 and read the total in the readout.</li>
+        <li>Tick <i>three aspect ratios</i>: the count triples.</li>
+        <li>Switch to <i>R-CNN</i>: now only ≈ N regions are processed, many of them hugging the objects (green = IoU ≥ 0.5 with an object). Each crop is warped and classified separately.</li>
+        <li>Switch to <i>Fast R-CNN</i>: first the backbone sweeps the image once (3.5 s), then each proposal is only a rectangle on the shared feature map pooled to 7×7. Then <i>Faster R-CNN</i>: same, but the proposals cost 10 ms instead of 2 s.</li></ol></div>
+      <div data-lab="detslide"></div>
+
+      <div class="prose">
+        <h3 class="sec">The formal definition: the Faster R-CNN pipeline</h3>
+        <p>Faster R-CNN is four stages: <b>backbone → RPN → RoIAlign → heads</b>.</p>
+        <div class="eq">\text{image}\xrightarrow{\text{backbone+FPN}}\{P_2,\dots,P_6\}\xrightarrow{\text{RPN}}\{\text{proposals}\}\xrightarrow{\text{RoIAlign}}\mathbb R^{256\times7\times7}\xrightarrow{\text{FC heads}}(\text{class},\,\text{box})</div>
+        <p>It is trained with a sum of four losses: RPN objectness (binary cross-entropy), RPN box regression (smooth-L1 on offsets), final classification (cross-entropy over classes + background) and final box regression (smooth-L1, only for positive proposals). The anchor machinery that the RPN relies on is lesson 6.3.</p>
+        <table class="sym">
+          <tr><td>backbone</td><td>a classification CNN with its classifier removed (ResNet-50 here), producing feature maps at strides 4–32</td></tr>
+          <tr><td>FPN</td><td>feature pyramid: the same 256 channels at 5 resolutions P2…P6, so each object size has a suitable map</td></tr>
+          <tr><td>RPN</td><td>region proposal network: a 3×3 conv then two 1×1 convs giving, per anchor, an objectness score and 4 offsets</td></tr>
+          <tr><td>proposal</td><td>an RPN box that survived decoding and NMS (≈ 1000 per image)</td></tr>
+          <tr><td>RoIAlign</td><td>extracts a fixed 7×7×256 block from the right pyramid level, by bilinear sampling</td></tr>
+          <tr><td>head</td><td>two FC layers (1024 units) then a class layer (K+1) and a box layer (4K)</td></tr>
+        </table>
+
+        <h3 class="sec">Draw it yourself</h3>
+        <p>The animated blueprint below follows one image through Faster R-CNN. Click any block for its shape, parameters and role. Below it is the real ResNet-50 backbone at 640×640: at this size its last stage is exactly the 20×20 map the blueprint shows as C5 (stride 32), and the whole backbone costs 33.4 GMACs — the price of "run the CNN once".</p>
+        <div data-lab="detblueprint" data-models="frcnn" data-title="Faster R-CNN blueprint"></div>
+        <div data-lab="archviz" data-preset="resnet50" data-resolution data-title="The backbone: ResNet-50 at 640×640"></div>
+        <table class="tbl"><thead><tr><th>Stage</th><th>Output shape</th><th>Parameters</th></tr></thead><tbody>
+          <tr><td>Input</td><td>3×640×640</td><td>–</td></tr>
+          <tr><td>Backbone C2/C3/C4/C5</td><td>256×160², 512×80², 1024×40², 2048×20²</td><td>23.5 M (ResNet-50 without FC)</td></tr>
+          <tr><td>FPN P2…P6</td><td>256×(160², 80², 40², 20², 10²)</td><td>≈ 3.3 M</td></tr>
+          <tr><td>RPN (3×3 conv + 2 × 1×1)</td><td>3 scores + 12 deltas per cell, 102,300 anchors</td><td>593,935</td></tr>
+          <tr><td>Proposals after NMS</td><td>1000×4</td><td>–</td></tr>
+          <tr><td>RoIAlign</td><td>1000×256×7×7</td><td>–</td></tr>
+          <tr><td>FC 12544→1024→1024</td><td>1000×1024</td><td>12,846,080 + 1,049,600</td></tr>
+          <tr><td>Class FC / box FC</td><td>1000×81, 1000×324</td><td>83,025 / 332,100</td></tr></tbody></table>
+        <p>Worked count: the RPN's 3×3 conv, 256→256, has 256·9·256 + 256 = <b>590,080</b> parameters; the first head FC has 12,544·1024 + 1024 = <b>12,846,080</b> — more than 20× the whole RPN. Total ≈ 41.8 M parameters (torchvision's <code>fasterrcnn_resnet50_fpn</code>).</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Two-stage" does not mean two networks trained separately.</b> Faster R-CNN is trained jointly; "stage 1" is the RPN, "stage 2" the box head.</li>
+          <li><b>Proposals are class-agnostic.</b> The RPN only says "object-like". Classes are decided in stage 2.</li>
+          <li><b>Stride matters.</b> Projecting a box to a stride-32 map without RoIAlign loses precision; a 20×20 map cannot localise a 16-pixel object at all, hence FPN.</li>
+          <li><b>Runtime scales with the number of proposals.</b> The heads run once per proposal (1000×), which is why fewer proposals speed up inference.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Mask R-CNN</b> (instance segmentation, Module 7) is Faster R-CNN plus a mask head on the same RoIAlign features.</li>
+          <li><b>Cascade R-CNN, Libra R-CNN</b> and most COCO leaderboard detectors until 2020 are two-stage refinements.</li>
+          <li>Autonomous-driving perception, document layout analysis (tables, figures) and medical lesion detection still often use two-stage models when accuracy matters more than speed.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 224×224 crop is fed to a CNN for each of 2000 proposals. What does Fast R-CNN change so that the CNN runs only once?</summary><div class="ans">It runs the backbone on the entire image once, then maps each proposal onto the resulting feature map (dividing coordinates by the stride) and pools that window to a fixed 7×7 size. The expensive convolutions are shared by all proposals.</div></details>
+        <details class="check"><summary>2. Why is RoIAlign more accurate than RoI pooling?</summary><div class="ans">RoI pooling rounds the box to integer feature cells (and the bins to integers again), shifting the region by up to a fraction of a cell, which is many pixels at stride 16 or 32. RoIAlign keeps the exact real-valued coordinates and uses bilinear interpolation, so there is no misalignment.</div></details>
+        <details class="check"><summary>3. How many windows does a 100×100 image need with a 20×20 window and stride 10?</summary><div class="ans">Positions per axis = ⌊(100−20)/10⌋ + 1 = 9, so 9·9 = 81 windows for this single size.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Sliding windows need tens of thousands of CNN passes; detection history is about sharing and avoiding work.</li>
+          <li>Faster R-CNN: backbone → (FPN) → RPN proposals → RoIAlign 7×7 → FC heads for class and box.</li>
+          <li>RoIAlign uses bilinear sampling instead of rounding.</li>
+          <li>Two-stage detectors are accurate but slower than single-shot ones.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.3 ===================== -->
+    <section class="lesson" id="anchors-heads" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.3</span><h2>Anchors &amp; detection heads</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A conv layer outputs numbers per <i>location</i>. An image has an unknown number of objects of unknown sizes at unknown places. How can a fixed-size tensor of outputs represent "three boxes here, none there"? And when 99.9% of all candidate places contain only background, how can the training signal avoid being drowned by the boring majority?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Make the problem easier by guessing in advance. At every position of the feature map we lay down a small set of <b>anchor boxes</b> — fixed template rectangles of several sizes and shapes, like a tailor's pattern pieces. The network no longer has to invent a box from nothing. For each anchor it answers two modest questions: <i>"is there an object matching this template?"</i> and <i>"how should I nudge and stretch the template to fit it exactly?"</i> Nudges are small numbers, which are far easier to regress than absolute coordinates.</p>
+        <p>The training signal comes from <b>matching</b>: compute the IoU of every anchor with every ground-truth box. Anchors with high IoU are told "you are responsible for this object" (positive); those with low IoU are told "you see background" (negative); the ones in between are ignored.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Layout.</b> A backbone at stride 64 turns a 512×512 image into an 8×8 grid; each cell centre is an anchor centre. With 3 scales × 3 aspect ratios each cell owns K = 9 anchors, so 8·8·9 = 576 anchors. Width and height from scale s and aspect ratio r = h/w: <span class="tex">w=s/\sqrt r,\ h=s\sqrt r</span>, which keeps area s². RetinaNet at 640×640 uses 5 pyramid levels (strides 8…128: 80², 40², 20², 10², 5²) and K = 9: (6400+1600+400+100+25)·9 = <b>76,725</b> anchors.</p>
+        <p><b>Encoding the offset.</b> For an anchor <span class="tex">(c_x^a,c_y^a,w^a,h^a)</span> and a ground-truth box <span class="tex">(c_x,c_y,w,h)</span> we regress four numbers. The shifts are divided by the anchor size, so they do not depend on the scale; width and height use a logarithm, so that "twice as wide" is +0.69 and "half as wide" is −0.69, symmetric, and the decoded size is always positive.</p>
+        <div class="worked"><b>Worked example: encoding and decoding</b>
+          <p>Anchor (cx, cy, w, h) = (200, 200, 128, 128). Ground truth (cx, cy, w, h) = (214, 190, 160, 100).</p>
+          <ul>
+            <li>t<sub>x</sub> = (214 − 200)/128 = <b>0.109</b></li>
+            <li>t<sub>y</sub> = (190 − 200)/128 = <b>−0.078</b> (up, because y grows downward)</li>
+            <li>t<sub>w</sub> = ln(160/128) = ln 1.25 = <b>0.223</b></li>
+            <li>t<sub>h</sub> = ln(100/128) = ln 0.78125 = <b>−0.247</b></li></ul>
+          <p>Decode: c<sub>x</sub> = 200 + 0.109·128 = 214 ✓; c<sub>y</sub> = 200 − 0.078·128 = 190 ✓; w = 128·e<sup>0.223</sup> = 160 ✓; h = 128·e<sup>−0.247</sup> = 100 ✓. (Some codebases divide the targets by "variances" 0.1, 0.1, 0.2, 0.2 to bring them to roughly unit scale: here 1.09, −0.78, 1.12, −1.23.)</p></div>
+        <p><b>The heads.</b> On top of each pyramid level sits a small fully convolutional head applied with <i>shared weights</i> to every location. RetinaNet uses two sibling subnets of four 3×3 conv layers (256 channels) each: the <b>classification subnet</b> ends with a conv giving K·C outputs per location (9·80 = 720), the <b>box subnet</b> ends with K·4 = 36 outputs. A conv is the natural fit: every cell is processed identically, so the output is a map the same shape as the feature map.</p>
+        <p><b>The imbalance problem and focal loss.</b> At 76,725 anchors per image, a handful are positive. Plain cross-entropy summed over all anchors is dominated by tens of thousands of <i>easy</i> background anchors, each contributing a small loss that adds up and swamps the few hard ones. <b>Focal loss</b> multiplies cross-entropy by a factor that shrinks as the prediction becomes confident and correct:</p>
+        <div class="eq">\mathrm{FL}(p_t)=-\alpha_t\,(1-p_t)^{\gamma}\,\log(p_t)</div>
+        <div class="worked"><b>Worked example: easy vs hard</b>
+          <p>p<sub>t</sub> is the probability the model gave to the <i>correct</i> class. Use γ = 2, and ignore α for the moment.</p>
+          <ul>
+            <li><b>Easy</b> p<sub>t</sub> = 0.9: CE = −ln 0.9 = 0.105; factor (0.1)² = 0.01 → FL = <b>0.00105</b> (100× smaller).</li>
+            <li><b>Hard</b> p<sub>t</sub> = 0.1: CE = −ln 0.1 = 2.303; factor (0.9)² = 0.81 → FL = <b>1.865</b> (only 1.2× smaller).</li>
+            <li>So the hard example is 22× more important than the easy one under CE, but <b>1,770×</b> more important under focal loss.</li>
+            <li>Whole image: 76,000 easy background anchors with p<sub>t</sub> = 0.99 give CE total = 76,000·0.01005 = <b>764</b>, but focal total = 76,000·(0.01)²·0.01005 = <b>0.076</b>. One hard positive (CE 2.30) now dominates the sum instead of being 0.3% of it. With α = 0.25 on positives and 0.75 on background (RetinaNet) the balance is fine-tuned further.</li></ul></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">t_x=\frac{c_x-c_x^a}{w^a},\quad t_y=\frac{c_y-c_y^a}{h^a},\quad t_w=\ln\frac{w}{w^a},\quad t_h=\ln\frac{h}{h^a}</div>
+        <div class="eq">\mathcal L=\frac1{N_{\text{pos}}}\Big(\sum_{\text{anchors}}\mathrm{FL}(p_t)+\lambda\!\!\sum_{\text{positives}}\mathrm{smoothL1}(t-\hat t)\Big)</div>
+        <table class="sym">
+          <tr><td>c<sub>x</sub>, c<sub>y</sub>, w, h</td><td>centre and size of the ground-truth box</td></tr>
+          <tr><td>c<sup>a</sup>, w<sup>a</sup>, h<sup>a</sup></td><td>centre and size of the anchor</td></tr>
+          <tr><td>t = (t<sub>x</sub>,t<sub>y</sub>,t<sub>w</sub>,t<sub>h</sub>)</td><td>the target offsets the head must predict; <span class="tex">\hat t</span> is its prediction</td></tr>
+          <tr><td>p<sub>t</sub></td><td>predicted probability of the true class of this anchor (p for a positive, 1−p for background)</td></tr>
+          <tr><td>γ</td><td>focusing parameter (2 in RetinaNet); γ = 0 gives ordinary cross-entropy</td></tr>
+          <tr><td>α<sub>t</sub></td><td>class-balance weight (0.25 for foreground)</td></tr>
+          <tr><td>N<sub>pos</sub></td><td>number of positive anchors; normalising by it keeps the loss scale stable</td></tr>
+          <tr><td>smoothL1</td><td>quadratic near 0, linear far away — robust to outliers</td></tr>
+        </table>
+        <p><b>Matching rules.</b> Faster R-CNN's RPN: IoU ≥ 0.7 positive, &lt; 0.3 negative. RetinaNet: ≥ 0.5 positive, &lt; 0.4 negative. In both, the single best-IoU anchor of each ground truth is <i>always</i> positive, so no object is left without a trainer. SSD uses ≥ 0.5 with hard-negative mining (keep the highest-loss negatives at 3:1) instead of focal loss.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Let the five steps play (or step through). In step ① a single cell owns its K anchors; click another cell to inspect it. In ② all anchors appear; ③ colours them by IoU with the green ground truth.</li>
+        <li>In step ④ the best anchor slides to the ground truth: the readout shows t<sub>x</sub>, t<sub>y</sub>, t<sub>w</sub>, t<sub>h</sub> with the arithmetic. Drag a corner of the green box and see the offsets change.</li>
+        <li>Untick the 256 scale and make the object big: the best IoU collapses. This is why anchor scales must cover the object sizes in the dataset.</li>
+        <li>Change the stride to 32 (more cells) and the thresholds to RPN (0.7/0.3): count how the number of positives moves.</li></ol></div>
+      <div data-lab="detanchors"></div>
+
+      <div class="prose">
+        <h3 class="sec">Draw it yourself</h3>
+        <p>The RetinaNet classification subnet on one pyramid level (P3, 80×80 at 640 input): four 3×3 convs of 256 channels, then 9·80 = 720 outputs. Change the layers to see how the parameter count and compute follow.</p>
+        <div data-lab="archviz" data-title="RetinaNet class subnet on P3 (80×80)"><script type="text/plain">input 256 80 80
+conv 256 k3
+relu
+conv 256 k3
+relu
+conv 256 k3
+relu
+conv 256 k3
+relu
+conv 720 k3</script></div>
+        <table class="tbl"><thead><tr><th>Block</th><th>Output</th><th>Parameters</th></tr></thead><tbody>
+          <tr><td>4 × conv 3×3, 256→256</td><td>256×80×80</td><td>4·(256·9·256 + 256) = 2,360,320</td></tr>
+          <tr><td>cls conv 3×3, 256→720</td><td>720×80×80 (9 anchors × 80 classes)</td><td>256·9·720 + 720 = 1,659,600</td></tr>
+          <tr><td><b>class subnet total</b></td><td></td><td><b>4,019,920</b> (shared by all 5 levels)</td></tr>
+          <tr><td>box subnet (4 convs + 36-channel conv)</td><td>36×80×80</td><td>2,360,320 + 82,980 = 2,443,300</td></tr></tbody></table>
+        <p>Note the shared weights: the same 4.0 M parameters score all 76,725 anchors. The class subnet at the P3 level alone costs 25.7 GMACs — the head is as expensive as a small backbone, which is why modern heads are narrower.</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Anchors are priors, not predictions.</b> They are fixed by design (sizes, ratios, strides); only the offsets and scores are learned. Poorly chosen anchors silently cap recall.</li>
+          <li><b>Regressing absolute coordinates directly</b> trains badly: the same error of 10 px matters hugely for a small box and not for a large one. Relative offsets fix this.</li>
+          <li><b>Using γ too large</b> ignores moderately hard examples; γ = 2 is a robust default, but tune α and γ together.</li>
+          <li><b>Many anchors match one object</b> (several positives): that is intended — and the reason NMS is needed afterward.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Faster R-CNN RPN</b> (9 anchors per location), <b>SSD</b> (8,732 default boxes on 6 feature maps), <b>RetinaNet</b> (focal loss), YOLOv2–v5 (anchors from k-means clustering of box shapes).</li>
+          <li>Focal loss is used well outside detection: medical segmentation with tiny lesions, fraud and anomaly detection with extreme class imbalance.</li>
+          <li><b>Anchor-free</b> detectors (FCOS, CenterNet, YOLOv8) drop the templates and regress distances from a cell centre to the box sides, keeping the same head-on-feature-map design (lesson 6.4).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Anchor (cx,cy,w,h) = (100,100,50,50), ground truth (110,95,100,50). Give (t<sub>x</sub>,t<sub>y</sub>,t<sub>w</sub>,t<sub>h</sub>).</summary><div class="ans">t<sub>x</sub> = 10/50 = 0.2; t<sub>y</sub> = −5/50 = −0.1; t<sub>w</sub> = ln(100/50) = 0.693; t<sub>h</sub> = ln(50/50) = 0.</div></details>
+        <details class="check"><summary>2. Compute the focal loss (γ = 2, no α) at p<sub>t</sub> = 0.6.</summary><div class="ans">−ln 0.6 = 0.511; (1−0.6)² = 0.16; FL = 0.0817. Compare 0.9 → 0.00105 and 0.1 → 1.865: a moderately confident example is down-weighted by a factor of 6 relative to CE.</div></details>
+        <details class="check"><summary>3. Why do we always make the best-IoU anchor of a ground-truth box positive, even when its IoU is below the threshold?</summary><div class="ans">Otherwise an object whose shape or position fits no anchor well would get no positive anchor at all, and the network would never be trained to detect it.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Anchors are template boxes at every feature-map location; the head predicts class scores and small offsets for each.</li>
+          <li>Offsets (t<sub>x</sub>,t<sub>y</sub>,t<sub>w</sub>,t<sub>h</sub>) are relative shifts and log-ratios, so they are scale-free.</li>
+          <li>IoU against ground truth labels anchors positive, negative or ignored.</li>
+          <li>Focal loss down-weights easy examples so rare hard ones are not drowned.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.4 ===================== -->
+    <section class="lesson" id="yolo-ssd" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.4</span><h2>Single-shot detectors &amp; FPN</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Faster R-CNN reaches 5 frames per second. A self-driving car, a drone or a phone camera needs 30–100. Most of the time goes to a two-step process (propose, then classify each proposal). Can we skip the proposals and read the answer straight off the feature map in a single forward pass? And since objects range from 10 pixels to the whole image, how can one feature map serve them all?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a chessboard laid over the photo. Instead of asking "where are the objects?", we ask every square of the board a simple question: <i>"is the centre of an object inside you, and if so what is it and how big?"</i> One pass of a CNN answers all squares at once, in parallel. That is the <b>single-shot</b> idea, and the board is a <b>grid</b> that coincides with the feature map: a stride-32 map of a 640 px image is a 20×20 grid, each cell covering 32×32 pixels.</p>
+        <p>The second problem is scale. Deep feature maps (stride 32) know <i>what</i> things are but have blurry positions; shallow ones (stride 8) know exactly <i>where</i> but little about <i>what</i>. A <b>feature pyramid network (FPN)</b> merges them: the deep map is upsampled and added to the shallow one, so every level has both. Small objects are then detected on the fine levels, large ones on the coarse levels.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>YOLO v1 (2016).</b> The image is divided into an S×S grid. A cell is <b>responsible</b> for an object if the object's <i>centre</i> falls inside it. Each cell predicts B boxes — each (x, y, w, h, confidence) — and one set of C class probabilities. The output tensor therefore has shape</p>
+        <div class="eq">S\times S\times(B\cdot5+C)</div>
+        <p>For S = 7, B = 2, C = 20 (PASCAL VOC) that is 7·7·30 = <b>1,470 numbers</b>. Here x, y are the box centre <i>relative to its cell</i> (0…1), w, h are relative to the whole image, and the confidence is trained to equal the IoU between the predicted box and the ground truth (zero if the cell has no object).</p>
+        <div class="worked"><b>Worked example: which cell, which numbers?</b>
+          <p>Image 448×448, S = 7, so a cell is 64×64. An object has box (x1,y1,x2,y2) = (150, 200, 350, 330). Centre = (250, 265), size 200×130.</p>
+          <ul>
+            <li>Column = ⌊250/64⌋ = 3, row = ⌊265/64⌋ = 4, so cell (row 4, col 3) is responsible.</li>
+            <li>x = 250/64 − 3 = 0.906, y = 265/64 − 4 = 0.141 (position inside the cell).</li>
+            <li>w = 200/448 = 0.446, h = 130/448 = 0.290 (fractions of the image).</li>
+            <li>Confidence target = IoU(pred, GT) ≈ 1; the class vector is one-hot.</li>
+            <li>All other 48 cells get confidence target 0 and no class loss.</li></ul>
+          <p>The cell's 30-vector: [0.906, 0.141, 0.446, 0.290, 1, (second box: 0,0,0,0,0), class one-hot of 20].</p></div>
+        <p><b>The limits of v1:</b> a cell has just 2 boxes and one class, so a flock of small birds in one cell is mostly missed; the final FC layer (50,176 → 4096 holds 205.5 M weights) makes the model huge; and only the last, coarse 7×7 map is used.</p>
+        <p><b>SSD (2016)</b> keeps the single-shot idea but predicts from <b>six feature maps of different sizes</b>, using anchors ("default boxes") with a conv head on each. On a 300×300 input: 38², 19², 10², 5², 3², 1² cells with 4, 6, 6, 6, 4, 4 boxes per cell = 5,776 + 2,166 + 600 + 150 + 36 + 4 = <b>8,732 boxes</b>. Large maps catch small objects, tiny maps catch big ones.</p>
+        <p><b>The YOLO family, in one line each.</b> <b>v2</b>: batch norm, anchor boxes from k-means, passthrough layer. <b>v3</b>: three scales (strides 32/16/8), Darknet-53, per-class sigmoids. <b>v4/v5</b>: CSP blocks, PAN neck (top-down <i>and</i> bottom-up paths), mosaic augmentation, CIoU loss. <b>v8</b>: <b>anchor-free</b> and <b>decoupled head</b> — separate branches for box and class. The architecture changes a lot; the idea ("a grid of predictions on pyramid levels, then NMS") stays.</p>
+        <div class="worked"><b>Worked example: the modern head on a 640×640 input</b>
+          <p>Three pyramid levels, strides 8, 16, 32:</p>
+          <table class="tbl"><thead><tr><th>Level</th><th>Stride</th><th>Grid</th><th>Cells</th><th>Responsible for</th></tr></thead><tbody>
+            <tr><td>P3</td><td>8</td><td>80×80</td><td>6,400</td><td>small objects</td></tr>
+            <tr><td>P4</td><td>16</td><td>40×40</td><td>1,600</td><td>medium</td></tr>
+            <tr><td>P5</td><td>32</td><td>20×20</td><td>400</td><td>large</td></tr></tbody></table>
+          <p>Total predictions = 6,400 + 1,600 + 400 = <b>8,400</b> per image. In YOLOv8 each cell outputs 4·16 = 64 box channels (a distribution over 16 bins for each of the four distances left/top/right/bottom to the box sides) plus 80 class scores = 144 channels per level, which after decoding give an <b>84 × 8,400</b> tensor (4 box numbers + 80 classes per prediction). There is no objectness and no anchor. Compared with RetinaNet's 76,725 anchors this is 9× fewer candidates.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat Y\in\mathbb R^{S\times S\times(5B+C)},\qquad \mathrm{score}_{ij,b,k}=\mathrm{conf}_{ij,b}\cdot p_{ij}(k)</div>
+        <div class="eq">P_\ell=\mathrm{Conv}_{3\times3}\big(\,C_\ell'+\mathrm{Up}_{2\times}(P_{\ell+1})\big),\qquad C_\ell'=\mathrm{Conv}_{1\times1}(C_\ell)</div>
+        <table class="sym">
+          <tr><td>S</td><td>grid size (cells per side); equals image size / stride</td></tr>
+          <tr><td>B</td><td>boxes predicted per cell</td></tr>
+          <tr><td>C</td><td>number of classes</td></tr>
+          <tr><td>conf</td><td>"objectness": probability a box contains an object times its IoU with the truth</td></tr>
+          <tr><td>p(k)</td><td>conditional probability of class k given an object</td></tr>
+          <tr><td>score</td><td>final detection score = conf × class probability</td></tr>
+          <tr><td>C<sub>ℓ</sub>, P<sub>ℓ</sub></td><td>backbone feature at level ℓ and its pyramid output</td></tr>
+          <tr><td>Conv<sub>1×1</sub>, Up<sub>2×</sub></td><td>1×1 conv to a common channel count; nearest-neighbour upsampling by 2</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Let the captions run: for each object the lab shows its centre, then the responsible cell, then that cell's output vector being filled, then the neighbour cells that must say "nothing here".</li>
+        <li>Drag an object so that its centre crosses a grid line: the responsible cell (and the numbers x, y) jump to the next cell.</li>
+        <li>Set S = 3: objects now crowd into few cells — see why a coarse grid cannot separate crowded objects. Then use the presets up to stride 8 (80×80).</li>
+        <li>Turn on the heatmap (confidence × class) and choose a class. Read the bottom-right readout for the number of predictions of a modern head at 320/416/640/1280 inputs.</li></ol></div>
+      <div data-lab="detyolo"></div>
+
+      <div class="prose">
+        <h3 class="sec">Draw it yourself</h3>
+        <p>Two blueprints: the 2016 YOLOv1 (a plain backbone and a huge FC layer) and a modern YOLOv8-style detector with FPN/PAN neck and three decoupled heads. Click blocks for shapes and parameters.</p>
+        <div data-lab="detblueprint" data-models="yolov8,yolov1" data-title="Single-shot blueprints"></div>
+        <table class="tbl"><thead><tr><th>Stage (YOLOv8-s, 640²)</th><th>Output</th><th>Notes</th></tr></thead><tbody>
+          <tr><td>Input</td><td>3×640×640</td><td></td></tr>
+          <tr><td>Backbone taps</td><td>128×80², 256×40², 512×20²</td><td>strides 8, 16, 32</td></tr>
+          <tr><td>PAN-FPN neck</td><td>same shapes</td><td>top-down then bottom-up merging</td></tr>
+          <tr><td>Head per level</td><td>(64 + 80) = 144 × H × W</td><td>box branch 64 ch, class branch 80 ch</td></tr>
+          <tr><td>Concatenate + decode</td><td>84 × 8,400</td><td>6,400 + 1,600 + 400 cells</td></tr>
+          <tr><td>NMS</td><td>≤ 300 × 6</td><td>x1, y1, x2, y2, score, class</td></tr></tbody></table>
+        <p>Worked count: the P3 box branch's last 1×1 conv, 64→64, has 64·64 + 64 = <b>4,160</b> parameters; its class branch's final 1×1 conv, 128→80, has 128·80 + 80 = <b>10,320</b>. The whole small model has ≈ 11.2 M parameters and ≈ 28.6 GFLOPs at 640², far less than the 41.8 M of Faster R-CNN with an FPN backbone.</p>
+        <p>Strides and shapes in a backbone are easiest to see in the visualiser below (ResNet-18): each stage halves the map and doubles the channels, and the outputs of stages 3, 4, 5 are exactly the stride 8/16/32 maps a detector taps.</p>
+        <div data-lab="archviz" data-preset="resnet18" data-resolution data-title="Strides and shapes in a backbone (ResNet-18)"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Single-shot is always less accurate."</b> Early ones were; with FPN, focal loss or strong training tricks, single-shot models match two-stage ones on COCO at far higher speed.</li>
+          <li><b>Responsible cell is decided by the centre only.</b> A large object covers many cells, but in v1 only one trains the box; neighbours are told "no object". Modern assigners make several nearby cells positive, which is why NMS stays necessary.</li>
+          <li><b>Counting predictions wrongly.</b> The number of predictions (8,400) is not the number of detections; almost all are background and filtered by score.</li>
+          <li><b>FPN is not an ensemble.</b> It is a single network whose levels share a head design; the levels differ in resolution.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>YOLOv5/v8/v11</b> in factories (defect detection), retail shelves, traffic cameras, sports analytics; <b>SSD-MobileNet</b> and YOLO-nano variants on phones and microcontrollers.</li>
+          <li><b>FPN/PAN necks</b> are in almost every detector and segmentation model (Mask R-CNN, RetinaNet, YOLO, DETR variants).</li>
+          <li><b>Real-time constraint:</b> 30 fps video means 33 ms per frame; a head that outputs 8,400 predictions in one convolutional pass fits, 1000 proposals through FC heads often does not.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is the output shape of YOLOv1 with S=7, B=2, C=20, and how many numbers?</summary><div class="ans">7×7×(2·5+20) = 7×7×30, i.e. 1,470 numbers.</div></details>
+        <details class="check"><summary>2. A 416×416 input, detection at strides 8, 16, 32. How many grid cells in total?</summary><div class="ans">416/8 = 52, 416/16 = 26, 416/32 = 13: 52² + 26² + 13² = 2,704 + 676 + 169 = 3,549 cells.</div></details>
+        <details class="check"><summary>3. Why do small objects get detected on the stride-8 level rather than stride-32?</summary><div class="ans">A stride-32 cell covers 32×32 pixels and its features are coarse: a 10-pixel object would fill a fraction of a cell and its position could not be resolved. Stride-8 cells are fine enough, and the FPN top-down path gives them the semantic strength they lack on their own.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Single-shot detectors make all predictions in parallel from a grid on the feature map: S×S×(B·5+C) in v1; per-level maps of box+class channels in modern ones.</li>
+          <li>The cell containing an object's centre (or several near it) is responsible for it.</li>
+          <li>FPN/PAN necks mix fine and coarse features so every scale is handled; 640² input gives 80²+40²+20² = 8,400 predictions.</li>
+          <li>Anchor-free, decoupled heads (YOLOv8) are the modern default.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.5 ===================== -->
+    <section class="lesson" id="nms" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.5</span><h2>Non-maximum suppression</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You trained a good detector and ran it on a photo of one dog. It reports <i>nine</i> boxes around the dog, all with high scores, all slightly different. Which do you keep, and how do you decide automatically? And what if two real dogs stand side by side?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every anchor and every grid cell near an object learns to fire for it. A detector is <i>supposed</i> to produce a cluster of overlapping boxes around each object; our job is to pick the best one per cluster. Think of a talent contest where several judges each submit a rating for the same performer: you want one verdict, the best-rated one, and you want to discard the near-duplicates — but not discard the <i>second performer</i> who happens to stand next to the first.</p>
+        <p>The rule: <b>take the highest-scoring box; delete every box that overlaps it too much; repeat with what is left</b>. "Too much" is measured by IoU (lesson 6.1) against a threshold.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: greedy NMS on 5 boxes (threshold 0.5)</b>
+          <table class="tbl"><thead><tr><th>Box</th><th>(x1,y1,x2,y2)</th><th>Score</th></tr></thead><tbody>
+            <tr><td>A</td><td>(100,100,300,300)</td><td>0.95</td></tr>
+            <tr><td>B</td><td>(120,110,310,310)</td><td>0.90</td></tr>
+            <tr><td>D</td><td>(360,150,500,320)</td><td>0.80</td></tr>
+            <tr><td>C</td><td>(90,120,290,290)</td><td>0.70</td></tr>
+            <tr><td>E</td><td>(420,170,560,330)</td><td>0.60</td></tr></tbody></table>
+          <p>Boxes are sorted by score. The IoUs we need (computed as in 6.1): A–B: intersection 34,200, union 40,000+38,000−34,200 = 43,800, so <b>0.781</b>; A–C: 32,300/(40,000+34,000−32,300) = 32,300/41,700 = <b>0.775</b>; A–D = A–E = 0 (disjoint); D–E: intersection 80·150 = 12,000, union 23,800 + 22,400 − 12,000 = 34,200, so <b>0.351</b>.</p>
+          <ol>
+            <li><b>Pick A</b> (0.95): keep. Compare: B 0.781 &gt; 0.5, suppress; D 0, stays; C 0.775 &gt; 0.5, suppress; E 0, stays.</li>
+            <li><b>Pick D</b> (0.80, the best remaining): keep. Compare E: 0.351 ≤ 0.5, stays.</li>
+            <li><b>Pick E</b> (0.60): keep. Nothing is left.</li></ol>
+          <p>Result: <b>A, D, E</b>. Notice E survives although it is probably a duplicate of D: the threshold 0.5 is too high to catch IoU 0.35. With threshold 0.3, E would be suppressed too.</p></div>
+        <p><b>Threshold effects.</b> A <i>low</i> threshold (0.3) removes duplicates aggressively but also kills true neighbours (two people hugging). A <i>high</i> threshold (0.7) keeps crowds but lets near-duplicates through, hurting precision. Usual values: 0.45–0.6, and 0.7 for RPN proposals.</p>
+        <p><b>Soft-NMS.</b> Instead of deleting an overlapping box, <i>decay its score</i> by how much it overlaps the kept box: <span class="tex">s_j\leftarrow s_j\,e^{-\mathrm{IoU}^2/\sigma}</span> (Gaussian) or <span class="tex">s_j(1-\mathrm{IoU})</span> (linear). A box only falls below the final score threshold if its overlap is large. With σ = 0.5 in our example: B = 0.90·e<sup>−0.781²/0.5</sup> = 0.90·0.296 = <b>0.27</b>; C = 0.70·e<sup>−0.775²/0.5</sup> = <b>0.21</b>; after D is picked, E = 0.60·e<sup>−0.351²/0.5</sup> = <b>0.47</b> — it survives with a lower score rather than being removed or kept at full strength. This helps crowded scenes.</p>
+        <p><b>Class-wise NMS.</b> Run NMS separately for each class, so a "person" box never suppresses an overlapping "backpack" box. Class-agnostic NMS (all classes together) is faster and removes the same object labelled as two classes, but can delete legitimately overlapping objects of different classes.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal D\leftarrow\text{candidates};\quad\text{while }\mathcal D\neq\emptyset:\ m=\arg\max_{b\in\mathcal D}s_b;\ \ \mathcal K\leftarrow\mathcal K\cup\{m\};\ \ \mathcal D\leftarrow\{\,b\in\mathcal D\setminus\{m\}:\mathrm{IoU}(b,m)\le\tau\,\}</div>
+        <table class="sym">
+          <tr><td>𝒟</td><td>the pool of candidate boxes still undecided</td></tr>
+          <tr><td>𝒦</td><td>the kept boxes (the output)</td></tr>
+          <tr><td>s<sub>b</sub></td><td>score (confidence × class probability) of box b</td></tr>
+          <tr><td>m</td><td>the best remaining box</td></tr>
+          <tr><td>τ</td><td>the IoU threshold</td></tr>
+          <tr><td>σ</td><td>soft-NMS width: larger σ means gentler decay</td></tr>
+        </table>
+        <p>Complexity: O(n²) IoU computations in the worst case; this is why detectors first drop low-score boxes (e.g. score &lt; 0.05) and cap the number per level (top 1000).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Play the <i>worked example</i> slowly. Each step compares the picked box (green) with one other (orange): the purple area is their intersection and the caption gives the IoU. Check that you get the same A, D, E as above.</li>
+        <li>Move the IoU threshold from 0.5 to 0.3: E vanishes. Move it to 0.8: B and C survive as duplicates.</li>
+        <li>Tick <i>soft-NMS</i>: scores decay instead of boxes disappearing; read the new scores in the table.</li>
+        <li>Load <i>crowd, two classes</i>: with class-wise ticked, boxes of one class never suppress the other class. Untick it and see the difference.</li>
+        <li>Drag a box on the canvas, or edit a score; the run restarts.</li></ol></div>
+      <div data-lab="detnms"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Applying NMS before the score threshold</b> wastes time (thousands of useless boxes); apply a low score filter first.</li>
+          <li><b>Using one global threshold for crowded scenes</b> (pedestrians, cells under a microscope) deletes real objects. Use soft-NMS, a higher τ, or a model without NMS (lesson 6.6).</li>
+          <li><b>NMS is not differentiable</b> and sits outside the training loss, so a model can be good by its loss yet have scores that do not reflect localisation quality. That is why YOLO-style models also predict quality scores.</li>
+          <li><b>Mixing coordinate formats</b> between the model output and your NMS function gives nonsense IoUs — see lesson 6.1.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>The last step of <b>Faster R-CNN</b> (per-class NMS 0.5, and NMS 0.7 on RPN proposals), <b>SSD</b>, <b>RetinaNet</b>, <b>YOLO</b> up to v9 (later versions train NMS-free).</li>
+          <li><code>torchvision.ops.nms</code>, <code>batched_nms</code> (class-wise via coordinate offsets), TensorRT's NMS plugin — deployment engineers often move NMS onto the GPU because it becomes a bottleneck at high resolution.</li>
+          <li>Related ideas: weighted box fusion (average overlapping boxes instead of picking one), and non-maximum suppression in <b>edge detection</b> and <b>keypoint heat maps</b>.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Boxes P (score 0.9) and Q (0.8) have IoU 0.6. Threshold 0.5. What happens?</summary><div class="ans">P is kept; Q's IoU with P is 0.6 &gt; 0.5, so Q is suppressed.</div></details>
+        <details class="check"><summary>2. Two real people stand shoulder to shoulder; their boxes have IoU 0.65. Plain NMS at 0.5 finds only one person. Name two fixes.</summary><div class="ans">Raise the threshold (e.g. 0.7), use soft-NMS (decay rather than delete), or use a detector that does not need NMS, such as DETR.</div></details>
+        <details class="check"><summary>3. A box with score 0.9 has IoU 0.6 with the kept box. Compute its soft-NMS Gaussian score with σ = 0.5.</summary><div class="ans">0.9·e<sup>−0.36/0.5</sup> = 0.9·e<sup>−0.72</sup> = 0.9·0.487 = 0.438.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Greedy NMS: keep the top box, delete others with IoU &gt; τ, repeat.</li>
+          <li>τ trades duplicates (high τ) against missed neighbours (low τ).</li>
+          <li>Soft-NMS decays scores; class-wise NMS keeps classes independent.</li>
+          <li>It is needed because many anchors/cells fire on one object; set-prediction models avoid it.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.6 ===================== -->
+    <section class="lesson" id="detr" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.6</span><h2>DETR: detection as set prediction</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Anchors, grids, IoU matching rules, NMS: a detector is a pile of hand-designed tricks. Could we just say "here is the image; output the <i>set</i> of objects" and train the network end to end with nothing hand-made in between? And if it outputs a set, how do we compare it with the ground-truth set, when neither has an order?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>DETR (DEtection TRansformer, 2020) pictures detection as a <b>conversation</b>. The image is turned into a sequence of tokens (the feature-map positions) and read by a transformer encoder. Then 100 learned <b>object queries</b> — think of 100 empty seats, each an "inspector" with a blank notebook — are sent to look at the image through <b>cross-attention</b>. Each inspector returns one answer: a class (or "∅, nothing") and a box. The inspectors also talk to each other (self-attention), so two inspectors learn not to report the same object — which is why <b>no NMS</b> is needed.</p>
+        <p>Training faces a puzzle. Ground truth is an unordered set of, say, 3 objects; the model gives 100 predictions. Which prediction should be compared with which object? The answer is a <b>one-to-one assignment</b>, chosen to make the total cost as small as possible. That is the <b>Hungarian algorithm</b>. Each real object gets exactly one query; the other 97 queries are trained to say "∅".</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The cost of pairing</b> query i with object j combines how wrong the class is and how wrong the box is: <span class="tex">\mathcal C_{ij}=-\hat p_i(c_j)+\lambda_{L1}\lVert b_j-\hat b_i\rVert_1+\lambda_{\mathrm{giou}}\,(1-\mathrm{GIoU}(b_j,\hat b_i))</span>. A confident correct class and a tight box give a low (even negative) cost.</p>
+        <div class="worked"><b>Worked example: Hungarian matching on a 3×3 cost matrix</b>
+          <p>Rows are queries Q1–Q3, columns are objects GT1–GT3:</p>
+          <table class="tbl" style="width:auto"><tbody><tr><th></th><th>GT1</th><th>GT2</th><th>GT3</th></tr><tr><th>Q1</th><td>4</td><td>1</td><td>3</td></tr><tr><th>Q2</th><td>2</td><td>0</td><td>5</td></tr><tr><th>Q3</th><td>3</td><td>2</td><td>2</td></tr></tbody></table>
+          <p><b>Why not just pick the cheapest per object?</b> GT1 prefers Q2 (2) and GT2 prefers Q2 (0): two objects claim the same query. We need a one-to-one assignment.</p>
+          <p><b>Brute force.</b> There are 3! = 6 assignments (listed as the query for GT1, GT2, GT3): (Q1,Q2,Q3) = 4+0+2 = 6; (Q1,Q3,Q2) = 4+2+5 = 11; (Q2,Q1,Q3) = 2+1+2 = <b>5</b>; (Q2,Q3,Q1) = 2+2+3 = 7; (Q3,Q1,Q2) = 3+1+5 = 9; (Q3,Q2,Q1) = 3+0+3 = 6. The minimum is <b>5</b>.</p>
+          <p><b>The Hungarian way (O(n³)).</b> Step 1: subtract each row's minimum (1, 0, 2): [[3,0,2],[2,0,5],[1,0,0]]. Step 2: subtract each column's minimum (1, 0, 0): [[2,0,2],[1,0,5],[0,0,0]]. The zeros are the cheap candidate pairs, but they cannot yet form a complete matching (Q1 and Q2 have their only zero in GT2). Cover all zeros with the fewest lines (column GT2 and row Q3). The smallest uncovered value is 1: subtract it from uncovered cells and add it to the doubly covered cell: [[1,0,1],[0,0,4],[0,1,0]]. Now a complete zero matching exists: Q1→GT2, Q2→GT1, Q3→GT3, with original cost 1+2+2 = <b>5</b>. Same as brute force.</p></div>
+        <p><b>The bipartite loss.</b> After matching, the loss is computed only on matched pairs for the box (L1 and GIoU) and on <i>all</i> queries for the class (matched queries target their object's class, unmatched ones target ∅, usually down-weighted by 0.1 because they are 97% of the queries). The loss is also applied after every decoder layer ("auxiliary losses") to help training.</p>
+        <p><b>Why DETR was slow to train:</b> 500 epochs on COCO (to reach 42 AP with ResNet-50), because cross-attention must learn from scratch which spatial position each query should look at; and it is weak on small objects since only the stride-32 map is used. Deformable DETR (attends to a few sampled points on multi-scale maps) and DN-DETR/DINO (denoising queries) fixed both; modern DETR-family models top COCO leaderboards.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat\sigma=\arg\min_{\sigma\in\mathfrak S_N}\sum_{i=1}^{N}\mathcal C_{\mathrm{match}}\big(y_i,\hat y_{\sigma(i)}\big),\qquad \mathcal L=\sum_{i=1}^{N}\Big[-\log\hat p_{\hat\sigma(i)}(c_i)+\mathbb 1_{c_i\neq\varnothing}\,\mathcal L_{\mathrm{box}}(b_i,\hat b_{\hat\sigma(i)})\Big]</div>
+        <table class="sym">
+          <tr><td>N</td><td>number of queries (100); ground truth is padded with ∅ to size N</td></tr>
+          <tr><td>y<sub>i</sub> = (c<sub>i</sub>, b<sub>i</sub>)</td><td>the i-th ground-truth object: class (maybe ∅) and box</td></tr>
+          <tr><td>ŷ<sub>j</sub></td><td>the prediction of query j: class distribution p̂<sub>j</sub> and box b̂<sub>j</sub></td></tr>
+          <tr><td>𝔖<sub>N</sub></td><td>all permutations of N elements (N! of them — never enumerated in practice)</td></tr>
+          <tr><td>σ̂</td><td>the optimal assignment found by the Hungarian algorithm</td></tr>
+          <tr><td>𝟙<sub>c≠∅</sub></td><td>box loss only for real objects</td></tr>
+          <tr><td>L<sub>box</sub></td><td>5·L1 + 2·(1 − GIoU) in the original DETR</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Play from the start: queries (coloured boxes) and ground truth (green dashed) appear, then the cost matrix, the row and column reductions, then every possible assignment flashes by with its total, and finally the optimum is highlighted.</li>
+        <li>Check that the default matrix gives 5 and the same assignment as the hand calculation.</li>
+        <li>Edit a number in the cost matrix — make Q2→GT1 very expensive (say 20). Does the optimal assignment change?</li>
+        <li>Switch to 4 queries: the leftover query ends unmatched and will be trained to predict ∅. Notice the number of candidate assignments (24 instead of 6).</li></ol></div>
+      <div data-lab="detdetr"></div>
+
+      <div class="prose">
+        <h3 class="sec">Draw it yourself</h3>
+        <div data-lab="detblueprint" data-models="detr" data-title="DETR blueprint"></div>
+        <table class="tbl"><thead><tr><th>Stage</th><th>Shape</th><th>Parameters</th></tr></thead><tbody>
+          <tr><td>Image</td><td>3×640×640</td><td>–</td></tr>
+          <tr><td>ResNet-50 (no classifier)</td><td>2048×20×20</td><td>23,508,032</td></tr>
+          <tr><td>1×1 conv + flatten + position encoding</td><td>400×256</td><td>2048·256 + 256 = 524,544</td></tr>
+          <tr><td>Encoder, 6 layers</td><td>400×256</td><td>1,315,072 per layer, 7,890,432 total</td></tr>
+          <tr><td>Object queries</td><td>100×256</td><td>25,600</td></tr>
+          <tr><td>Decoder, 6 layers</td><td>100×256</td><td>1,578,752 per layer, 9,472,512 total</td></tr>
+          <tr><td>Class head</td><td>100×92</td><td>256·92 + 92 = 23,644</td></tr>
+          <tr><td>Box MLP (256→256→256→4)</td><td>100×4</td><td>65,792·2 + 1,028 = 132,612</td></tr></tbody></table>
+        <p>Worked count of one encoder layer: attention has 4 matrices of 256×256 plus biases = 4·256·256 + 4·256 = 263,168; the FFN has 256·2048 + 2048 + 2048·256 + 256 = 1,050,880; two LayerNorms add 2·2·256 = 1,024. Sum = <b>1,315,072</b>. A decoder layer has two attentions (self and cross) and three LayerNorms: 526,336 + 1,050,880 + 1,536 = <b>1,578,752</b>. The paper reports ≈ 41 M parameters and ≈ 86 GFLOPs for the full model.</p>
+        <p>Also remember the cost of attention: the encoder's self-attention matrix is 400×400 (160,000 entries) per head — modest at stride 32, but quadratic in the number of tokens, which is why DETR cannot simply use a stride-8 map (6,400 tokens → 41 M entries per head).</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"No NMS" does not mean no post-processing.</b> You still threshold on score and drop ∅ predictions.</li>
+          <li><b>Queries are not tied to image positions.</b> Query 17 does not always look at the same place; queries specialise statistically (regions, sizes) but are learned vectors.</li>
+          <li><b>The matching is recomputed every training step</b> with the current predictions; it is not a fixed label assignment, and it is not differentiated through — only the matched pairs' losses are.</li>
+          <li><b>Do not enumerate permutations.</b> 100! is astronomically large; the Hungarian algorithm (<code>scipy.optimize.linear_sum_assignment</code>) solves it in O(N³) ≈ 10⁶ steps.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>DETR, Deformable DETR, DINO, RT-DETR</b> (real-time); <b>MaskFormer/Mask2Former</b> use queries for segmentation (Module 7); <b>SAM</b>'s mask decoder is query-based too.</li>
+          <li>Hungarian matching appears in multi-object tracking (associating detections between frames), speaker diarisation, and any "match two unordered sets" problem.</li>
+          <li>Object queries inspired the <b>Perceiver</b> and the <b>Q-Former</b> in vision-language models.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Cost matrix [[1,4],[3,2]]. What is the optimal assignment and cost?</summary><div class="ans">Q1→GT1 (1) and Q2→GT2 (2) = 3, versus Q1→GT2 (4) + Q2→GT1 (3) = 7. Optimum: 3.</div></details>
+        <details class="check"><summary>2. DETR has 100 queries, an image has 4 objects. What target do the 96 unmatched queries get?</summary><div class="ans">The "no object" class ∅, with no box loss (and a reduced class weight such as 0.1 so that they do not overwhelm the loss).</div></details>
+        <details class="check"><summary>3. Why does DETR not need NMS?</summary><div class="ans">The one-to-one matching punishes duplicates: if two queries predict the same object, only one is matched and the other is trained toward ∅. The decoder's self-attention lets queries coordinate, so each object ends up reported once.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>DETR: backbone → transformer encoder → decoder with N = 100 object queries → class + box heads; the output is a set.</li>
+          <li>Hungarian matching gives a one-to-one assignment of queries to objects; unmatched queries learn ∅.</li>
+          <li>One-to-one training removes anchors and NMS, at the cost of slow convergence (fixed by deformable/denoising variants).</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.7 ===================== -->
+    <section class="lesson" id="detection-metrics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.7</span><h2>Measuring detection</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Detector A finds every dog but also draws 50 phantom boxes. Detector B draws only 3 boxes, all perfect, but misses 7 of 10 dogs. Which is better? Accuracy does not apply — there is no single "right answer" per image. We need a number that rewards finding objects, punishes phantoms, punishes loose boxes, and does not depend on one arbitrary confidence cut-off.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every detection has a <b>confidence score</b>, and you choose a cut-off: show only detections above it. Cut high: few boxes, mostly right (high <b>precision</b>) but many objects missed (low <b>recall</b>). Cut low: every object found (high recall) but cluttered with false alarms (low precision). Neither is "the" answer; the honest picture is the whole <b>precision–recall curve</b> as the cut-off slides. <b>Average Precision (AP)</b> is the area under that curve: one number summarising all cut-offs.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>First, classify every detection against the ground truth at an IoU threshold t (say 0.5). Walk down the list sorted by score:</p>
+        <ul>
+          <li><b>True positive (TP):</b> IoU ≥ t with a ground-truth box of the same class that has not been matched yet.</li>
+          <li><b>False positive (FP):</b> anything else — a <i>background</i> box (no object), a <i>localisation</i> error (right object, IoU &lt; t), a <i>duplicate</i> (object already matched by a better detection), or a <i>wrong class</i>.</li>
+          <li><b>False negative (FN):</b> a ground-truth object with no matching detection (counted at the end).</li></ul>
+        <p>Precision = TP/(TP+FP) = "of the boxes I drew, how many were right"; recall = TP/(number of ground-truth objects) = "of the objects present, how many did I find".</p>
+        <div class="worked"><b>Worked example: AP from a ranked list, by hand</b>
+          <p>The dataset has <b>5</b> ground-truth objects. The detector returns 8 detections (IoU threshold 0.5):</p>
+          <table class="tbl"><thead><tr><th>Rank</th><th>Score</th><th>Verdict (why)</th><th>TP</th><th>FP</th><th>Precision</th><th>Recall</th></tr></thead><tbody>
+            <tr><td>1</td><td>0.95</td><td>TP (IoU 0.82)</td><td>1</td><td>0</td><td>1/1 = 1.00</td><td>1/5 = 0.2</td></tr>
+            <tr><td>2</td><td>0.90</td><td>TP (0.74)</td><td>2</td><td>0</td><td>2/2 = 1.00</td><td>0.4</td></tr>
+            <tr><td>3</td><td>0.85</td><td>FP (duplicate of GT1)</td><td>2</td><td>1</td><td>2/3 = 0.67</td><td>0.4</td></tr>
+            <tr><td>4</td><td>0.80</td><td>TP (0.58)</td><td>3</td><td>1</td><td>3/4 = 0.75</td><td>0.6</td></tr>
+            <tr><td>5</td><td>0.70</td><td>FP (background)</td><td>3</td><td>2</td><td>3/5 = 0.60</td><td>0.6</td></tr>
+            <tr><td>6</td><td>0.65</td><td>FP (IoU 0.44 &lt; 0.5, loose)</td><td>3</td><td>3</td><td>3/6 = 0.50</td><td>0.6</td></tr>
+            <tr><td>7</td><td>0.55</td><td>TP (0.62)</td><td>4</td><td>3</td><td>4/7 = 0.57</td><td>0.8</td></tr>
+            <tr><td>8</td><td>0.40</td><td>FP (background)</td><td>4</td><td>4</td><td>4/8 = 0.50</td><td>0.8</td></tr></tbody></table>
+          <p>The fifth object is never found, so recall stops at 0.8.</p>
+          <p><b>Interpolation.</b> The raw precision zigzags. We replace it by the <i>envelope</i>: at each recall r, the maximum precision achieved at any recall ≥ r (a detector could always have chosen that operating point). At the rows where recall increases (rows 1, 2, 4, 7) the envelope is 1.00, 1.00, 0.75 (best of 0.75, 0.60, 0.50, 0.57, 0.50) and 0.571.</p>
+          <p><b>AP = area under the envelope</b>, summing recall steps × envelope height: recall 0→0.2: 0.2·1.00 = 0.200; 0.2→0.4: 0.2·1.00 = 0.200; 0.4→0.6: 0.2·0.75 = 0.150; 0.6→0.8: 0.2·0.571 = 0.114; 0.8→1.0: 0 (never reached). <b>AP = 0.664.</b> (The VOC07 11-point version gives 0.695 for the same list.)</p></div>
+        <p><b>From AP to mAP.</b> AP is per class. <b>mAP</b> averages AP over all classes. COCO's headline metric, <b>mAP@[.5:.95]</b> (written simply AP), additionally averages over ten IoU thresholds 0.50, 0.55, …, 0.95, so it rewards <i>tight</i> boxes: a detector with AP50 = 0.70 may have AP = 0.45. Also reported: AP50, AP75, and AP<sub>S/M/L</sub> for small (&lt; 32²), medium and large objects, plus average recall. COCO samples the curve at 101 recall points and allows 100 detections per image.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P=\frac{TP}{TP+FP},\quad R=\frac{TP}{TP+FN},\quad \mathrm{AP}=\int_0^1 p_{\mathrm{interp}}(r)\,dr,\quad p_{\mathrm{interp}}(r)=\max_{r'\ge r}p(r')</div>
+        <div class="eq">\mathrm{mAP}=\frac1{|\mathcal K|}\sum_{k\in\mathcal K}\mathrm{AP}_k,\qquad \mathrm{mAP@[.5:.95]}=\frac1{10}\sum_{t\in\{0.50,0.55,\dots,0.95\}}\mathrm{mAP}_t</div>
+        <table class="sym">
+          <tr><td>TP, FP, FN</td><td>true positives, false positives, false negatives at the chosen IoU threshold</td></tr>
+          <tr><td>P, R</td><td>precision and recall at one score cut-off</td></tr>
+          <tr><td>p(r)</td><td>the precision-recall curve: precision as a function of recall, built by lowering the cut-off</td></tr>
+          <tr><td>p<sub>interp</sub></td><td>its envelope (monotone non-increasing)</td></tr>
+          <tr><td>𝒦</td><td>set of classes</td></tr>
+          <tr><td>t</td><td>IoU threshold</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Play from the start and follow one row at a time: a TP (green dot) moves recall right, an FP (red dot) drops precision. Compare the table with the hand calculation; AP should read 0.664 at IoU 0.50.</li>
+        <li>Slide the IoU threshold to 0.75, then 0.9: rows with loose boxes switch from TP to FP and the curve collapses. Read mAP@[.5:.95] — the average over thresholds.</li>
+        <li>Edit the IoU of a row, or change a score so that the order changes (the table re-sorts), and see how a confident false positive near the top hurts AP much more than one at the bottom.</li>
+        <li>Switch the interpolation to 11-point or 101-point and note the small changes.</li></ol></div>
+      <div data-lab="detpr"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Comparing APs from different protocols.</b> VOC AP50, COCO AP (0.5:0.95) and Open Images AP are not interchangeable; IoU thresholds, interpolation and detection limits differ.</li>
+          <li><b>AP depends on the ranking of scores, not their calibration.</b> A detector can have excellent AP and badly calibrated probabilities.</li>
+          <li><b>Duplicates count as false positives.</b> Dropping NMS or setting its threshold too high lowers AP even if every box is "correct".</li>
+          <li><b>mAP hides failure types.</b> Two models with the same mAP may fail differently (one misses small objects, the other mislocalises). Break down by size, class and error type.</li>
+          <li><b>Small test sets:</b> AP is noisy, especially for rare classes with few ground truths.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every leaderboard: <b>COCO test-dev</b> (AP), <b>PASCAL VOC</b> (AP50), <b>LVIS</b> (long-tail AP), <b>Open Images</b>, KITTI/nuScenes (3-D AP).</li>
+          <li>Choosing a deployment threshold: read the PR curve to find the cut-off that gives the precision your product needs (e.g. 95% for an automatic alert) and see what recall remains.</li>
+          <li>The validation loop of YOLO, Detectron2 and MMDetection prints "mAP50-95" every epoch — exactly the metric of this lesson — and model selection uses it.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. 10 ground-truth objects; a detector returns 8 detections, 6 of them TP. Precision and recall?</summary><div class="ans">Precision = 6/8 = 0.75; recall = 6/10 = 0.60.</div></details>
+        <details class="check"><summary>2. Two detections, in score order: TP then FP, with 2 ground-truth objects in total. Compute AP (all-point).</summary><div class="ans">After rank 1: P = 1, R = 0.5; after rank 2: P = 0.5, R = 0.5. The envelope is 1 for recall ≤ 0.5. Area = 0.5·1 = 0.5; recall never exceeds 0.5. AP = 0.5.</div></details>
+        <details class="check"><summary>3. Why is mAP@[.5:.95] lower than mAP@0.5 for the same model?</summary><div class="ans">Stricter thresholds (0.75, 0.9…) turn loosely localised detections from true into false positives, so AP at those thresholds is lower, and the average over all ten thresholds falls below the AP at 0.5 alone.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Each detection is TP or FP at an IoU threshold; precision and recall depend on the score cut-off.</li>
+          <li>AP is the area under the (interpolated) precision–recall curve; mAP averages over classes; COCO also averages over IoU 0.5…0.95.</li>
+          <li>Break results down by object size, class and error type, not only one number.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now describe a detector end to end: boxes and IoU, proposals or anchors, heads and losses, grids and pyramids, NMS or set prediction, and how it is measured. Next, <b>Module 7 · Segmentation &amp; dense prediction</b> goes from boxes to a label for every pixel, with encoder–decoder networks and skip connections.</div>
+
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>
