@@ -26,7 +26,7 @@ jobs:
       - name: Stage site files
         run: |
           mkdir _site
-          cp -r index.html machine-learning.html mathematics.html assets _site/
+          cp -r *.html assets _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

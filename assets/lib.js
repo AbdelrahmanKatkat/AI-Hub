@@ -271,17 +271,22 @@
   };
 
   /** Animation loop that only runs while `el` is on screen. fn(dt, time). */
-  AI.loop = function (el, fn) {
+  AI.loop = function (el, fn, opts) {
     let vis = true, last = performance.now();
+    const gap = 1000 / ((opts && opts.fps) || 60) - 2; // opts.fps caps the frame rate for heavy labs
     new IntersectionObserver((e) => (vis = e[0].isIntersecting)).observe(el);
     const tick = (t) => {
+      requestAnimationFrame(tick);
+      if (t - last < gap) return;
       const dt = Math.min(0.05, (t - last) / 1000);
       last = t;
       if (vis && !document.hidden) fn(dt, t / 1000);
-      requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   };
+
+  /** Fixed-rate stepping: const n = ticker(dt, perSecond) -> whole steps to run this frame (frame-rate independent). */
+  AI.ticker = () => { let acc = 0; return (dt, perSec) => { acc += dt * perSec; const n = Math.floor(acc); acc -= n; return Math.min(n, 40); }; };
 
   AI.niceStep = (range, target = 6) => {
     const raw = range / target, pow = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / pow;

@@ -76,7 +76,7 @@ AI.labs.preprocess = function (root) {
     g.textAlign = 'left'; g.fillStyle = color; g.fillText(label, x0, y0 - 4);
   };
   AI.loop(root, (dt, time) => {
-    const k = 1 - Math.exp(-dt * 7);
+    const k = 1 - Math.exp(-dt * 3.5);
     for (const key of ['top', 'bot']) {
       const t = targets[key], r = rows[key]; if (!t) continue;
       r.lo += (t.lo - r.lo) * k; r.hi += (t.hi - r.hi) * k;
@@ -91,7 +91,7 @@ AI.labs.preprocess = function (root) {
     for (const p of particles) {
       const a = raw[p.i], b = out[p.i];
       if (!Number.isFinite(b)) continue;
-      const s = AI.smooth(((time * 0.35 + p.ph) % 1) * 1.3 - 0.15);
+      const s = AI.smooth(((time * 0.16 + p.ph) % 1) * 1.3 - 0.15);
       const xa = x0 + ((a - rows.top.lo) / (rows.top.hi - rows.top.lo)) * w, xb = x0 + ((b - rows.bot.lo) / (rows.bot.hi - rows.bot.lo)) * w;
       const ya = yT + hh + 22, yb = yB - 8;
       g.globalAlpha = Math.sin(s * Math.PI) * 0.9;
@@ -105,13 +105,14 @@ AI.labs.preprocess = function (root) {
 /* ================= Regression + gradient descent ================= */
 AI.labs.regression = function (root) {
   const { view, ctl } = AI.labShell(root, 'Training lab: fit any model with gradient descent', 'edit the equation, press play',
-    `<canvas id="fit" style="height:300px"></canvas><canvas id="loss" style="height:130px"></canvas>`,
+    `<canvas id="fit" style="height:320px"></canvas><canvas id="loss" style="height:120px"></canvas>`,
     `<label>Dataset <select id="data"><option value="linear">line + noise</option><option value="quad">parabola + noise</option><option value="sine">sine wave</option><option value="outlier">line with outliers</option></select></label>
      <label>Model &nbsp;ŷ = f(x; w, b, c) <input type="text" id="expr" value="w*x + b" spellcheck="false"></label>
      <div class="err" id="err"></div>
      <div class="chips" id="presets"></div>
      <label>Learning rate η <span class="v" id="lrv"></span><input type="range" id="lr" min="-3.5" max="-0.3" step="0.05" value="-1.3"></label>
-     <label>Steps per frame <span class="v" id="spv"></span><input type="range" id="sp" min="1" max="20" step="1" value="2"></label>
+     <label>Speed <span class="v" id="spv"></span><input type="range" id="sp" min="1" max="60" step="1" value="4"></label>
+     <label style="flex-direction:row;gap:6px;align-items:center"><input type="checkbox" id="slow" checked> Slow motion: show every step (predict → measure → gradient → update)</label>
      <div class="row"><button class="btn primary" id="play">⏸ Pause</button><button class="btn" id="step">Step</button><button class="btn" id="reset">Reset</button><button class="btn" id="noise">New data</button></div>
      <div class="readout" id="out"></div>`);
   const q = (s) => AI.$(s, root);
@@ -119,7 +120,10 @@ AI.labs.regression = function (root) {
   const models = { 'line': 'w*x + b', 'parabola': 'w*x^2 + b*x + c', 'sine': 'w*sin(b*x) + c', 'tanh': 'w*tanh(b*x) + c' };
   const sugg = { linear: 'line', quad: 'parabola', sine: 'sine', outlier: 'line' };
   const P = ['w', 'b', 'c'], init = { w: -1, b: 1.5, c: 0.5 };
-  let xs = [], ys = [], seed = 3, fn = null, used = [], p = { ...init }, hist = [], playing = true, diverged = false, lastG = {}, steps = 0;
+  const CAPS = ['① Predict: the model draws its current curve through the data.', '② Measure: every red square is one squared error. Their average is the loss L.', '③ Gradient: for each knob, work out which direction lowers L (numbers on the right).', '④ Update: nudge every knob a small step downhill — the curve glides to its new shape.'];
+  const PH = 1.5; // seconds per phase at speed x1
+  let xs = [], ys = [], seed = 3, fn = null, used = [], p = { ...init }, pShow = { ...init }, hist = [], playing = true, diverged = false, lastG = {}, steps = 0, phase = 0, phT = 0;
+  const tick = AI.ticker();
 
   const gen = () => {
     const r = AI.rng(seed), d = q('#data').value;
@@ -130,13 +134,11 @@ AI.labs.regression = function (root) {
     });
   };
   const loss = (pp) => { let s = 0; for (let i = 0; i < xs.length; i++) { const e = fn({ x: xs[i], ...pp }) - ys[i]; s += e * e; } return s / xs.length; };
-  const reset = () => { p = { ...init }; hist = []; steps = 0; diverged = false; lastG = {}; };
+  const reset = () => { p = { ...init }; pShow = { ...init }; hist = []; steps = 0; diverged = false; lastG = {}; phase = 0; phT = 0; };
   const stepOnce = () => {
     if (!fn || diverged) return;
     const lr = Math.pow(10, +q('#lr').value), g = {};
-    for (const k of used) {
-      const h = 1e-5; g[k] = (loss({ ...p, [k]: p[k] + h }) - loss({ ...p, [k]: p[k] - h })) / (2 * h);
-    }
+    for (const k of used) { const h = 1e-5; g[k] = (loss({ ...p, [k]: p[k] + h }) - loss({ ...p, [k]: p[k] - h })) / (2 * h); }
     for (const k of used) p[k] -= lr * g[k];
     lastG = g; steps++;
     const L = loss(p);
@@ -156,28 +158,44 @@ AI.labs.regression = function (root) {
   q('#play').onclick = () => { playing = !playing; q('#play').textContent = playing ? '⏸ Pause' : '▶ Play'; };
   gen(); ei.run();
 
-  AI.loop(root, () => {
+  AI.loop(root, (dt) => {
+    const sp = +q('#sp').value, slow = q('#slow').checked;
     q('#lrv').textContent = AI.fmt(Math.pow(10, +q('#lr').value), 4);
-    q('#spv').textContent = q('#sp').value;
-    if (playing) for (let i = 0; i < +q('#sp').value; i++) stepOnce();
+    q('#spv').textContent = slow ? 'speed ×' + AI.fmt(sp / 4, 2) : sp + ' steps / s';
+    if (playing && fn && !diverged) {
+      if (slow) { phT += (dt * sp) / 4; if (phT >= PH) { phT = 0; phase = (phase + 1) % 4; if (phase === 3) stepOnce(); } }
+      else { const n = tick(dt, sp); for (let i = 0; i < n; i++) stepOnce(); }
+    }
+    const kk = 1 - Math.exp(-dt * (slow ? 3 : 14));
+    for (const k of P) pShow[k] += (p[k] - pShow[k]) * kk;
     const C = AI.col();
     // fit
     let g = c1.ctx; g.clearRect(0, 0, c1.w, c1.h);
     const v = AI.view(c1, -3.5, 3.5, -6, 6);
     AI.axes(g, v);
-    const curve = (x) => fn({ x, ...p });
+    const curve = (x) => fn({ x, ...pShow });
     if (!diverged) {
-      g.strokeStyle = C.red; g.globalAlpha = 0.35; g.lineWidth = 1;
-      xs.forEach((x, i) => { const yh = curve(x); if (!Number.isFinite(yh)) return; g.beginPath(); g.moveTo(v.X(x), v.Y(ys[i])); g.lineTo(v.X(x), v.Y(AI.clamp(yh, -20, 20))); g.stroke(); });
-      g.globalAlpha = 1;
+      const showSq = slow && (phase === 1 || phase === 2);
+      xs.forEach((x, i) => {
+        const yh = curve(x); if (!Number.isFinite(yh)) return;
+        const y1 = AI.clamp(yh, -20, 20);
+        g.strokeStyle = C.red; g.globalAlpha = showSq ? 0.9 : 0.3; g.lineWidth = showSq ? 1.5 : 1; g.beginPath(); g.moveTo(v.X(x), v.Y(ys[i])); g.lineTo(v.X(x), v.Y(y1)); g.stroke();
+        if (showSq) { const side = Math.abs(v.Y(y1) - v.Y(ys[i])), top = Math.min(v.Y(y1), v.Y(ys[i])); g.fillStyle = C.red; g.globalAlpha = 0.16; g.fillRect(v.X(x), top, side, side); g.globalAlpha = 0.7; g.strokeRect(v.X(x), top, side, side); }
+        g.globalAlpha = 1;
+      });
       g.strokeStyle = C.orange; g.lineWidth = 2.5; g.beginPath();
       for (let i = 0; i <= 160; i++) { const x = -3.5 + (7 * i) / 160, y = AI.clamp(curve(x), -30, 30); i ? g.lineTo(v.X(x), v.Y(y)) : g.moveTo(v.X(x), v.Y(y)); }
       g.stroke();
     }
     g.fillStyle = C.blue;
     xs.forEach((x, i) => { g.beginPath(); g.arc(v.X(x), v.Y(ys[i]), 3.5, 0, 7); g.fill(); });
-    g.fillStyle = C.muted; g.font = '11px sans-serif'; g.textAlign = 'left';
-    g.fillText('● data   — model   | residuals', v.pad.l + 6, v.pad.t + 12);
+    g.textAlign = 'left'; g.font = '12px sans-serif';
+    if (slow && playing && !diverged) {
+      const bw = Math.min(v.pw - 8, 520);
+      g.fillStyle = C.bg2; g.globalAlpha = 0.92; g.fillRect(v.pad.l + 4, v.pad.t + 4, bw, 24); g.globalAlpha = 1;
+      g.fillStyle = C.fg; g.fillText(CAPS[phase], v.pad.l + 10, v.pad.t + 20);
+      g.fillStyle = C.border; g.fillRect(v.pad.l + 4, v.pad.t + 30, bw, 3); g.fillStyle = C.blue; g.fillRect(v.pad.l + 4, v.pad.t + 30, bw * ((phase + phT / PH) / 4), 3);
+    } else { g.fillStyle = C.muted; g.fillText('● data   — model   | residuals', v.pad.l + 6, v.pad.t + 14); }
     // loss
     g = c2.ctx; g.clearRect(0, 0, c2.w, c2.h);
     const pad = { l: 40, r: 12, t: 16, b: 22 };
@@ -190,7 +208,7 @@ AI.labs.regression = function (root) {
       vals.forEach((y, i) => (i ? g.lineTo(vv.X(i), vv.Y(y)) : g.moveTo(vv.X(i), vv.Y(y)))); g.stroke();
     }
     g.fillStyle = C.muted; g.font = '11px sans-serif'; g.textAlign = 'left';
-    g.fillText('log₁₀ loss vs step', pad.l + 6, 12);
+    g.fillText('log₁₀ loss vs step (should go down)', pad.l + 6, 12);
     // readout
     const L = hist.length ? hist[hist.length - 1] : loss(p), lr = Math.pow(10, +q('#lr').value);
     let t = `<span class="m">step</span> ${steps}   <span class="m">L = MSE</span> <span class="o">${AI.fmt(L, 4)}</span>\n`;
@@ -200,7 +218,7 @@ AI.labs.regression = function (root) {
       t += `<span class="b">${k}</span> ← ${AI.fmt(p[k] + (gk !== undefined ? lr * gk : 0), 3)} − η·(<span class="g">${gk === undefined ? '…' : AI.fmt(gk, 3)}</span>) = <b>${AI.fmt(p[k], 3)}</b>\n`;
     });
     q('#out').innerHTML = t;
-  });
+  }, { fps: 40 });
 };
 
 /* ================= Neural network playground ================= */
@@ -212,6 +230,7 @@ AI.labs.nn = function (root) {
      <div>Hidden layers <div class="layers" id="layers"></div></div>
      <label>Activation <select id="act"><option>tanh</option><option>relu</option><option>sigmoid</option></select></label>
      <label>Learning rate <span class="v" id="lrv"></span><input type="range" id="lr" min="-2.5" max="0.3" step="0.05" value="-1"></label>
+     <label>Training speed <span class="v">batches / second</span><input type="range" id="sp" min="5" max="300" step="5" value="40"></label>
      <div class="row"><button class="btn primary" id="play">⏸ Pause</button><button class="btn" id="reset">Reset weights</button></div>
      <div class="readout" id="out"></div>
      <div class="caption" id="formula"></div>`);
@@ -227,7 +246,8 @@ AI.labs.nn = function (root) {
   };
   let on = [0, 1], hidden = [6, 4], pts = [], net, hist = [], playing = true, steps = 0, probe = null, seed = 1;
   const off = document.createElement('canvas'); off.width = off.height = 48;
-  let frame = 0;
+  let histT = 0, hmT = 0;
+  const tick = AI.ticker();
 
   const data = () => {
     const r = AI.rng(5), d = q('#data').value, P = [];
@@ -324,10 +344,10 @@ AI.labs.nn = function (root) {
 
   AI.loop(root, (dt, time) => {
     q('#lrv').textContent = AI.fmt(Math.pow(10, +q('#lr').value), 3);
-    if (playing) { const lr = Math.pow(10, +q('#lr').value); for (let i = 0; i < 6; i++) trainBatch(lr); if (frame % 4 === 0) hist.push(fullLoss()); if (hist.length > 300) hist.shift(); }
+    if (playing) { const lr = Math.pow(10, +q('#lr').value); const nb = tick(dt, +q('#sp').value); for (let i = 0; i < nb; i++) trainBatch(lr); histT += dt; if (histT > 0.25) { histT = 0; hist.push(fullLoss()); } if (hist.length > 300) hist.shift(); }
     const C = AI.col(), c0 = AI.rgb(C.orange), c1 = AI.rgb(C.blue), bg = AI.rgb(C.bg);
     // decision map
-    if (frame++ % 3 === 0 || !playing) {
+    hmT += dt; if (hmT > 0.12 || !playing) { hmT = 0;
       const g = off.getContext('2d'), im = g.createImageData(48, 48);
       for (let j = 0; j < 48; j++) for (let i = 0; i < 48; i++) {
         const x = ((i + 0.5) / 48) * 2.4 - 1.2, y = -(((j + 0.5) / 48) * 2.4 - 1.2), p = forward(feat(x, y)).pop()[0], s = 0.2 + 0.6 * Math.abs(2 * p - 1);
@@ -355,7 +375,7 @@ AI.labs.nn = function (root) {
       const w = net.W[l][j][i], [x0, y0] = pos[l][i], [x1, y1] = pos[l + 1][j], a = Math.abs(w);
       g.strokeStyle = w > 0 ? C.blue : C.orange; g.globalAlpha = AI.clamp(a * 0.5, 0.05, 0.9); g.lineWidth = AI.clamp(a * 1.4, 0.4, 4);
       g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
-      if (a > 0.3) { const ph = (time * 0.5 + (i * 7 + j * 13 + l * 3) * 0.137) % 1; g.globalAlpha = Math.min(1, a); g.fillStyle = C.fg; g.beginPath(); g.arc(AI.lerp(x0, x1, ph), AI.lerp(y0, y1, ph), 1.8, 0, 7); g.fill(); }
+      if (a > 0.3) { const ph = (time * 0.22 + (i * 7 + j * 13 + l * 3) * 0.137) % 1; g.globalAlpha = Math.min(1, a); g.fillStyle = C.fg; g.beginPath(); g.arc(AI.lerp(x0, x1, ph), AI.lerp(y0, y1, ph), 1.8, 0, 7); g.fill(); }
     }
     g.globalAlpha = 1;
     pos.forEach((col, l) => col.forEach(([x, y], i) => {
@@ -393,8 +413,8 @@ AI.labs.threshold = function (root) {
     q('#dv').textContent = d; q('#sv').textContent = s; q('#tv').textContent = AI.fmt(t, 2);
     const v = AI.view(c1, -4, 8, 0, 0.5, { l: 12, r: 12, t: 12, b: 24 });
     // stream
-    acc += dt * 22;
-    while (acc > 1) { acc--; const pos = Math.random() < 0.5; parts.push({ pos, x: (pos ? d : 0) + s * AI.randn(), y: 0, vy: 40 + Math.random() * 30 }); }
+    acc += dt * 7;
+    while (acc > 1) { acc--; const pos = Math.random() < 0.5; parts.push({ pos, x: (pos ? d : 0) + s * AI.randn(), y: 0, vy: 34 + Math.random() * 16 }); }
     parts.forEach((p) => { p.y += p.vy * dt; });
     let g = c1.ctx; g.clearRect(0, 0, c1.w, c1.h);
     AI.axes(g, v, { noY: true, noGrid: true });

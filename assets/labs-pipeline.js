@@ -5,7 +5,7 @@ AI.labs.pipeline = function (root) {
   root.innerHTML = `
     <div class="pipe-tools">
       <button class="btn small" data-a="play">⏸ Pause</button>
-      <label>Speed <input type="range" min="0.3" max="3" step="0.1" value="1"></label>
+      <label>Speed <input type="range" min="0.25" max="2.5" step="0.05" value="1"></label>
       <span>Click a stage to pin its details.</span>
     </div>
     <div class="pipe-scroll"><div class="pipe-track" style="--n:${N}">
@@ -50,8 +50,8 @@ AI.labs.pipeline = function (root) {
   AI.loop(root, (dt) => {
     if (playing) {
       spawn -= dt * speed;
-      if (spawn <= 0) { packets.push({ t: 0 }); spawn = 1.7; }
-      packets.forEach((p) => (p.t += dt * speed * 0.6));
+      if (spawn <= 0) { packets.push({ t: 0 }); spawn = 3.6; }
+      packets.forEach((p) => (p.t += dt * speed * 0.26));
       packets = packets.filter((p) => p.t < N + 0.2);
     }
     const C = AI.col(), g = c.ctx, y = 42;

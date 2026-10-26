@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · Foundations · Mathematics for AI</title>
+<meta name="description" content="Numbers, sets, functions, algebra, sums, logarithms, trigonometry, geometry and notation — the language of AI mathematics, built from intuition.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-math.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="math" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="mathematics.html">Mathematics for AI</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">0</div>
+      <div style="flex:1">
+        <h1>Module 0 · Foundations</h1>
+        <p>The language everything else is written in. If you can do arithmetic, you can start here. By the end you will be able to read a formula like <span class="tex">\frac1N\sum_i (f(x_i;\theta)-y_i)^2</span> aloud, explain every symbol, and turn it into code.</p>
+        <div class="chips"><span class="chip">8 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">No prerequisites</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="numbers-sets" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.1</span><h2>Numbers, sets &amp; ℝⁿ</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A house has 3 bedrooms, 120 m² of floor area, is 8 years old and sits 2 km from the city centre. A computer can only work with numbers. How do we hand it <i>this house</i> so that it can estimate a price — and what does it even mean to say two houses are "similar"?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Numbers are tools, and different jobs need different tools.</p>
+        <ul>
+          <li><b>Counting</b> things (3 bedrooms): the <i>natural numbers</i> <span class="tex">\mathbb N=\{0,1,2,3,\dots\}</span>.</li>
+          <li><b>Gaining and losing</b> (a bank balance of −40, a temperature of −5 °C): the <i>integers</i> <span class="tex">\mathbb Z=\{\dots,-2,-1,0,1,2,\dots\}</span>.</li>
+          <li><b>Sharing</b> (half a pizza, ¾ of a tank): the <i>rational numbers</i> <span class="tex">\mathbb Q</span> — anything you can write as a fraction <span class="tex">p/q</span>.</li>
+          <li><b>Measuring</b> (120.5 m², 1.7320508… km): the <i>real numbers</i> <span class="tex">\mathbb R</span> — every point on an unbroken number line, including numbers like <span class="tex">\sqrt2</span> and <span class="tex">\pi</span> that no fraction can capture.</li>
+        </ul>
+        <p>Each set contains the one before it: every natural number is an integer, every integer is a fraction (<span class="tex">5=5/1</span>), every fraction is real. Almost everything in AI lives in <span class="tex">\mathbb R</span>.</p>
+        <p>A <b>set</b> is simply a bag of distinct things where we only care <i>what is in it</i>, not the order. We write it with braces: <span class="tex">\{2,4,6\}</span>. The symbol <span class="tex">\in</span> reads "is an element of": <span class="tex">4\in\{2,4,6\}</span> is true, <span class="tex">5\in\{2,4,6\}</span> is false. If every element of A is also in B we write <span class="tex">A\subset B</span> ("A is a subset of B"). Sets of real numbers between two ends are <b>intervals</b>: <span class="tex">[0,1]</span> includes both ends, <span class="tex">(0,1)</span> excludes them, and <span class="tex">[0,\infty)</span> means "zero and everything above".</p>
+
+        <h3 class="sec">Build it up: from one number to many</h3>
+        <p>One measurement is one real number. But a house has <i>several</i> measurements, and their <b>order matters</b> (bedrooms first, age third — swapping them changes the meaning). An ordered list of numbers is a <b>tuple</b>. Our house becomes:</p>
+        <div class="eq">\text{house}=(3,\;120,\;8,\;2)</div>
+        <p>A list of 2 numbers is a point on a flat map (x across, y up). A list of 3 numbers is a point in space. A list of 4 numbers is a point in a space we cannot draw — but everything we know about points (distance, direction, "between", "close to") still works. We call the space of all lists of <i>n</i> real numbers <span class="tex">\mathbb R^n</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>House A = (3, 120, 8, 2), house B = (3, 118, 9, 2.5). Both live in <span class="tex">\mathbb R^4</span>. They are <i>close</i> in this space because every coordinate is nearly the same. House C = (6, 300, 1, 15) is far from both. "Similar houses" has become "nearby points" — a statement a computer can test with arithmetic. (We make "nearby" precise in lesson 0.7.)</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbb R^n=\{(x_1,x_2,\dots,x_n)\;:\;x_i\in\mathbb R\text{ for every }i=1,\dots,n\}</div>
+        <table class="sym">
+          <tr><td>ℝⁿ</td><td>the set of all ordered lists of <i>n</i> real numbers</td></tr>
+          <tr><td>(x₁, …, xₙ)</td><td>one such list; the small number below is a position (an <i>index</i>), so <span class="tex">x_2</span> means "the second entry"</td></tr>
+          <tr><td>:</td><td>reads "such that"</td></tr>
+          <tr><td>∈</td><td>"is an element of"</td></tr>
+        </table>
+        <p>A whole <b>dataset</b> with N examples is then a collection of N such points — which we will arrange as a table (a matrix) in Module 1.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Move only the first slider: your point travels along a line (ℝ¹).</li>
+        <li>Move the second as well: the point moves around a plane (ℝ²).</li>
+        <li>Move all three: the same three numbers describe a colour. A single pixel of a photo is a point in ℝ³.</li></ol></div>
+      <div data-lab="rn"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Computers do not store all of ℝ.</b> They store finite approximations (floating-point). In most languages <code>0.1 + 0.2</code> gives <code>0.30000000000000004</code>. Usually harmless, but it is why we later care about numerical stability.</li>
+          <li><b>Categories are not numbers.</b> Encoding colour as red=1, green=2, blue=3 tells the model that blue is "three times red" and that green sits "between" them. Categories need special encodings (one-hot vectors).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A tabular row, like our house, is a point in <span class="tex">\mathbb R^n</span>; the <i>features</i> are its coordinates.</li>
+          <li>A 28×28 greyscale image is a point in <span class="tex">\mathbb R^{784}</span>; a 224×224 colour image lives in <span class="tex">\mathbb R^{150528}</span>.</li>
+          <li>A word becomes an integer <i>token id</i> in <span class="tex">\mathbb N</span>, then an <i>embedding</i> — a point in <span class="tex">\mathbb R^{d}</span> with <i>d</i> typically 768 to 12288.</li>
+          <li>A model's <i>parameters</i> are also just a (very long) list of reals: a point in <span class="tex">\mathbb R^{P}</span>. Training moves that point around.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Is −3 a natural number? An integer? A real number?</summary><div class="ans">Not a natural number (those start at 0), but it is an integer and a real number.</div></details>
+        <details class="check"><summary>2. A weather report uses (temperature, humidity, wind speed, pressure). Which ℝⁿ does a report live in, and what does the order of the list mean?</summary><div class="ans">ℝ⁴. The order is a fixed convention: slot 1 always means temperature, slot 2 humidity, and so on. Swapping entries would describe a different weather.</div></details>
+        <details class="check"><summary>3. Why is "colour = 1, 2, 3" a bad encoding for red, green and blue as three categories?</summary><div class="ans">The numbers imply an order and distances (blue is 3× red, green lies between them) that do not exist in the data. One-hot vectors (1,0,0), (0,1,0), (0,0,1) are equally far apart and avoid this.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>ℕ ⊂ ℤ ⊂ ℚ ⊂ ℝ; AI works almost entirely in ℝ.</li><li>An ordered list of n reals is a point in ℝⁿ — data, images, embeddings and parameters are all points.</li><li>"Similar" will become "close", which is something we can compute.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="functions" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.2</span><h2>Functions</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We want a rule that takes a house's size and returns a predicted price. What exactly is a "rule" in mathematics, how do we combine several rules, and how do we say "a rule with adjustable knobs"?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>function</b> is a machine with one slot for input and one for output. Drop in a number, a number comes out. The single most important property: <b>the same input always gives the same output</b>. A vending machine is a function (press B4, always the same snack); a dice roll is not.</p>
+        <p>We name the machine <i>f</i>, the input <i>x</i>, and write <span class="tex">f(x)</span> for "what comes out when x goes in". The set of allowed inputs is the <b>domain</b>; the set of outputs that actually occur is the <b>range</b>. For <span class="tex">f(x)=\sqrt x</span>, the domain is <span class="tex">[0,\infty)</span> because we cannot take the square root of a negative number (yet).</p>
+        <p>A <b>graph</b> is a picture of the machine's behaviour: for every input <i>x</i> on the horizontal axis we plot a dot at height <i>f(x)</i>. Watch the machine below, then see how its graph is built.</p>
+
+        <div data-lab="machine" data-f="2*x+1" style="margin-top:0"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Let it run with <code>2*x+1</code>. Check one pair by hand: input 3 → 2·3+1 = 7.</li>
+          <li>Change the rule to <code>x^2</code>. Feed −2 and then 2. Different inputs, <i>same</i> output — allowed! A function may send many inputs to one output; what it may not do is send one input to two outputs.</li>
+          <li>Try <code>1/x</code> and feed 0. The machine jams: 0 is not in its domain.</li></ol></div>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Composition — chaining machines.</b> Put the output of one machine into the input of another. If <i>g</i> acts first and <i>f</i> second, we write <span class="tex">(f\circ g)(x)=f(g(x))</span>, read "f after g". Order matters, and the notation reads from the inside out.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Let <span class="tex">f(x)=3x-2</span> and <span class="tex">g(x)=x^2</span>.</p>
+          <p><span class="tex">f(g(2))</span>: first <span class="tex">g(2)=4</span>, then <span class="tex">f(4)=3\cdot4-2=10</span>.</p>
+          <p><span class="tex">g(f(2))</span>: first <span class="tex">f(2)=4</span>, then <span class="tex">g(4)=16</span>.</p>
+          <p>10 ≠ 16: composition is <i>not</i> commutative.</p></div>
+        <p><b>Inverse — the undo machine.</b> If <i>f</i> turns 2 into 7, the inverse <span class="tex">f^{-1}</span> turns 7 back into 2. To find it, write <span class="tex">y=f(x)</span> and solve for <i>x</i>. For <span class="tex">f(x)=3x-2</span>: <span class="tex">y=3x-2\Rightarrow x=\frac{y+2}{3}</span>, so <span class="tex">f^{-1}(y)=\frac{y+2}{3}</span>. An inverse exists only when different inputs always give different outputs (so <span class="tex">x^2</span> has no inverse on all of ℝ: both −2 and 2 map to 4, so we could not know which to return).</p>
+        <p><b>Variables versus parameters.</b> Consider <span class="tex">f(x)=ax+b</span>. We think of <i>x</i> as the input that changes from example to example, while <i>a</i> and <i>b</i> are <b>knobs</b> that fix <i>which</i> line we have. To emphasise this we write <span class="tex">f(x;a,b)</span> or <span class="tex">f(x;\theta)</span> with <span class="tex">\theta=(a,b)</span>: the semicolon separates the input from the parameters. Machine learning is the art of turning the knobs <span class="tex">\theta</span> until the machine fits the data.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">f:A\to B,\qquad x\mapsto f(x)\qquad\text{such that each }x\in A\text{ has exactly one }f(x)\in B</div>
+        <table class="sym">
+          <tr><td>f : A → B</td><td>"f is a function from the set A (domain) to the set B (where outputs live)"</td></tr>
+          <tr><td>x ↦ f(x)</td><td>"x is sent to f(x)" — the rule itself</td></tr>
+          <tr><td>f ∘ g</td><td>composition, "f after g"</td></tr>
+          <tr><td>f⁻¹</td><td>inverse function (<b>not</b> 1/f)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: knobs, and chaining machines</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the first plot, drag <b>a</b> and <b>b</b>. You are not changing the formula, only the knobs — yet you sweep through every possible line. A family of functions <i>is</i> a model.</li>
+        <li>In the second plot, the green curve is <span class="tex">g(f(x))</span>. Move the sliders and compare it with the orange <i>g</i> alone: composition bends and moves the shape.</li></ol></div>
+      <div data-lab="fplot" data-title="One formula, many lines" data-f="a*x+b" data-params="a=1:-3..3:0.1; b=0:-3..3:0.1" data-view="-5,5,-6,6" data-readout="f(0) = b; slope = a"></div>
+      <div data-lab="fplot" data-title="Composition" data-names="f(x);g(x);g(f(x))" data-f="a*x+b; x^2; (a*x+b)^2" data-params="a=1:-3..3:0.1; b=0:-3..3:0.1" data-view="-4,4,-2,10"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><span class="tex">f(x)</span> is <b>not</b> "f times x". It means "apply f to x".</li>
+          <li><span class="tex">f^{-1}(x)</span> is the inverse function, <b>not</b> <span class="tex">1/f(x)</span>.</li>
+          <li><span class="tex">f(a+b)</span> is generally <b>not</b> <span class="tex">f(a)+f(b)</span> — only special "linear" functions behave that way (Module 1).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>A model is a function</b> <span class="tex">\hat y=f(x;\theta)</span>: input features in, prediction out, parameters as knobs.</li>
+          <li><b>A deep network is a composition</b> <span class="tex">f=f_L\circ\dots\circ f_2\circ f_1</span> — each layer is one machine feeding the next. Understanding composition is understanding depth.</li>
+          <li><b>A perspective flip.</b> The loss <span class="tex">L(\theta)</span> is a function whose <i>input is the parameters</i> and whose output is "how wrong the model is". Training = finding the input of <i>L</i> that gives the smallest output.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. If f(x)=x+1 and g(x)=2x, compute f(g(3)) and g(f(3)).</summary><div class="ans">g(3)=6, f(6)=7. f(3)=4, g(4)=8. So 7 and 8.</div></details>
+        <details class="check"><summary>2. Find the inverse of f(x)=5x−10.</summary><div class="ans">y=5x−10 ⇒ x=(y+10)/5, so f⁻¹(y)=(y+10)/5 = y/5+2.</div></details>
+        <details class="check"><summary>3. Why is "pick a random number" not a function?</summary><div class="ans">A function must give the same output every time for the same input. A random pick can give different outputs for the same input (nothing).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A function maps each input to exactly one output; its graph shows all pairs.</li><li>Composition chains functions; order matters. Deep nets are long compositions.</li><li>f(x; θ) separates the data x from the knobs θ — learning adjusts θ.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="algebra" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.3</span><h2>Algebra &amp; equations</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A taxi charges $3 to start and $2 per kilometre. You have $17. How far can you travel? More generally: given a rule and a result, how do we <i>work backwards</i> to find the missing input?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An <b>equation</b> is a balanced scale. The left pan and the right pan hold the same weight. You may do anything you like — add 5, double, halve — as long as you do the <i>same thing to both pans</i>; the scale stays balanced. Solving an equation means using this rule to peel away everything around the unknown until it stands alone.</p>
+        <div class="worked"><b>Worked example — the taxi</b>
+          <p>Cost = 3 + 2x where x is kilometres. We want cost = 17: <span class="tex">3+2x=17</span>.</p>
+          <p>Subtract 3 from both sides: <span class="tex">2x=14</span>. Divide both sides by 2: <span class="tex">x=7</span>.</p>
+          <p>Check: 3 + 2·7 = 17 ✓. Always substitute back — it catches mistakes.</p></div>
+        <p><b>Rearranging formulas</b> is the same skill with letters. From <span class="tex">y=ax+b</span>, "solve for x": subtract <i>b</i>, divide by <i>a</i>: <span class="tex">x=\frac{y-b}{a}</span> (valid when <span class="tex">a\ne0</span>). This is exactly the inverse function from lesson 0.2.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Inequalities</b> work the same way with one dangerous exception: <i>multiplying or dividing by a negative number flips the sign.</i> From <span class="tex">-2x&gt;6</span> divide by −2 to get <span class="tex">x&lt;-3</span>. (Sanity check: x = −4 gives −2·(−4) = 8 &gt; 6 ✓.)</p>
+        <p><b>Quadratics.</b> Equations with an <span class="tex">x^2</span> term, <span class="tex">ax^2+bx+c=0</span>, can have 0, 1 or 2 solutions — where the U-shaped curve crosses the horizontal axis. The formula:</p>
+        <div class="eq">x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}</div>
+        <p>The number under the root, <span class="tex">\Delta=b^2-4ac</span> (the <i>discriminant</i>), predicts the count: positive → two crossings, zero → touches once, negative → none (no real solution). The lowest (or highest) point of the parabola, its <b>vertex</b>, sits at <span class="tex">x=-\frac{b}{2a}</span>. Remember this — it is the first time we meet <i>minimising</i> a function, which is what training does.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">x^2-5x+6=0</span>: a=1, b=−5, c=6. Δ = 25 − 24 = 1. So <span class="tex">x=\frac{5\pm1}{2}</span> → x = 3 or x = 2. Check x=2: 4 − 10 + 6 = 0 ✓.</p></div>
+        <p><b>Systems of equations</b> ask for values that satisfy several equations at once. Two lines in the plane usually cross at exactly one point. Solve <span class="tex">x+y=5,\; x-y=1</span>: add the equations → <span class="tex">2x=6</span>, so x = 3; then y = 2. Geometrically: the point where two lines meet.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li><b>Linear:</b> the blue line is <i>ax+b</i>, the orange line is a flat target <i>c</i>. The white dot is the solution of <span class="tex">ax+b=c</span>. Change <i>c</i> and watch it slide.</li>
+        <li><b>Quadratic:</b> change the knobs until the parabola just touches the axis (one solution), then lift it so it misses (none). That is the discriminant in action.</li>
+        <li><b>System:</b> make the two lines parallel (same slope). The solution vanishes — the system has no solution.</li></ol></div>
+      <div data-lab="fplot" data-title="Solve ax + b = c" data-f="a*x+b; c" data-params="a=2:-3..3:0.1; b=3:-5..5:0.1; c=17:-5..20:0.5" data-view="-6,10,-8,22" data-roots></div>
+      <div data-lab="fplot" data-title="Roots of a quadratic" data-names="y" data-f="a*x^2+b*x+c" data-params="a=1:-2..2:0.1; b=-5:-8..8:0.1; c=6:-8..8:0.1" data-view="-2,8,-8,12" data-roots data-readout="vertex x = -b/(2*a); discriminant = b^2 - 4*a*c"></div>
+      <div data-lab="fplot" data-title="A system of two equations" data-names="line 1;line 2" data-f="a*x+b; c*x+d" data-params="a=1:-3..3:0.1; b=-1:-5..5:0.1; c=-1:-3..3:0.1; d=5:-5..8:0.1" data-view="-5,8,-6,10" data-roots></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Never divide by something that could be zero. <span class="tex">x(x-2)=x</span> divided by x loses the solution x=0.</li>
+          <li>Squaring both sides can <i>create</i> false solutions: <span class="tex">x=-3</span> becomes <span class="tex">x^2=9</span>, which also accepts +3. Always check.</li>
+          <li><span class="tex">\sqrt{x^2}=|x|</span>, not x.</li>
+          <li><span class="tex">(a+b)^2\ne a^2+b^2</span>; the correct expansion is <span class="tex">a^2+2ab+b^2</span>.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Closed-form fitting.</b> Fit a line <span class="tex">y=ax+b</span> through two data points: that is a 2×2 system, solved exactly as above. With more points we use linear algebra (Module 1) — the same idea at scale.</li>
+          <li><b>The first optimisation.</b> A quadratic loss such as <span class="tex">L(w)=(w-3)^2+1</span> is smallest at its vertex w = 3. Gradient descent finds this vertex step by step when no neat formula exists.</li>
+          <li><b>Rearranging</b> is how every paper derives a loss, an update rule, a normalisation. It is the daily bread of ML maths.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Solve 5x − 7 = 18.</summary><div class="ans">5x = 25, so x = 5.</div></details>
+        <details class="check"><summary>2. How many real solutions does x² + 2x + 5 = 0 have?</summary><div class="ans">Δ = 4 − 20 = −16 &lt; 0 → none. The parabola never reaches the axis.</div></details>
+        <details class="check"><summary>3. Solve −3x ≤ 12.</summary><div class="ans">Divide by −3 and flip the sign: x ≥ −4.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Do the same to both sides; check by substituting back.</li><li>Negative multiplication flips inequalities.</li><li>Quadratics: the discriminant counts the roots; the vertex at −b/2a is the minimum (for a&gt;0).</li><li>Solving equations is "running a function backwards".</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="sums-products" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.4</span><h2>Σ and Π notation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model makes five predictions and is off by 2, −1, 0, 3 and −2. How do we write "the average squared error" without writing five terms — and without writing a thousand terms when there are a thousand predictions?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The capital Greek letter <b>Σ</b> (sigma) means "<b>add up</b>"; capital <b>Π</b> (pi) means "<b>multiply together</b>". They are the mathematician's <code>for</code>-loop. Under the symbol you say where the counter <i>i</i> starts, on top where it stops, and to the right what to compute at each step.</p>
+        <pre><code># Σ_{i=1}^{n} i²              # Π_{i=1}^{n} i
+total = 0                       product = 1
+for i in range(1, n + 1):       for i in range(1, n + 1):
+    total += i ** 2                 product *= i</code></pre>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="eq">\sum_{i=1}^{4} i^2 \;=\; 1^2+2^2+3^2+4^2 \;=\; 1+4+9+16 \;=\; 30</div>
+        <table class="sym">
+          <tr><td>Σ</td><td>"sum of"</td></tr>
+          <tr><td>i = 1 (below)</td><td>the counter <i>i</i> starts at 1</td></tr>
+          <tr><td>4 (above)</td><td>and stops after 4</td></tr>
+          <tr><td>i²</td><td>the <b>body</b>: what to compute and add at each step</td></tr>
+        </table>
+        <p><b>Rules that save effort.</b></p>
+        <ul>
+          <li>Constants pull out: <span class="tex">\sum_i c\,x_i=c\sum_i x_i</span>.</li>
+          <li>Sums split: <span class="tex">\sum_i (x_i+y_i)=\sum_i x_i+\sum_i y_i</span>.</li>
+          <li>Adding the constant 1 <i>n</i> times gives <i>n</i>: <span class="tex">\sum_{i=1}^n 1=n</span>.</li>
+          <li>Gauss's trick: <span class="tex">\sum_{i=1}^n i=\frac{n(n+1)}{2}</span> (pair 1 with n, 2 with n−1, … each pair sums to n+1 and there are n/2 pairs).</li>
+        </ul>
+        <p>The <b>average</b> (mean) of <i>n</i> numbers is the most common sum in ML:</p>
+        <div class="eq">\bar x=\frac1n\sum_{i=1}^{n}x_i\qquad\qquad \text{MSE}=\frac1n\sum_{i=1}^{n}(\hat y_i-y_i)^2</div>
+        <div class="worked"><b>Worked example — the question we started with</b>
+          <p>Errors: 2, −1, 0, 3, −2. Squares: 4, 1, 0, 9, 4. Sum = 18. Divide by n = 5: MSE = 3.6.</p>
+          <p>Why square? So positive and negative errors don't cancel (their plain sum is 2 − 1 + 0 + 3 − 2 = 2, which would wrongly suggest a small error) and so large mistakes count extra.</p></div>
+        <p><b>Products.</b> <span class="tex">\prod_{i=1}^{n} i=n!</span> (factorial): <span class="tex">5!=1\cdot2\cdot3\cdot4\cdot5=120</span>. Products appear whenever <i>independent</i> events combine: the chance that five independent coin flips are all heads is <span class="tex">\prod_{i=1}^5\tfrac12=\tfrac1{32}</span>. That is the shape of a <b>likelihood</b>: the probability of all the data is the product of the probabilities of each example.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press ▶ Replay with <code>i^2</code> and n = 4. Watch the orange total climb to 30.</li>
+        <li>Switch the term to <code>i</code> and set n = 10: the total is 55 = 10·11/2 (Gauss).</li>
+        <li>Switch to Π with term <code>i</code>: you are computing the factorial and the product explodes quickly — note how fast.</li>
+        <li>Try the term <code>1/2</code> with Π: halving repeatedly shrinks the product towards 0.</li></ol></div>
+      <div data-lab="sigma" data-term="i^2"></div>
+      <div data-lab="calc" data-title="Mean squared error by hand" data-sub="targets are 2, 4, 6 — drag your predictions" data-params="p1=1:0..8:0.1; p2=5:0..8:0.1; p3=6:0..8:0.1"
+           data-rows="error 1 = p1 - 2; error 2 = p2 - 4; error 3 = p3 - 6; sum of squares = (p1-2)^2 + (p2-4)^2 + (p3-6)^2; MSE = ((p1-2)^2 + (p2-4)^2 + (p3-6)^2) / 3"
+           data-note="Set every prediction to its target (2, 4, 6) and the MSE is exactly 0 — a perfect model."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Σ ranges include both ends.</b> <span class="tex">\sum_{i=1}^{4}</span> has 4 terms; <span class="tex">\sum_{i=0}^{4}</span> has 5. Off-by-one errors are the classic bug.</li>
+          <li><span class="tex">\sum x_i^2\ne\left(\sum x_i\right)^2</span>. Square-then-add and add-then-square differ.</li>
+          <li>The counter <i>i</i> is a dummy: <span class="tex">\sum_i x_i</span> and <span class="tex">\sum_j x_j</span> are identical.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Losses</b> are averages over the dataset: <span class="tex">L=\frac1N\sum_i\ell(\hat y_i,y_i)</span>.</li>
+          <li><b>A neuron</b> computes a weighted sum <span class="tex">z=\sum_{j}w_jx_j+b</span> — the dot product in Module 1.</li>
+          <li><b>Likelihood</b> is a product <span class="tex">\prod_i p(y_i\mid x_i)</span>. Taking logs (lesson 0.5) turns it into a sum <span class="tex">\sum_i\log p(y_i\mid x_i)</span>, which is why log-likelihood is so convenient.</li>
+          <li><b>Softmax</b> divides by a sum over all classes: <span class="tex">\sum_k e^{z_k}</span>.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Write out and evaluate Σ_{i=1}^{3} (2i+1).</summary><div class="ans">(2·1+1)+(2·2+1)+(2·3+1) = 3+5+7 = 15.</div></details>
+        <details class="check"><summary>2. What does Π_{i=1}^{4} 2 equal?</summary><div class="ans">2·2·2·2 = 16 (it is 2⁴).</div></details>
+        <details class="check"><summary>3. Compute the MSE for predictions (3, 5) and targets (2, 8).</summary><div class="ans">Errors 1 and −3; squares 1 and 9; mean = 10/2 = 5.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Σ is a loop that adds, Π is a loop that multiplies; the bounds are inclusive.</li><li>Mean and MSE are sums divided by n.</li><li>Independent probabilities multiply (Π), and logs will turn that into a sum (Σ).</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="exp-log" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.5</span><h2>Exponents &amp; logarithms</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model assigns probability 0.01 to each of 200 independent examples. The probability of all of them is 0.01²⁰⁰ = 10⁻⁴⁰⁰ — a number so small a computer rounds it to <i>zero</i>. Is there a way to handle such numbers without losing them?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Exponents</b> are repeated multiplication: <span class="tex">2^5=2\cdot2\cdot2\cdot2\cdot2=32</span>. Addition grows steadily (+2, +2, +2…); exponentiation grows by <i>multiplying</i> (×2, ×2, ×2…), which explodes — a sheet of paper folded 42 times would reach the Moon.</p>
+        <p>The rules all follow from "count the multiplications":</p>
+        <div class="eq">a^m\cdot a^n=a^{m+n}\qquad (a^m)^n=a^{mn}\qquad a^0=1\qquad a^{-n}=\frac1{a^n}\qquad a^{1/2}=\sqrt a</div>
+        <p>(Why <span class="tex">a^0=1</span>? Because <span class="tex">a^3/a^3=a^{3-3}=a^0</span> and anything divided by itself is 1.)</p>
+        <p>A <b>logarithm</b> asks the reverse question: <i>"what exponent do I need?"</i> Since <span class="tex">2^3=8</span>, we say <span class="tex">\log_2 8=3</span>. In general <span class="tex">\log_a y=x\iff a^x=y</span>. The log of a number counts "how many multiplications by a it took to get here" — so it turns huge ranges into small ones (that's why earthquake and sound scales use it).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The special number e.</b> Suppose you earn 100 % interest per year. Paid once you get ×2. Paid in two halves (50 % twice): 1.5² = 2.25. Monthly: (1+1/12)¹² ≈ 2.613. Continuously, you approach <span class="tex">e=\lim_{n\to\infty}(1+\tfrac1n)^n\approx2.71828</span>. This is the natural rate of continuous growth, and <span class="tex">e^x</span> has the beautiful property that <b>its slope equals its height</b> — the reason it dominates calculus and probability. The logarithm base e is the <b>natural log</b>, written <span class="tex">\ln</span> (and in ML code, <code>log</code> almost always means ln).</p>
+        <p><b>The most important property of logs:</b></p>
+        <div class="eq">\log(ab)=\log a+\log b\qquad\log\frac ab=\log a-\log b\qquad \log(a^k)=k\log a</div>
+        <p>Logarithms <b>turn multiplication into addition</b>. This is what rescues our 200 tiny probabilities: instead of multiplying 0.01 two hundred times (underflow), add <span class="tex">\ln0.01\approx-4.605</span> two hundred times to get ≈ −921, a perfectly ordinary number.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">\log_{10}(1000\cdot100)=\log_{10}(100000)=5</span> and <span class="tex">\log_{10}1000+\log_{10}100=3+2=5</span> ✓.</p>
+          <p>Change of base: <span class="tex">\log_2 10=\frac{\ln10}{\ln2}\approx\frac{2.3026}{0.6931}\approx3.32</span> — about 3.3 doublings to reach 10.</p></div>
+        <p>Finally the <b>sigmoid</b>, a curve you'll meet constantly: <span class="tex">\sigma(x)=\dfrac1{1+e^{-x}}</span>. It squashes any real number into (0,1), which is how a model turns a raw score into a probability. Large positive x → <span class="tex">e^{-x}\to0</span> → σ → 1. Large negative x → σ → 0.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the first plot, the blue curve <i>aˣ</i> and orange <i>log_a(x)</i> are mirror images across the dashed line y = x: each undoes the other. Change <i>a</i> and confirm the mirror holds.</li>
+        <li>In the log-rule panel, pick any p and q: the first two rows always match the third.</li>
+        <li>In the underflow panel, push n up. The raw product hits 0 near n ≈ 155 while the log-sum remains sensible.</li>
+        <li>In the sigmoid plot, increase <i>k</i>: the S-curve steepens into a switch.</li></ol></div>
+      <div data-lab="fplot" data-title="Exponent and logarithm are inverses" data-names="a^x;log base a" data-f="a^x; log(x)/log(a)" data-params="a=2:1.1..6:0.05" data-view="-4,8,-4,8" data-diag></div>
+      <div data-lab="calc" data-title="Logs turn × into +" data-params="p=8:0.1..50:0.1; q=5:0.1..50:0.1"
+           data-rows="ln(p × q) = log(p*q); ln p + ln q = log(p) + log(q); p × q = p*q; e^(ln p + ln q) = exp(log(p) + log(q))"></div>
+      <div data-lab="calc" data-title="Why AI sums log-probabilities" data-sub="200 examples each with probability 0.01" data-params="n=20:1..400:1"
+           data-rows="product 0.01^n = 0.01^n; log-sum  n·ln(0.01) = n*log(0.01)"
+           data-note="Past n ≈ 154 the product is smaller than the smallest positive double (≈10⁻³⁰⁸) and becomes exactly 0, losing all information. The log-sum stays fine."></div>
+      <div data-lab="fplot" data-title="The sigmoid squashes scores into probabilities" data-names="σ(kx)" data-f="1/(1+exp(-k*x))" data-params="k=1:0.2..5:0.1" data-view="-8,8,-0.5,1.5"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><span class="tex">\log(a+b)\ne\log a+\log b</span>. Logs convert <i>products</i> to sums, not sums to anything simple.</li>
+          <li>The log of zero or a negative number is undefined (for real numbers). In code, <code>log(0)</code> is −∞: always clip probabilities away from 0.</li>
+          <li><span class="tex">\ln</span> (base e), <span class="tex">\log_{10}</span> and <span class="tex">\log_2</span> differ by constant factors only; ML papers mean ln unless they say bits.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Log-likelihood:</b> maximise <span class="tex">\sum_i\log p(y_i\mid x_i)</span> instead of the product — stable and easier to differentiate.</li>
+          <li><b>Cross-entropy loss</b> is just a negative log-probability, <span class="tex">-\log p_{\text{correct}}</span>.</li>
+          <li><b>Sigmoid and softmax</b> are built from <span class="tex">e^x</span>; they convert scores into probabilities.</li>
+          <li><b>Perplexity</b> of a language model is <span class="tex">e^{\text{loss}}</span>.</li>
+          <li><b>Learning-rate schedules</b> and many hyper-parameters are searched on a log scale (1e-5, 1e-4, 1e-3…).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Evaluate log₂ 32 and 5⁻².</summary><div class="ans">2⁵ = 32 so log₂ 32 = 5. 5⁻² = 1/25 = 0.04.</div></details>
+        <details class="check"><summary>2. Simplify ln(e³ · e⁵).</summary><div class="ans">e³·e⁵ = e⁸, so ln = 8 (or 3 + 5 using the log rule).</div></details>
+        <details class="check"><summary>3. Why is it better to add log-probabilities than to multiply probabilities?</summary><div class="ans">Products of many numbers below 1 underflow to 0 in floating point; sums of their logs stay in a normal range. Sums are also easier to differentiate.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Exponents multiply repeatedly; logs ask "which exponent?" and undo them.</li><li>log(ab) = log a + log b — the property that makes ML numerically workable.</li><li>e is the natural growth base; σ and softmax are built from eˣ.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.6 ===================== -->
+    <section class="lesson" id="trig" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.6</span><h2>Angles, sine &amp; cosine</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>How do we describe a turning wheel, a pure musical note, or "rotate this image by 30°" with numbers — and why do transformers feed sines and cosines into language models?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a wheel of radius 1 with a lamp on its rim, spinning steadily. Shine the lamp sideways onto a wall: the shadow slides up and down — smoothly, slowing at the top, fastest through the middle. That up-down shadow is <b>sine</b>. The shadow on the floor, sliding left-right, is <b>cosine</b>. Same wheel, two views; cosine is just sine shifted by a quarter turn.</p>
+        <p>To measure "how far round the wheel" we use <b>radians</b>: the angle equals the length of arc travelled on the unit circle. A full lap has circumference 2π, so a full turn is 2π radians; half a turn is π; a quarter turn is π/2. Degrees are the same idea with 360 instead of 2π (so <span class="tex">\pi\text{ rad}=180^\circ</span>). Radians are preferred in maths because formulas such as "the slope of sine is cosine" are only that simple in radians.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Definition: the point on the unit circle at angle θ (measured anticlockwise from the positive x-axis) has coordinates <span class="tex">(\cos\theta,\ \sin\theta)</span>. Because that point lies on a circle of radius 1, Pythagoras gives <span class="tex">\cos^2\theta+\sin^2\theta=1</span>. Use the lab to see it all at once.</p>
+      </div>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Spin and watch the dot's horizontal shadow (orange) and vertical shadow (green) trace the two waves on the right.</li>
+        <li>Stop at θ = π/2 (1.57): cosine is 0, sine is 1. Stop at π (3.14): cosine −1, sine 0.</li>
+        <li>Check that cos² + sin² stays at exactly 1 everywhere.</li></ol></div>
+      <div data-lab="unitcircle"></div>
+      <div class="prose">
+        <div class="worked"><b>Worked examples</b>
+          <p><span class="tex">\theta=\pi/6</span> (30°): <span class="tex">\sin=\tfrac12,\ \cos=\tfrac{\sqrt3}2\approx0.866</span>. Check: 0.25 + 0.75 = 1 ✓.</p>
+          <p><span class="tex">\theta=\pi/4</span> (45°): sin = cos = <span class="tex">\tfrac{\sqrt2}2\approx0.707</span>.</p>
+          <p><b>Right triangles.</b> With hypotenuse <i>h</i>, side opposite the angle <i>o</i> and adjacent side <i>a</i>: <span class="tex">\sin\theta=o/h,\ \cos\theta=a/h,\ \tan\theta=o/a</span>.</p></div>
+        <p><b>Waves.</b> Real signals have different heights, speeds and starting points. The general sine wave is</p>
+        <div class="eq">y(t)=A\sin(2\pi f\,t+\varphi)</div>
+        <table class="sym">
+          <tr><td>A</td><td><b>amplitude</b> — the height of the peaks</td></tr>
+          <tr><td>f</td><td><b>frequency</b> — complete cycles per unit of t (so the period is 1/f)</td></tr>
+          <tr><td>φ</td><td><b>phase</b> — a horizontal shift, where in the cycle you start</td></tr>
+        </table>
+      </div>
+      <div class="try"><b>Try this</b><ol><li>Raise <i>f</i>: more waves squeezed into the window — a higher pitch.</li><li>Raise <i>A</i>: louder, same pitch.</li><li>Move φ: the pattern slides sideways without changing shape.</li></ol></div>
+      <div data-lab="fplot" data-title="Amplitude, frequency, phase" data-names="y(t)" data-f="A*sin(2*pi*f*x + p)" data-params="A=1:0.2..2:0.1; f=1:0.25..4:0.05; p=0:-3.14..3.14:0.05" data-view="-2,2,-2.5,2.5"></div>
+      <div class="prose">
+        <p><b>Rotation preview.</b> Rotating a point <span class="tex">(x,y)</span> by angle θ about the origin gives <span class="tex">(x\cos\theta-y\sin\theta,\ x\sin\theta+y\cos\theta)</span>. Rotation never changes a point's distance from the origin — a fact we will see as a matrix in Module 1.</p>
+      </div>
+      <div data-lab="calc" data-title="Rotate a point" data-params="x=3:-5..5:0.1; y=1:-5..5:0.1; theta=0.6:0..6.28:0.02"
+           data-rows="new x = x*cos(theta) - y*sin(theta); new y = x*sin(theta) + y*cos(theta); length before = sqrt(x^2+y^2); length after = sqrt((x*cos(theta)-y*sin(theta))^2 + (x*sin(theta)+y*cos(theta))^2)"
+           data-note="The two lengths are always equal: rotation preserves distance."></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Calculators and code libraries differ: <code>sin</code> in Python/NumPy expects <b>radians</b>. Passing 30 means 30 radians, not 30°.</li>
+          <li><span class="tex">\sin^2\theta</span> means <span class="tex">(\sin\theta)^2</span>, not sin of θ².</li>
+          <li>Sine and cosine only repeat every 2π — so they cannot tell θ from θ + 2π.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Transformer positional encodings</b> use <span class="tex">\sin(pos/10000^{2k/d})</span> and cosine at many frequencies so each position gets a unique, smoothly varying fingerprint; <b>rotary embeddings (RoPE)</b> rotate query/key vectors by position-dependent angles.</li>
+          <li><b>Fourier analysis</b> — any signal is a sum of sine waves — underlies audio models, spectrograms and many image filters.</li>
+          <li><b>Cyclic features</b> (hour of day, day of year) should be fed as <span class="tex">(\sin\tfrac{2\pi h}{24},\cos\tfrac{2\pi h}{24})</span>; otherwise hour 23 looks "far" from hour 0.</li>
+          <li><b>Data augmentation</b> rotates images by random angles.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Convert 90° to radians. What are sin and cos there?</summary><div class="ans">π/2 rad. sin = 1, cos = 0.</div></details>
+        <details class="check"><summary>2. A wave is y = 3 sin(2π·2·t). What are its amplitude, frequency and period?</summary><div class="ans">Amplitude 3, frequency 2 cycles per unit, period 1/2.</div></details>
+        <details class="check"><summary>3. Why feed (sin, cos) of the hour instead of the hour itself?</summary><div class="ans">The raw number makes 23 and 0 look far apart although they are adjacent on the clock. (sin, cos) places times on a circle so neighbours stay close.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>(cos θ, sin θ) is the point on the unit circle; cos² + sin² = 1.</li><li>Radians measure arc length; 2π is a full turn.</li><li>A sin(2πft+φ): amplitude, frequency, phase.</li><li>Rotation preserves lengths.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.7 ===================== -->
+    <section class="lesson" id="coords-geometry" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.7</span><h2>Coordinates &amp; geometry</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two houses are points in ℝ⁴. How far apart are they? And if we draw a "line" through that space to separate cheap houses from expensive ones, how does a computer decide which side a new house falls on?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Coordinates are addresses. On a map, two numbers pinpoint a place; the distance between two places is the straight-line "as the crow flies" length. Pythagoras gives it: walk <i>dx</i> east and <i>dy</i> north, the shortcut is <span class="tex">\sqrt{dx^2+dy^2}</span>.</p>
+        <p>The wonderful fact is that this recipe never changes with dimension. For points with <i>n</i> coordinates, square every coordinate difference, add them up, take the root.</p>
+        <div class="eq">d(\mathbf a,\mathbf b)=\sqrt{\sum_{i=1}^{n}(a_i-b_i)^2}</div>
+        <div class="worked"><b>Worked example</b><p>Houses A=(3, 120, 8, 2) and B=(3, 118, 9, 2.5): differences (0, 2, −1, −0.5); squares (0, 4, 1, 0.25); sum 5.25; distance √5.25 ≈ 2.29. Note the size difference (2 m²) contributes most — features with large numbers dominate distance, which is why we <i>scale features</i> before using distances.</p></div>
+      </div>
+      <div class="try"><b>Try this</b><ol><li>Drag the blue and orange tips. The red segment is the distance; the readout shows it computed from coordinates.</li><li>Put both tips at the same height: the distance becomes just the horizontal gap.</li></ol></div>
+      <div data-lab="vec2" data-title="Distance between two points" data-show="dist" data-ax="3" data-ay="1" data-bx="-1" data-by="3"></div>
+      <div class="prose">
+        <h3 class="sec">Build it up: lines, planes and hyperplanes</h3>
+        <p>A line in the plane is <span class="tex">y=mx+b</span>. A more useful form for ML writes it as <span class="tex">w_1x_1+w_2x_2+b=0</span>. Define the <b>score</b> <span class="tex">s(\mathbf x)=w_1x_1+w_2x_2+b</span>. Points on the line have score 0; points on one side have positive score, on the other side negative. The vector <span class="tex">\mathbf w=(w_1,w_2)</span> points perpendicular to the line toward the positive side, and the distance from a point to the line is <span class="tex">|s(\mathbf x)|/\lVert\mathbf w\rVert</span>.</p>
+        <p>In 3-D the same equation describes a flat <b>plane</b>. In ℝⁿ it describes an (n−1)-dimensional flat sheet called a <b>hyperplane</b>: it splits the whole space into two halves. Classifying a point = checking the sign of one score.</p>
+      </div>
+      <div class="try"><b>Try this</b><ol><li>Change w₁, w₂ and b and watch the boundary rotate and shift; the purple arrow (w) always points to the blue side.</li><li>Click different places: the sign of the score flips exactly when you cross the line.</li><li>Set b = 0: the line passes through the origin. Changing b slides the line without turning it.</li></ol></div>
+      <div data-lab="halfplane"></div>
+      <div class="prose">
+        <p><b>Circles and spheres.</b> All points at distance <i>r</i> from a centre <span class="tex">(a,b)</span>: <span class="tex">(x-a)^2+(y-b)^2=r^2</span>. The same idea in ℝⁿ gives a hypersphere — the set of points at equal distance from a centre, i.e. "all points equally similar to a prototype".</p>
+        <h3 class="sec">High dimensions are strange</h3>
+        <p>Our intuition was trained in 2-D and 3-D, and it misleads us at 100 or 1000 dimensions. One famous effect: with many dimensions, random points become almost <i>equally far</i> from each other, so "nearest" loses meaning. See it for yourself.</p>
+      </div>
+      <div class="try"><b>Try this</b><ol><li>Start at d = 2: distances spread wide. Slide d up to several hundred: the histogram collapses onto 1.</li><li>Watch "farthest ÷ nearest" shrink toward 1 — the curse of dimensionality.</li></ol></div>
+      <div data-lab="highdim"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Unscaled features</b> let one big-number coordinate dominate every distance.</li>
+          <li>Straight-line (Euclidean) distance is only one choice; Module 1 introduces others (L1, cosine).</li>
+          <li>Pictures lie in high dimensions: your 3-D intuition about volume, corners and neighbours does not transfer.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>k-nearest neighbours</b> predicts by distance to stored examples.</li>
+          <li><b>Linear classifiers, logistic regression and SVMs</b> are hyperplanes <span class="tex">\mathbf w\cdot\mathbf x+b=0</span>; a single neuron is exactly this score.</li>
+          <li><b>Embeddings</b> are placed so that similar items are near each other; retrieval and recommendation are "find the closest points".</li>
+          <li><b>The curse of dimensionality</b> motivates dimension reduction and good features.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Distance between (1, 2) and (4, 6)?</summary><div class="ans">√(3² + 4²) = 5.</div></details>
+        <details class="check"><summary>2. For w=(2, −1), b=3, which side is the point (1, 1) on?</summary><div class="ans">Score = 2·1 − 1·1 + 3 = 4 &gt; 0, the positive side.</div></details>
+        <details class="check"><summary>3. Why does scaling features matter for distance-based methods?</summary><div class="ans">Differences in a feature with large numbers (e.g. area in m²) swamp differences in small-valued features (e.g. bedrooms), so the distance mostly measures the big feature.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Distance = √(sum of squared coordinate differences), in any dimension.</li><li>w·x + b = 0 is a line / plane / hyperplane; its sign classifies points.</li><li>High dimensions break low-dimensional intuition: distances concentrate.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.8 ===================== -->
+    <section class="lesson" id="notation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.8</span><h2>Reading mathematical notation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You open a machine-learning paper and see <span class="tex">\theta^\star=\arg\min_\theta\frac1N\sum_{i=1}^N\ell\big(f(\mathbf x_i;\theta),y_i\big)+\lambda\lVert\theta\rVert_2^2</span>. How do you read that without panic?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Mathematical notation is <b>shorthand</b> — dense, but every symbol has a plain-English reading. Nothing in a formula is magic; it is a sentence. Authors also follow strong <i>conventions</i>, so once you know them, you can guess a symbol's job before reading its definition.</p>
+
+        <h3 class="sec">Build it up: the conventions</h3>
+        <table class="tbl" style="max-width:780px">
+          <tr><th>Style</th><th>Usually means</th><th>Example</th></tr>
+          <tr><td>plain italic lower case</td><td>a single number (scalar)</td><td><span class="tex">x,\ y,\ a,\ \eta</span></td></tr>
+          <tr><td><b>bold</b> lower case</td><td>a vector</td><td><span class="tex">\mathbf x,\ \mathbf w</span></td></tr>
+          <tr><td><b>bold</b> upper case</td><td>a matrix</td><td><span class="tex">\mathbf W,\ \mathbf X</span></td></tr>
+          <tr><td>subscript <span class="tex">x_i</span></td><td>the <i>i</i>-th entry</td><td><span class="tex">x_2</span> = second feature</td></tr>
+          <tr><td>superscript <span class="tex">x^{(i)}</span></td><td>the <i>i</i>-th example / layer (in parentheses, to avoid confusion with powers)</td><td><span class="tex">\mathbf x^{(5)}</span> = fifth data point</td></tr>
+          <tr><td>hat <span class="tex">\hat y</span></td><td>an estimate / prediction</td><td>prediction vs true <i>y</i></td></tr>
+          <tr><td>bar <span class="tex">\bar x</span></td><td>an average</td><td>mean of x</td></tr>
+          <tr><td>star <span class="tex">\theta^\star</span></td><td>the optimal value</td><td>best parameters</td></tr>
+        </table>
+        <p><b>Greek letters you will meet constantly:</b></p>
+        <table class="tbl" style="max-width:780px">
+          <tr><th>Symbol</th><th>Usual meaning in AI</th><th>Symbol</th><th>Usual meaning in AI</th></tr>
+          <tr><td>α, η</td><td>learning rate / step size</td><td>μ</td><td>mean</td></tr>
+          <tr><td>β</td><td>momentum or decay rate</td><td>σ</td><td>standard deviation (also the sigmoid)</td></tr>
+          <tr><td>γ</td><td>discount factor (RL), scale</td><td>ρ</td><td>correlation</td></tr>
+          <tr><td>δ</td><td>small change, error signal</td><td>τ</td><td>temperature</td></tr>
+          <tr><td>ε</td><td>tiny number (e.g. 10⁻⁸)</td><td>φ, ϕ</td><td>feature map / activation</td></tr>
+          <tr><td>θ</td><td>all parameters of a model</td><td>Σ (capital)</td><td>sum — or a covariance matrix</td></tr>
+          <tr><td>λ</td><td>regularisation strength, eigenvalue</td><td>Δ</td><td>change in / discriminant</td></tr>
+          <tr><td>∇</td><td>gradient (nabla)</td><td>∂</td><td>partial derivative</td></tr>
+        </table>
+        <p><b>Logic and set shorthand:</b></p>
+        <table class="tbl" style="max-width:780px">
+          <tr><td><span class="tex">\forall</span></td><td>"for all"</td><td><span class="tex">\exists</span></td><td>"there exists"</td></tr>
+          <tr><td><span class="tex">\Rightarrow</span></td><td>"implies"</td><td><span class="tex">\iff</span></td><td>"if and only if"</td></tr>
+          <tr><td><span class="tex">:=</span></td><td>"is defined as"</td><td><span class="tex">\propto</span></td><td>"is proportional to"</td></tr>
+          <tr><td><span class="tex">\approx</span></td><td>"is approximately"</td><td><span class="tex">\lVert\mathbf x\rVert</span></td><td>"length (norm) of x"</td></tr>
+          <tr><td><span class="tex">\arg\min_\theta g(\theta)</span></td><td colspan="3">"the value of θ that makes g smallest" (the <i>location</i> of the minimum, not the minimum value). <span class="tex">\arg\max</span> is the mirror.</td></tr>
+        </table>
+        <p><b>A three-step reading procedure.</b> (1) Find the <i>shapes</i>: which symbols are scalars, vectors, matrices? (2) Read inside-out, left to right, saying each symbol in words. (3) Translate to code — if you can write the loop, you understand the formula.</p>
+      </div>
+      <div class="try"><b>Try this</b><p style="margin:4px 0">Click each piece of the formula below. The explanation appears underneath, and the code at the bottom is the very same computation.</p></div>
+      <div data-lab="decode"><script type="application/json">
+{"title":"The mean-squared-error loss","parts":[
+ {"tex":"L(\\theta)","say":"<b>L(θ)</b> — the <i>loss</i>, a single number that depends on the parameters θ (the knobs). Smaller means the model fits better."},
+ {"tex":"=","say":"<b>=</b> — here this is a <i>definition</i>: the loss is <i>defined</i> to be what follows."},
+ {"tex":"\\frac1N","say":"<b>1/N</b> — divide by the number of examples, N. Together with the sum this makes an <i>average</i>."},
+ {"tex":"\\sum_{i=1}^{N}","say":"<b>Σ from i = 1 to N</b> — loop over every example and add up the results (lesson 0.4)."},
+ {"tex":"\\big(","say":"<b>( … )²</b> — whatever is inside is squared, so errors are never negative and big mistakes count more."},
+ {"tex":"f(\\mathbf x_i;\\theta)","say":"<b>f(x<sub>i</sub>; θ)</b> — the model's prediction for example i: the machine f, fed input x<sub>i</sub>, with knobs θ (lesson 0.2)."},
+ {"tex":"-\\,y_i","say":"<b>− y<sub>i</sub></b> — subtract the true answer. The difference is the <i>error</i> for example i."},
+ {"tex":"\\big)^2","say":"<b>²</b> — square the error."}],
+ "code":"loss = np.mean((model(X, theta) - y) ** 2)   # (1/N) * sum((f(x_i; theta) - y_i)^2)"}
+</script></div>
+      <div class="prose">
+        <div class="worked"><b>Now the formula from the start of the lesson</b>
+          <p><span class="tex">\theta^\star=\arg\min_\theta\ \frac1N\sum_i\ell(f(\mathbf x_i;\theta),y_i)+\lambda\lVert\theta\rVert_2^2</span></p>
+          <p><i>"The best parameters θ-star are the θ that make the following smallest: the average over all examples of the loss ℓ between the model's prediction and the true label, plus λ times the squared length of θ."</i> The last term penalises large parameters (regularisation, Module 4 and 6). The whole thing is one training objective.</p></div>
+        <div class="trap"><b>Common traps</b><ul>
+          <li>The same letter means different things in different papers. <i>Always</i> find the definition (often a "Notation" paragraph).</li>
+          <li><span class="tex">x^2</span> (square) versus <span class="tex">x^{(2)}</span> (second example) versus <span class="tex">x_2</span> (second feature) are three different things.</li>
+          <li>Bold may be dropped in handwritten or lazy typesetting; use shapes to infer.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul><li>Every paper, textbook and framework docs page. Fluency here turns "I can use the library" into "I can understand why it works and modify it".</li><li>Code ↔ maths translation is the daily skill: <code>np.dot(w, x) + b</code> ↔ <span class="tex">\mathbf w\cdot\mathbf x+b</span>; <code>np.argmax(p)</code> ↔ <span class="tex">\arg\max_k p_k</span>.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Say in words: ŷ = f(x; θ).</summary><div class="ans">"y-hat, the prediction, equals the model f applied to the input x with parameters θ."</div></details>
+        <details class="check"><summary>2. What is the difference between min and argmin?</summary><div class="ans">min g(θ) is the smallest <i>value</i> of g; argmin g(θ) is the <i>input θ</i> where that smallest value occurs.</div></details>
+        <details class="check"><summary>3. Translate into code: (1/n) Σ_{i=1}^{n} x_i².</summary><div class="ans"><code>np.mean(x ** 2)</code> or <code>sum(v*v for v in x) / n</code>.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Bold = vector/matrix, subscript = entry, hat = estimate, star = optimum.</li><li>Read formulas as sentences, inside-out; translate to code to confirm understanding.</li><li>Always check each paper's own notation.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You now have the whole vocabulary: numbers and ℝⁿ, functions, algebra, sums, logs, trigonometry, geometry and notation. Next, <b>Module 1</b> turns lists of numbers into vectors and matrices — the objects every neural network is made of.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mathematics for AI · AI Learning Hub</title>
-<meta name="description" content="Linear algebra, calculus, optimization, backpropagation and probability for AI — with editable equations and animations.">
+<meta name="description" content="A zero-to-hero mathematics curriculum for AI: foundations, linear algebra, calculus, probability, statistics, information theory, optimization and the math of neural networks.">
 <link rel="stylesheet" href="assets/style.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-math.js"></script>
 <script defer src="assets/lib.js"></script>
 <script defer src="assets/labs-pipeline.js"></script>
-<script defer src="assets/labs-math.js"></script>
 <script defer src="assets/shell.js"></script>
 </head>
 <body data-topic="math">
@@ -23,86 +23,41 @@
     <div class="hero">
       <div class="big" style="background:#39c5cf26">∑</div>
       <div style="flex:1">
-        <h1>Mathematics for AI</h1>
-        <p>The four ideas behind almost every model: vectors, derivatives, optimisation and probability. Every equation here is something you can edit and watch move.</p>
-        <div class="chips"><span class="chip">Matrices</span><span class="chip">Derivatives</span><span class="chip">Optimizers</span><span class="chip">Backprop</span><span class="chip">Probability</span></div>
+        <h1>Mathematics for AI — zero to hero</h1>
+        <p>A complete path that starts from school arithmetic and ends at the mathematics behind transformers, VAEs and diffusion models. Every idea is built from intuition first, then a worked example, then the formal statement — and then you play with it.</p>
+        <div class="chips"><span class="chip">9 modules</span><span class="chip">58 lessons</span><span class="chip">Interactive labs</span><span class="chip">No prerequisites beyond arithmetic</span></div>
       </div>
-      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div><small style="color:var(--muted)">≈ 50 min with the labs</small></div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
     </div>
 
-    <section class="lesson" id="intro" data-lesson>
-      <div class="lesson-head"><span class="level" style="color:var(--teal)">Level 1</span><h2>Why math &amp; the pipeline</h2><button class="btn small mark"></button></div>
+    <section class="lesson" id="start" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>How to learn from this</h2></div>
       <div class="prose">
-        <p>Training a model is a loop of four mathematical moves, each from a different field: <b>linear algebra</b> computes predictions, <b>probability</b> defines the loss, <b>calculus</b> finds the gradient and <b>optimization</b> updates the weights. The pipeline below shows where each one lives.</p>
+        <p>Go in order the first time: each lesson only uses ideas from the ones before it. Inside a lesson the rhythm is always the same:</p>
+        <ol>
+          <li><b>The question</b> — a real problem that makes the idea necessary.</li>
+          <li><b>Intuition</b> — the idea in plain words and pictures, before any symbols.</li>
+          <li><b>Build it up</b> — a worked example with real numbers, then the formal definition with every symbol explained.</li>
+          <li><b>Lab</b> — change numbers or equations and watch the result move. Following the "try this" steps is the fastest way to understand.</li>
+          <li><b>Where it shows up in AI</b>, <b>common traps</b> and <b>check yourself</b> questions.</li>
+        </ol>
+        <div class="callout"><b>Already know some of it?</b>Skim the "Check yourself" questions of a lesson first. If you can answer all three, mark it complete and move on.</div>
+      </div>
+    </section>
+
+    <section class="lesson" id="map">
+      <div class="lesson-head"><h2>The map</h2></div>
+      <div class="pathbar" id="pathbar"></div>
+      <div class="prose">
+        <p>Training a model is a loop of four moves, each from a different branch of mathematics. Foundations (module 0) is the shared language; modules 1–5 supply the four branches; module 6 puts them together into optimisation; modules 7–8 apply everything to modern networks and generative models.</p>
       </div>
       <div data-lab="pipeline" data-id="math"></div>
-      <div class="takeaways"><h4>Key takeaways</h4><ul><li>Predict → measure error → compute gradient → update. Repeat.</li><li>You never need to do this by hand, but knowing each piece tells you why training fails and how to fix it.</li></ul></div>
     </section>
 
-    <section class="lesson" id="linear-algebra" data-lesson>
-      <div class="lesson-head"><span class="level" style="color:var(--blue)">Level 2</span><h2>Linear algebra: vectors &amp; matrices</h2><button class="btn small mark"></button></div>
-      <div class="prose">
-        <p>Data are vectors; a layer of a neural network is a matrix. Multiplying by a matrix moves every point in space: rotating, stretching, shearing or squashing it. The columns of the matrix are where the basis vectors <span class="tex">\hat\imath,\hat\jmath</span> land.</p>
-        <div class="eq">\mathbf y = W\mathbf x + \mathbf b \qquad \begin{pmatrix}y_1\\y_2\end{pmatrix}=\begin{pmatrix}a&amp;b\\c&amp;d\end{pmatrix}\begin{pmatrix}x_1\\x_2\end{pmatrix}</div>
-        <p>Type your own numbers or pick a preset. The <b>determinant</b> is how much area scales; when it hits zero the matrix squashes the plane onto a line and information is lost. <b>Eigenvectors</b> (yellow) are the directions that are only stretched, never turned.</p>
-      </div>
-      <div data-lab="matrix"></div>
-      <div class="takeaways"><h4>Key takeaways</h4><ul><li>A matrix = a linear map; its columns show where the axes go.</li><li>det = 0 means irreversible (rank-deficient); this is why redundant features hurt.</li><li>Eigenvectors power PCA and explain how repeated multiplication behaves.</li></ul></div>
-    </section>
-
-    <section class="lesson" id="calculus" data-lesson>
-      <div class="lesson-head"><span class="level" style="color:var(--purple)">Level 3</span><h2>Derivatives &amp; gradients</h2><button class="btn small mark"></button></div>
-      <div class="prose">
-        <p>The derivative is the slope of the best straight-line approximation. It is the limit of secant slopes as the step shrinks:</p>
-        <div class="eq">f'(x)=\lim_{h\to0}\frac{f(x+h)-f(x)}{h} \qquad \nabla f=\Big(\tfrac{\partial f}{\partial x_1},\dots,\tfrac{\partial f}{\partial x_n}\Big)</div>
-        <p>Type any <span class="tex">f(x)</span> (try <code>abs(x)</code> to see a corner with no derivative) and press <i>Shrink h → 0</i>: the orange secant rotates onto the red tangent. The green dashed curve is <span class="tex">f'(x)</span> computed by automatic differentiation — the same machinery that trains neural networks.</p>
-      </div>
-      <div data-lab="derivative"></div>
-      <div class="takeaways"><h4>Key takeaways</h4><ul><li>Slope tells you which way is uphill; its negative is downhill.</li><li>The gradient is the vector of slopes in every parameter direction.</li><li>Frameworks compute exact derivatives automatically; numeric differences are only for checking.</li></ul></div>
-    </section>
-
-    <section class="lesson" id="optimization" data-lesson>
-      <div class="lesson-head"><span class="level" style="color:var(--orange)">Level 4</span><h2>Optimization</h2><button class="btn small mark"></button></div>
-      <div class="prose">
-        <p>Gradient descent repeatedly steps against the gradient. Modern optimizers add memory of past gradients:</p>
-        <div class="eq">\text{SGD: } \theta\leftarrow\theta-\eta g \qquad \text{Momentum: } v\leftarrow\beta v+g,\; \theta\leftarrow\theta-\eta v</div>
-        <div class="eq">\text{Adam: } m\leftarrow\beta_1m+(1-\beta_1)g,\; s\leftarrow\beta_2s+(1-\beta_2)g^2,\; \theta\leftarrow\theta-\eta\frac{\hat m}{\sqrt{\hat s}+\epsilon}</div>
-        <p>Pick <b>Valley</b>: plain SGD zig-zags across the narrow canyon while Momentum and Adam glide along it. On <b>Ripples</b> different optimizers land in different local minima. On <b>Saddle</b> the gradient vanishes at the centre but it is not a minimum. Edit f(x, y) to build your own landscape, and click the map to move the start.</p>
-      </div>
-      <div data-lab="descent"></div>
-      <div class="takeaways"><h4>Key takeaways</h4><ul><li>Learning rate is the single most important setting: too high diverges, too low stalls.</li><li>Momentum smooths noise and speeds up along consistent directions.</li><li>Adam adapts the step per parameter, which is why it is a strong default.</li></ul></div>
-    </section>
-
-    <section class="lesson" id="backprop" data-lesson>
-      <div class="lesson-head"><span class="level" style="color:var(--pink)">Level 5</span><h2>Chain rule &amp; backpropagation</h2><button class="btn small mark"></button></div>
-      <div class="prose">
-        <p>A model is a composition of simple functions, so its derivative is a product of local derivatives (the chain rule). Backpropagation evaluates that product from the output backwards, reusing every intermediate value from the forward pass.</p>
-        <div class="eq">\frac{\partial L}{\partial x}=\frac{\partial L}{\partial z}\cdot\frac{\partial z}{\partial x}\qquad\text{(one local rule per node)}</div>
-        <p>Enter any expression. The <span style="color:var(--blue)">blue values</span> flow forward; the <span style="color:var(--orange)">orange gradients</span> flow back. Check the readout: backprop agrees with finite differences (✓). When a variable appears twice, its gradients add.</p>
-      </div>
-      <div data-lab="backprop"></div>
-      <div class="takeaways"><h4>Key takeaways</h4><ul><li>Backward cost is about the same as forward cost, regardless of how many parameters there are.</li><li>This is why activations must be stored during training, and why training needs more memory than inference.</li></ul></div>
-    </section>
-
-    <section class="lesson" id="probability" data-lesson>
-      <div class="lesson-head"><span class="level" style="color:var(--green)">Level 5</span><h2>Probability &amp; statistics</h2><button class="btn small mark"></button></div>
-      <div class="prose">
-        <p>Models express uncertainty as probabilities, and losses come from probability: minimising cross-entropy is exactly maximising the likelihood of the labels.</p>
-        <div class="eq">\mathcal L=-\frac1N\sum_i\Big[y_i\log\hat p_i+(1-y_i)\log(1-\hat p_i)\Big]</div>
-        <p>Averages of many independent draws look Gaussian whatever the source distribution — the <b>central limit theorem</b>: <span class="tex">\bar X_n\approx\mathcal N(\mu,\sigma^2/n)</span>. The lab builds samples from raw uniform noise using a formula you can edit (inverse-transform sampling). Increase <i>n</i> and the skew and kurtosis fall toward zero. Try the Cauchy preset: it has no finite mean, so averaging never helps.</p>
-      </div>
-      <div data-lab="sampling"></div>
-      <div class="takeaways"><h4>Key takeaways</h4><ul><li>Loss functions are negative log-likelihoods in disguise.</li><li>Gaussians appear everywhere because of averaging, but heavy tails break the rule.</li><li>Evaluation metrics are estimates: always ask how much noise is in the number.</li></ul></div>
-    </section>
-
-    <section class="lesson" id="roadmap">
-      <div class="lesson-head"><h2>Coming next in this topic</h2></div>
-      <div class="grid">
-        <div class="card soon"><h3>SVD &amp; PCA</h3><p>Compress data along its strongest directions.</p></div>
-        <div class="card soon"><h3>Information theory</h3><p>Entropy, KL divergence and why cross-entropy works.</p></div>
-        <div class="card soon"><h3>Bayesian inference</h3><p>Updating beliefs with evidence, animated.</p></div>
-        <div class="card soon"><h3>Matrix calculus</h3><p>Gradients of whole layers at once.</p></div>
-      </div>
+    <section class="lesson" id="curriculum">
+      <div class="lesson-head"><h2>The curriculum</h2></div>
+      <div class="mods" id="mod-list"></div>
+      <p style="color:var(--muted);font-size:13px">The full specification of every lesson is in <a href="https://github.com/AbdelrahmanKatkat/AI-Hub/blob/main/curriculum/mathematics.md" target="_blank" rel="noopener">curriculum/mathematics.md</a>.</p>
     </section>
   </main>
   <aside id="outline"></aside>

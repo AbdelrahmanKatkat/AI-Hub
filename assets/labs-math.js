@@ -25,7 +25,7 @@ AI.labs.matrix = function (root) {
   setM(presets['Spin + scale']);
 
   AI.loop(root, (dt) => {
-    const k = 1 - Math.exp(-dt * 3);
+    const k = 1 - Math.exp(-dt * 1.6);
     for (let i = 0; i < 4; i++) D[i] += (M[i] - D[i]) * k;
     const C = AI.col(), g = c.ctx, R = 4.5, s = Math.min(c.w, c.h) / (2 * R), ox = c.w / 2, oy = c.h / 2;
     const P = (x, y) => [ox + x * s, oy - y * s], T = (x, y) => [D[0] * x + D[1] * y, D[2] * x + D[3] * y];
@@ -89,7 +89,7 @@ AI.labs.derivative = function (root) {
   q('#h').oninput = () => (shrinking = false);
 
   AI.loop(root, (dt) => {
-    if (shrinking) { const v = +q('#h').value - dt * 0.55; if (v <= -3) shrinking = false; q('#h').value = Math.max(-3, v); }
+    if (shrinking) { const v = +q('#h').value - dt * 0.22; if (v <= -3) shrinking = false; q('#h').value = Math.max(-3, v); }
     const h = Math.pow(10, +q('#h').value), x0 = +q('#x0').value, C = AI.col(), g = c.ctx;
     q('#xv').textContent = AI.fmt(x0, 2); q('#hv').textContent = AI.fmt(h, 4);
     // y-range from samples
@@ -130,7 +130,7 @@ AI.labs.descent = function (root) {
      <div class="err" id="err"></div>
      <div class="chips" id="presets"></div>
      <label>Learning rate η <span class="v" id="lrv"></span><input type="range" id="lr" min="-3.5" max="-0.3" step="0.05" value="-1.5"></label>
-     <label>Speed <input type="range" id="sp" min="1" max="10" step="1" value="2"></label>
+     <label>Speed <span class="v">steps / second</span><input type="range" id="sp" min="1" max="60" step="1" value="6"></label>
      <div class="legend"><span><i style="background:var(--blue)"></i>SGD</span><span><i style="background:var(--green)"></i>Momentum</span><span><i style="background:var(--orange)"></i>Adam</span></div>
      <div class="row"><button class="btn primary" id="play">⏸ Pause</button><button class="btn" id="reset">Restart</button></div>
      <div class="readout" id="out"></div>`);
@@ -144,6 +144,7 @@ AI.labs.descent = function (root) {
     Saddle: { e: 'x^2 - y^2 + 0.05*(x^4 + y^4)', v: [-3, 3, -3, 3], s: [2, 0.05], lr: -1.5 },
   };
   const OPT = [['SGD', 'blue'], ['Momentum', 'green'], ['Adam', 'orange']];
+  const tickD = AI.ticker();
   let fn = null, view2 = PRE.Bowl.v, start = [...PRE.Bowl.s], runs = [], playing = true, img = null, imgDirty = true, range = [0, 1], t = 0;
   const off = document.createElement('canvas');
 
@@ -188,10 +189,10 @@ AI.labs.descent = function (root) {
   };
   window.addEventListener('themechange', () => (imgDirty = true));
 
-  AI.loop(root, () => {
+  AI.loop(root, (dt) => {
     const lr = Math.pow(10, +q('#lr').value); q('#lrv').textContent = AI.fmt(lr, 4);
     if (imgDirty) paint();
-    if (playing) for (let i = 0; i < +q('#sp').value; i++) runs.forEach((r) => stepRun(r, lr));
+    if (playing) { const n = tickD(dt, +q('#sp').value); for (let i = 0; i < n; i++) runs.forEach((r) => stepRun(r, lr)); }
     const C = AI.col(), g = c.ctx, [x0, x1, y0, y1] = view2;
     g.clearRect(0, 0, c.w, c.h); g.drawImage(off, 0, 0, c.w, c.h);
     const X = (x) => ((x - x0) / (x1 - x0)) * c.w, Y = (y) => ((y1 - y) / (y1 - y0)) * c.h;
@@ -200,13 +201,14 @@ AI.labs.descent = function (root) {
     for (const r of runs) {
       g.strokeStyle = C[r.col]; g.lineWidth = 2.5; g.beginPath();
       r.path.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.stroke();
+      if (r.path.length < 160) { g.fillStyle = C[r.col]; r.path.forEach(([x, y]) => { g.beginPath(); g.arc(X(x), Y(y), 2.2, 0, 7); g.fill(); }); } // one dot per step
       const [px, py] = r.p;
       g.fillStyle = C[r.col]; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(X(px), Y(py), 6, 0, 7); g.fill(); g.stroke();
       if (!r.dead) { const gr = grad(r.p), n = Math.hypot(...gr) || 1; AI.arrow(g, X(px), Y(py), X(px) - (gr[0] / n) * 26, Y(py) + (gr[1] / n) * 26, C[r.col], 2); }
       const fv = fn({ x: px, y: py });
       txt += `<span class="${r.col === 'blue' ? 'b' : r.col === 'green' ? 'g' : 'o'}">${r.n.padEnd(9)}</span> f=${r.dead ? '<span class="r">diverged</span>' : AI.fmt(fv, 4)}  (${AI.fmt(px, 2)}, ${AI.fmt(py, 2)})\n`;
     }
-    g.fillStyle = C.fg; g.font = '11px sans-serif'; g.fillText('arrows: −∇f direction', 10, 16);
+    g.fillStyle = C.fg; g.font = '11px sans-serif'; g.fillText('each dot = one step; arrow = −∇f (downhill)', 10, 16);
     q('#out').innerHTML = txt + '<span class="m">Adam uses 5×η here so it is visible at the same scale.</span>';
   });
 };
@@ -283,7 +285,7 @@ AI.labs.backprop = function (root) {
     for (const o of [...nodes].sort((a, b) => a.h - b.h)) {
       if (tk !== token) return false;
       showV.add(o); if (o.edgeEl) o.edgeEl.setAttribute('stroke', 'var(--blue)');
-      refresh(); q('#cap').textContent = rule(o, false); await sleep(550);
+      refresh(); q('#cap').textContent = rule(o, false); await sleep(1100);
     }
     return true;
   };
@@ -292,7 +294,7 @@ AI.labs.backprop = function (root) {
     for (const o of [...nodes].sort((a, b) => a.d - b.d)) {
       if (tk !== token) return false;
       showG.add(o); if (o.edgeEl) o.edgeEl.setAttribute('stroke', 'var(--orange)');
-      refresh(); q('#cap').textContent = rule(o, true); await sleep(550);
+      refresh(); q('#cap').textContent = rule(o, true); await sleep(1100);
     }
     return true;
   };
@@ -328,7 +330,7 @@ AI.labs.sampling = function (root) {
      <div class="err" id="err"></div>
      <div class="chips" id="presets"></div>
      <label>Average n draws <span class="v" id="nv"></span><input type="range" id="n" min="1" max="60" step="1" value="1"></label>
-     <label>Samples per second <input type="range" id="rate" min="20" max="600" step="10" value="150"></label>
+     <label>Samples per second <input type="range" id="rate" min="5" max="300" step="5" value="30"></label>
      <div class="row"><button class="btn primary" id="play">⏸ Pause</button><button class="btn" id="reset">Clear</button></div>
      <div class="readout" id="out"></div>`);
   const q = (s) => AI.$(s, root);
@@ -376,7 +378,7 @@ AI.labs.sampling = function (root) {
     for (let i = 0; i <= 200; i++) { const x = lo + ((hi - lo) * i) / 200, y = tot * binW * Math.exp(-0.5 * ((x - st.mean) / st.std) ** 2) / (st.std * Math.sqrt(2 * Math.PI)); i ? g.lineTo(v.X(x), v.Y(y)) : g.moveTo(v.X(x), v.Y(y)); }
     g.stroke();
     // falling drops
-    drops.forEach((d) => (d.y += dt * 520));
+    drops.forEach((d) => (d.y += dt * 300));
     for (const d of drops) { const ty = v.Y(counts[d.b] ?? 0); const y = Math.min(d.y, ty); g.fillStyle = C.fg; g.globalAlpha = Math.max(0, 1 - (d.y - ty + 40) / 60); g.beginPath(); g.arc(v.X(d.x), y + 6, 2.5, 0, 7); g.fill(); }
     g.globalAlpha = 1; drops = drops.filter((d) => d.y < v.Y(counts[d.b] ?? 0) + 30);
     g.fillStyle = C.muted; g.font = '11px sans-serif'; g.textAlign = 'left'; g.fillText('■ histogram of samples   — Gaussian with the same mean & std', v.pad.l + 4, 12);

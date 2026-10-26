@@ -2,12 +2,14 @@
 window.HUB = {
   repo: 'https://github.com/AbdelrahmanKatkat/AI-Hub',
   topics: [
-    { id: 'cv', title: 'Computer Vision', icon: '👁️', color: '#2f81f7', status: 'soon', desc: 'Teach machines to see: pixels, convolutions, detection, segmentation.' },
-    { id: 'genai', title: 'Generative AI', icon: '✨', color: '#a371f7', status: 'soon', desc: 'Transformers, diffusion, and how models create text, images and code.' },
-    { id: 'nlp', title: 'NLP', icon: '💬', color: '#db6d28', status: 'soon', desc: 'Tokens, embeddings, attention and language understanding.' },
-    { id: 'voice', title: 'Voice AI Engineer', icon: '🎙️', color: '#db61a2', status: 'soon', desc: 'Speech recognition, synthesis and real-time voice pipelines.' },
     {
-      id: 'ml', title: 'Machine Learning', icon: '🧠', color: '#3fb950', status: 'live', href: 'machine-learning.html', next: 'math',
+      id: 'math', title: 'Mathematics for AI', icon: '∑', color: '#39c5cf', status: 'live', href: 'mathematics.html', next: 'ml',
+      desc: 'Linear algebra, calculus, optimization, backpropagation and probability — animated.',
+      tags: ['Matrices', 'Derivatives', 'Optimizers', 'Backprop', 'Probability'],
+      // sections/modules are generated from curriculum/mathematics.md (see assets/curriculum-math.js)
+    },
+    {
+      id: 'ml', title: 'Machine Learning', icon: '🧠', color: '#3fb950', status: 'live', href: 'machine-learning.html', next: 'ds',
       desc: 'From data and preprocessing to training, neural networks, evaluation and production.',
       tags: ['Preprocessing', 'Regression', 'Gradient descent', 'Neural networks', 'Evaluation'],
       sections: [
@@ -20,22 +22,15 @@ window.HUB = {
       ],
     },
     { id: 'ds', title: 'Data Science', icon: '📊', color: '#388bfd', status: 'soon', desc: 'Exploration, statistics, experimentation and storytelling with data.' },
-    {
-      id: 'math', title: 'Mathematics for AI', icon: '∑', color: '#39c5cf', status: 'live', href: 'mathematics.html', next: 'ml',
-      desc: 'Linear algebra, calculus, optimization, backpropagation and probability — animated.',
-      tags: ['Matrices', 'Derivatives', 'Optimizers', 'Backprop', 'Probability'],
-      sections: [
-        { id: 'intro', t: 'Why math & the pipeline', k: 'vectors tensors loss gradient' },
-        { id: 'linear-algebra', t: 'Linear algebra', k: 'matrix vector transform determinant eigenvalue eigenvector' },
-        { id: 'calculus', t: 'Derivatives & gradients', k: 'derivative slope tangent secant limit autodiff' },
-        { id: 'optimization', t: 'Optimization', k: 'gradient descent momentum adam saddle local minimum learning rate' },
-        { id: 'backprop', t: 'Chain rule & backprop', k: 'computational graph chain rule reverse mode' },
-        { id: 'probability', t: 'Probability & statistics', k: 'distribution sampling central limit theorem gaussian histogram' },
-      ],
-    },
-    { id: 'gov', title: 'Governing AI', icon: '⚖️', color: '#d29922', status: 'soon', desc: 'Safety, ethics, regulation and responsible deployment.' },
+    { id: 'cv', title: 'Computer Vision', icon: '👁️', color: '#2f81f7', status: 'soon', desc: 'Teach machines to see: pixels, convolutions, detection, segmentation.' },
+    { id: 'nlp', title: 'NLP', icon: '💬', color: '#db6d28', status: 'soon', desc: 'Tokens, embeddings, attention and language understanding.' },
+    { id: 'voice', title: 'Voice', icon: '🎙️', color: '#db61a2', status: 'soon', desc: 'Speech recognition, synthesis and real-time voice pipelines.' },
+    { id: 'genai', title: 'Generative AI', icon: '✨', color: '#a371f7', status: 'soon', desc: 'Transformers, diffusion, and how models create text, images and code.' },
+    { id: 'gov', title: 'Governing AI', icon: '⚖️', color: '#d29922', status: 'soon', desc: 'How AI is kept safe, fair and accountable: risk, ethics, regulation, auditing and responsible deployment.' },
     { id: 'rl', title: 'Reinforcement Learning', icon: '🎮', color: '#f85149', status: 'soon', desc: 'Agents, rewards, policies and learning by interaction.' },
-    { id: 'domains', title: 'Domains (GeoAI, Robotics…)', icon: '🌍', color: '#56d364', status: 'soon', desc: 'AI applied to geospatial data, robotics and other fields.' },
+    { id: 'domains', title: 'Domains', icon: '🌍', color: '#56d364', status: 'soon', children: [
+        { title: 'GeoAI', icon: '🛰️' }, { title: 'Robotics', icon: '🤖' }, { title: 'Healthcare & Bio', icon: '🧬' }, { title: 'Climate & Earth', icon: '🌦️' }, { title: 'Finance', icon: '💹' }, { title: 'Other domains', icon: '➕' },
+      ], desc: 'Applied AI, one page per field: GeoAI, Robotics, Healthcare, Climate, Finance and more.' },
   ],
 };
 
