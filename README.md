@@ -11,7 +11,7 @@ python -m http.server 8000   # then open http://localhost:8000
 ```
 
 ## Deploy on GitHub Pages
-Settings → Pages → Deploy from branch → `main` / root. Then set `HUB.repo` in `assets/topics.js` to the repo URL.
+Deployment is automatic: `.github/workflows/pages.yml` publishes on every push to `main`.
 
 ## Structure
 - `index.html`, `machine-learning.html`, `mathematics.html` — one page per topic

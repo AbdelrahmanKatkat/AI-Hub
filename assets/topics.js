@@ -1,6 +1,6 @@
 /* Topic registry + pipeline definitions. Add a topic here and it appears in the sidebar, search and home page. */
 window.HUB = {
-  repo: 'https://github.com/', // TODO: set to the real repository URL
+  repo: 'https://github.com/AbdelrahmanKatkat/AI-Hub',
   topics: [
     { id: 'cv', title: 'Computer Vision', icon: '👁️', color: '#2f81f7', status: 'soon', desc: 'Teach machines to see: pixels, convolutions, detection, segmentation.' },
     { id: 'genai', title: 'Generative AI', icon: '✨', color: '#a371f7', status: 'soon', desc: 'Transformers, diffusion, and how models create text, images and code.' },
