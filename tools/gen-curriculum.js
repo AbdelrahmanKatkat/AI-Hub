@@ -2,8 +2,9 @@
 // Usage: node tools/gen-curriculum.js [slug]        slug defaults to "math"
 //   math -> curriculum/mathematics.md -> window.MATH_MODULES
 //   cv   -> curriculum/computer-vision.md -> window.CV_MODULES
+//   ml   -> curriculum/machine-learning.md -> window.ML_MODULES
 const fs = require('fs');
-const FILES = { math: 'mathematics', cv: 'computer-vision' };
+const FILES = { math: 'mathematics', cv: 'computer-vision', ml: 'machine-learning' };
 const slugs = process.argv[2] ? [process.argv[2]] : Object.keys(FILES);
 const BAR = '¦'; // placeholder for an escaped pipe inside a table cell
 

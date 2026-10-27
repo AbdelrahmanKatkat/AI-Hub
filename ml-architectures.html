@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 · Deep-learning architectures at a glance · Machine Learning</title>
+<meta name="description" content="CNNs, RNNs and LSTMs, attention and transformers, embeddings and autoencoders, graph networks and a decision guide — each as a blueprint with shape tables, parameter counts and animated, editable labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-ml-architectures.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="7">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 7</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">7</div>
+      <div style="flex:1">
+        <h1>Module 7 · Deep-learning architectures at a glance</h1>
+        <p>Every deep model is a blueprint: blocks, the tensor shape between them, and a parameter count. Here you meet the six blueprints behind almost all modern AI — convolutions, recurrence, attention, embeddings, graphs — and learn which one to reach for. You will compute a convolution, an LSTM step, a self-attention layer and a GCN layer by hand, then watch each one run.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: neural-network basics</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 7.1 ===================== -->
+    <section class="lesson" id="cnn-overview" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.1</span><h2>Convolutional networks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A 28×28 photo has 784 pixels. If every neuron looked at every pixel, one layer producing a 26×26×8 stack of feature maps would need over four million weights — and would have to relearn "an edge" separately at every position. Can we build a layer that learns <i>one</i> small detector and slides it everywhere?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine reading a page with a magnifying glass that only shows a 3×3 patch. You slide it along; at each stop you ask the same question ("is there a vertical edge here?") and write the answer in a grid. The glass is the <b>filter</b> (kernel), the grid of answers is a <b>feature map</b>. Two ideas make this powerful: <b>locality</b> (nearby pixels matter together) and <b>weight sharing</b> (the same nine numbers are reused at every position, so a cat's ear is detected wherever it appears). <b>Pooling</b> then shrinks the map by keeping the strongest response in each small window, giving some tolerance to small shifts.</p>
+        <p>This lesson is an overview. The full treatment — stride, padding, receptive fields, famous networks — lives in the Computer Vision topic: <a href="cv-cnn.html#conv-layer">the convolution layer</a>, <a href="cv-cnn.html#pooling-downsampling">pooling</a> and <a href="cv-architectures.html#resnet">ResNet</a>.</p>
+
+        <h3 class="sec">Build it up: one conv layer by hand</h3>
+        <p>Take a 5×5 patch of a grayscale image and a 3×3 vertical-edge kernel (left column +1, right column −1). With no padding and stride 1 the kernel has 3×3 = 9 positions, so the output is 3×3 (output size = 5 − 3 + 1).</p>
+        <div class="eq">\text{patch}=\begin{pmatrix}1&amp;2&amp;0&amp;1&amp;3\\0&amp;1&amp;3&amp;1&amp;2\\2&amp;1&amp;0&amp;0&amp;1\\1&amp;0&amp;2&amp;1&amp;0\\3&amp;1&amp;1&amp;2&amp;1\end{pmatrix},\quad K=\begin{pmatrix}1&amp;0&amp;-1\\1&amp;0&amp;-1\\1&amp;0&amp;-1\end{pmatrix}</div>
+        <div class="worked"><b>Worked example — the top-left output</b>
+          <p>Overlay K on rows 1–3, columns 1–3 (values 1,2,0 / 0,1,3 / 2,1,0). Multiply element-wise and add: <span class="tex">1\cdot1+2\cdot0+0\cdot(-1)</span> + <span class="tex">0\cdot1+1\cdot0+3\cdot(-1)</span> + <span class="tex">2\cdot1+1\cdot0+0\cdot(-1)</span> = 1 − 3 + 2 = <b>0</b>.</p>
+          <p>Slide one column right: window 2,0,1 / 1,3,1 / 1,0,0 → (2−1)+(1−1)+(1−0) = <b>2</b>. One more: window 0,1,3 / 3,1,2 / 0,0,1 → (0−3)+(3−2)+(0−1) = <b>−3</b>. Completing all nine positions gives</p>
+          <div class="eq">\begin{pmatrix}0&amp;2&amp;-3\\-2&amp;0&amp;2\\3&amp;-1&amp;1\end{pmatrix}\xrightarrow{\ \text{ReLU}\ }\begin{pmatrix}0&amp;2&amp;0\\0&amp;0&amp;2\\3&amp;0&amp;1\end{pmatrix}</div>
+          <p>ReLU zeroes negatives; a 2×2 max-pool of the top-left block of this map would keep 2. Large |values| mark places where left and right differ — an edge.</p></div>
+        <h3 class="sec">Parameter sharing versus dense</h3>
+        <p>Blueprint for a 28×28×1 input, <span class="tex">k=3</span>, 8 filters, no padding:</p>
+        <table class="tbl"><tr><th>Stage</th><th>Output shape</th><th>Parameters</th></tr>
+          <tr><td>input</td><td>1×28×28</td><td>0</td></tr>
+          <tr><td>conv 3×3, 8 filters</td><td>8×26×26</td><td>8·(1·3·3) + 8 = <b>80</b></td></tr>
+          <tr><td>ReLU</td><td>8×26×26</td><td>0</td></tr>
+          <tr><td>max-pool 2×2</td><td>8×13×13</td><td>0</td></tr>
+          <tr><td>flatten</td><td>1352</td><td>0</td></tr>
+          <tr><td>fc → 10</td><td>10</td><td>1352·10 + 10 = 13,530</td></tr></table>
+        <p>A <b>dense</b> layer producing the same 8×26×26 = 5,408 outputs from 784 inputs needs 784·5,408 + 5,408 = <b>4,245,280</b> parameters — about 53,000 times more than the conv layer's 80. The saving is pure weight sharing plus locality.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y_{o,i,j}=b_o+\sum_{c=1}^{C_{in}}\sum_{u=0}^{k-1}\sum_{v=0}^{k-1}W_{o,c,u,v}\;x_{c,\,i+u,\,j+v},\qquad \text{params}=C_{out}(C_{in}k^2+1)</div>
+        <table class="sym">
+          <tr><td>x<sub>c,i,j</sub></td><td>input value in channel c at row i, column j</td></tr>
+          <tr><td>W<sub>o,c,u,v</sub></td><td>shared weight of filter o, input channel c, kernel offset (u,v)</td></tr>
+          <tr><td>b<sub>o</sub></td><td>one bias per filter</td></tr>
+          <tr><td>k</td><td>kernel size (3 = 3×3)</td></tr>
+          <tr><td>C<sub>in</sub>, C<sub>out</sub></td><td>input channels, number of filters (= output channels)</td></tr>
+        </table>
+        <p>Output spatial size with padding <i>p</i> and stride <i>s</i>: <span class="tex">\lfloor (n+2p-k)/s\rfloor+1</span>. Inductive bias: <b>translation equivariance</b> — shift the input and the feature map shifts with it.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the convolution lab, press play and follow the 3×3 window; edit the nine kernel weights to your vertical-edge kernel and compare the output with the table above.</li>
+        <li>In the blueprint below, click a block to see its shapes and parameters; confirm the conv layer is tiny while the final dense layer dominates.</li>
+        <li>Try a blur kernel (all 1/9) and then a sharpen kernel: one set of nine numbers changes what the whole layer "sees".</li></ol></div>
+      <div data-lab="convolve" data-kernel="sobel x"></div>
+      <div data-lab="archviz" data-preset="small-cnn" data-title="A small CNN blueprint (shapes and parameters)"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Deep-learning "convolution" is really cross-correlation (the kernel is not flipped) — harmless because the kernel is learned.</li>
+          <li>Parameters ≠ compute. The conv layer above has 80 parameters yet does 26·26·8·9 = 48,672 multiplications; weight sharing saves memory, not arithmetic.</li>
+          <li>CNNs are equivariant to shifts, not rotations or scale; they must learn those from data (augmentation).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Image classification and detection (ResNet, EfficientNet), medical imaging, satellite imagery.</li>
+          <li>Audio: 1-D convolutions or 2-D convolutions over spectrograms for speech and sound classification.</li>
+          <li>Text and time series: 1-D convs as fast local pattern detectors; TCN, WaveNet.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters has a conv layer with 3 input channels, 16 filters of size 5×5?</summary><div class="ans">16·(3·25 + 1) = 16·76 = 1,216.</div></details>
+        <details class="check"><summary>2. What is the output size for a 32×32 input, k=5, p=0, s=1?</summary><div class="ans">32 − 5 + 1 = 28, so 28×28 per filter.</div></details>
+        <details class="check"><summary>3. Why is the vertical-edge output 0 where the patch is flat?</summary><div class="ans">Left and right columns are equal, so (+1)·a + (−1)·a cancel in every row and the sum is 0.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A conv layer slides one small shared filter bank over the input: params = C<sub>out</sub>(C<sub>in</sub>k²+1), independent of image size.</li><li>Locality + sharing give translation equivariance and a huge parameter saving versus dense layers.</li><li>Pooling shrinks maps and adds small-shift tolerance. Details: Computer Vision topic.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.2 ===================== -->
+    <section class="lesson" id="rnn-lstm" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.2</span><h2>Recurrent networks, LSTM &amp; GRU</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>"The movie was not good" — the word <i>not</i> flips the meaning of <i>good</i> three tokens later. A model must read words one at a time, remember what mattered, and cope with sentences of any length using a fixed number of weights. How do we give a network a memory?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Read a sentence with a notepad. At every word you look at the word and your current notes, then rewrite the notes. The notepad is the <b>hidden state</b> <span class="tex">h_t</span>; the rewriting rule is the same at every step (shared weights, just like a conv filter shared across space — here shared across <i>time</i>). Drawing the loop <i>unrolled</i> gives a long chain of identical cells, one per time step.</p>
+        <p>The notepad has a flaw: after 50 rewrites the early words are barely visible, and during training the error signal fading back through those rewrites is even weaker. The <b>LSTM</b> fixes this with a second, protected notepad (the <b>cell state</b>) that only changes through gates — doors that open or close between 0 and 1.</p>
+
+        <h3 class="sec">Build it up: a vanilla RNN by hand</h3>
+        <p>Use scalars to see every number: <span class="tex">h_t=\tanh(w_h h_{t-1}+w_x x_t+b)</span> with <span class="tex">w_h=0.5,\ w_x=1,\ b=0,\ h_0=0</span> and inputs <span class="tex">x=(1,\,0.5,\,-1)</span>.</p>
+        <div class="worked"><b>Worked example — three steps</b>
+          <table class="tbl"><tr><th>t</th><th>x<sub>t</sub></th><th>pre-activation 0.5·h<sub>t−1</sub> + x<sub>t</sub></th><th>h<sub>t</sub> = tanh(·)</th><th>local slope 1 − h<sub>t</sub>²</th></tr>
+            <tr><td>1</td><td>1</td><td>0.5·0 + 1 = 1</td><td>0.7616</td><td>0.4200</td></tr>
+            <tr><td>2</td><td>0.5</td><td>0.5·0.7616 + 0.5 = 0.8808</td><td>0.7068</td><td>0.5004</td></tr>
+            <tr><td>3</td><td>−1</td><td>0.5·0.7068 − 1 = −0.6466</td><td>−0.5694</td><td>0.6758</td></tr></table>
+          <p>The state is a summary: <span class="tex">h_3=-0.5694</span> already depends on all three inputs.</p></div>
+        <h3 class="sec">The vanishing-gradient product</h3>
+        <p>Training sends an error signal backwards through time. By the chain rule the sensitivity of <span class="tex">h_t</span> to an early state is a <i>product</i> of per-step factors, each <span class="tex">w_h(1-h_k^2)</span>:</p>
+        <div class="eq">\frac{\partial h_t}{\partial h_0}=\prod_{k=1}^{t} w_h\,(1-h_k^{2})</div>
+        <p>From the table, the three factors are 0.5·0.4200 = 0.2100, 0.5·0.5004 = 0.2502 and 0.5·0.6758 = 0.3379. Their product over 3 steps is already 0.0178. Computed numerically for a long run (h starting at 0.5, bias 0.3):</p>
+        <table class="tbl"><tr><th>w<sub>h</sub></th><th>after 1 step</th><th>5</th><th>10</th><th>20</th><th>50</th></tr>
+          <tr><td>0.5</td><td>3.8e−1</td><td>7.4e−3</td><td>5.4e−5</td><td>3.0e−9</td><td>4.8e−22</td></tr>
+          <tr><td>0.9</td><td>5.4e−1</td><td>1.6e−2</td><td>1.5e−4</td><td>1.3e−8</td><td>8.0e−21</td></tr></table>
+        <p>Even with no tanh slope at all, a factor of 0.9 per step gives 0.9<sup>10</sup> = 0.35, 0.9<sup>50</sup> = 0.0052; a factor of 1.1 explodes: 1.1<sup>50</sup> ≈ 117. Gradients vanish or explode exponentially with sequence length; gradient clipping tames explosions, gating tames vanishing.</p>
+
+        <h3 class="sec">LSTM and GRU</h3>
+        <p>The LSTM keeps cell state <span class="tex">c_t</span> and three gates computed from the current input and previous hidden state. Its key line is additive: <span class="tex">c_t=f_t c_{t-1}+i_t g_t</span>. If <span class="tex">f_t\approx1</span> the old memory passes through untouched, so the gradient along <span class="tex">c</span> is multiplied by <span class="tex">f_t</span> instead of a squashing tanh slope — no exponential decay.</p>
+        <div class="worked"><b>Worked example — one LSTM step with real numbers</b>
+          <p>Scalar cell (h = 1, d = 1). Input <span class="tex">x=1</span>, previous <span class="tex">h_{t-1}=0.5</span>, previous <span class="tex">c_{t-1}=2</span>. Each gate has weights (w<sub>x</sub>, w<sub>h</sub>, b): forget (0.5, 0.4, 0.1), input (0.8, −0.3, 0), output (0.3, 0.9, −0.2), candidate (1.0, 0.5, 0).</p>
+          <table class="tbl"><tr><th>Gate</th><th>pre-activation</th><th>value</th></tr>
+            <tr><td>forget f</td><td>0.5·1 + 0.4·0.5 + 0.1 = 0.80</td><td>σ(0.80) = <b>0.690</b></td></tr>
+            <tr><td>input i</td><td>0.8·1 − 0.3·0.5 + 0 = 0.65</td><td>σ(0.65) = <b>0.657</b></td></tr>
+            <tr><td>output o</td><td>0.3·1 + 0.9·0.5 − 0.2 = 0.55</td><td>σ(0.55) = <b>0.634</b></td></tr>
+            <tr><td>candidate g</td><td>1.0·1 + 0.5·0.5 + 0 = 1.25</td><td>tanh(1.25) = <b>0.848</b></td></tr></table>
+          <p>Cell: <span class="tex">c_t=0.690\cdot2+0.657\cdot0.848=1.380+0.557=\mathbf{1.937}</span>. Hidden: <span class="tex">h_t=0.634\cdot\tanh(1.937)=0.634\cdot0.959=\mathbf{0.608}</span>. The forget gate kept 69% of the old memory and the input gate admitted 66% of the new candidate.</p></div>
+        <p>The <b>GRU</b> merges cell and hidden state and uses two gates (update <i>z</i>, reset <i>r</i>): <span class="tex">h_t=(1-z_t)h_{t-1}+z_t\tilde h_t</span> — 3 weight blocks instead of 4, about 25% fewer parameters.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\begin{aligned}f_t&amp;=\sigma(W_f[h_{t-1},x_t]+b_f)\\ i_t&amp;=\sigma(W_i[h_{t-1},x_t]+b_i)\\ o_t&amp;=\sigma(W_o[h_{t-1},x_t]+b_o)\\ g_t&amp;=\tanh(W_g[h_{t-1},x_t]+b_g)\\ c_t&amp;=f_t\odot c_{t-1}+i_t\odot g_t\\ h_t&amp;=o_t\odot\tanh(c_t)\end{aligned}</div>
+        <table class="sym">
+          <tr><td>x<sub>t</sub> ∈ ℝ<sup>d</sup></td><td>input at time t</td></tr>
+          <tr><td>h<sub>t</sub>, c<sub>t</sub> ∈ ℝ<sup>h</sup></td><td>hidden state (output) and cell state (long-term memory)</td></tr>
+          <tr><td>f, i, o</td><td>forget, input, output gates: vectors in (0,1) from the sigmoid σ</td></tr>
+          <tr><td>g</td><td>candidate content, in (−1,1)</td></tr>
+          <tr><td>[h<sub>t−1</sub>, x<sub>t</sub>]</td><td>concatenation, length h+d, so each W is h×(h+d)</td></tr>
+          <tr><td>⊙</td><td>element-wise product</td></tr>
+        </table>
+        <p>Parameters: each of the 4 blocks has an h×(h+d) matrix and h biases, so</p>
+        <div class="eq">\begin{aligned}\text{params}_{LSTM}&amp;=4\,\bigl(h(h+d)+h\bigr)\ \text{params}_{GRU}&amp;=3\,\bigl(h(h+d)+h\bigr)\ \text{params}_{RNN}&amp;=h(h+d)+h\end{aligned}</div>
+        <p>Blueprint with d = 64, h = 128: LSTM 4·(128·192+128) = <b>98,816</b>; GRU 74,112; vanilla RNN 24,704. The scalar cell above has 4·(1·2+1) = 12. Parameter count does <i>not</i> depend on sequence length; compute does (T sequential steps, which cannot run in parallel).</p>
+        <table class="tbl"><tr><th>Tensor</th><th>Shape (batch B, length T)</th></tr>
+          <tr><td>input</td><td>B×T×d</td></tr><tr><td>hidden sequence</td><td>B×T×h</td></tr><tr><td>last state (classification)</td><td>B×h</td></tr></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>RNN lab: enter x = 1, 0.5, −1 and w<sub>h</sub> = 0.5 and check the three h values above. Then press play and watch the blue state flow forward and the red gradient shrink as it travels backwards.</li>
+        <li>Raise w<sub>h</sub> to 1.5, then lower to 0.2: which makes the gradient explode and which makes it vanish on early steps?</li>
+        <li>LSTM lab: load the worked-example numbers and watch the forget and input gates open. Then drive the forget gate bias to −3 and see the memory c erased.</li></ol></div>
+      <div data-lab="rnnUnroll"></div>
+      <div data-lab="lstmCell"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>The LSTM does not remove vanishing gradients everywhere — only along the cell path; very long dependencies (thousands of steps) still fail.</li>
+          <li>Bidirectional RNNs cannot be used for real-time generation: they need the future.</li>
+          <li>Sequence length costs time, not parameters: training time is O(T) <i>sequential</i> steps, which is why transformers displaced RNNs on GPUs.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Speech recognition, early machine translation (seq2seq with LSTM encoder/decoder, 2014–2016).</li>
+          <li>Sensor, finance and demand forecasting where streaming and small models matter (GRU on edge devices).</li>
+          <li>Modern revival: state-space models such as Mamba are recurrent networks with a hardware-friendly parallel scan.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters has a GRU with d = 10, h = 20?</summary><div class="ans">3·(20·30 + 20) = 3·620 = 1,860.</div></details>
+        <details class="check"><summary>2. If f = 1 and i = 0 at every step, what is c<sub>t</sub>?</summary><div class="ans">c<sub>t</sub> = c<sub>t−1</sub>: the cell is a perfect memory and the gradient along it is exactly 1.</div></details>
+        <details class="check"><summary>3. A per-step gradient factor of 0.9 acts over 100 steps. Roughly what is the total?</summary><div class="ans">0.9<sup>100</sup> ≈ 2.7×10<sup>−5</sup>: the early inputs receive almost no learning signal.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>An RNN reuses one cell across time; hidden state is a running summary.</li><li>Backprop through time multiplies per-step factors, so gradients vanish or explode exponentially.</li><li>LSTM: params 4(h(h+d)+h); the additive cell update c = f·c + i·g protects memory. GRU is the leaner 3-block cousin.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.3 ===================== -->
+    <section class="lesson" id="attention-transformers" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.3</span><h2>Attention &amp; transformers</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>In "The animal didn't cross the street because it was too tired", what does <i>it</i> refer to? A recurrent net must carry the answer through every intermediate word. Could each word instead look <i>directly</i> at any other word, in one step, and decide how much to listen?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Attention is a soft dictionary lookup. Each token writes a <b>query</b> ("what am I looking for?"), a <b>key</b> ("what do I contain?") and a <b>value</b> ("what I will hand over if chosen"). A token compares its query with every key; high similarity means high weight; the output is the weighted average of values. Everything is differentiable, so the network learns what to ask and what to advertise. The maths is derived in <a href="math-neural.html#attention-math">the attention lesson</a>; here we build the blueprint.</p>
+
+        <h3 class="sec">Build it up: self-attention on 3 tokens, by hand</h3>
+        <p>Three tokens with 2-dimensional embeddings <span class="tex">x_1=(1,0),\ x_2=(0,1),\ x_3=(1,1)</span> (rows of X). Take <span class="tex">W_Q=I</span>, <span class="tex">W_K=\begin{pmatrix}1&amp;1\\0&amp;1\end{pmatrix}</span>, <span class="tex">W_V=\begin{pmatrix}1&amp;0\\1&amp;1\end{pmatrix}</span>, and <span class="tex">d_k=2</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><b>① Q, K, V</b> (row-vector times matrix): Q = (1,0), (0,1), (1,1). K = (1,1), (0,1), (1,2). V = (1,0), (1,1), (2,1).</p>
+          <p><b>② Scores</b> <span class="tex">QK^\top/\sqrt{d_k}</span>. Raw dot products row by row: token 1: (1, 0, 1); token 2: (1, 1, 2); token 3: (2, 1, 3). Divide by √2 = 1.414:</p>
+          <div class="eq">S=\begin{pmatrix}0.707&amp;0&amp;0.707\\0.707&amp;0.707&amp;1.414\\1.414&amp;0.707&amp;2.121\end{pmatrix}</div>
+          <p><b>③ Softmax each row.</b> Row 1: e<sup>0.707</sup> = 2.028, e<sup>0</sup> = 1, e<sup>0.707</sup> = 2.028, sum 5.056 → (0.401, 0.198, 0.401). Row 2 → (0.248, 0.248, 0.503). Row 3 → (0.284, 0.140, 0.576). Every row sums to 1.</p>
+          <p><b>④ Weighted sum of values.</b> Token 1: 0.401·(1,0) + 0.198·(1,1) + 0.401·(2,1) = (1.401, 0.599). Token 2 → (1.503, 0.752). Token 3 → (1.576, 0.716).</p>
+          <p>Each output is a mixture of all three values, in one step, whatever the distance between tokens.</p></div>
+        <h3 class="sec">The transformer block</h3>
+        <p>One block = <b>multi-head self-attention</b> (h heads of size d/h, outputs concatenated and mixed by <span class="tex">W_O</span>) → add &amp; layer-norm → <b>MLP</b> (expand to 4d, nonlinearity, project back to d) → add &amp; layer-norm. Residual connections keep a clear gradient path. Stack L blocks.</p>
+        <table class="tbl"><tr><th>Part</th><th>Shape in → out (n tokens)</th><th>Weights</th><th>Params (d = 768)</th></tr>
+          <tr><td>W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub></td><td>n×d → n×d each</td><td>3·d²</td><td>1,769,472</td></tr>
+          <tr><td>W<sub>O</sub></td><td>n×d → n×d</td><td>d²</td><td>589,824</td></tr>
+          <tr><td>MLP up</td><td>n×d → n×4d</td><td>4d²</td><td>2,359,296</td></tr>
+          <tr><td>MLP down</td><td>n×4d → n×d</td><td>4d²</td><td>2,359,296</td></tr>
+          <tr><td><b>Block total</b></td><td>n×d → n×d</td><td><b>12d²</b></td><td><b>7,077,888</b> (+9,984 biases and norms)</td></tr></table>
+        <p>Twelve such blocks at d = 768 give 12·7,077,888 ≈ 84.9 M weights — the bulk of BERT-base and ViT-B/16 (86.6 M with patch embedding and head).</p>
+        <p><b>Cost.</b> The score matrix <span class="tex">QK^\top</span> is n×n: computing it takes n²d multiply-adds, applying it to V another n²d, and storing it n² numbers per head. Attention is <b>O(n²d)</b> time and O(n²) memory; the MLP is O(n d²). Doubling the context quadruples attention cost: for n = 1,024 and d = 768, QKᵀ alone is 1,024²·768 = 805 M MACs.</p>
+        <table class="tbl"><tr><th>n</th><th>512</th><th>2,048</th><th>8,192</th><th>32,768</th></tr><tr><td>n² scores per head</td><td>262,144</td><td>4.2 M</td><td>67 M</td><td>1.07 G</td></tr></table>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{Attn}(X)=\mathrm{softmax}\!\Bigl(\frac{QK^{\top}}{\sqrt{d_k}}\Bigr)V,\quad Q=XW_Q,\ K=XW_K,\ V=XW_V</div>
+        <table class="sym">
+          <tr><td>X ∈ ℝ<sup>n×d</sup></td><td>one row per token embedding</td></tr>
+          <tr><td>W<sub>Q</sub>, W<sub>K</sub> ∈ ℝ<sup>d×d<sub>k</sub></sup>, W<sub>V</sub> ∈ ℝ<sup>d×d<sub>v</sub></sup></td><td>learned projections (the parameters)</td></tr>
+          <tr><td>QKᵀ</td><td>n×n matrix of query·key dot products</td></tr>
+          <tr><td>√d<sub>k</sub></td><td>keeps scores at unit scale so softmax does not saturate</td></tr>
+          <tr><td>softmax (row-wise)</td><td>turns each row into weights that sum to 1</td></tr>
+        </table>
+        <p>Attention is order-blind (permuting tokens permutes outputs), so <b>positional encodings</b> are added to X. A <b>causal mask</b> sets future scores to −∞ for generation (GPT-style); no mask gives bidirectional encoders (BERT). Vision version: <a href="cv-transformers.html">Vision Transformers</a>.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Attention lab: load the worked example and confirm the weights (0.401, 0.198, 0.401) for token 1; press play to watch the arcs and the weighted sum assemble.</li>
+        <li>Make two tokens' embeddings nearly identical: their attention weight to each other grows. Make a query large: softmax becomes sharp (one arc dominates).</li>
+        <li>Comparison lab: grow the sequence length and watch the RNN path length grow while the transformer's stays 1 — but its cost square.</li>
+        <li>In the ViT blueprint click the transformer block and compare its parameter count with 12·768².</li></ol></div>
+      <div data-lab="attnLab"></div>
+      <div data-lab="seqCompare"></div>
+      <div data-lab="archviz" data-preset="vit-b16" data-title="ViT-B/16: patch embedding, 12 transformer blocks, head"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Attention weights are not a perfect explanation of the model's reasoning; they are one intermediate quantity.</li>
+          <li>Softmax is over keys (each row sums to 1), not over queries.</li>
+          <li>Parameters grow with d², not n; <i>compute</i> grows with n². Long context is expensive even though no extra weights are added.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Large language models (GPT, Llama, Claude): stacks of causal transformer blocks, 32–120+ layers.</li>
+          <li>Vision transformers, CLIP, speech models like Whisper, protein folding (AlphaFold's Evoformer).</li>
+          <li>Efficiency work: FlashAttention (same maths, less memory traffic), sparse and linear attention, KV caching at inference.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Block parameters for d = 512 (weights only)?</summary><div class="ans">12·512² = 3,145,728.</div></details>
+        <details class="check"><summary>2. Context grows from 4k to 16k tokens. How much more does the n² attention-score computation cost?</summary><div class="ans">4× the tokens means 16× the score entries and score computation.</div></details>
+        <details class="check"><summary>3. Why divide by √d<sub>k</sub>?</summary><div class="ans">A dot product of d<sub>k</sub> unit-variance terms has standard deviation √d<sub>k</sub>; without scaling, large scores push softmax to near one-hot with vanishing gradients.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Attention = softmax(QKᵀ/√d)V: every token reads from every other in one step.</li><li>A block has 12d² weights (4d² attention + 8d² MLP); attention costs O(n²d) time and O(n²) memory.</li><li>Order comes from positional encodings; masking decides what a token may see.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.4 ===================== -->
+    <section class="lesson" id="embeddings-autoencoders" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.4</span><h2>Embeddings &amp; autoencoders</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop has 100,000 products. One-hot vectors make "sneakers" and "running shoes" exactly as different as "sneakers" and "garden hose". How do we hand a model a short list of numbers in which similar things sit close together — and learn those numbers from data?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An <b>embedding</b> places every item at a point in a low-dimensional space (a few hundred dimensions rather than 100,000), arranged so that distance means similarity. Mechanically it is nothing but a <b>lookup table</b>: row <i>i</i> of a matrix E holds the vector of item <i>i</i>; the rows are ordinary parameters learned by backpropagation. Because positions are learned from how items are used together, directions can acquire meaning — the classic <i>king − man + woman ≈ queen</i>.</p>
+        <p>An <b>autoencoder</b> learns such a representation without labels: squeeze the input through a narrow <b>bottleneck</b> and ask the network to rebuild it. If reconstruction is good, the few bottleneck numbers must have kept what matters.</p>
+
+        <h3 class="sec">Build it up: lookup and similarity search by hand</h3>
+        <div class="worked"><b>Worked example — a 5-word table, d = 3</b>
+          <table class="tbl"><tr><th>word</th><th>vector</th></tr>
+            <tr><td>king</td><td>(0.9, 0.8, 0.1)</td></tr><tr><td>queen</td><td>(0.9, 0.1, 0.8)</td></tr><tr><td>man</td><td>(0.1, 0.9, 0.1)</td></tr><tr><td>woman</td><td>(0.1, 0.2, 0.8)</td></tr><tr><td>apple</td><td>(−0.5, 0.1, 0.1)</td></tr></table>
+          <p>Lookup: token id 0 (king) returns row 0 — equivalent to multiplying a one-hot vector by E, but without the wasted zeros. Similarity by cosine: <span class="tex">\cos(a,b)=\frac{a\cdot b}{\|a\|\|b\|}</span>. For king and man: dot = 0.09 + 0.72 + 0.01 = 0.82; norms 1.2124 and 0.9110; cosine = <b>0.745</b>. king–woman: <b>0.329</b>. king–apple: <b>−0.573</b>. Nearest neighbour of king among the others is therefore man (0.745), then queen (0.664).</p>
+          <p>Analogy: king − man + woman = (0.9−0.1+0.1, 0.8−0.9+0.2, 0.1−0.1+0.8) = (0.9, 0.1, 0.8), which is exactly queen in this toy table. Real embeddings are only approximately that clean.</p></div>
+        <p><b>Search at scale:</b> store all vectors, embed the query, return the top-k by cosine (or dot product). Exact search costs N·d multiplications per query; approximate indexes (HNSW, IVF) trade a little recall for orders-of-magnitude speed. Table size is V·d parameters: 100,000 items at d = 128 is 12.8 M numbers.</p>
+
+        <h3 class="sec">Autoencoders and bottlenecks</h3>
+        <table class="tbl"><tr><th>Stage</th><th>Shape</th><th>Parameters</th></tr>
+          <tr><td>input (28×28 image flattened)</td><td>784</td><td>0</td></tr>
+          <tr><td>encoder fc</td><td>784 → 32</td><td>784·32 + 32 = 25,120</td></tr>
+          <tr><td>bottleneck code z</td><td>32</td><td>0</td></tr>
+          <tr><td>decoder fc</td><td>32 → 784</td><td>32·784 + 784 = 25,872</td></tr>
+          <tr><td><b>Total</b></td><td></td><td><b>50,992</b></td></tr></table>
+        <p>Compression ratio = 784 / 32 = <b>24.5×</b>. A deeper version 784→128→32→128→784 has 209,968 parameters. With a linear encoder/decoder and squared error, the optimum spans the same subspace as PCA (<a href="math-linear-algebra.html#svd-pca">PCA</a>); non-linear layers let it bend around curved data. Variants: <i>denoising</i> (corrupt the input, rebuild the clean one), <i>sparse</i>, and <i>variational</i> (code is a distribution, so you can sample new data).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">e=E[i],\qquad \cos(a,b)=\frac{a^{\top}b}{\|a\|\,\|b\|},\qquad \mathcal L_{AE}=\frac1N\sum_n\bigl\|x_n-g(f(x_n))\bigr\|^2</div>
+        <table class="sym">
+          <tr><td>E ∈ ℝ<sup>V×d</sup></td><td>embedding table: V items, d dimensions (trainable)</td></tr>
+          <tr><td>i</td><td>integer id of the item (token, user, product)</td></tr>
+          <tr><td>cos(a,b)</td><td>similarity of directions in [−1, 1]; 1 = same direction</td></tr>
+          <tr><td>f, g</td><td>encoder (x → code z) and decoder (z → x̂)</td></tr>
+          <tr><td>z = f(x)</td><td>bottleneck code, dimension k ≪ input dimension</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Embedding lab: click a point and read its nearest neighbours by cosine; drag a point and watch the ranking change.</li>
+        <li>Pick the analogy a − b + c and see which point lies nearest to the result.</li>
+        <li>Autoencoder lab: shrink the bottleneck from 8 to 1 and watch reconstruction error rise; use the latent slider to traverse the code and see shapes morph.</li></ol></div>
+      <div data-lab="embedSpace"></div>
+      <div data-lab="autoencoderLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Embedding axes are not individually interpretable, and the space can be rotated without changing any similarity.</li>
+          <li>Cosine ignores vector length; dot product does not. Use whichever the model was trained with.</li>
+          <li>An autoencoder with a bottleneck as wide as the input can learn the identity and nothing useful; capacity must be limited (or noise/sparsity added).</li>
+          <li>Embeddings inherit biases from their training data.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Recommenders: user and item embeddings, score = dot product (two-tower models, matrix factorisation).</li>
+          <li>Retrieval and RAG: text/image embeddings in a vector database, nearest-neighbour search.</li>
+          <li>Every language model begins with a token-embedding table; autoencoders power anomaly detection, denoising and the latent space of image generators.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Parameters in an embedding table of 50,000 tokens at d = 768?</summary><div class="ans">50,000·768 = 38,400,000.</div></details>
+        <details class="check"><summary>2. Compression ratio of an autoencoder 1024 → 64 → 1024?</summary><div class="ans">1024/64 = 16×. Parameters: (1024·64+64)+(64·1024+1024) = 132,160.</div></details>
+        <details class="check"><summary>3. Why is cosine(king, apple) negative in the table?</summary><div class="ans">Their vectors point in roughly opposite directions: apple has a negative first coordinate while king's is strongly positive, so the dot product is negative.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>An embedding is a trainable lookup table E ∈ ℝ<sup>V×d</sup>; closeness (cosine) encodes similarity.</li><li>Similarity search = embed the query, take the top-k nearest vectors.</li><li>An autoencoder compresses through a bottleneck (784→32 = 24.5×) and learns features without labels.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.5 ===================== -->
+    <section class="lesson" id="gnn-intro" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.5</span><h2>Graph neural networks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A molecule is atoms joined by bonds; a social network is people joined by friendships. There is no grid and no sequence, the number of neighbours varies, and relabelling the nodes must not change the answer. What network can read that?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Each node starts with a feature vector. In every round of <b>message passing</b> a node (1) collects its neighbours' vectors, (2) <b>aggregates</b> them (sum, mean or weighted mean — an order-independent operation), (3) transforms the result with a learned weight matrix and non-linearity. After <i>k</i> rounds a node knows about everything within <i>k</i> hops, much like a conv filter's receptive field growing with depth. In fact an image is just a graph where pixels connect to their 8 neighbours.</p>
+
+        <h3 class="sec">Build it up: one GCN layer on 4 nodes</h3>
+        <p>Graph: edges 1–2, 2–3, 2–4, 3–4. Node features (2-dimensional): <span class="tex">h_1=(1,0),\ h_2=(0,1),\ h_3=(1,1),\ h_4=(2,0)</span>. The GCN layer adds self-loops (<span class="tex">\hat A=A+I</span>) and normalises by degree: <span class="tex">H'=\mathrm{ReLU}(\hat D^{-1/2}\hat A\hat D^{-1/2}HW)</span>. Degrees including self-loop: (2, 4, 3, 3). Weights <span class="tex">W=\begin{pmatrix}1&amp;-1\\0.5&amp;1\end{pmatrix}</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><b>① Normalised adjacency</b> entries <span class="tex">1/\sqrt{d_id_j}</span> for connected pairs: (1,1) = 0.5, (1,2) = 0.354, (2,2) = 0.25, (2,3) = (2,4) = 0.289, (3,3) = (3,4) = (4,4) = 0.333.</p>
+          <p><b>② Aggregate</b> <span class="tex">\hat A_{norm}H</span>. Node 1: 0.5·(1,0) + 0.354·(0,1) = (0.5, 0.354). Node 2: 0.354·(1,0) + 0.25·(0,1) + 0.289·(1,1) + 0.289·(2,0) = (1.220, 0.539). Node 3: 0.289·(0,1) + 0.333·(1,1) + 0.333·(2,0) = (1.000, 0.622). Node 4 has the same neighbourhood as node 3: (1.000, 0.622).</p>
+          <p><b>③ Transform</b> by W (row-vector × W): node 1: (0.5·1 + 0.354·0.5, −0.5 + 0.354) = (0.677, −0.146); node 2: (1.489, −0.681); nodes 3 and 4: (1.311, −0.378).</p>
+          <p><b>④ ReLU</b>: H′ = (0.677, 0), (1.489, 0), (1.311, 0), (1.311, 0). Nodes 3 and 4 are now identical — they are structurally interchangeable (same features after aggregation), a known limit of plain message passing.</p></div>
+        <table class="tbl"><tr><th>Stage</th><th>Shape</th><th>Parameters</th></tr>
+          <tr><td>node features H</td><td>N×F = 4×2</td><td>0</td></tr>
+          <tr><td>aggregation Â<sub>norm</sub>H</td><td>N×F</td><td>0 (fixed by graph)</td></tr>
+          <tr><td>linear W</td><td>N×F′ = 4×2</td><td>F·F′ = 4 (+F′ if bias)</td></tr>
+          <tr><td>readout (graph task): mean/sum over nodes</td><td>1×F′</td><td>0</td></tr></table>
+        <p>Parameters do not depend on the number of nodes or edges: the same W is applied at every node, so one trained GNN runs on graphs of any size. A realistic layer F = 64 → F′ = 64 has 64·64 + 64 = 4,160 weights. Tasks: <b>node</b> classification (use h<sub>v</sub>), <b>edge</b>/link prediction (combine h<sub>u</sub>, h<sub>v</sub>), <b>graph</b> classification/regression (pool all nodes). Cost per layer ≈ O(|E|·F + N·F·F′) — linear in edges, unlike attention's n².</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">h_v^{(l+1)}=\sigma\Bigl(W^{(l)}\sum_{u\in\mathcal N(v)\cup\{v\}}\frac{1}{\sqrt{\hat d_u\hat d_v}}\,h_u^{(l)}\Bigr)</div>
+        <table class="sym">
+          <tr><td>h<sub>v</sub><sup>(l)</sup></td><td>feature vector of node v after l layers (h<sup>(0)</sup> = input features)</td></tr>
+          <tr><td>𝒩(v)</td><td>neighbours of v; the node itself is added (self-loop)</td></tr>
+          <tr><td>d̂<sub>v</sub></td><td>degree of v counting the self-loop</td></tr>
+          <tr><td>W<sup>(l)</sup></td><td>learned weights, shared by all nodes of layer l</td></tr>
+          <tr><td>σ</td><td>non-linearity (ReLU)</td></tr>
+        </table>
+        <p>Variants: GraphSAGE (sample neighbours), GAT (attention weights over neighbours — a transformer restricted to edges), GIN (sum aggregation, more expressive).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: watch messages travel along edges to node 2, then the aggregated vector and the updated features. Compare node 2's result with (1.220, 0.539).</li>
+        <li>Click two nodes to add or remove an edge and see which nodes' features change after one round.</li>
+        <li>Run 2–3 rounds: features of connected nodes converge (over-smoothing), which is why GNNs are usually only 2–4 layers deep.</li></ol></div>
+      <div data-lab="gnnLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Over-smoothing: too many layers make all node vectors similar.</li>
+          <li>Aggregation must be permutation-invariant (sum/mean/max), never a concatenation in arbitrary neighbour order.</li>
+          <li>Hub nodes with thousands of neighbours make full-batch training memory-hungry; sample neighbours.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Molecules and drug discovery (property prediction), materials science, weather models on mesh graphs.</li>
+          <li>Social, citation and fraud networks; recommendation on user–item graphs (PinSage).</li>
+          <li>Road and traffic forecasting, knowledge graphs, and transformers themselves (full attention = a GNN on the complete graph).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why do nodes 3 and 4 get identical outputs in the example?</summary><div class="ans">After adding self-loops both have the same neighbourhood {2, 3, 4} and same degree 3, and aggregation only sees the multiset of neighbour features (1,1), (2,0), and node 2's (0,1) — identical for both.</div></details>
+        <details class="check"><summary>2. How many parameters has a GCN layer 16→8 with bias?</summary><div class="ans">16·8 + 8 = 136, regardless of graph size.</div></details>
+        <details class="check"><summary>3. After 2 layers, how far away can information come from?</summary><div class="ans">Two hops: a node's output depends on all nodes within graph distance 2.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Message passing = aggregate neighbours, transform with shared W, update; k layers see k hops.</li><li>Parameters are independent of graph size; cost is linear in edges.</li><li>Use a GNN when relationships between items are data in themselves.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.6 ===================== -->
+    <section class="lesson" id="architecture-choice" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.6</span><h2>Choosing an architecture</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 20,000 labelled X-rays and one GPU, or 8 million customer-event sequences, or a tabular spreadsheet of 50,000 rows. Which blueprint do you start with — and why is the answer often "not the newest one"?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An architecture is a <b>bet about the structure of your data</b>, called its <b>inductive bias</b>. A CNN bets that nearby pixels belong together and patterns repeat across space. An RNN bets that order matters and the past can be summarised. A transformer makes few assumptions and lets data decide who attends to whom — flexible, but it needs more data to discover structure that a CNN is given for free. A GNN bets that connections carry information. The right bet saves data and compute; a wrong one wastes both.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <table class="tbl"><tr><th>Architecture</th><th>Assumes</th><th>Params (typical block)</th><th>Time per layer</th><th>Parallel over sequence?</th></tr>
+          <tr><td>MLP</td><td>no structure</td><td>d·d′</td><td>O(d d′)</td><td>yes</td></tr>
+          <tr><td>CNN</td><td>locality, shift-equivariance</td><td>C<sub>out</sub>(C<sub>in</sub>k²+1)</td><td>O(HW·C<sub>in</sub>C<sub>out</sub>k²)</td><td>yes</td></tr>
+          <tr><td>RNN / LSTM / GRU</td><td>order, Markov-like summary</td><td>4(h(h+d)+h)</td><td>O(T h²) sequential</td><td>no</td></tr>
+          <tr><td>Transformer</td><td>little; positions added</td><td>12d²</td><td>O(n²d + n d²)</td><td>yes</td></tr>
+          <tr><td>GNN</td><td>relational structure</td><td>F·F′</td><td>O(|E|F + N F F′)</td><td>yes (per layer)</td></tr>
+          <tr><td>Autoencoder</td><td>data lies near a low-dim manifold</td><td>encoder + decoder</td><td>as its layers</td><td>yes</td></tr></table>
+        <div class="worked"><b>Worked example — sizing against data</b>
+          <p>A rule of thumb: a model with P parameters wants on the order of 10 or more training examples per parameter-equivalent of signal when trained from scratch; far fewer if you <i>fine-tune</i> a pre-trained one. A from-scratch 86.6 M-parameter ViT-B on 20,000 images is badly over-parameterised (4,330 parameters per image) and will memorise; the 80-parameter conv layer of lesson 7.1 plus a small head has the right bias for the job. Compute check: attention over n = 4,096 tokens costs 4,096²·d = 16.8 M·d MACs per layer, 16× that of n = 1,024.</p></div>
+        <h3 class="sec">Decision guide</h3>
+        <table class="tbl"><tr><th>Your data</th><th>Small data (&lt; ~10⁴ rows)</th><th>Medium (10⁴–10⁶)</th><th>Large (&gt; 10⁶)</th></tr>
+          <tr><td>Tabular</td><td>trees / linear (Modules 3–4)</td><td>gradient boosting</td><td>boosting or MLP with embeddings</td></tr>
+          <tr><td>Images</td><td>pre-trained CNN, fine-tune head</td><td>fine-tune CNN / ViT</td><td>ViT or ConvNeXt from scratch</td></tr>
+          <tr><td>Text</td><td>embeddings + linear model</td><td>fine-tune pre-trained transformer</td><td>transformer pre-training</td></tr>
+          <tr><td>Time series / streams</td><td>classical + lag features</td><td>GRU / LSTM / 1-D CNN</td><td>transformer or state-space</td></tr>
+          <tr><td>Graph</td><td>hand features + trees</td><td>GCN / GraphSAGE</td><td>GAT / graph transformer</td></tr></table>
+        <p>Always add the constraints: <b>latency</b> (real-time on a phone favours small CNNs, GRUs, distilled models), <b>memory</b> (n² attention maps), <b>interpretability</b> and <b>data you can borrow</b> (pre-trained checkpoints change the table: transfer learning, Module 8). Start with the simplest model that respects the data's structure and beat it before escalating.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Answer the questions for a project you know; read the ranked recommendations and the reasons.</li>
+        <li>Change only the dataset size and see the top choice flip from "fine-tune" to "train from scratch".</li>
+        <li>Tighten latency to "real-time on device" and see which architectures drop out.</li></ol></div>
+      <div data-lab="archChooser"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Picking by headline (the latest architecture) instead of by data structure and budget.</li>
+          <li>Ignoring baselines: gradient boosting often beats deep nets on tabular data.</li>
+          <li>Comparing parameter counts across families — a CNN and a transformer with the same parameters can differ 100× in compute.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Hybrids are common: CNN stem + transformer body (ConvNeXt/ViT hybrids), GNN + transformer (molecules), CNN encoder + LSTM decoder (captioning), embeddings feeding gradient boosting.</li>
+          <li>Foundation models make "fine-tune a pre-trained transformer" the default for text and increasingly for images and audio.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. 5,000 labelled leaf photos, one laptop GPU. First choice?</summary><div class="ans">A pre-trained CNN with a new head fine-tuned (small data, image bias, modest compute).</div></details>
+        <details class="check"><summary>2. Why prefer a GRU to a transformer for a 10 ms on-device sensor stream?</summary><div class="ans">Constant memory per step, tiny parameter count and streaming inference without n² attention.</div></details>
+        <details class="check"><summary>3. Which data type suggests a GNN?</summary><div class="ans">Data whose relationships (bonds, friendships, roads) matter as much as node attributes, with variable neighbourhood size.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Architecture = inductive bias: match it to the data's structure (grid, sequence, set, graph).</li><li>Small data needs strong bias or transfer learning; large data can afford flexible models.</li><li>Always weigh latency, memory and compute, not only accuracy and parameter count.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Module complete.</b> You can now count the parameters of conv, LSTM, transformer, embedding, autoencoder and GCN layers, run each cell by hand, and pick a blueprint for a project. Next: <a href="ml-advanced.html">Module 8 · Beyond supervised learning &amp; special problems</a> — pre-trained models, transfer learning, recommenders and more.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

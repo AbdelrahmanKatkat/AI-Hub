@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · Classical algorithms · Machine Learning</title>
+<meta name="description" content="k-nearest neighbours, naive Bayes, decision trees, support vector machines, clustering, dimensionality reduction and anomaly detection — each worked by hand and animated.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-classical.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · Classical algorithms</h1>
+        <p>Seven algorithms that predate deep learning and are still everywhere: neighbours that vote, a probabilistic spam filter, trees that carve the plane, margins and support vectors, clusters, projections and outlier hunters. Each one is computed by hand on a tiny dataset, then animated so you can <b>watch it learn</b>.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">8 animated labs</span><span class="chip">Hand-worked numbers</span><span class="chip">Pipeline view for each algorithm</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 3.1 k-NN ===================== -->
+    <section class="lesson" id="knn" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">3.1</span><h2>k-nearest neighbours</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A new customer walks in. You have no formula for "who buys", but you have 10 000 past customers with known outcomes. What is the laziest sensible prediction you can make? And when does "lazy" stop working?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>"Tell me who your friends are and I will tell you who you are." To classify a new point, find the <i>k</i> most similar points you already know and let them <b>vote</b>. There is no training step at all: the "model" is simply the stored dataset. That is why k-NN is called a <b>lazy learner</b> (or instance-based): all the work is postponed until a question arrives.</p>
+        <p>Two choices define it. <b>How do we measure "similar"?</b> (a distance) and <b>how many neighbours do we ask?</b> (<span class="tex">k</span>). With <span class="tex">k=1</span> the boundary hugs every training point, even noisy ones, so it is jagged and has low bias but high variance. With a huge <span class="tex">k</span> the vote is nearly the global majority, so the boundary is smooth and may be too simple: high bias, low variance. This is the bias–variance trade-off in its cleanest form.</p>
+
+        <h3 class="sec">Build it up: one vote by hand</h3>
+        <p>Six labelled points in the plane (B = blue, R = red) and a query <span class="tex">q=(3,3)</span>. The Euclidean distance is <span class="tex">d=\sqrt{(x-3)^2+(y-3)^2}</span>.</p>
+        <table class="tbl"><thead><tr><th>point</th><th>(x, y)</th><th>class</th><th>distance to q</th><th>rank</th></tr></thead><tbody>
+          <tr><td>P1</td><td>(1, 1)</td><td>B</td><td>2.828</td><td>6</td></tr>
+          <tr><td>P2</td><td>(2, 1)</td><td>B</td><td>2.236</td><td>5</td></tr>
+          <tr><td>P3</td><td>(1, 3)</td><td>B</td><td>2.000</td><td>3</td></tr>
+          <tr><td>P4</td><td>(4, 4)</td><td>R</td><td>1.414</td><td>2</td></tr>
+          <tr><td>P5</td><td>(5, 3.5)</td><td>R</td><td>2.061</td><td>4</td></tr>
+          <tr><td>P6</td><td>(3, 3.5)</td><td>R</td><td>0.500</td><td>1</td></tr></tbody></table>
+        <div class="worked"><b>Worked example — the vote</b>
+          <p><b>k = 1:</b> nearest is P6 (R) → predict <b>R</b>.</p>
+          <p><b>k = 3:</b> P6 (R), P4 (R), P3 (B) → R gets 2 votes, B 1 → <b>R</b> with probability 2/3.</p>
+          <p><b>k = 5:</b> add P5 (R) and P2 (B) → R 3, B 2 → <b>R</b>, probability 3/5.</p>
+          <p><b>k = 6</b> (every point): 3 vs 3 — a tie! Using all the data erased the local information, which is why an odd <i>k</i> (or a tie-break rule) is used.</p>
+          <p><b>Distance-weighted vote</b> (weight <span class="tex">1/d</span>), k = 3: R weight = 1/0.5 + 1/1.414 = 2.707; B weight = 1/2.0 = 0.5 → R share = 2.707/3.207 = 0.844. Close neighbours count more.</p></div>
+        <p><b>Scaling matters.</b> Suppose person <i>q</i> has (age 30, income 50 000), person A is (31, 52 000) and person B is (60, 50 500). Raw distances: <span class="tex">d(q,A)=2000.0</span>, <span class="tex">d(q,B)=500.9</span> — B looks "nearer" although he is 30 years older, because income's huge units swamp age. Standardise (age std ≈ 10, income std ≈ 10 000): A becomes (0.1, 0.2) away → 0.224; B (3.0, 0.05) → 3.00. Now A is nearest, as common sense says. <b>Distance-based models need scaled features</b> (see <a href="ml-data.html">Module 1</a>).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat y(q)=\arg\max_{c}\sum_{i\in N_k(q)}\mathbb 1[y_i=c],\qquad d(a,b)=\Big(\sum_j |a_j-b_j|^p\Big)^{1/p}</div>
+        <table class="sym">
+          <tr><td>q</td><td>the query point whose label we want</td></tr>
+          <tr><td>N_k(q)</td><td>the set of the <i>k</i> training points closest to q</td></tr>
+          <tr><td>𝟙[y_i = c]</td><td>1 if neighbour i has class c, else 0 (so the sum counts votes)</td></tr>
+          <tr><td>p</td><td>1 = Manhattan, 2 = Euclidean; cosine distance is common for text/embeddings</td></tr>
+          <tr><td>k</td><td>hyper-parameter: number of neighbours</td></tr></table>
+<pre><code>fit(X, y):      store X, y                        # nothing else
+predict(q):     d_i = distance(q, x_i) for all i  # O(n·d)
+                take the k smallest              # O(n) with a heap/select
+                return majority (or mean, for regression)</code></pre>
+        <table class="tbl"><thead><tr><th>Pipeline view</th><th></th></tr></thead><tbody>
+          <tr><td>Preprocessing</td><td>scale features (standardise); encode categoricals; remove irrelevant features</td></tr>
+          <tr><td>Stored</td><td>the whole training set (n × d numbers) + k and the metric</td></tr>
+          <tr><td>Training cost</td><td>≈ 0 (or build an index: k-d tree / ball tree / HNSW)</td></tr>
+          <tr><td>Inference cost</td><td>O(n·d) per query by brute force; ≈ O(log n) with trees in low d; approximate indexes for millions of vectors</td></tr>
+          <tr><td>Memory</td><td>O(n·d) — grows with data</td></tr></tbody></table>
+        <table class="tbl"><thead><tr><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>
+          <tr><td>No training; trivially updated by adding points; handles any boundary shape; good baseline; works for regression too</td><td>Slow inference and large memory; needs scaling; hurt by irrelevant features; <b>curse of dimensionality</b>: in high <i>d</i> all points become almost equally far, so "nearest" loses meaning</td></tr></tbody></table>
+        <p><b>Curse of dimensionality, in numbers.</b> To capture 10% of uniformly spread data with a cube neighbourhood you need edge length 0.1 in 1-D, but <span class="tex">0.1^{1/10}=0.79</span> in 10-D: the "neighbourhood" covers 79% of each axis — it is no longer local.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: neighbours light up and vote</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Click anywhere to place the query. Press <b>Play</b>: the neighbours light up one by one, nearest first, and the vote bar fills.</li>
+        <li>Move <b>k</b> from 1 to 15 with the <i>moons</i> data: the boundary goes from jagged islands to a smooth curve.</li>
+        <li>Switch the dataset to <i>stretched</i> and toggle <b>scale features</b>: with raw units one axis dominates and the boundary turns into stripes.</li></ol></div>
+      <div data-lab="knnlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Forgetting to scale</b> (shown above) and <b>fitting the scaler on test data</b> (leakage).</li>
+          <li>Choosing <i>k</i> on the training set: at k = 1 training accuracy is always 100% (each point is its own neighbour). Choose <i>k</i> by validation.</li>
+          <li>Using k-NN on hundreds of raw features: distances concentrate; reduce dimensions first (lesson 3.6).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Retrieval and recommendation:</b> "find the nearest item embeddings" is k-NN, served by approximate indexes (FAISS, HNSW) in vector databases and RAG systems.</li>
+          <li><b>Imputation</b> (KNNImputer), <b>anomaly scores</b> (distance to the k-th neighbour) and <b>few-shot / prototype</b> classifiers on top of deep embeddings.</li>
+          <li>Use it when data is small, boundaries are irregular and a quick, explainable baseline is wanted; avoid it for huge, high-dimensional, latency-critical problems.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the table above, what does k = 4 predict, and what is the probability?</summary><div class="ans">Neighbours: P6 (R), P4 (R), P3 (B), P5 (R) → R 3, B 1 → predict R with probability 3/4.</div></details>
+        <details class="check"><summary>2. Why is training accuracy 100% at k = 1 (with no duplicate points of different labels), and why is that useless?</summary><div class="ans">Each training point is its own nearest neighbour (distance 0), so it votes for itself. It says nothing about new data; only validation or test accuracy does.</div></details>
+        <details class="check"><summary>3. Brute-force k-NN on n = 1 000 000 points with d = 100: roughly how many multiply-adds per query?</summary><div class="ans">About n·d = 10⁸ (times a small constant). That is why indexes or approximate search are used at scale.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>k-NN stores the data and votes among the k closest points; no training, O(n·d) inference.</li><li>Small k → jagged, high variance; large k → smooth, high bias.</li><li>Always scale features; beware high dimensions.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 Naive Bayes ===================== -->
+    <section class="lesson" id="naive-bayes" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">3.2</span><h2>Naive Bayes</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An email contains the words "win" and "now". Given a pile of emails already labelled spam or ham, how likely is this one to be spam — and how can we compute that with almost no training time and a few counts?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Spam tends to use certain words; ham uses others. Ask: <i>if this were spam, how surprising would these words be? If it were ham, how surprising?</i> Whichever class finds the words less surprising (after weighting by how common the class is) wins. That is <b>Bayes' rule</b> (<a href="math-probability.html#conditional-bayes">probability module</a>). The "naive" part: to avoid modelling every word combination we pretend that, <i>given the class</i>, words are independent of each other. This is false ("free" and "money" go together) but the resulting classifier is often surprisingly good because we only need the <i>ranking</i> of classes, not exact probabilities.</p>
+
+        <h3 class="sec">Build it up: spam filter by hand</h3>
+        <p>Training emails (vocabulary of V = 9 distinct words):</p>
+        <ul><li>Spam: "win money now", "win prize money", "free money" → 8 word tokens</li>
+        <li>Ham: "meeting now", "lunch meeting", "project update now" → 7 word tokens</li></ul>
+        <table class="tbl"><thead><tr><th>word</th><th>win</th><th>money</th><th>now</th><th>prize</th><th>free</th><th>meeting</th><th>lunch</th><th>project</th><th>update</th></tr></thead><tbody>
+          <tr><td>count in spam</td><td>2</td><td>3</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+          <tr><td>count in ham</td><td>0</td><td>0</td><td>2</td><td>0</td><td>0</td><td>2</td><td>1</td><td>1</td><td>1</td></tr></tbody></table>
+        <p>Priors: 3 of 6 emails are spam → <span class="tex">P(\text{spam})=P(\text{ham})=0.5</span>. Without smoothing, <span class="tex">P(w\mid c)=\text{count}(w,c)/N_c</span>. The query is "<b>win now</b>".</p>
+        <div class="worked"><b>Worked example</b>
+          <p><b>No smoothing.</b> <span class="tex">P(\text{win}\mid\text{ham})=0/7=0</span>, so the whole ham product is 0 and spam wins with probability 100% — a single unseen (word, class) pair vetoes a class. Worse, for "free meeting" both classes get 0 and the result is 0/0.</p>
+          <p><b>Laplace smoothing (α = 1):</b> add 1 to every count and V = 9 to every denominator: <span class="tex">P(w\mid c)=\frac{\text{count}+1}{N_c+V}</span>. Denominators: spam 8+9 = 17, ham 7+9 = 16.</p>
+          <p>Spam: <span class="tex">0.5\cdot\frac{2+1}{17}\cdot\frac{1+1}{17}=0.5\cdot\frac{3}{17}\cdot\frac{2}{17}=0.01038</span>.</p>
+          <p>Ham: <span class="tex">0.5\cdot\frac{0+1}{16}\cdot\frac{2+1}{16}=0.5\cdot\frac1{16}\cdot\frac3{16}=0.00586</span>.</p>
+          <p>Normalise: <span class="tex">P(\text{spam}\mid\text{win now})=\frac{0.01038}{0.01038+0.00586}=0.639</span> → spam, but with honest uncertainty.</p>
+          <p>"free meeting" with smoothing: spam <span class="tex">0.5\cdot\frac{2}{17}\cdot\frac1{17}=0.00346</span>, ham <span class="tex">0.5\cdot\frac1{16}\cdot\frac3{16}=0.00586</span> → P(spam) = 0.371 → ham.</p></div>
+        <p><b>Underflow:</b> multiplying hundreds of small probabilities underflows, so implementations add <b>log</b>-probabilities instead and compare the sums.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat y=\arg\max_c\;\Big[\log P(c)+\sum_{j=1}^{d}\log P(x_j\mid c)\Big]</div>
+        <table class="sym">
+          <tr><td>P(c)</td><td>prior: fraction of training rows with class c</td></tr>
+          <tr><td>P(x_j | c)</td><td>likelihood of feature j given the class — <b>multinomial</b> for word counts, <b>Bernoulli</b> for present/absent, <b>Gaussian</b> <span class="tex">\mathcal N(\mu_{jc},\sigma_{jc}^2)</span> for numbers</td></tr>
+          <tr><td>α (alpha)</td><td>Laplace/additive smoothing; α = 1 above</td></tr>
+          <tr><td>independence</td><td>assumed: <span class="tex">P(x_1,\dots,x_d\mid c)=\prod_j P(x_j\mid c)</span></td></tr></table>
+<pre><code>fit:     for each class c: prior[c] = n_c / n
+                          for each feature j: store counts (or mean, variance)
+predict: score[c] = log prior[c] + sum_j log P(x_j | c)    # with smoothing
+         return argmax score</code></pre>
+        <table class="tbl"><thead><tr><th>Pipeline view</th><th></th></tr></thead><tbody>
+          <tr><td>Preprocessing</td><td>tokenise text, build a vocabulary, count (or TF-IDF); Gaussian variant: no scaling needed</td></tr>
+          <tr><td>Stored</td><td>priors + one table of P(feature | class): O(classes × features)</td></tr>
+          <tr><td>Training</td><td>one pass over the data, O(n·d) — streaming friendly</td></tr>
+          <tr><td>Inference</td><td>O(d·classes), microseconds</td></tr></tbody></table>
+        <table class="tbl"><thead><tr><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>
+          <tr><td>Extremely fast, tiny, works with little data and very many features, online updates, a strong text baseline</td><td>Independence assumption is wrong → probabilities are badly calibrated (over-confident); cannot learn feature interactions; zero counts need smoothing</td></tr></tbody></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: word probabilities as bars</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Tick words of an email, then <b>Play</b>: the log-score bars of spam and ham grow word by word.</li>
+        <li>Set α to 0 and tick "win" — ham's bar collapses to zero, a hard veto. Raise α to 1 and watch the veto soften.</li>
+        <li>Raise α to 5: probabilities flatten towards uniform; the data matters less (over-smoothing).</li></ol></div>
+      <div data-lab="nblab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Reading the output as a calibrated probability. Naive Bayes is a good <i>ranker</i> but its probabilities are extreme; calibrate before using thresholds (Module 5).</li>
+          <li>Forgetting that α is added to <i>every</i> vocabulary word, so the denominator grows by <i>V</i>, not 1.</li>
+          <li>Multiplying probabilities instead of summing logs for long documents.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Classic <b>spam filters</b>, sentiment baselines, document routing, language identification.</li>
+          <li>The generative-classifier idea (model <span class="tex">P(x\mid c)</span>, then flip with Bayes) reappears in Gaussian mixtures, LDA/QDA, and the "generative vs discriminative" debate.</li>
+          <li>Choose it for fast baselines on text or high-dimensional sparse data; avoid it when feature interactions decide the label.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With α = 1, compute P(prize | spam) and P(prize | ham).</summary><div class="ans">Spam: (1+1)/(8+9) = 2/17 = 0.118. Ham: (0+1)/(7+9) = 1/16 = 0.0625.</div></details>
+        <details class="check"><summary>2. Why do the smoothed probabilities of all 9 words in a class still sum to 1?</summary><div class="ans">Sum of (count+1) over V words = N_c + V, divided by N_c + V gives 1.</div></details>
+        <details class="check"><summary>3. "free" and "money" are strongly correlated in spam. What does naive Bayes do with them?</summary><div class="ans">It counts both as independent evidence, so it double-counts, making the spam score too extreme. The ranking is often still right.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Naive Bayes = prior × product of per-feature likelihoods, using Bayes' rule and conditional independence.</li><li>Laplace smoothing prevents zero-count vetoes.</li><li>Training is one counting pass; inference is a sum of logs — ideal text baseline.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 Decision trees ===================== -->
+    <section class="lesson" id="decision-trees" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">3.3</span><h2>Decision trees</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A bank officer wants a model they can read aloud: "if hours studied ≤ 2.5 then fail, else …". How do we <i>learn</i> such a list of questions from data, and which question should come first?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Play twenty questions. A good first question splits the possibilities into groups that are as <b>pure</b> as possible — mostly one answer in each. A tree does exactly this: it picks one feature and one threshold, splits the data in two, then repeats the game on each half (<b>recursive partitioning</b>) until the groups are pure or a stopping rule fires. Geometrically each split is an axis-parallel line that cuts the plane; the final leaves are rectangles, each predicting its majority class.</p>
+        <p>"Purity" needs a number. Two standard impurity measures for a node with class fractions <span class="tex">p_c</span>: <b>Gini</b> <span class="tex">G=1-\sum_c p_c^2</span> and <b>entropy</b> <span class="tex">H=-\sum_c p_c\log_2 p_c</span>. Both are 0 for a pure node and maximal for a 50/50 node (Gini 0.5, entropy 1 bit for two classes). The <b>gain</b> of a split is the parent impurity minus the size-weighted impurity of the children. The tree greedily picks the split with the largest gain.</p>
+
+        <h3 class="sec">Build it up: every candidate split by hand</h3>
+        <p>Eight students: <i>x₁</i> = hours studied, <i>x₂</i> = hours slept, outcome 1 = pass, 0 = fail.</p>
+        <table class="tbl"><thead><tr><th>#</th><th>x₁</th><th>x₂</th><th>pass</th></tr></thead><tbody>
+          <tr><td>1</td><td>1</td><td>2</td><td>0</td></tr><tr><td>2</td><td>2</td><td>1</td><td>0</td></tr><tr><td>3</td><td>3</td><td>3</td><td>0</td></tr><tr><td>4</td><td>4</td><td>2</td><td>1</td></tr>
+          <tr><td>5</td><td>5</td><td>4</td><td>1</td></tr><tr><td>6</td><td>6</td><td>1</td><td>1</td></tr><tr><td>7</td><td>3</td><td>5</td><td>1</td></tr><tr><td>8</td><td>2</td><td>4</td><td>0</td></tr></tbody></table>
+        <p>Root: 4 fail, 4 pass → <span class="tex">G=1-0.5^2-0.5^2=0.5</span>, <span class="tex">H=1</span>. Candidate thresholds are the midpoints between consecutive distinct values. Counts are written (fail/pass).</p>
+        <table class="tbl"><thead><tr><th>split</th><th>left</th><th>right</th><th>G left</th><th>G right</th><th>weighted G</th><th>gain G</th><th>H left</th><th>H right</th><th>weighted H</th><th>info gain</th></tr></thead><tbody>
+          <tr><td>x₁ ≤ 1.5</td><td>1/0</td><td>3/4</td><td>0</td><td>0.490</td><td>0.4286</td><td>0.0714</td><td>0</td><td>0.985</td><td>0.8621</td><td>0.1379</td></tr>
+          <tr><td><b>x₁ ≤ 2.5</b></td><td>3/0</td><td>1/4</td><td>0</td><td>0.320</td><td>0.2000</td><td><b>0.3000</b></td><td>0</td><td>0.722</td><td>0.4512</td><td><b>0.5488</b></td></tr>
+          <tr><td>x₁ ≤ 3.5</td><td>4/1</td><td>0/3</td><td>0.320</td><td>0</td><td>0.2000</td><td>0.3000</td><td>0.722</td><td>0</td><td>0.4512</td><td>0.5488</td></tr>
+          <tr><td>x₁ ≤ 4.5</td><td>4/2</td><td>0/2</td><td>0.444</td><td>0</td><td>0.3333</td><td>0.1667</td><td>0.918</td><td>0</td><td>0.6887</td><td>0.3113</td></tr>
+          <tr><td>x₁ ≤ 5.5</td><td>4/3</td><td>0/1</td><td>0.490</td><td>0</td><td>0.4286</td><td>0.0714</td><td>0.985</td><td>0</td><td>0.8621</td><td>0.1379</td></tr>
+          <tr><td>x₂ ≤ 1.5</td><td>1/1</td><td>3/3</td><td>0.5</td><td>0.5</td><td>0.5000</td><td>0</td><td>1</td><td>1</td><td>1.0000</td><td>0</td></tr>
+          <tr><td>x₂ ≤ 2.5</td><td>2/2</td><td>2/2</td><td>0.5</td><td>0.5</td><td>0.5000</td><td>0</td><td>1</td><td>1</td><td>1.0000</td><td>0</td></tr>
+          <tr><td>x₂ ≤ 3.5</td><td>3/2</td><td>1/2</td><td>0.480</td><td>0.444</td><td>0.4667</td><td>0.0333</td><td>0.971</td><td>0.918</td><td>0.9512</td><td>0.0488</td></tr>
+          <tr><td>x₂ ≤ 4.5</td><td>4/3</td><td>0/1</td><td>0.490</td><td>0</td><td>0.4286</td><td>0.0714</td><td>0.985</td><td>0</td><td>0.8621</td><td>0.1379</td></tr></tbody></table>
+        <div class="worked"><b>Worked example — reading the table</b>
+          <p>Row "x₁ ≤ 2.5": left holds students 1, 2, 8 (all fail, G = 0); right holds students 3–7 (1 fail, 4 pass): <span class="tex">G=1-(0.2^2+0.8^2)=0.32</span>. Weighted: <span class="tex">\tfrac38\cdot0+\tfrac58\cdot0.32=0.20</span>. Gain = 0.5 − 0.2 = <b>0.30</b>. Entropy: right <span class="tex">H=-(0.2\log_20.2+0.8\log_20.8)=0.722</span>, weighted <span class="tex">\tfrac58\cdot0.722=0.451</span>, information gain 1 − 0.451 = <b>0.549</b>.</p>
+          <p><b>Best split:</b> x₁ ≤ 2.5 and x₁ ≤ 3.5 tie (the tie is broken by taking the first). Both criteria agree on the ranking here; they usually do. Sleep alone is almost useless (best gain 0.07).</p>
+          <p>Next level, using the right child (rows 3–7, G = 0.32): the best split is x₁ ≤ 3.5, which puts rows 3 and 7 (one fail, one pass, G = 0.5) on the left and rows 4–6 (all pass) on the right: gain = 0.32 − 0.4·0.5 = 0.12. Rows 3 and 7 share x₁ = 3 and can only be separated by sleep (x₂ ≤ 4) — after which every leaf is pure.</p></div>
+        <p><b>Stopping and pruning.</b> Grown to purity, a tree memorises noise (a leaf for every point: variance explodes). Control it with <code>max_depth</code>, <code>min_samples_leaf</code>, a minimum gain, or <b>prune</b> a full tree back (cost-complexity pruning minimises error + λ·leaves). <b>Regression trees</b> use <b>variance</b> (MSE) as the impurity and predict the mean of the leaf.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{gain}(s)=I(\text{parent})-\frac{n_L}{n}I(L)-\frac{n_R}{n}I(R),\qquad G=1-\sum_c p_c^2,\quad H=-\sum_c p_c\log_2p_c</div>
+        <table class="sym">
+          <tr><td>s</td><td>a candidate split "feature j ≤ threshold t"</td></tr>
+          <tr><td>I</td><td>an impurity: Gini, entropy, or variance (regression)</td></tr>
+          <tr><td>n, n_L, n_R</td><td>rows in the parent, left child, right child</td></tr>
+          <tr><td>p_c</td><td>fraction of rows of class c in the node</td></tr></table>
+<pre><code>grow(rows, depth):
+  if pure(rows) or depth == max_depth or len(rows) &lt; 2*min_leaf: return leaf(majority(rows))
+  best = argmax over features j, thresholds t of gain(j, t)     # O(d · n log n) with sorting
+  if gain(best) &lt;= 0: return leaf(majority(rows))
+  return node(best, grow(left, depth+1), grow(right, depth+1))</code></pre>
+        <table class="tbl"><thead><tr><th>Pipeline view</th><th></th></tr></thead><tbody>
+          <tr><td>Preprocessing</td><td>almost none: no scaling (thresholds are rank-based), tolerates monotone transforms, outliers; categoricals need encoding in most libraries</td></tr>
+          <tr><td>Stored</td><td>the tree: per internal node (feature, threshold), per leaf a class distribution or value — O(#nodes)</td></tr>
+          <tr><td>Training</td><td>≈ O(d·n log n) per level; seconds for millions of rows</td></tr>
+          <tr><td>Inference</td><td>O(depth) comparisons — a handful</td></tr></tbody></table>
+        <table class="tbl"><thead><tr><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>
+          <tr><td>Readable rules; no scaling; handles mixed types and interactions; fast; basis of forests and boosting</td><td>High variance (small data change → different tree); axis-parallel boundaries need many splits for diagonals; extrapolates as a constant; greedy, not globally optimal</td></tr></tbody></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: watch a tree grow</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b> on <i>moons</i>: each phase scans candidate splits (gain bars), then draws the winner as a line and colours the new regions.</li>
+        <li>Raise <b>max depth</b>: the overfit warning appears when train accuracy hits 100% while the held-out accuracy stalls or drops.</li>
+        <li>Raise <b>min leaf</b> to 8: the tree refuses tiny leaves and the boundary calms down. Compare Gini and entropy.</li></ol></div>
+      <div data-lab="treelab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Trusting a deep tree's training accuracy — it can be 100% and useless.</li>
+          <li>Reading feature importance from a single unstable tree; use forests / permutation importance.</li>
+          <li>Expecting a tree to extrapolate a trend: beyond the data it predicts the last leaf's constant.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Random forests and gradient boosting</b> (<a href="ml-ensembles.html">Module 4</a>) are many trees: the strongest default on tabular data (XGBoost, LightGBM, CatBoost).</li>
+          <li>Credit scoring and medical triage rules, where a human must audit the logic; trees also build isolation forests (lesson 3.7).</li>
+          <li>Use a single tree for interpretability or as a diagnostic; use ensembles when accuracy matters.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A node has 3 fail and 1 pass. Compute its Gini and entropy.</summary><div class="ans">p = 0.75/0.25. Gini = 1 − 0.5625 − 0.0625 = 0.375. Entropy = −(0.75·log₂0.75 + 0.25·log₂0.25) = 0.811 bits.</div></details>
+        <details class="check"><summary>2. Why can the gain never be negative with Gini or entropy?</summary><div class="ans">Both are concave, so the weighted average of the children's impurity is ≤ the parent's impurity. A split can have zero gain (as x₂ ≤ 2.5 above) but not negative.</div></details>
+        <details class="check"><summary>3. Why are no scaling or standardisation steps needed for trees?</summary><div class="ans">Splits compare one feature to a threshold; any monotone rescaling moves the threshold but leaves the ordering, and thus the partitions, unchanged.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>A tree greedily chooses the split with the largest impurity decrease, recursively.</li><li>Gini and entropy usually agree; regression trees use variance.</li><li>Unrestricted trees overfit: limit depth/leaf size or prune. Trees are the building block of ensembles.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 SVM ===================== -->
+    <section class="lesson" id="svm" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">3.4</span><h2>Support vector machines</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Many lines separate two classes perfectly. Which one should we trust on <i>new</i> data? Intuitively, the one that stays as far as possible from both classes — but how do we turn "as far as possible" into something we can optimise?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a road between two villages. A road squeezed against one village's houses is risky; the best road is the <b>widest</b> one that still separates them. The road's width is the <b>margin</b>, and only the houses on the road's edge — the <b>support vectors</b> — decide where it goes; remove any other house and nothing changes. The classifier is the road's centre line <span class="tex">w\cdot x+b=0</span>; the edges are <span class="tex">w\cdot x+b=\pm1</span>.</p>
+        <p>Real data overlap, so we allow some points inside or across the road and pay a price: the <b>soft margin</b> with a dial <span class="tex">C</span> (large C = punish violations hard, narrow road; small C = tolerate violations, wide road). When no straight line works, the <b>kernel trick</b> lets the machine act as if the data lived in a much higher-dimensional space where a line does work (the RBF kernel makes bumpy, local boundaries).</p>
+
+        <h3 class="sec">Build it up: margin and hinge loss by hand</h3>
+        <p>Four points: negatives (0,0) and (1,1); positives (2,2) and (4,1). Labels <span class="tex">y=\mp1</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><b>The widest road.</b> The closest opposite pair is (1,1) and (2,2), at distance √2 = 1.414. The best separator is their perpendicular bisector <span class="tex">x_1+x_2=3</span>, i.e. <span class="tex">w=(1,1),\ b=-3</span>. Check the edges: (1,1) → 1+1−3 = −1, (2,2) → 4−3 = +1 ✓; the others are outside: (0,0) → −3, (4,1) → +2.</p>
+          <p><b>Margin width</b> = <span class="tex">2/\lVert w\rVert=2/\sqrt2=1.414</span> ✓ (equals the gap between the two support vectors). <b>Support vectors</b>: (1,1) and (2,2) only.</p>
+          <p><b>Hinge loss</b> per point <span class="tex">\max(0,\,1-y(w\cdot x+b))</span>: scores y(w·x+b) = 1, 3, 1, 2 for (1,1),(0,0),(2,2),(4,1) → hinge = 0, 0, 0, 0. Every point is on or outside its correct edge.</p>
+          <p><b>Competing candidates</b> (objective <span class="tex">\tfrac12\lVert w\rVert^2+C\sum\xi_i</span>):</p>
+          <table class="tbl"><thead><tr><th>w, b</th><th>margin 2/‖w‖</th><th>hinge values</th><th>obj, C = 1</th><th>obj, C = 0.5</th></tr></thead><tbody>
+            <tr><td>(1,1), −3</td><td>1.414</td><td>0, 0, 0, 0</td><td><b>1.00</b></td><td>1.00</td></tr>
+            <tr><td>(1,0), −1.5</td><td>2.000</td><td>0, 0.5, 0.5, 0</td><td>1.50</td><td>1.00</td></tr>
+            <tr><td>(0.5,0.5), −1.5</td><td>2.828</td><td>0, 0.5, 0.5, 0</td><td>1.25</td><td><b>0.75</b></td></tr></tbody></table>
+          <p>For example (1,0),−1.5: scores are 1.5, 0.5, 0.5, 2.5 → hinge 0, 0.5, 0.5, 0, so ½·1 + C·1.0. With C = 1 the hard-margin solution wins; with C = 0.5 the wider, violating road (0.5,0.5) wins: a smaller C buys a bigger margin by tolerating mistakes. (Hand-checked candidates, not an exhaustive optimisation.)</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\min_{w,b}\ \tfrac12\lVert w\rVert^2+C\sum_{i=1}^{n}\max\!\big(0,\,1-y_i(w\cdot x_i+b)\big),\qquad \text{margin}=\frac{2}{\lVert w\rVert}</div>
+        <div class="eq">f(x)=\sum_{i\in SV}\alpha_i y_i\,K(x_i,x)+b,\qquad K_{\text{RBF}}(a,b)=\exp\!\big(-\gamma\lVert a-b\rVert^2\big)</div>
+        <table class="sym">
+          <tr><td>w, b</td><td>normal vector and offset of the separating line/plane</td></tr>
+          <tr><td>y_i ∈ {−1, +1}</td><td>class label</td></tr>
+          <tr><td>½‖w‖²</td><td>minimising it maximises the margin 2/‖w‖</td></tr>
+          <tr><td>max(0, 1 − y f)</td><td>hinge loss: 0 beyond the margin, grows linearly inside/across it</td></tr>
+          <tr><td>C</td><td>penalty weight on violations (large = strict)</td></tr>
+          <tr><td>α_i</td><td>learned weights, non-zero only for support vectors</td></tr>
+          <tr><td>K, γ</td><td>kernel and its width: large γ = very local, wiggly boundary</td></tr></table>
+        <p>Training is convex optimisation (<a href="math-optimization.html">optimisation module</a>): quadratic programming in the dual, or sub-gradient descent on the hinge loss for linear SVMs.</p>
+        <table class="tbl"><thead><tr><th>Pipeline view</th><th></th></tr></thead><tbody>
+          <tr><td>Preprocessing</td><td><b>Scale features</b> (the margin is a distance); encode categoricals</td></tr>
+          <tr><td>Stored</td><td>support vectors + α + b (kernel SVM); just w and b (linear)</td></tr>
+          <tr><td>Training</td><td>kernel SVM between O(n²) and O(n³) time, O(n²) memory — fine to ~10⁵ rows; linear SVM ≈ O(n·d) per pass</td></tr>
+          <tr><td>Inference</td><td>O(#SV · d) kernel; O(d) linear</td></tr></tbody></table>
+        <table class="tbl"><thead><tr><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>
+          <tr><td>Strong on small/medium data and high-dimensional sparse data (text); margin gives robustness; kernels give non-linear boundaries; convex, unique optimum</td><td>Poor scaling in n; needs scaling and tuning of C and γ; no native probabilities; less accurate than boosting on mixed tabular data</td></tr></tbody></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: drag points, move the road</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag any point: the margin lines re-fit smoothly. Support vectors have a ring around them; drag a non-support point far away and nothing changes.</li>
+        <li>Slide <b>C</b> from high to low: the road widens and some points are allowed inside it (hinge &gt; 0).</li>
+        <li>Switch the kernel to RBF on <i>circles</i> and raise <b>γ</b>: a smooth blob becomes isolated islands (overfit).</li></ol></div>
+      <div data-lab="svmlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Not scaling features — the widest road in raw units is meaningless.</li>
+          <li>Very large γ with large C memorises the training set; tune both on validation data, on a log grid.</li>
+          <li>Expecting probabilities: SVM outputs scores; Platt scaling is an add-on.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Text classification with sparse TF-IDF features (linear SVMs are still strong), bioinformatics, small-data image classifiers on top of CNN features.</li>
+          <li>The hinge loss and margin idea live on in "max-margin" and contrastive/triplet losses; the kernel idea in Gaussian processes and attention-as-similarity.</li>
+          <li>Pick it for small or medium, clean, scaled data; avoid it for millions of rows.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For w = (3, 4), what is the margin width 2/‖w‖?</summary><div class="ans">‖w‖ = 5, so the width is 0.4.</div></details>
+        <details class="check"><summary>2. Which training points can be removed without changing a hard-margin SVM?</summary><div class="ans">All points that are not support vectors (their α = 0), e.g. (0,0) and (4,1) in the example.</div></details>
+        <details class="check"><summary>3. What does lowering C do, and which side of the bias–variance trade-off does it move you toward?</summary><div class="ans">It lowers the price of margin violations, giving a wider margin and a simpler fit: more bias, less variance (regularisation is stronger).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>SVM maximises the margin 2/‖w‖; only support vectors matter.</li><li>Soft margin = hinge loss + C; kernels bend the boundary (RBF with γ).</li><li>Scale features; kernel SVMs do not scale to huge n.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 Clustering ===================== -->
+    <section class="lesson" id="clustering" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">3.5</span><h2>Clustering</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 100 000 customers and no labels. Can the data itself suggest natural groups — "bargain hunters", "weekend big spenders" — and how would you know if the groups are any good?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Clustering is <b>unsupervised</b>: no right answers, only structure. <b>k-means</b> works like organising a fair: drop <i>k</i> flags (centroids) on the map, let everyone walk to the nearest flag (<b>assign</b>), then move each flag to the centre of its crowd (<b>update</b>), and repeat until nobody switches. Each full round can only lower the total squared distance to the flags (the <b>inertia</b>), so it always settles — but possibly in a poor spot, which is why we restart from several random starts.</p>
+        <p><b>Hierarchical clustering</b> starts with every point alone and repeatedly merges the two closest clusters, producing a tree (dendrogram) you can cut at any height. <b>DBSCAN</b> asks a different question: where is the data <i>dense</i>? Points with at least <i>minPts</i> neighbours within radius ε are "core"; connected core points form a cluster; the rest is <b>noise</b>. It finds arbitrary shapes and needs no <i>k</i>. <b>Gaussian mixtures</b> model each cluster as a bell and use <b>EM</b> (soft assignments ↔ re-estimate means/covariances), giving probabilities instead of hard labels.</p>
+
+        <h3 class="sec">Build it up: one k-means iteration by hand</h3>
+        <p>Six points, <span class="tex">k=2</span>, initial centroids <span class="tex">c_1=(1,1)</span> and <span class="tex">c_2=(7,7)</span>.</p>
+        <table class="tbl"><thead><tr><th>point</th><th>(x, y)</th><th>d to c₁</th><th>d to c₂</th><th>assigned</th></tr></thead><tbody>
+          <tr><td>A</td><td>(1, 1)</td><td>0.00</td><td>8.49</td><td>1</td></tr><tr><td>B</td><td>(2, 1)</td><td>1.00</td><td>7.81</td><td>1</td></tr>
+          <tr><td>C</td><td>(1, 3)</td><td>2.00</td><td>7.21</td><td>1</td></tr><tr><td>D</td><td>(6, 5)</td><td>6.40</td><td>2.24</td><td>2</td></tr>
+          <tr><td>E</td><td>(7, 7)</td><td>8.49</td><td>0.00</td><td>2</td></tr><tr><td>F</td><td>(6, 6)</td><td>7.07</td><td>1.41</td><td>2</td></tr></tbody></table>
+        <div class="worked"><b>Worked example</b>
+          <p><b>① Assign</b> (table above). Inertia with the starting flags: cluster 1 → 0² + 1² + 2² = 5; cluster 2 → 2.24² + 0 + 1.41² = 5 + 2 = 7; total <b>12</b>.</p>
+          <p><b>② Update:</b> <span class="tex">c_1=\big(\tfrac{1+2+1}3,\tfrac{1+1+3}3\big)=(1.333,1.667)</span>, <span class="tex">c_2=\big(\tfrac{6+7+6}3,\tfrac{5+7+6}3\big)=(6.333,6)</span>. Inertia with the new flags: <b>6.0</b> (it fell from 12).</p>
+          <p><b>③ Re-assign:</b> nobody changes cluster → converged after one iteration. With a bad start (both flags inside one blob) the algorithm can settle with one flag splitting a blob and another flag covering two — a local minimum.</p></div>
+        <p><b>Choosing k.</b> Plot inertia vs k (the <b>elbow</b>: it always falls, look for where it flattens) or use the <b>silhouette</b>: for a point, <span class="tex">a</span> = mean distance to its own cluster, <span class="tex">b</span> = mean distance to the nearest other cluster, <span class="tex">s=\frac{b-a}{\max(a,b)}</span>. For A=(1,1): a = (1.00+2.00)/2 = 1.5, b = (6.40+8.49+7.07)/3 = 7.32, so <span class="tex">s=0.795</span> (near 1 = well clustered, near 0 = on a border, negative = probably wrong cluster).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\min_{c_1..c_k}\ \sum_{i=1}^n\lVert x_i-c_{z_i}\rVert^2,\quad z_i=\arg\min_j\lVert x_i-c_j\rVert,\quad c_j=\frac1{|S_j|}\sum_{i\in S_j}x_i</div>
+        <table class="sym">
+          <tr><td>c_j</td><td>centroid (mean) of cluster j</td></tr>
+          <tr><td>z_i</td><td>cluster assigned to point i</td></tr>
+          <tr><td>S_j</td><td>the set of points currently assigned to cluster j</td></tr>
+          <tr><td>ε, minPts</td><td>DBSCAN radius and density threshold</td></tr>
+          <tr><td>silhouette s</td><td>(b − a)/max(a, b) ∈ [−1, 1]</td></tr></table>
+<pre><code>k-means:  init k centroids (k-means++ spreads them out)
+          repeat: assign each point to nearest centroid
+                  move each centroid to the mean of its points
+          until assignments stop changing           # inertia never increases
+DBSCAN:   for each unvisited point p: if |N_eps(p)| >= minPts: grow a cluster by
+          following core points; else mark as noise (may be claimed later)</code></pre>
+        <table class="tbl"><thead><tr><th>Pipeline view</th><th>k-means</th><th>DBSCAN / hierarchical</th></tr></thead><tbody>
+          <tr><td>Preprocessing</td><td>scale features; remove extreme outliers</td><td>scale features; choose a sensible distance</td></tr>
+          <tr><td>Stored</td><td>k centroids</td><td>labels (and the points) / the dendrogram</td></tr>
+          <tr><td>Training</td><td>O(n·k·d) per iteration</td><td>≈ O(n log n) (DBSCAN with index) / O(n²) memory (hierarchical)</td></tr>
+          <tr><td>Inference</td><td>O(k·d): nearest centroid</td><td>no natural "predict" for new points</td></tr></tbody></table>
+        <table class="tbl"><thead><tr><th>Method</th><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>
+          <tr><td>k-means</td><td>simple, fast, scales to millions</td><td>needs k; assumes round, similar-size clusters; sensitive to init and outliers</td></tr>
+          <tr><td>Hierarchical</td><td>no k up front; dendrogram; any distance</td><td>O(n²); cannot undo merges</td></tr>
+          <tr><td>DBSCAN</td><td>arbitrary shapes; finds noise; no k</td><td>one global ε fails for varying density; sensitive to ε</td></tr>
+          <tr><td>Gaussian mixture</td><td>soft assignment, elliptical clusters</td><td>needs k; EM local optima</td></tr></tbody></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs: centroids moving, and density vs hierarchy</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b> in the k-means lab: watch phase ① assign (points take colours), phase ② update (centroids glide to the means). The inertia curve steps down.</li>
+        <li>Press <b>Bad initialisation</b>, then <b>Restart</b> with another seed: compare final inertia. Move <b>k</b> and read the elbow plot.</li>
+        <li>In the second lab choose <i>moons</i>: k-means cuts them wrongly; DBSCAN (adjust ε) recovers them, marking stray points as noise.</li></ol></div>
+      <div data-lab="kmeanslab"></div>
+      <div data-lab="hdblab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Clusters are not "ground truth": a different feature scaling gives different clusters. Validate them against business meaning.</li>
+          <li>k-means on non-spherical or very unequal groups, and on unscaled features.</li>
+          <li>Picking k from the elbow alone — often ambiguous; combine with silhouette and usefulness.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Customer segmentation, image colour quantisation, vector quantisation / product quantisation inside vector search, codebooks in audio and image tokenisers.</li>
+          <li>Initialising or pre-grouping data for other models; anomaly detection via DBSCAN noise.</li>
+          <li>Use k-means as a fast default for roundish groups; DBSCAN for shapes and noise; GMM for overlapping, soft clusters.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why can k-means never increase its inertia in a full iteration?</summary><div class="ans">Assignment moves each point to its nearest centroid (not worse); the update moves each centroid to the mean of its points, which minimises the sum of squared distances for that fixed assignment. Both steps are non-increasing; as the number of assignments is finite, it converges.</div></details>
+        <details class="check"><summary>2. In the worked example, compute the silhouette of F = (6,6).</summary><div class="ans">Own cluster D=(6,5), E=(7,7): distances 1.000 and 1.414 → a = 1.207. Other cluster A, B, C: 7.07, 6.40, 5.83 → b = 6.43. s = (6.43 − 1.207)/6.43 = 0.81.</div></details>
+        <details class="check"><summary>3. When would you pick DBSCAN over k-means?</summary><div class="ans">When clusters are non-convex (rings, moons), you do not know k, or you want outliers labelled as noise — and density is roughly uniform.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>k-means alternates assign and update; inertia only falls; restart to avoid poor local minima.</li><li>Choose k by elbow and silhouette; scale features.</li><li>DBSCAN = density, hierarchical = a tree of merges, GMM = soft assignments.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 Dimensionality reduction ===================== -->
+    <section class="lesson" id="dimensionality-reduction" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">3.6</span><h2>Dimensionality reduction</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your table has 300 correlated columns. You want to plot it on a screen, speed up a model, or compress it — which few directions keep most of the information?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Photograph a flat book from an angle: you lose little, because the book is nearly 2-D inside 3-D. <b>Principal component analysis (PCA)</b> finds the viewing direction that keeps the most spread. The first principal component is the direction along which the data vary the most; the second is the best direction at right angles to it; and so on. Projecting onto the first few components keeps the biggest variations and discards the rest, which is often noise. (The linear algebra — eigenvectors of the covariance, or SVD — is in <a href="math-linear-algebra.html#svd-pca">the linear algebra module</a>.)</p>
+        <p><b>t-SNE and UMAP</b> are non-linear: they try to place points in 2-D so that neighbours stay neighbours. They produce beautiful cluster pictures, but the distances <i>between</i> clusters, cluster sizes and even the number of clusters can be artefacts of the settings (perplexity, n_neighbours). Use them for exploration, never as proof.</p>
+
+        <h3 class="sec">Build it up: variance explained from a 2×2 covariance</h3>
+        <p>Suppose two centred features have covariance matrix</p>
+        <div class="eq">\Sigma=\begin{pmatrix}5&amp;2\\2&amp;2\end{pmatrix}</div>
+        <div class="worked"><b>Worked example</b>
+          <p>Eigenvalues solve <span class="tex">\det(\Sigma-\lambda I)=\lambda^2-7\lambda+6=0</span> (trace 7, determinant 6) → <span class="tex">\lambda_1=6,\ \lambda_2=1</span>.</p>
+          <p>Eigenvector for 6: <span class="tex">(5-6)x+2y=0\Rightarrow y=x/2</span> → <span class="tex">v_1=(2,1)/\sqrt5</span>. Then <span class="tex">v_2=(-1,2)/\sqrt5</span>.</p>
+          <p><b>Variance explained:</b> PC1 = 6/(6+1) = <b>85.7%</b>, PC2 = 14.3%. Total variance 7 = trace ✓. Keeping one component loses 14.3% of the variance.</p>
+          <p><b>Projecting a point.</b> Take the centred point <span class="tex">x=(3,2)</span>. Score <span class="tex">z_1=x\cdot v_1=(6+2)/\sqrt5=3.578</span>. Reconstruction <span class="tex">z_1v_1=(3.2,1.6)</span>; residual <span class="tex">(-0.2,0.4)</span>. Check: <span class="tex">\lVert x\rVert^2=13=3.578^2+\lVert\text{residual}\rVert^2=12.8+0.2</span> ✓ — PCA is a rotation, and the discarded part is small because the point lies near PC1.</p></div>
+        <p><b>Scree plot and choosing k.</b> Plot eigenvalues in order and keep enough components to reach, say, 90–95% cumulative variance, or stop at the "elbow". <b>Always standardise first</b> when features have different units, or the biggest-unit column hijacks PC1.</p>
+        <p><b>When to reduce:</b> visualisation, removing multicollinearity, denoising, speeding up k-NN/SVM, compression. <b>When not to:</b> tree models rarely need it, interpretability matters (components mix features), or the signal lives in low-variance directions (PCA keeps variance, not label information — see LDA for supervised reduction).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\Sigma=\tfrac1{n-1}X_c^{\top}X_c,\quad \Sigma v_j=\lambda_jv_j,\quad z=V_k^{\top}(x-\mu),\quad \text{explained}_j=\frac{\lambda_j}{\sum_i\lambda_i}</div>
+        <table class="sym">
+          <tr><td>X_c</td><td>data matrix with each column's mean μ subtracted</td></tr>
+          <tr><td>Σ</td><td>covariance matrix (d × d)</td></tr>
+          <tr><td>λ_j, v_j</td><td>eigenvalue (variance along the component) and unit eigenvector (the direction)</td></tr>
+          <tr><td>V_k</td><td>matrix whose columns are the top-k eigenvectors</td></tr>
+          <tr><td>z</td><td>the k-dimensional representation</td></tr></table>
+<pre><code>fit:      mu = mean(X); Xc = X - mu; (optionally divide by std)
+          U, S, Vt = svd(Xc);  eigenvalues = S**2 / (n-1);  keep first k rows of Vt
+transform: z = (x - mu) @ Vt[:k].T
+inverse:   x_hat = z @ Vt[:k] + mu               # reconstruction (lossy)</code></pre>
+        <table class="tbl"><thead><tr><th>Pipeline view</th><th></th></tr></thead><tbody>
+          <tr><td>Preprocessing</td><td>centre (always) and scale (usually); fit on training data only</td></tr>
+          <tr><td>Stored</td><td>mean μ and k components (k × d numbers)</td></tr>
+          <tr><td>Training</td><td>SVD O(n·d·min(n,d)); randomised PCA is much faster for large data</td></tr>
+          <tr><td>Inference</td><td>one matrix multiply O(k·d); t-SNE/UMAP cannot transform new points as cheaply</td></tr></tbody></table>
+        <table class="tbl"><thead><tr><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>
+          <tr><td>Fast, deterministic, invertible-ish, removes correlation, great for denoising and visualisation</td><td>Linear only; components are hard to interpret; variance ≠ relevance; sensitive to scaling and outliers</td></tr></tbody></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: project onto the first component</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>: the line rotates slowly to the direction of greatest variance while points slide onto it; the variance-explained bar fills.</li>
+        <li>Set the correlation high: PC1 explains almost everything; set it to 0: both components share the variance equally (no preferred direction).</li>
+        <li>Stretch one axis ("units") without changing anything else: PC1 snaps to that axis — the reason to standardise.</li></ol></div>
+      <div data-lab="pcalab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Reading t-SNE/UMAP cluster distances or sizes as real, or running them once with default settings.</li>
+          <li>Fitting PCA on the full dataset before splitting (leakage), or forgetting to apply the same transform to test data.</li>
+          <li>Assuming the top-variance directions are the predictive ones.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Eigenfaces, genomics, whitening before other methods, visualising embeddings from neural networks (t-SNE/UMAP plots of word or image embeddings).</li>
+          <li>Compressing vectors for search (PCA then product quantisation); autoencoders are the non-linear cousin (<a href="ml-architectures.html">Module 7</a>).</li>
+          <li>Reduce when dimensions are redundant and a downstream distance-based model suffers; skip when a tree ensemble handles the raw features well.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Covariance [[4, 0],[0, 1]]: what are the components and variance explained?</summary><div class="ans">Already diagonal: PC1 = x-axis (λ = 4, 80%), PC2 = y-axis (λ = 1, 20%).</div></details>
+        <details class="check"><summary>2. Why standardise before PCA when one feature is in metres and another in millimetres?</summary><div class="ans">The mm feature has a variance 10⁶ times larger and would dominate PC1 purely because of units. Standardising puts features on comparable footing.</div></details>
+        <details class="check"><summary>3. A t-SNE plot shows two clusters far apart and one tiny. What can you conclude?</summary><div class="ans">Only that there is local neighbourhood structure. The gap and sizes may be artefacts of perplexity; verify with other settings and with the original data.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>PCA keeps the directions of largest variance; explained variance = λ/Σλ.</li><li>Centre and usually scale; fit on training data only.</li><li>t-SNE/UMAP are for looking, not for measuring.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.7 Anomaly detection ===================== -->
+    <section class="lesson" id="anomaly-detection" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">3.7</span><h2>Anomaly detection</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>One transaction in 100 000 is fraud, and tomorrow's fraud looks different from yesterday's. You cannot train a normal classifier on examples you do not have. How do you flag "unusual" — and how can you evaluate it without labels?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Anomalies are <b>few and different</b>. Four families of ideas, from simple to strong:</p>
+        <ul>
+          <li><b>Statistical:</b> far from the typical value — a z-score <span class="tex">|x-\mu|/\sigma</span> above 3, or outside the box-plot fences.</li>
+          <li><b>Distance / density:</b> far from its k nearest neighbours, or in a much sparser region than they are (k-NN distance, local outlier factor).</li>
+          <li><b>Isolation:</b> an outlier is easy to <i>isolate</i>. Cut the data with random lines; a lone point is separated after very few cuts, a point in a crowd needs many. <b>Isolation forest</b> averages the number of cuts (path length) over many random trees.</li>
+          <li><b>Boundary / reconstruction:</b> learn what "normal" looks like (one-class SVM draws a boundary around the normal data; an autoencoder or PCA reconstructs normal data well but reconstructs anomalies badly → large reconstruction error).</li></ul>
+
+        <h3 class="sec">Build it up: two hand computations</h3>
+        <p>Eight sensor readings: 1, 2, 2.5, 3, 3.5, 4, 4.5, <b>20</b>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p><b>Statistical.</b> Mean = 5.06, standard deviation (population) = 5.74. The z-score of 20 is (20 − 5.06)/5.74 = <b>2.60</b>. Notice the outlier itself inflated σ and the mean: this is <i>masking</i>. Robust versions use the median and MAD.</p>
+          <p><b>Isolation path length.</b> Pick a random cut between the smallest and largest value of the current group, keep the side that contains the point, and count cuts until it is alone. For the value 20 the range is 1–20; almost any cut separates it at once (a cut landing in 4.5–20, i.e. a 82% chance, isolates it in one cut). For the value 3 in the crowd, many cuts are needed. Averaging 20 000 random runs of this procedure (computed, <i>not</i> a hand estimate): value 20 → <b>1.20</b> cuts, value 3 → <b>4.74</b> cuts, value 1 → 2.91 cuts (it sits at the edge).</p>
+          <p><b>Score.</b> Normalise by the average path length of an unsuccessful binary-tree search: <span class="tex">c(n)=2H(n-1)-\tfrac{2(n-1)}n</span> with <span class="tex">H(m)\approx\ln m+0.5772</span> the harmonic number; exactly for n = 8: <span class="tex">c(8)=2\cdot2.593-1.75=3.436</span>. Then <span class="tex">s=2^{-E[h]/c(n)}</span>: for 20 → 2^(−1.20/3.436) = <b>0.785</b>; for 3 → 2^(−4.74/3.436) = <b>0.384</b>. Scores near 1 are anomalies; well below 0.5 are clearly normal.</p></div>
+        <p><b>Evaluating without labels.</b> Hold out a small labelled audit set if you can and use precision at the top-N alerts, PR-AUC (not accuracy!), or the analyst's alert-review rate. Otherwise inject synthetic anomalies, check stability across random seeds, and monitor the alert rate over time. Choosing the threshold is a cost decision: alerts a human can review per day.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">s(x,n)=2^{-E[h(x)]/c(n)},\qquad c(n)=2H(n-1)-\frac{2(n-1)}{n},\qquad z=\frac{x-\mu}{\sigma}</div>
+        <table class="sym">
+          <tr><td>h(x)</td><td>number of random cuts needed to isolate x in one random tree</td></tr>
+          <tr><td>E[h(x)]</td><td>its average over many trees (the forest)</td></tr>
+          <tr><td>c(n)</td><td>typical path length for n points — makes the score comparable across sample sizes</td></tr>
+          <tr><td>s</td><td>anomaly score in (0,1); near 1 = anomaly, ≈ 0.5 = nothing stands out</td></tr>
+          <tr><td>μ, σ</td><td>mean and standard deviation (or median/MAD for the robust version)</td></tr></table>
+<pre><code>isolation_forest.fit(X):  for t in 1..T: sample psi rows; grow a tree with random (feature, split in [min,max]) until
+                          each point is alone or depth = log2(psi)
+score(x):                 mean path length over trees  ->  s = 2^(-E[h]/c(psi))
+flag:                     s above a threshold chosen by alert budget / contamination</code></pre>
+        <table class="tbl"><thead><tr><th>Pipeline view</th><th></th></tr></thead><tbody>
+          <tr><td>Preprocessing</td><td>distance/SVM methods: scale; isolation forest: little; train on mostly-normal data</td></tr>
+          <tr><td>Stored</td><td>T small trees (isolation forest, typically T = 100, ψ = 256); μ, σ for z-scores; the normal data (distance methods)</td></tr>
+          <tr><td>Training</td><td>isolation forest ≈ O(T·ψ·log ψ) — independent of n; one-class SVM O(n²)–O(n³)</td></tr>
+          <tr><td>Inference</td><td>O(T·log ψ) per point; real-time friendly</td></tr></tbody></table>
+        <table class="tbl"><thead><tr><th>Method</th><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>
+          <tr><td>z-score / IQR</td><td>trivial, explainable</td><td>one variable, assumes bell shape, masking</td></tr>
+          <tr><td>Distance / LOF</td><td>finds local outliers</td><td>O(n²), scaling, high-dim weakness</td></tr>
+          <tr><td>Isolation forest</td><td>fast, scales, few assumptions</td><td>axis-aligned cuts; clustered anomalies can hide</td></tr>
+          <tr><td>One-class SVM / autoencoder</td><td>learns a complex "normal" region</td><td>tuning; needs clean normal data</td></tr></tbody></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: random cuts isolate the outlier</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>: random cuts slice the plane. Watch how few cuts the red outlier survives compared with a point in the crowd.</li>
+        <li>Drag the outlier toward the crowd: its path length grows and the score falls.</li>
+        <li>Raise the number of trees: the average path lengths stabilise (less noise).</li></ol></div>
+      <div data-lab="isolab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Evaluating with accuracy: if 0.1% are anomalies, "never alert" scores 99.9%.</li>
+          <li>Training on data that already contains many anomalies, or assuming "normal" never drifts — retrain and monitor.</li>
+          <li>Treating every statistical outlier as an error: rare is not the same as wrong.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Fraud and intrusion detection, predictive maintenance on sensor streams, ML monitoring (data drift alarms, <a href="ml-production.html">Module 9</a>), manufacturing defect screening with autoencoders.</li>
+          <li>Isolation forest is a default first choice for tabular data; reconstruction error for images and sequences.</li>
+          <li>Prefer supervised classifiers when you have enough labelled anomalies; use anomaly detection when you do not.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Readings have mean 50 and σ = 5. What z-score does 68 have, and is it a 3-sigma outlier?</summary><div class="ans">z = (68 − 50)/5 = 3.6 → yes, beyond 3σ.</div></details>
+        <details class="check"><summary>2. Why does a lone outlier get a short isolation path?</summary><div class="ans">A random cut in the data's range is likely to fall in the empty gap between the outlier and the crowd, separating it immediately; points in dense regions need many cuts to be separated from neighbours.</div></details>
+        <details class="check"><summary>3. Why is PR-AUC better than accuracy for evaluating an anomaly detector?</summary><div class="ans">With extreme imbalance accuracy rewards doing nothing. PR-AUC focuses on how many alerts are real (precision) and how many anomalies are caught (recall).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Anomalies are few and different: score them by distance, density, isolation or reconstruction error.</li><li>Isolation forest: short average path length → anomaly; s = 2^(−E[h]/c(n)).</li><li>Without labels, evaluate by alert budgets, audits and injected anomalies; monitor over time.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Module complete.</b> You now have seven classical tools and, more importantly, the vocabulary of bias vs variance, scaling, impurity, margins and distances. Next: <a href="ml-ensembles.html">Module 4 · Ensembles &amp; boosting</a> — many trees voting, and trees correcting each other's mistakes.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 · ML in production: system architecture &amp; MLOps · Machine Learning</title>
+<meta name="description" content="Designing ML systems, feature stores, experiment tracking and registries, serving and rollout, drift monitoring, governance and an end-to-end capstone — with capacity maths and animated architecture diagrams.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-production.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="9">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 9</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">9</div>
+      <div style="flex:1">
+        <h1>Module 9 · ML in production: system architecture &amp; MLOps</h1>
+        <p>A trained model is perhaps 5% of a working ML system. The rest is data plumbing, storage, serving, rollout, monitoring and governance. This module draws the whole machine — and lets you watch requests and data flow through it, break it on purpose, and size it with real arithmetic.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">8 new animated labs</span><span class="chip">Capacity maths · PSI/KS by hand · rollout statistics</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+    <div class="callout"><b>Honesty note.</b> The labs in this module are <b>illustrative simulations</b>: component latencies, prices and accuracies are round example numbers you can edit, not benchmarks of any product. The arithmetic in the text is exact. For the Computer Vision specifics (camera pipelines, quantisation, edge hardware) see <a href="cv-production.html">cv-production.html</a>; this module covers what is common to <i>any</i> model.</div>
+
+    <!-- ===================== 9.1 ===================== -->
+    <section class="lesson" id="ml-system-design" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.1</span><h2>Designing an ML system</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your product team wants "a fraud score on every card payment, in under 100 ms, for at most one cent per thousand payments, with scores that stay good for a year." The model is the easy part. What else must exist, and how many servers does it need on Black Friday?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of an ML system as a <b>restaurant kitchen</b>, not a recipe. The recipe (the model) matters, but customers experience the ordering desk (API), the pantry (data and features), how fast plates leave (latency), how many can be served at once (throughput), the bill (cost) and whether yesterday's recipe still tastes right today (monitoring). Designing the system means choosing these pieces <i>before</i> picking the model, because they decide which models are allowed: a 400 ms model cannot serve a 100 ms budget however accurate it is.</p>
+        <p>Start from <b>three layers of metrics</b>. <b>Business metrics</b> say why the system exists (fraud losses in $, conversion, churn). <b>Model metrics</b> say how good the predictions are (precision, recall, AUC — see <a href="ml-evaluation.html">the evaluation module</a>). <b>System metrics</b> say whether the machinery works (latency percentiles, throughput, error rate, cost). A model can improve while the business metric gets worse (better AUC but slower pages that lose users), so you track all three.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1 — requirements.</b> Write them as numbers: peak and average request rate (QPS, queries per second), latency budget at a <b>percentile</b> (p50 = median, p95, p99 = the time that 50%/95%/99% of requests beat), availability, freshness (how old may a prediction be?), cost ceiling, and data constraints (privacy, region).</p>
+        <p><b>Step 2 — percentiles, by hand.</b> Averages hide pain. Twenty request latencies in ms, sorted: 12, 14, 15, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 27, 30, 34, 41, 55, 120, 310. Mean = 42.75 ms. With linear interpolation at position <span class="tex">p(n-1)</span>: p50 sits at position 9.5 → between 21 and 22 = <b>21.5 ms</b>; p95 at 18.05 → 120 + 0.05·190 = <b>129.5 ms</b>; p99 at 18.81 → 120 + 0.81·190 = <b>273.9 ms</b>. The average (42.75) describes nobody: half the users wait about 21 ms and a few wait over a quarter second. Tails also <i>multiply</i>: if one request calls 5 services and each is slow 1% of the time, <span class="tex">1-0.99^5=4.9\%</span> of requests hit at least one slow service.</p>
+        <div class="worked"><b>Worked example — how many replicas? (Little's law)</b>
+          <p>Peak load λ = 200 requests/s. One model replica handles one request at a time and takes S = 40 ms. <b>Little's law</b> says the average number of requests inside the system equals arrival rate × time in system: <span class="tex">L=\lambda W=200\times0.04=8</span> requests in service at once, so at least 8 replicas just to keep up (utilisation 100%, no slack — queues explode). Run each replica at about 60% utilisation so bursts do not queue: <span class="tex">8/0.6=13.3\to14</span> replicas.</p>
+          <p><b>Why 60%?</b> For a single-server queue with random arrivals (M/M/1), the mean time in system is <span class="tex">W=S/(1-\rho)</span>: at ρ=0.6, W = 40/0.4 = 100 ms; at ρ=0.8, 200 ms; at ρ=0.9, 400 ms. Latency grows hyperbolically near full utilisation.</p>
+          <p><b>Cost.</b> At $0.20 per replica-hour: 14 × 0.20 = $2.80/h. Peak throughput is 200 × 3600 = 720,000 predictions/h, so <span class="tex">2.80/720=\$0.0039</span> per 1,000 predictions <i>if you were at peak all day</i>; if the average load is a third of peak and you do not autoscale, the real cost per 1k triples. That is the case for autoscaling, caching and batching (lesson 9.4).</p></div>
+        <p><b>Step 3 — batch or real-time?</b> The most consequential design choice. The decision question is: <i>does the prediction depend on information that exists only at request time?</i></p>
+        <table class="tbl"><tr><th></th><th>Batch scoring</th><th>Online (real-time) API</th><th>Streaming</th></tr>
+          <tr><td>Trigger</td><td>Schedule (nightly)</td><td>User/system request</td><td>Event arrives on a queue</td></tr>
+          <tr><td>Latency</td><td>Minutes–hours</td><td>ms</td><td>ms–seconds</td></tr>
+          <tr><td>Freshness</td><td>Up to the schedule interval</td><td>Per request</td><td>Per event</td></tr>
+          <tr><td>Throughput / cost</td><td>Highest, cheapest per prediction</td><td>Idle capacity paid for</td><td>Medium; always-on</td></tr>
+          <tr><td>Complexity</td><td>Low</td><td>High (SLOs, scaling)</td><td>Highest (ordering, state)</td></tr>
+          <tr><td>Use when</td><td>Recommendations, churn lists, credit refresh</td><td>Fraud on payment, search ranking</td><td>Sensor alerts, live bidding</td></tr></table>
+        <div class="worked"><b>Worked example — 5 million predictions a day</b>
+          <p><b>Batch:</b> a node scores 2,000 rows/s; four nodes give 8,000/s, so 5,000,000/8,000 = 625 s ≈ 10.4 min. Four nodes at $0.40/h for 10.4 min = <b>$0.28/day</b>. Predictions are up to 24 h stale. <b>Online:</b> to answer at a peak of 150 QPS with 6 replicas always on: 6 × $0.40 × 24 = <b>$57.60/day</b>, 200× more, but each answer is fresh. Rule of thumb: if a day-old score is fine, batch; the answer changes the cost by orders of magnitude.</p></div>
+        <p><b>Step 4 — the reference architectures.</b> Every system is a variation of: <i>data lake → feature store (offline/online) → training job → registry → serving → monitor → (back to data)</i>. The lab below draws four versions; you will see where each request travels, which component saturates first, and what a failure does.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">L=\lambda W\qquad \text{replicas}\ \ge\ \Big\lceil\frac{\lambda\,S}{\rho_{\max}}\Big\rceil\qquad W_{M/M/1}=\frac{S}{1-\rho}\qquad \text{cost}_{1k}=\frac{1000\,C_h}{3600\,\lambda}</div>
+        <table class="sym">
+          <tr><td>λ</td><td>arrival rate (requests per second)</td></tr>
+          <tr><td>W, S</td><td>average time a request spends in the system, and pure service time</td></tr>
+          <tr><td>L</td><td>average number of requests in the system</td></tr>
+          <tr><td>ρ, ρ<sub>max</sub></td><td>utilisation = λS/replicas; the ceiling you allow (≈0.6–0.7)</td></tr>
+          <tr><td>C<sub>h</sub></td><td>hourly cost of the whole serving fleet</td></tr>
+        </table>
+        <p>Little's law holds for any stable system and any arrival pattern; the M/M/1 formula assumes random (Poisson) arrivals and exponential service times, so treat it as a planning approximation. The probability tools are in <a href="math-probability.html">Mathematics: probability</a>.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: reference architectures</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose <b>Real-time API</b> and press play. Follow one request packet: client → gateway → cache → (on a miss) online feature store → model server → back. Watch the story captions step through the path.</li>
+        <li>Raise the request rate until one component turns red: that is the <b>bottleneck</b>. Select it in the component list and add replicas; note how cost per 1k predictions changes.</li>
+        <li>Mark the cache as <b>down</b>: all traffic now hits the model server and the capacity drops. Mark the online feature store down: misses fail and the error rate appears.</li>
+        <li>Switch to <b>Batch</b>: there is no user waiting, so latency matters little but throughput and schedule matter. Compare cost per 1k with the real-time design.</li></ol></div>
+      <div data-lab="sysarch" data-arch="realtime"></div>
+      <div class="try" style="margin-top:14px"><b>Try this</b><ol><li>Open the stage you are about to design: the six-stage ML pipeline. Click each stage and say which component of the diagram above implements it.</li></ol></div>
+      <div data-lab="pipeline" data-id="ml"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Quoting the average latency.</b> Contracts and user experience are set by p95/p99. Always say which percentile.</li>
+          <li><b>Sizing for the average load.</b> Peaks, retries and deployments set the fleet size. Keep utilisation under ~70%.</li>
+          <li><b>Choosing real-time by default.</b> Many "real-time" needs are satisfied by a nightly batch plus a cache, at 1/200 of the cost.</li>
+          <li><b>Optimising the model metric alone.</b> A +0.5% AUC that adds 150 ms may lower the business metric.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Recommenders</b> (video, shopping) use batch candidate generation plus an online ranking model — a hybrid of both columns above.</li>
+          <li><b>Card-fraud scoring</b> is online with a hard latency budget; rules and a small gradient-boosted model run first and a heavier model only on the ambiguous cases.</li>
+          <li><b>LLM serving</b> is dominated by exactly this arithmetic: tokens per second per GPU, concurrent requests via Little's law, cost per 1k tokens.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Peak 120 QPS, service time 50 ms, target utilisation 0.6. How many single-request replicas?</summary><div class="ans">L = 120×0.05 = 6 in service; 6/0.6 = 10 replicas.</div></details>
+        <details class="check"><summary>2. At ρ=0.9 and S=40 ms, what is the mean time in system under M/M/1?</summary><div class="ans">W = 40/(1−0.9) = 400 ms — ten times the service time.</div></details>
+        <details class="check"><summary>3. A request calls 3 services, each slower than its own p99 for 1% of calls. What fraction of requests hit at least one slow call?</summary><div class="ans">1 − 0.99³ = 0.0297 ≈ 3%.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Specify business, model and system metrics up front; latency in percentiles, not averages.</li><li>Replicas ≈ λ·S/ρ_max (Little's law); keep utilisation near 60–70% because W = S/(1−ρ).</li><li>Batch vs online is a freshness-vs-cost decision; batch is often 100× cheaper.</li><li>Every system is data → features → training → registry → serving → monitor, looping back.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.2 ===================== -->
+    <section class="lesson" id="feature-stores-data" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.2</span><h2>Data, features &amp; storage</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your churn model scores 0.91 AUC offline and 0.64 in production. The code is the same. What changed — and how could a "feature" computed in two places disagree with itself?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Raw data lives in a <b>data lake</b> (cheap files of every kind, schema decided when you read) or a <b>warehouse</b> (tables with a schema, fast SQL). Models, though, do not eat raw events; they eat <b>features</b>: numbers such as "orders in the last 30 days". A feature is a <i>recipe</i> applied to data <i>as of a moment in time</i>. Two problems follow: (1) the recipe must be the same in training and serving, and (2) "as of" must be respected, or you train on the future.</p>
+        <p>A <b>feature store</b> solves both. It has an <b>offline store</b> (full history, used to build training sets) and an <b>online store</b> (only the latest value per key, a fast key–value lookup used while serving), fed from one shared definition. Think of the offline store as the archive of every newspaper, and the online store as today's front page.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Training-serving skew</b> is any difference between how a feature is computed during training and during serving. It is the commonest production bug because both paths "work" and nothing crashes.</p>
+        <div class="worked"><b>Worked example — a mismatched feature</b>
+          <p>Feature: average order value over 30 days. A customer made three orders: $40, $60, $20. The <b>training</b> pipeline (SQL over a daily table, zero-filled for days with no order) computes <span class="tex">\text{AVG over 30 days}=120/30=4.0</span>. The <b>serving</b> code averages over orders only: <span class="tex">120/3=40</span>. A logistic model <span class="tex">\text{logit}=-2+0.05x</span> was trained on values near 4: training-style input gives logit −1.8 → probability <b>0.142</b>; the serving value 40 gives logit 0 → probability <b>0.500</b>. Same customer, same model, a 3.5× different risk score because the feature meant two different things.</p>
+          <p>Defences: define each feature once (one code path or a shared definition), log the exact features served and compare to what training would have produced, and test the feature code with the same fixtures in both environments.</p></div>
+        <p><b>Point-in-time correctness.</b> To build a training row for an event at time <i>t</i> (say, a customer's status at day 10, with a churn label observed later) you must join each feature's value <b>as it was at t</b>: the latest record with timestamp ≤ t. A naive join on the key alone picks the <i>latest value overall</i> — possibly one recorded after the event.</p>
+        <div class="worked"><b>Worked example — the timeline</b>
+          <p>Feature "support tickets in 30 days" changes on days 3 → 1, 9 → 2, 15 → 5, 22 → 6. Training example at <b>t = 10</b> (will the customer churn by day 30?). <b>Point-in-time join:</b> latest record with day ≤ 10 is day 9, value <b>2</b>. <b>Naive join (latest overall):</b> value 6 — recorded 12 days <i>after</i> t, and probably high <i>because</i> the customer was already unhappy and leaving. The model learns "6 tickets ⇒ churn", offline AUC soars, and in production, where the future is not available, only ~2 tickets are visible and the signal vanishes. That is the AUC gap in the question.</p>
+          <p>A <b>TTL</b> (time to live) adds a freshness rule: if the latest record is older than, say, 7 days, treat it as missing rather than stale. At t = 10 the day-9 record is 1 day old: fine.</p></div>
+        <p><b>Offline/online consistency.</b> A materialisation job copies the latest feature values from offline to online (every few minutes or on each event). Streaming features update the online store within seconds. Consistency means: <i>the online value for key k at time t equals the offline point-in-time value for (k, t)</i>. Monitor it with a sample: recompute offline for recent requests and compare.</p>
+        <p><b>Data versioning.</b> Models are reproducible only if the data is. Keep immutable snapshots (a table version or a content hash like <code>sha256:9f2c…</code>), record the snapshot id with every training run, and never overwrite history in place. Tools: DVC, lakeFS, Delta/Iceberg table versions.</p>
+        <table class="tbl"><tr><th>Store</th><th>Holds</th><th>Access pattern</th><th>Typical latency</th></tr>
+          <tr><td>Data lake</td><td>raw files/events</td><td>scan large volumes</td><td>seconds–minutes</td></tr>
+          <tr><td>Warehouse</td><td>cleaned tables</td><td>SQL analytics</td><td>seconds</td></tr>
+          <tr><td>Feature store offline</td><td>feature history with timestamps</td><td>point-in-time joins for training</td><td>seconds–minutes</td></tr>
+          <tr><td>Feature store online</td><td>latest value per key</td><td>key lookup while serving</td><td>1–10 ms</td></tr></table>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">x_k(t)=f_k\big(\{e\in\mathcal D:\ \text{key}(e)=k,\ \tau(e)\le t\}\big)\qquad \text{PIT join: } v(k,t)=v\big(k,\max\{\tau_i\le t\}\big)</div>
+        <table class="sym">
+          <tr><td>x<sub>k</sub>(t)</td><td>the feature for entity k as of time t</td></tr>
+          <tr><td>f<sub>k</sub></td><td>the feature recipe (aggregation); one definition shared by training and serving</td></tr>
+          <tr><td>𝒟, τ(e)</td><td>event data and each event's timestamp; only events with τ ≤ t may be used</td></tr>
+          <tr><td>v(k, t)</td><td>feature value for key k that was current at time t</td></tr>
+        </table>
+        <p>Leakage in general (target, time, group) is treated in <a href="ml-evaluation.html">the evaluation module</a>; the conditional-probability view is in <a href="math-probability.html#conditional-bayes">Bayes and conditioning</a>.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: point-in-time join</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: the clock moves along the timeline. At each feature change the <b>online store</b> (right) overwrites its single value while the <b>offline store</b> appends a history row.</li>
+        <li>When the clock reaches a label time, a training row is built. In <b>naive</b> mode the row takes the latest value overall; watch it grab a value from the future and flash LEAK.</li>
+        <li>Switch to <b>point-in-time</b>: the lookup now stops at the label time. Switch on the TTL and shorten it: stale values become missing.</li>
+        <li>Edit the feature values and label times and see which rows leak.</li></ol></div>
+      <div data-lab="featstore"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Joining on key only.</b> Every training join needs an "as of" timestamp.</li>
+          <li><b>Two implementations of one feature</b> (SQL for training, Python for serving). Use one definition.</li>
+          <li><b>Event time vs processing time.</b> Use the time the fact became true <i>and known</i>; late-arriving data must not leak backwards.</li>
+          <li><b>Overwriting history</b> in the warehouse; you can no longer reproduce an old model.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Feast, Tecton, Vertex/SageMaker Feature Store</b> implement the offline/online split with point-in-time joins.</li>
+          <li><b>Click-through-rate and fraud models</b> rely on streaming counters ("clicks in last 10 min") that are the hardest to keep consistent.</li>
+          <li><b>Kaggle-style leaks</b> in real pipelines nearly always are a missing "as of" filter.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the timeline above, what value does a point-in-time join return at t = 16, and at t = 2?</summary><div class="ans">t = 16: latest record with day ≤ 16 is day 15 → 5. t = 2: no record yet → missing (null / default), never the day-3 value.</div></details>
+        <details class="check"><summary>2. Orders $50, $30 in 30 days. Training averages over 30 days, serving over orders. What are the two feature values and their ratio?</summary><div class="ans">80/30 = 2.667 versus 80/2 = 40; the ratio is 15×.</div></details>
+        <details class="check"><summary>3. Why does the online store keep only the latest value?</summary><div class="ans">Serving needs a millisecond key lookup of "now"; history is only needed to build training sets, which the offline store provides.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Features are recipes evaluated as of a time; define them once.</li><li>Offline store = history for training; online store = latest values for serving.</li><li>Point-in-time joins (latest record ≤ t) prevent leakage; TTLs bound staleness.</li><li>Training-serving skew produces silent, large errors; log and compare served features.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.3 ===================== -->
+    <section class="lesson" id="experiments-registry" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.3</span><h2>Experiments, reproducibility &amp; registry</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Six weeks ago a teammate trained a model that scored 0.86; today nobody can reproduce it, and the production model's origin is "a notebook on someone's laptop". How do you make every model traceable, repeatable and safely promotable?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Training is an <b>experiment</b>: change one thing, run, measure. Without a lab notebook you forget what you changed. <b>Experiment tracking</b> is that notebook written by the machine: every run records <i>code version, data version, parameters, random seed, environment, metrics and artefacts</i>. A <b>model registry</b> is the controlled warehouse where finished models are stored with a version number and a <b>stage</b> (None → Staging → Production → Archived); promoting a model is a deliberate act with checks, like a release at a factory.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>What must be recorded to reproduce a run.</b> (1) git commit of the code; (2) data snapshot id/hash; (3) all hyper-parameters; (4) random seeds for the split, initialisation and shuffling; (5) library versions / container image digest; (6) hardware if results are non-deterministic (GPU kernels); (7) metrics and the model file.</p>
+        <table class="tbl"><tr><th>run</th><th>commit</th><th>data</th><th>model</th><th>lr</th><th>depth</th><th>seed</th><th>val AUC</th><th>p95 ms</th></tr>
+          <tr><td>r-101</td><td>a41f9c2</td><td>d7 (2026-09-01)</td><td>GBM</td><td>0.10</td><td>4</td><td>0</td><td>0.842</td><td>6</td></tr>
+          <tr><td>r-102</td><td>a41f9c2</td><td>d7</td><td>GBM</td><td>0.10</td><td>4</td><td>1</td><td>0.851</td><td>6</td></tr>
+          <tr><td>r-103</td><td>a41f9c2</td><td>d7</td><td>GBM</td><td>0.05</td><td>6</td><td>0</td><td>0.855</td><td>9</td></tr>
+          <tr><td>r-104</td><td>b87d0e1</td><td>d8 (+Oct data)</td><td>GBM</td><td>0.05</td><td>6</td><td>0</td><td>0.861</td><td>9</td></tr></table>
+        <p>(Illustrative table of the kind a tracker such as MLflow or Weights &amp; Biases shows.) Notice r-101 and r-102 differ <i>only</i> by seed: 0.842 vs 0.851.</p>
+        <div class="worked"><b>Worked example — is run B really better than run A?</b>
+          <p>Train the same configuration with five seeds: AUC = 0.842, 0.851, 0.847, 0.839, 0.855. Mean = <b>0.8468</b>; sample standard deviation <span class="tex">s=\sqrt{\tfrac{1}{4}\sum(x_i-\bar x)^2}=0.0065</span>; standard error of the mean <span class="tex">s/\sqrt5=0.0029</span>. A new idea that scores 0.851 on one seed is only +0.0042 above the mean — less than <i>one standard deviation of pure seed noise</i>. Claiming it as an improvement would be a mistake. Rule: compare means over several seeds (or a paired bootstrap on the same test set) and require the gain to exceed the noise. Statistics background: <a href="math-statistics.html">Mathematics: statistics</a>.</p></div>
+        <p><b>Seeds and environments.</b> Fix the split seed always; the model seed is varied on purpose to measure noise. Pin dependencies (lock file) and build a container so "works on my machine" becomes "works in this image digest". Floating-point sums on GPUs can be non-deterministic: record it, or enable deterministic kernels at a speed cost.</p>
+        <p><b>Registry stages and gates.</b> A candidate moves <i>None → Staging → Production</i>. Each move has automatic <b>gates</b>: metric ≥ threshold on the frozen test set and on key slices; latency p95 within budget; no fairness regression; unit tests of the preprocessing pass; model card present. The previous Production version stays one click away for <b>rollback</b>.</p>
+        <p><b>CI/CD for models.</b> Continuous integration runs on every change: lint, unit tests, a small training smoke test on a data sample, and data-validation checks (schema, ranges, null rates). Continuous delivery packages the model (container + registry entry), deploys it to staging, runs shadow/canary checks (lesson 9.4) and promotes. Retraining pipelines are the same pipeline triggered by data or schedule instead of a code commit.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\bar m=\frac1K\sum_{i=1}^{K}m_i\qquad s=\sqrt{\frac{1}{K-1}\sum_i (m_i-\bar m)^2}\qquad \mathrm{SE}=\frac{s}{\sqrt K}\qquad \text{promote}\iff \bigwedge_j g_j(\text{run})=\text{true}</div>
+        <table class="sym">
+          <tr><td>m<sub>i</sub>, K</td><td>metric of the i-th seed run and number of seeds</td></tr>
+          <tr><td>m̄, s, SE</td><td>mean, sample standard deviation (seed noise) and standard error of the mean</td></tr>
+          <tr><td>g<sub>j</sub></td><td>the j-th promotion gate (a boolean check); all gates must pass</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: experiment tracker and model registry</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: training runs appear in the table one at a time (progress bar, then a row). Illustrative metrics only.</li>
+        <li>Click a row to select it; the gates panel shows whether it passes AUC, latency, fairness and tests.</li>
+        <li>Click <b>Promote</b> to move the selected model None → Staging → Production. A failing gate blocks it and tells you which one.</li>
+        <li>Raise the AUC gate until the best run fails; press <b>Roll back</b> to restore the previous Production model.</li></ol></div>
+      <div data-lab="expreg"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Tuning on the test set.</b> Choosing the best of 200 runs by test score makes the test score optimistic; keep a final untouched holdout.</li>
+          <li><b>Single-seed comparisons</b> of differences smaller than the seed noise.</li>
+          <li><b>Unrecorded data version.</b> Same code, different data = different model.</li>
+          <li><b>Manual promotion</b> by copying files; no audit trail, no rollback.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>MLflow, Weights &amp; Biases, Neptune, DVC</b> track runs; <b>MLflow Registry, SageMaker, Vertex AI</b> hold staged models.</li>
+          <li><b>Hyper-parameter search</b> (random, Bayesian, successive halving) is thousands of tracked runs.</li>
+          <li><b>LLM fine-tuning</b> uses the same tracking for prompts, datasets and evaluation suites.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Seeds give AUC 0.80, 0.82, 0.84. Mean, s and SE?</summary><div class="ans">Mean 0.82; s = sqrt((0.0004+0+0.0004)/2) = 0.02; SE = 0.02/√3 = 0.0115.</div></details>
+        <details class="check"><summary>2. Name four things besides parameters you must record to reproduce a run.</summary><div class="ans">Code commit, data snapshot/hash, random seeds, environment/container digest (also hardware if non-deterministic).</div></details>
+        <details class="check"><summary>3. Why keep the previous Production model after promotion?</summary><div class="ans">So a failed release can be rolled back in seconds instead of retraining.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Track code, data, parameters, seeds, environment and metrics for every run.</li><li>Compare configurations over several seeds; ignore gains below the seed noise.</li><li>The registry gives versions and stages; promotion passes automatic gates; rollback is instant.</li><li>CI/CD for ML adds data validation and model checks to ordinary software CI/CD.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.4 ===================== -->
+    <section class="lesson" id="serving-inference" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.4</span><h2>Serving &amp; inference</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your model takes 8 ms for one input but you must serve 400 requests a second on one GPU. How can batching and caching help, what do they cost in latency, and how do you roll out a new model without betting the whole business on it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>bus</b> versus a <b>taxi</b>. Running the model for one request at a time (taxi) gives the lowest wait per rider but wastes the engine; waiting a few milliseconds to fill a batch (bus) carries many riders for nearly the cost of one trip, raising <b>throughput</b> (predictions/second) at the price of a little extra <b>latency</b>. A <b>cache</b> is remembering yesterday's answers: a repeated question costs nothing.</p>
+        <p>The four serving modes: <b>batch</b> (scheduled, writes predictions to a table), <b>online</b> (request/response API), <b>streaming</b> (events consumed from a queue, results emitted to another topic), <b>edge</b> (the model runs on the device — no network, private, works offline, limited by memory/compute; see <a href="cv-production.html">cv-production.html</a> for compression and hardware).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Batching.</b> A batch of <i>b</i> inputs takes <span class="tex">T(b)=t_0+t_1b</span>: a fixed cost <i>t₀</i> (kernel launch, memory transfer) and a per-item cost <i>t₁</i>. Throughput is <span class="tex">b/T(b)</span>.</p>
+        <div class="worked"><b>Worked example — the batching curve</b>
+          <p>t₀ = 8 ms, t₁ = 1.5 ms. b=1: T=9.5 ms → <b>105</b> predictions/s. b=8: T=20 ms → <b>400</b>/s. b=32: T=56 ms → <b>571</b>/s. b=64: T=104 ms → <b>615</b>/s. The asymptote is 1/t₁ = 667/s. Throughput rises fast and then flattens, while latency for every member of the batch grows from 9.5 ms to 104 ms. A <b>batching window</b> W (e.g. 10 ms) bounds the waiting: dispatch when the batch is full <i>or</i> when the oldest request has waited W. To meet 400/s you need b≈8; with a p95 budget of 50 ms that fits comfortably (≤ W + T = 30 ms).</p></div>
+        <div class="worked"><b>Worked example — caching</b>
+          <p>A cache answers in 2 ms; a miss costs 30 ms through the model. Hit rate h=0.6: mean latency = 0.6·2 + 0.4·30 = <b>13.2 ms</b>, and the model sees only 40% of the load: 200 QPS becomes <b>80 QPS</b>, so replicas drop by 60%. Caching works when inputs repeat (popular items, repeated queries) and the answer stays valid (set an expiry; invalidate when the model changes).</p></div>
+        <p><b>Scaling.</b> Horizontal: more replicas behind a load balancer (autoscale on queue length or utilisation; mind cold-start time of a large model). Vertical: a bigger machine/GPU. Also: async queues absorb bursts (a queue converts a latency spike into waiting, and gives back-pressure); load shedding (reject early) protects the rest.</p>
+        <p><b>Safe rollout.</b> A new model version is risky even when offline metrics are better. Three techniques, from safest to most informative:</p>
+        <ul>
+          <li><b>Shadow:</b> send the candidate a <i>copy</i> of live traffic, discard its output. No user impact; compare to the current model's outputs (agreement rate, latency, errors).</li>
+          <li><b>Canary:</b> send a small share (1% → 5% → 25% → 50% → 100%) of real traffic to the candidate, compare error rate/latency against the baseline, and <b>roll back automatically</b> if a rule trips.</li>
+          <li><b>A/B test:</b> a fixed random split (e.g. 50/50) measured on the business metric with a pre-planned sample size.</li></ul>
+        <div class="worked"><b>Worked example — the canary rule</b>
+          <p>Baseline: 95 errors in 19,000 requests (0.50%). Canary at 5%: 12 errors in 1,000 requests (1.20%). Pooled rate <span class="tex">\hat p=107/20000=0.00535</span>; <span class="tex">SE=\sqrt{\hat p(1-\hat p)(1/1000+1/19000)}=0.00237</span>; <span class="tex">z=(0.012-0.005)/0.00237=2.96</span>. Rule "roll back if z &gt; 2.58 (one-sided ≈ 0.5% false alarm) and the canary has ≥ 500 requests" fires. The 1,000-request canary only exposed 5% of users to the bug.</p></div>
+        <div class="worked"><b>Worked example — how long must an A/B test run?</b>
+          <p>Baseline conversion 10.0%; we want to detect a lift to 10.5% (+0.5 pp) with 5% significance and 80% power. With <span class="tex">\bar p=0.1025</span>: <span class="tex">n=2(1.96+0.84)^2\bar p(1-\bar p)/\delta^2=2\cdot7.84\cdot0.0920/0.000025\approx57{,}700</span> users <b>per arm</b>. With 20,000 per arm the observed lift gives <span class="tex">z=0.005/0.00303=1.65</span> — not significant (needs 1.96). Peeking every day and stopping at the first z&gt;1.96 inflates false positives; fix n in advance or use sequential tests.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">T(b)=t_0+t_1 b,\quad \text{throughput}=\frac{b}{T(b)}\qquad \bar W=h\,W_{hit}+(1-h)\,W_{miss}\qquad z=\frac{\hat p_c-\hat p_b}{\sqrt{\hat p(1-\hat p)\left(\frac1{n_c}+\frac1{n_b}\right)}}</div>
+        <table class="sym">
+          <tr><td>t₀, t₁, b</td><td>fixed batch cost, per-item cost, batch size</td></tr>
+          <tr><td>h</td><td>cache hit rate; W<sub>hit</sub>, W<sub>miss</sub> the latencies of a hit and a miss</td></tr>
+          <tr><td>p̂<sub>c</sub>, p̂<sub>b</sub>, p̂</td><td>observed error (or conversion) rate of canary, baseline, and pooled</td></tr>
+          <tr><td>n<sub>c</sub>, n<sub>b</sub></td><td>number of requests in canary and baseline</td></tr>
+          <tr><td>z</td><td>standardised difference; compare with 1.96 (two-sided 5%) or 2.58 (one-sided 0.5%)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: serving — batching window and cache</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch requests arrive. Cache hits fly straight out; misses wait in the batch box until it fills or the window timer ends, then run on the server.</li>
+        <li>Set the window to 0 ms and the maximum batch to 1: latency is low at light load but the server saturates quickly (see the throughput readout and the growing queue).</li>
+        <li>Raise the max batch to 16–32 with a 10 ms window: throughput capacity rises while the histogram moves right.</li>
+        <li>Move the cache hit rate up: the server load and the median latency fall.</li></ol></div>
+      <div data-lab="serving"></div>
+      <h3 class="sec" style="max-width:780px">Lab: shadow, canary and A/B rollout</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In <b>canary</b> mode set the candidate error rate to 0.5% (same as baseline) and run: the ramp completes and the model is promoted.</li>
+        <li>Set the candidate error rate to 1.5%: the metrics diverge, the z-score crosses the line and the rollback rule fires.</li>
+        <li>Try <b>shadow</b>: users never see the candidate, yet its disagreement and latency are measured.</li>
+        <li>In <b>A/B</b> mode look at how many users are needed before the lift becomes significant.</li></ol></div>
+      <div data-lab="rollout"></div>
+      <h3 class="sec" style="max-width:780px">Lab: streaming and edge architectures</h3>
+      <div class="try"><b>Try this</b><ol><li>Pick <b>Streaming</b>: a queue buffers events. Raise the rate above the stream processor's capacity and watch the queue backlog grow instead of requests failing.</li><li>Pick <b>Edge</b> and mark the network down: on-device inference continues, only the upload and model update stop.</li></ol></div>
+      <div data-lab="sysarch" data-arch="streaming"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Unbounded batch waiting.</b> Always cap the window; otherwise a quiet period makes the first request wait forever.</li>
+          <li><b>Caching stale or personal answers</b> (keys that ignore user, context or model version).</li>
+          <li><b>Declaring a canary safe with too few requests.</b> 20 requests at 0% errors proves almost nothing; set a minimum count.</li>
+          <li><b>Peeking at an A/B test</b> daily and stopping when significant.</li>
+          <li><b>Autoscaling large models</b> on a slow cold start: the burst is over before the replica is ready.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>NVIDIA Triton, TorchServe, KServe, vLLM</b> implement dynamic batching, queueing and model versioning; continuous batching in LLM serving is the same idea applied per token.</li>
+          <li><b>Embedding and result caches</b> in search and RAG systems cut cost sharply.</li>
+          <li><b>Shadow deployments</b> are the standard way large platforms validate ranking models; canaries gate every release.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. t₀ = 5 ms, t₁ = 1 ms. Throughput at b = 20?</summary><div class="ans">T = 25 ms; 20/0.025 = 800 predictions/s (asymptote 1000/s).</div></details>
+        <details class="check"><summary>2. Hit rate 0.8, hit 1 ms, miss 25 ms. Mean latency and model load at 100 QPS?</summary><div class="ans">0.8·1 + 0.2·25 = 5.8 ms; model sees 20 QPS.</div></details>
+        <details class="check"><summary>3. Canary: 4 errors in 400 requests; baseline 40 in 9,600. Is the rule z &gt; 2.58 met?</summary><div class="ans">p_c = 1.0%, p_b = 0.4167%; pooled 44/10000 = 0.0044; SE = sqrt(0.0044·0.9956·(1/400+1/9600)) = 0.00338; z = 0.00583/0.00338 = 1.72: not met — and only 400 requests, so keep watching.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Batching trades latency for throughput: T(b) = t₀ + t₁b; cap the waiting window.</li><li>Caching lowers mean latency and server load in proportion to the hit rate.</li><li>Roll out with shadow → canary → full, with automatic rollback rules; use pre-sized A/B tests for business metrics.</li><li>Choose batch/online/streaming/edge from freshness, latency, connectivity and privacy needs.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.5 ===================== -->
+    <section class="lesson" id="monitoring-drift" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.5</span><h2>Monitoring &amp; drift</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your model went live in January with 0.88 AUC. By July revenue per recommendation has quietly fallen, no alert fired, and the true labels (purchases) take 30 days to arrive. How could you have known in February?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Models are trained on a <b>photograph of the past</b>. The world keeps moving: customers change, a sensor ages, a competitor appears. Software that is correct today stays correct; an ML model decays. Monitoring is the <b>smoke detector</b>: you cannot wait for the fire (labels, revenue) when cheap signals — the inputs and the outputs — change first.</p>
+        <p>Kinds of change: <b>data drift</b> (covariate shift) — the input distribution <span class="tex">P(x)</span> changes; <b>concept drift</b> — the relationship <span class="tex">P(y\mid x)</span> changes (the same customer behaviour now means something else); <b>label/prior drift</b> — the share of positives changes; <b>upstream breakage</b> — a column silently turns into nulls or changes unit. What to monitor: <b>system</b> metrics (latency, errors, cost), <b>data quality</b> (nulls, ranges, schema), <b>input and prediction distributions</b>, and <b>performance</b> when labels arrive (often delayed).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>To compare a live window with the training (reference) data, bin a feature using the reference quantiles, then measure how the bin shares moved. Two standard measures:</p>
+        <p><b>PSI</b> (population stability index): <span class="tex">\mathrm{PSI}=\sum_i (a_i-e_i)\ln(a_i/e_i)</span>, with <i>e<sub>i</sub></i> the reference share and <i>a<sub>i</sub></i> the live share of bin i. <b>KS</b> (Kolmogorov–Smirnov): the largest vertical gap between the two cumulative distributions, <span class="tex">D=\max|F_a-F_e|</span>.</p>
+        <div class="worked"><b>Worked example — by hand on 4 bins</b>
+          <table class="tbl"><tr><th>bin</th><th>reference e</th><th>live a</th><th>(a−e)·ln(a/e)</th><th>cum e</th><th>cum a</th><th>|gap|</th></tr>
+            <tr><td>1 (low)</td><td>0.20</td><td>0.10</td><td>(−0.10)·ln 0.5 = 0.0693</td><td>0.20</td><td>0.10</td><td>0.10</td></tr>
+            <tr><td>2</td><td>0.30</td><td>0.20</td><td>(−0.10)·ln 0.667 = 0.0405</td><td>0.50</td><td>0.30</td><td>0.20</td></tr>
+            <tr><td>3</td><td>0.30</td><td>0.30</td><td>0</td><td>0.80</td><td>0.60</td><td>0.20</td></tr>
+            <tr><td>4 (high)</td><td>0.20</td><td>0.40</td><td>(0.20)·ln 2 = 0.1386</td><td>1.00</td><td>1.00</td><td>0</td></tr></table>
+          <p>PSI = 0.0693 + 0.0405 + 0 + 0.1386 = <b>0.2485</b>. Common reading: &lt;0.1 stable, 0.1–0.25 moderate shift, &gt;0.25 major shift — this feature sits right at the border. KS: <b>D = 0.20</b>. For two samples of n = m = 1,000 the 5% critical value is <span class="tex">1.36\sqrt{(n+m)/(nm)}=1.36\sqrt{0.002}=0.061</span>, so with that much data D = 0.20 is hugely "significant". This is why <b>effect-size thresholds (PSI)</b> are used for alerts: with big windows, KS flags harmless tiny shifts. Zero-share bins need a floor (e.g. 0.0001) because ln 0 is undefined.</p></div>
+        <p><b>Retraining triggers.</b> Retraining on a schedule is simple but wasteful or late. Combine: (1) <b>drift rule</b> — PSI &gt; 0.25 on any top-importance feature for 3 consecutive windows; (2) <b>performance rule</b> — rolling AUC (or precision) at least 0.03 below the validation value once labels arrive; (3) <b>data-quality rule</b> — null rate or schema change: fix upstream, <i>do not</i> retrain on garbage; (4) <b>calendar rule</b> — at most every N weeks regardless. A trigger starts a pipeline, never directly replaces production: the retrained model goes through registry gates and the rollout of lesson 9.4.</p>
+        <p><b>Delayed labels.</b> When labels arrive weeks late, use proxy signals: prediction distribution (share of high-risk scores), input drift, and business proxies (click-through). Keep a small, labelled, always-fresh audit sample to estimate real performance.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{PSI}=\sum_{i=1}^{B}(a_i-e_i)\ln\frac{a_i}{e_i}\qquad D_{KS}=\sup_x\big|F_{live}(x)-F_{ref}(x)\big|\qquad D_{crit}\approx c(\alpha)\sqrt{\tfrac{n+m}{nm}}</div>
+        <table class="sym">
+          <tr><td>B, e<sub>i</sub>, a<sub>i</sub></td><td>number of bins; reference and live share of bin i (each sums to 1)</td></tr>
+          <tr><td>F<sub>live</sub>, F<sub>ref</sub></td><td>empirical cumulative distribution functions of the live window and reference data</td></tr>
+          <tr><td>c(α)</td><td>1.36 for α=0.05, 1.63 for α=0.01</td></tr>
+          <tr><td>n, m</td><td>sizes of the two samples</td></tr>
+        </table>
+        <p>PSI is a symmetrised KL divergence; see <a href="math-information.html">information theory</a> for KL, and <a href="cv-production.html">cv-production.html</a> for a vision-specific drift example.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: drift monitor and retraining trigger</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Each tick is one monitoring window: the live histogram (orange) is compared with the training distribution (blue) and PSI/KS are plotted per feature.</li>
+        <li>Choose a drifting feature and a drift type (gradual shift, sudden jump, variance growth). Watch PSI cross the threshold, the alarm fire, and — after the required consecutive windows — the retraining job run and PSI reset.</li>
+        <li>Lower the consecutive-window setting to see more false alarms from noise; raise the window size to see the noise shrink.</li>
+        <li>Untick auto-retrain: the estimated (illustrative) AUC keeps decaying until you retrain by hand.</li></ol></div>
+      <div data-lab="driftmon"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Alerting on KS p-values</b> with huge windows: everything is "significant". Use effect size.</li>
+          <li><b>Retraining on a schedule only</b> and missing a sudden upstream break.</li>
+          <li><b>Automatic retrain-and-deploy</b> without gates: the model can learn from a corrupted window.</li>
+          <li><b>Monitoring only averages:</b> a shift in one segment (a region, a device) vanishes in the global mean; slice.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Evidently, WhyLabs, Arize, Fiddler</b> compute PSI/KS/Jensen–Shannon dashboards; cloud platforms ship "model monitor" jobs.</li>
+          <li><b>COVID-19</b> broke countless demand and fraud models at once: the canonical sudden concept drift.</li>
+          <li><b>LLM applications</b> monitor prompt/topic drift, refusal rates and embedding-distribution shift the same way.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Reference shares (0.5, 0.5), live (0.7, 0.3). PSI and KS?</summary><div class="ans">PSI = 0.2·ln1.4 + (−0.2)·ln0.6 = 0.0673 + 0.1021 = 0.1694 (moderate). KS = max(|0.7−0.5|, 0) = 0.20.</div></details>
+        <details class="check"><summary>2. Why is a PSI threshold preferred to a KS test for alerting at 1 million rows per day?</summary><div class="ans">With enormous n the KS critical value is tiny, so negligible shifts are "significant"; PSI measures size of the shift, independent of n (apart from noise).</div></details>
+        <details class="check"><summary>3. Fraud labels arrive after 45 days. Name two signals available today.</summary><div class="ans">Input-feature drift (PSI/KS) and the prediction-score distribution (e.g. share of scores &gt; 0.9); also data-quality metrics and a small audited sample.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Data drift changes P(x); concept drift changes P(y|x); monitor inputs, outputs, quality, system metrics and (late) performance.</li><li>PSI = Σ(a−e)ln(a/e); KS = max CDF gap; use PSI-style effect thresholds for alerts.</li><li>Retrain on combined rules (drift for k windows, performance drop, calendar) and send results through the registry gates.</li><li>Fix data-quality breaks upstream instead of retraining on them.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.6 ===================== -->
+    <section class="lesson" id="ml-governance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.6</span><h2>Responsible &amp; governed ML</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your loan-approval model is accurate overall — but approves 30% of applicants in one group and 45% in another. A regulator asks: what is the model for, what data trained it, who checked it, and who can switch it off? What must exist <i>before</i> that question arrives?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Governance is <b>seat belts and a logbook</b>: it does not make the car faster, it makes it safe to drive on public roads and lets you reconstruct what happened after an accident. For ML it means four habits: <b>measure harm</b> (bias audits), <b>limit exposure</b> (privacy and security), <b>write it down</b> (documentation such as a model card), and <b>assign accountability</b> (humans who approve, monitor and can stop it). The effort scales with <b>risk</b>: a movie recommender and a hiring screener are not governed alike.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Bias audit.</b> Compute metrics <i>per group</i>, not just overall. Using a binary decision, three common measures: <b>selection rate</b> (share predicted positive), <b>true-positive rate</b> (recall) and <b>false-positive rate</b>.</p>
+        <div class="worked"><b>Worked example — two groups</b>
+          <p>Group A: selection rate 0.45, TPR 0.82. Group B: selection rate 0.30, TPR 0.70. <b>Disparate-impact ratio</b> = 0.30/0.45 = <b>0.667</b>; the "four-fifths rule of thumb" from US employment practice flags ratios below 0.8. <b>Equal-opportunity gap</b> = 0.82 − 0.70 = <b>0.12</b>: qualified people in B are missed more often. Equal overall accuracy can hide both. Which fairness criterion to enforce is a <i>policy</i> choice — several cannot hold simultaneously when base rates differ — so document the choice and who approved it.</p></div>
+        <p><b>Privacy.</b> Minimise: collect only needed fields, hash or drop identifiers, set retention limits. Models can memorise training data (a language model can output a stored phone number), so treat a model as potentially containing its data. <b>Differential privacy</b> adds calibrated noise: for a count query (sensitivity 1) with privacy budget ε = 0.5 the Laplace noise has scale 1/ε = 2, so typical error ≈ 2 counts; smaller ε = more privacy, more noise. <b>Federated learning</b> trains where data lives and shares only updates.</p>
+        <p><b>Security.</b> Threats specific to ML: data poisoning (corrupt training data), adversarial inputs (see <a href="cv-production.html">cv-production.html</a>), model theft by repeated querying, prompt injection for LLM apps, and leaked secrets in logs. Controls: access control on data and registry, signed model artefacts, input validation, rate limits, audit logs.</p>
+        <p><b>Documentation.</b> A <b>model card</b> (Mitchell et al., 2019) is a short standard document stored with the registry entry: <i>model details</i> (name, version, owner, date), <i>intended use</i> and <i>out-of-scope uses</i>, <i>training data</i> (source, period, known gaps), <i>evaluation data and metrics</i> overall <i>and per subgroup</i>, <i>limitations and risks</i>, <i>ethical considerations</i>, <i>monitoring and retraining plan</i>, and a <i>contact</i>. A companion <b>datasheet for datasets</b> records how the data was collected and labelled.</p>
+        <p><b>Risk tiers and regulation.</b> Many regimes sort AI systems by impact. The EU AI Act, for example, distinguishes unacceptable-risk practices (banned), high-risk systems (e.g. hiring, credit, medical, critical infrastructure; need risk management, data governance, logging, human oversight, accuracy and robustness testing), limited-risk (transparency duties such as telling users they talk to an AI) and minimal-risk. Details and other regimes (NIST AI RMF, ISO/IEC 42001) are covered in the Governing AI topic; the lab below uses a simplified, <b>illustrative</b> tiering — not legal advice.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{DI}=\frac{\Pr(\hat y=1\mid G=b)}{\Pr(\hat y=1\mid G=a)}\qquad \Delta_{\mathrm{EO}}=\mathrm{TPR}_a-\mathrm{TPR}_b\qquad \tilde q=q+\mathrm{Lap}\!\left(\tfrac{\Delta q}{\varepsilon}\right)</div>
+        <table class="sym">
+          <tr><td>ŷ, G</td><td>the model's decision and the protected-group attribute (a = reference group, b = compared group)</td></tr>
+          <tr><td>DI</td><td>disparate-impact ratio of selection rates (≥ 0.8 is the common rule of thumb)</td></tr>
+          <tr><td>Δ<sub>EO</sub></td><td>equal-opportunity gap: difference of true-positive rates</td></tr>
+          <tr><td>Δq, ε</td><td>query sensitivity (how much one person can change it) and privacy budget</td></tr>
+          <tr><td>Lap(b)</td><td>Laplace noise with scale b</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: model card and risk tier (illustrative)</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose a use case and toggle its properties (personal data, automated decisions, safety impact, human oversight). The risk tier and the required checklist change.</li>
+        <li>Fill the model-card fields; the completeness bar and the live card preview update.</li>
+        <li>Move the subgroup TPR sliders: the equal-opportunity gap is computed and a high-risk tier blocks release when the gap exceeds 0.05.</li>
+        <li>Watch the release gate turn from BLOCKED to READY only when every required item is satisfied.</li></ol></div>
+      <div data-lab="governance"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"We removed the protected attribute, so it is fair."</b> Proxies (postcode, school) carry it back in; audit outcomes by group.</li>
+          <li><b>One overall metric.</b> Slice by group, region and device.</li>
+          <li><b>Model card written once and forgotten.</b> It is part of the registry gate and must be updated with every version.</li>
+          <li><b>Governance as a final-week checklist</b> instead of design input (data collection decisions are hard to undo).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model cards and datasheets</b> are published by Google, Hugging Face (every model page), OpenAI/Anthropic ("system cards").</li>
+          <li><b>Fairness toolkits:</b> Fairlearn, AIF360, What-If Tool compute the per-group metrics above.</li>
+          <li><b>Differential privacy</b> ships in Apple/Google telemetry and in DP-SGD training (Opacus, TensorFlow Privacy).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Selection rates 0.40 (group a) and 0.34 (group b). Disparate-impact ratio and verdict under the four-fifths rule?</summary><div class="ans">0.34/0.40 = 0.85 ≥ 0.8, so it does not trip the rule of thumb (still report it and watch the trend).</div></details>
+        <details class="check"><summary>2. Count query, sensitivity 1, ε = 0.2. Laplace scale?</summary><div class="ans">1/0.2 = 5; typical absolute error ≈ 5 counts — stronger privacy costs accuracy.</div></details>
+        <details class="check"><summary>3. Name five sections of a model card.</summary><div class="ans">Model details, intended use / out-of-scope, training data, evaluation metrics (including per-subgroup), limitations and ethical considerations, monitoring plan, contact.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Audit by group: disparate-impact ratio and TPR gap; fairness criteria are policy choices that must be documented.</li><li>Minimise data, protect models and registries, and assume models can leak training data.</li><li>Model cards and datasheets are part of the release gate.</li><li>Governance effort scales with the risk tier; see the Governing AI topic for regulation.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.7 ===================== -->
+    <section class="lesson" id="end-to-end-project" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.7</span><h2>Capstone: an end-to-end project</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You are given a business problem — flag the 10% of orders likely to be returned — and a free hand. Which dataset size, preprocessing, model, threshold, deployment mode and monitoring plan give the best <i>whole-system</i> outcome, not just the best accuracy?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every earlier module was a part; here you are the <b>architect</b>. Each choice trades something: more data costs more but raises accuracy; a bigger model gains accuracy but adds latency and cost; a lower threshold catches more cases but raises false alarms; real-time serving gives fresh answers but costs 100× a batch run; monitoring costs a little and protects everything. The skill is seeing the <b>whole pipeline</b> at once: data → preprocessing → training → evaluation → deployment → monitoring.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>A simple project plan, stage by stage: <b>(1) Frame</b> — decision, cost of each error type, latency/freshness and budget. <b>(2) Data</b> — sources, snapshot, split by time (train on the past, test on the future, never random for time-dependent data). <b>(3) Preprocess</b> — one shared pipeline object fitted on training data only (imputation, scaling, encoding; see <a href="ml-data.html">the data module</a>). <b>(4) Train</b> — a simple baseline first (logistic regression), then a stronger model; track every run. <b>(5) Evaluate</b> — metrics per slice, calibration, threshold chosen on <i>cost</i>. <b>(6) Deploy</b> — packaging, mode, gradual rollout. <b>(7) Monitor</b> — drift, performance, retrain rules, model card.</p>
+        <div class="worked"><b>Worked example — choosing the threshold by cost</b>
+          <p>Illustrative model: AUC 0.85 on a population with 10% positives. Under a standard binormal score model, AUC = Φ(d′/√2) gives d′ = √2·Φ⁻¹(0.85) = <b>1.466</b>. With calibrated probabilities, a threshold of 0.30 gives TPR = <b>0.425</b>, FPR = <b>0.049</b>, precision = 0.1·0.425 / (0.1·0.425 + 0.9·0.049) = <b>0.491</b>, F1 = 0.456. A missed return costs $50, a false alarm $5 (a manual check). Expected cost per 1,000 orders = 1000·[0.1·(1−0.425)·50 + 0.9·0.049·5] = 2,873 + 221 = <b>$3,094</b>. Lower the threshold to 0.20: TPR 0.571, FPR 0.099, precision 0.390 — cost = 1000·[0.1·0.429·50 + 0.9·0.099·5] = 2,144 + 446 = <b>$2,590</b>, cheaper even though precision fell. The best threshold depends on the <i>cost ratio</i>, not on F1. (See <a href="ml-evaluation.html">the evaluation module</a> for ROC and thresholds.)</p></div>
+        <p><b>Latency and cost budget.</b> Add the stages: gateway 3 ms + feature lookup 6 ms + model inference (logistic 0.2 ms, gradient boosting 3 ms, 300-tree forest 8 ms, small neural net 6 ms) + response 2 ms. The p95 target decides what is allowed. Cost per 1k predictions in real-time = fleet cost per day ÷ (predictions per day / 1000); with 200,000 predictions/day, two always-on replicas at $0.08/h cost $3.84/day = <b>$0.0192 per 1k</b>; the same predictions in a nightly batch cost cents per day.</p>
+        <p><b>The capstone lab.</b> You choose the six decisions; an animated pipeline runs and a scorecard reports accuracy, latency, cost and risk. <b>All numbers are produced by transparent illustrative formulas</b> (accuracy grows with data and model strength; preprocessing and monitoring reduce skew and drift risk) — not measured benchmarks. The point is the <i>interaction</i> of choices.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{TPR}=1-\Phi(x_c-d'),\ \ \text{FPR}=1-\Phi(x_c),\ \ d'=\sqrt2\,\Phi^{-1}(\mathrm{AUC})\qquad C_{1k}=1000\big[\pi(1-\text{TPR})c_{FN}+(1-\pi)\text{FPR}\,c_{FP}\big]</div>
+        <table class="sym">
+          <tr><td>Φ, Φ⁻¹</td><td>standard normal CDF and its inverse</td></tr>
+          <tr><td>d′</td><td>separation between positive and negative score distributions (equal-variance binormal model)</td></tr>
+          <tr><td>x<sub>c</sub></td><td>score cut corresponding to the probability threshold</td></tr>
+          <tr><td>π</td><td>positive rate (prevalence)</td></tr>
+          <tr><td>c<sub>FN</sub>, c<sub>FP</sub></td><td>cost of a missed positive and of a false alarm</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: end-to-end project simulator (illustrative)</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Keep the defaults and watch the packet travel through the six stages; the scorecard fills in as the pipeline reaches each stage.</li>
+        <li>Pick <b>edge</b> deployment with the random forest: the model-size check fails — the scorecard flags it. Pick logistic regression and it fits.</li>
+        <li>Set monitoring to <b>none</b> and read the 6-month AUC and risk; then set <b>full + retrain</b>.</li>
+        <li>Move the threshold and watch the expected cost per 1k decisions: find the cheapest threshold.</li></ol></div>
+      <div data-lab="capstone"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Random split on time-dependent data</b> — the test set is "the past mixed with the future"; use a time split.</li>
+          <li><b>Picking the model before the budget</b> — a 400 ms ensemble for a 100 ms product.</li>
+          <li><b>Fitting preprocessing on all data</b> (leakage) or two different pipelines for training and serving.</li>
+          <li><b>No monitoring plan</b> — the project is "finished" the day accuracy starts to decay.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Kaggle-to-production gap:</b> the winning 50-model ensemble is rarely deployable; real teams ship the simple model that fits the latency, cost and maintenance budget.</li>
+          <li><b>MLOps maturity models</b> (Google's levels 0–2) describe exactly this journey from notebooks to automated pipelines.</li>
+          <li><b>Portfolio projects</b> that include a monitored, containerised API and a model card stand out far more than a notebook.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Cost per 1,000 orders at threshold 0.5 given TPR = 0.222, FPR = 0.0128, π = 0.1, c<sub>FN</sub> = $50, c<sub>FP</sub> = $5?</summary><div class="ans">1000·[0.1·0.778·50 + 0.9·0.0128·5] = 3,890 + 57.6 ≈ $3,948 — worse than at 0.3 or 0.2, because false negatives are 10× pricier.</div></details>
+        <details class="check"><summary>2. Two always-on replicas at $0.08/h serve 100,000 predictions a day. Cost per 1k?</summary><div class="ans">2·0.08·24 = $3.84/day; 100 thousand-blocks → $0.0384 per 1k.</div></details>
+        <details class="check"><summary>3. Why split by time for a returns model?</summary><div class="ans">Production predicts the future from the past; a random split lets the model see future patterns and overstates performance.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Choose threshold from error costs; choose model from latency, size and cost budget as well as accuracy.</li><li>Use one shared preprocessing pipeline and time-based splits.</li><li>Deployment mode drives cost by orders of magnitude; monitoring is cheap insurance.</li><li>A finished project has: tracked runs, a registry entry, a rollout plan, monitoring rules and a model card.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Module complete.</b> You have followed machine learning from a single data point to a governed, monitored production system. Return to <a href="machine-learning.html">the Machine Learning hub</a>, review the vision-specific deployment details in <a href="cv-production.html">Computer Vision · Module 9</a>, or continue with the next topic in the <a href="index.html">AI Learning Hub</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

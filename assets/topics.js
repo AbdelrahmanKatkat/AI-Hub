@@ -9,17 +9,10 @@ window.HUB = {
       // sections/modules are generated from curriculum/mathematics.md (see assets/curriculum-math.js)
     },
     {
-      id: 'ml', title: 'Machine Learning', icon: '🧠', color: '#3fb950', status: 'live', href: 'machine-learning.html', next: 'ds',
-      desc: 'From data and preprocessing to training, neural networks, evaluation and production.',
-      tags: ['Preprocessing', 'Regression', 'Gradient descent', 'Neural networks', 'Evaluation'],
-      sections: [
-        { id: 'intro', t: 'What is ML & the pipeline', k: 'pipeline supervised unsupervised' },
-        { id: 'data', t: 'Data & preprocessing', k: 'normalize standardize scaling log transform outliers leakage' },
-        { id: 'training', t: 'Models & training', k: 'linear regression mse loss gradient descent learning rate' },
-        { id: 'neural', t: 'Neural networks', k: 'mlp activation backpropagation decision boundary playground' },
-        { id: 'evaluation', t: 'Evaluation & post-processing', k: 'threshold precision recall roc f1 confusion matrix' },
-        { id: 'production', t: 'Computation & storage', k: 'gpu inference quantization feature store registry drift monitoring' },
-      ],
+      id: 'ml', title: 'Machine Learning', icon: '🧠', color: '#3fb950', status: 'live', href: 'machine-learning.html', curriculum: 'assets/curriculum-ml.js', next: 'ds',
+      desc: 'Zero to hero: data preparation, classical algorithms, ensembles, neural networks, evaluation and production systems — every algorithm animated.',
+      tags: ['Data preparation', 'Trees & boosting', 'Neural networks', 'Evaluation', 'MLOps'],
+      // lessons are generated from curriculum/machine-learning.md (assets/curriculum-ml.js)
     },
     { id: 'ds', title: 'Data Science', icon: '📊', color: '#388bfd', status: 'soon', desc: 'Exploration, statistics, experimentation and storytelling with data.' },
     {

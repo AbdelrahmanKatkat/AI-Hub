@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · Ensembles &amp; boosting · Machine Learning</title>
+<meta name="description" content="Bagging, random forests, gradient boosting, XGBoost/LightGBM/CatBoost and stacking: why many weak models beat one strong one, derived and animated.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-ensembles.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · Ensembles &amp; boosting</h1>
+        <p>One decision tree is jumpy and unreliable. A committee of trees is the strongest default model for tabular data. You will derive <i>why</i> averaging helps (a two-line variance calculation), watch trees vote, watch boosting fix its own mistakes one tree at a time, and compute a full boosting round, an XGBoost split gain and a stacking table by hand.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs: <a href="ml-classical.html#decision-trees">decision trees</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 4.1 bagging ===================== -->
+    <section class="lesson" id="bagging" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.1</span><h2>Why ensembles work &amp; bagging</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A fully grown <a href="ml-classical.html#decision-trees">decision tree</a> fits the training set perfectly, yet change three training rows and its boundary reshuffles completely. Can we keep the tree's flexibility but remove this instability, using nothing but more computing power and no new maths model?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Ask one friend to guess the weight of an ox and they may be far off; ask a hundred and average, and the errors — some too high, some too low — largely cancel. That is the wisdom of crowds. It only works if the guesses are <b>not all wrong in the same way</b>. If all hundred friends copied the same neighbour, averaging gives you nothing.</p>
+        <p>An unpruned tree has <b>low bias</b> (it can fit anything) but <b>high variance</b> (its answer depends strongly on exactly which rows it saw). Variance is exactly what averaging removes. So: train many trees, each on a slightly different version of the data, and average. The trick for getting "different versions of the data" from one dataset is the <b>bootstrap</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the variance of an average.</b> Suppose we have <i>n</i> predictors <span class="tex">T_1,\dots,T_n</span>, each with variance <span class="tex">\sigma^2</span>, and any two of them have correlation <span class="tex">\rho</span> (so covariance <span class="tex">\rho\sigma^2</span>). The ensemble is their average <span class="tex">\bar T=\frac1n\sum_iT_i</span>. Variance of a sum is the sum of all variances and covariances:</p>
+        <div class="eq">\operatorname{Var}(\bar T)=\frac1{n^2}\Big[\underbrace{n\sigma^2}_{\text{n variances}}+\underbrace{n(n-1)\rho\sigma^2}_{\text{n(n-1) ordered pairs}}\Big]=\frac{\sigma^2}{n}+\frac{n-1}{n}\rho\sigma^2=\rho\sigma^2+\frac{1-\rho}{n}\sigma^2</div>
+        <p>Read it: the second term shrinks as 1/n — more trees always helps there. The first term, <span class="tex">\rho\sigma^2</span>, <b>never shrinks</b>: it is the part of the error the trees share. Adding trees cannot beat the correlation floor. The only ways to go lower are making each tree better, or making trees <i>less correlated</i> — which is the whole idea of random forests (next lesson).</p>
+        <div class="worked"><b>Worked example — variance of the average</b>
+          <p>Let <span class="tex">\sigma^2=1</span>.</p>
+          <p>Independent trees, <span class="tex">\rho=0,\ n=10</span>: <span class="tex">0+\frac{1}{10}=0.10</span>. Ten times less variance.</p>
+          <p><span class="tex">\rho=0.3,\ n=10</span>: <span class="tex">0.3+\frac{0.7}{10}=0.37</span>. With 100 trees: <span class="tex">0.3+0.007=0.307</span>. With infinitely many: 0.30. Going from 10 to 100 trees bought only 0.063.</p>
+          <p><span class="tex">\rho=0.9,\ n=10</span>: <span class="tex">0.9+0.01=0.91</span> — highly correlated trees are almost useless to average.</p></div>
+        <div data-lab="fplot" data-title="Variance of an average of n predictors (σ² = 1)" data-names="Var(average)" data-f="rho + (1-rho)/n" data-params="rho=0.3:0..1:0.05; n=10:1..100:1" data-view="0,100,0,1" data-readout="floor (n→∞) = rho; at n=10 = rho + (1-rho)/10"></div>
+        <p>(Here the horizontal axis of the plot is a dummy variable <span class="tex">x</span>; read the readout, and drag <b>rho</b> and <b>n</b>.)</p>
+
+        <p><b>Step 2: the bootstrap.</b> We only have one dataset of <i>N</i> rows, but we want many different ones. A <b>bootstrap sample</b> draws <i>N</i> rows <b>with replacement</b>: each draw picks any of the N rows with probability 1/N, so some rows appear twice or three times and others not at all. Each tree gets its own bootstrap sample — they all look like the data, but differ in which rows are over- and under-represented.</p>
+        <p><b>The 63.2% fact.</b> The chance that a particular row is <i>not</i> chosen in one draw is <span class="tex">1-\frac1N</span>; not chosen in all N independent draws: <span class="tex">(1-\frac1N)^N\to e^{-1}\approx0.368</span>. So each bootstrap sample contains about <b>63.2%</b> of the distinct rows, and about 36.8% are left out. For small N: N = 6 gives <span class="tex">1-(5/6)^6=66.5\%</span> in-bag; N = 10 gives 65.1%; N = 100 gives 63.4%.</p>
+        <p><b>Bagging</b> = <b>b</b>ootstrap <b>agg</b>regat<b>ing</b>: train one deep tree per bootstrap sample; predict by averaging (regression) or by majority vote / averaging class probabilities (classification).</p>
+
+        <p><b>Step 3: out-of-bag (OOB) error — a free validation set.</b> The ~36.8% of rows a tree never saw are its personal test set. To score the whole ensemble, predict each row <i>using only the trees that did not train on it</i>, then compare with the truth. No separate hold-out needed.</p>
+        <div class="worked"><b>Worked example — bagging and OOB on six points</b>
+          <p>Data (x → y): 1→3, 2→5, 3→4, 4→10, 5→12, 6→11. Three bootstrap samples (row numbers drawn with replacement) and a depth-1 tree (a stump: one split, leaf = mean) per sample:</p>
+          <table class="tbl"><tr><th>tree</th><th>bootstrap rows</th><th>in-bag distinct</th><th>best split</th><th>leaf means</th><th>OOB rows</th></tr>
+          <tr><td>1</td><td>1,1,2,4,4,6</td><td>1,2,4,6</td><td>x &lt; 3</td><td>3.667 | 10.333</td><td>3, 5</td></tr>
+          <tr><td>2</td><td>2,3,3,5,6,6</td><td>2,3,5,6</td><td>x &lt; 4</td><td>4.333 | 11.333</td><td>1, 4</td></tr>
+          <tr><td>3</td><td>1,3,4,5,5,6</td><td>1,3,4,5,6</td><td>x &lt; 3.5</td><td>3.5 | 11.25</td><td>2</td></tr></table>
+          <p>OOB predictions: row 3 (y=4) → 10.333, error² = 40.11; row 5 (y=12) → 10.333, 2.78; row 1 (y=3) → 4.333, 1.78; row 4 (y=10) → 11.333, 1.78; row 2 (y=5) → 3.5, 2.25. Row 6 was in-bag for all three trees, so it has no OOB prediction. OOB MSE = (40.11+2.78+1.78+1.78+2.25)/5 = <b>9.74</b> (RMSE 3.12). With hundreds of trees every row has dozens of OOB trees and the estimate is stable. (Three stumps is a toy; real bagging uses deep trees.)</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat f_{\text{bag}}(x)=\frac1B\sum_{b=1}^{B}\hat f^{*b}(x),\qquad \text{OOB error}=\frac1N\sum_{i}L\Big(y_i,\ \frac1{|B_i|}\sum_{b\in B_i}\hat f^{*b}(x_i)\Big)</div>
+        <table class="sym">
+          <tr><td>B</td><td>number of trees (bootstrap samples)</td></tr>
+          <tr><td><span class="tex">\hat f^{*b}</span></td><td>the tree trained on the b-th bootstrap sample</td></tr>
+          <tr><td><span class="tex">B_i</span></td><td>set of trees whose bootstrap sample did <i>not</i> contain row i</td></tr>
+          <tr><td><span class="tex">\rho,\sigma^2</span></td><td>correlation between trees' predictions, variance of one tree's prediction</td></tr>
+          <tr><td>L</td><td>per-row loss (squared error, or 0/1 error for votes)</td></tr>
+        </table>
+        <p><b>Pipeline view.</b> <i>Stored:</i> B full trees (each up to ~N nodes if grown deep: memory ≈ B × nodes × 16–32 bytes). <i>Training:</i> B × the cost of one tree, <span class="tex">O(B\cdot dN\log N)</span>, but trees are independent, so it parallelises perfectly across cores. <i>Inference:</i> B × depth comparisons per row — latency scales with trees × depth (100 trees × depth 20 = 2000 comparisons, microseconds in C, milliseconds in naive Python). <i>Preprocessing:</i> none — no scaling, tolerates monotone transforms and outliers. <i>Use when:</i> you have a high-variance learner. <i>Do not use when:</i> the base learner is already stable (bagging linear regression barely changes anything — averaging identical models gives <span class="tex">\rho\approx1</span>) or biased (it fixes variance, not bias).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: watch the committee form</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Each round draws a bootstrap sample (watch some dots fatten — drawn twice — and others fade out — left out), then fits a deep tree. Notice each tree's jagged boundary is different.</li>
+        <li>Move the <b>number of trees</b> slider: the averaged boundary (big picture) turns from blocky to smooth, and the variance plot falls and then flattens at a floor.</li>
+        <li>Raise <b>noise</b>: a single tree overfits noise; the average does not chase it.</li></ol></div>
+      <div data-lab="mlBagging"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>"More trees overfit." Not for bagging: B only affects the 1/n term, which just converges. (Boosting is different — see 4.3.)</li>
+          <li>Bagging cannot reduce <i>bias</i>. Averaging many depth-1 stumps of an XOR pattern is still wrong.</li>
+          <li>OOB error is a good validation estimate only if rows are independent; with grouped or time-ordered data the leakage makes it too optimistic (<a href="ml-evaluation.html">Module 5</a>).</li>
+          <li>Bootstrap rows are duplicated, so do not use <code>min_samples_leaf</code> reasoning based on distinct rows.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Random forests</b> (next lesson) are bagging plus one extra trick; <b>extra-trees</b> push decorrelation further.</li>
+          <li><b>Model averaging in deep learning</b>: ensembles of networks with different seeds, snapshot ensembles, and dropout (an implicit exponential ensemble) rely on the same variance formula.</li>
+          <li><b>Test-time augmentation</b> averages predictions over perturbed copies of one input — bagging over inputs instead of training sets.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. 25 trees, σ² = 4, ρ = 0.5. What is the variance of their average?</summary><div class="ans">0.5·4 + (0.5/25)·4 = 2 + 0.08 = 2.08. Half the variance is the shared floor.</div></details>
+        <details class="check"><summary>2. In a dataset of 1000 rows, about how many distinct rows does one bootstrap sample contain?</summary><div class="ans">1 − (0.999)^1000 ≈ 0.632, so about 632 distinct rows; ~368 are out-of-bag.</div></details>
+        <details class="check"><summary>3. Why can you not reduce error below ρσ² by adding trees?</summary><div class="ans">The ρσ² term of the variance formula does not depend on n. It is the error the trees make together; only less-correlated or more accurate trees can lower it.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Var(average) = ρσ² + (1−ρ)σ²/n: more trees kills the second term only.</li><li>Bootstrap = N draws with replacement → 63.2% distinct rows, 36.8% out-of-bag.</li><li>OOB error is a free validation score; bagging cuts variance, not bias.</li><li>Cost: B× training (parallel), B×depth inference, no preprocessing.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 random forest ===================== -->
+    <section class="lesson" id="random-forest" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.2</span><h2>Random forests</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Suppose one feature is very strong. Every bagged tree will split on it at the root, so all B trees look alike (ρ close to 1) and averaging helps little. How can we force trees to disagree <i>without</i> making each one worse?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a committee in which every member is handed the same star witness's report first: they all reach the same conclusion. A random forest <b>blindfolds part of the evidence</b>: at every split, a tree may look at only a random handful of the features. Sometimes the star feature is hidden, so the tree must find the next-best structure. Individual trees become slightly worse (higher bias) but far less alike (lower ρ), and by the formula of lesson 4.1 the net effect on the average is a big win.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The algorithm, per tree <i>b</i> = 1…B:</p>
+        <ol>
+          <li>Draw a bootstrap sample of the N rows.</li>
+          <li>Grow a deep tree. At <b>each node</b>, choose <i>m</i> of the <i>d</i> features at random, and search for the best split (Gini or entropy gain, as in the <a href="ml-classical.html#decision-trees">decision-trees lesson</a>) among those <i>m</i> only.</li>
+          <li>No pruning. Stop at a minimum leaf size.</li>
+        </ol>
+        <p>Defaults: <span class="tex">m=\lfloor\sqrt d\rfloor</span> for classification, <span class="tex">m=d/3</span> for regression. With <span class="tex">m=d</span> you recover plain bagging. With <span class="tex">m=1</span> you get nearly random trees: very decorrelated, but weak.</p>
+        <div class="worked"><b>Worked example — how much does subsampling decorrelate?</b>
+          <p>Say d = 10 features and one strong feature S. With m = 10 every tree splits on S at the root: probability 1. With m = 3, the root sees S with probability 3/10 = 0.3, so 70% of trees must pick a different root feature. Suppose this lowers the correlation from ρ = 0.8 to ρ = 0.4 while a single tree's variance rises from σ² = 1 to 1.2. Ensemble variance with n = 100: before <span class="tex">0.8+0.2/100=0.802</span>; after <span class="tex">0.4\cdot1.2+0.6\cdot1.2/100=0.487</span>. A noticeably better ensemble from individually worse trees. (Numbers are illustrative to show the mechanics, not measured.)</p></div>
+        <p><b>Feature importance.</b> Two common measures: (1) <i>impurity importance</i> — sum, over every split on feature j in every tree, of the impurity decrease weighted by the fraction of rows reaching it, normalised to sum to 1 (cheap, but biased toward high-cardinality or continuous features); (2) <i>permutation importance</i> — shuffle feature j in the OOB rows and measure how much OOB accuracy drops (slower, more honest; <a href="ml-evaluation.html">Module 5</a>).</p>
+        <p><b>OOB error as you add trees.</b> The OOB curve falls as B grows and then flattens — you can pick B as "the point where OOB stops improving"; more trees cost only compute, never accuracy.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat f_{\text{RF}}(x)=\frac1B\sum_{b=1}^{B}T_b(x;\Theta_b),\qquad \mathrm{Imp}(j)=\sum_{t:\,\text{split on }j}\frac{n_t}{N}\,\Delta\mathrm{imp}_t</div>
+        <table class="sym">
+          <tr><td><span class="tex">\Theta_b</span></td><td>the randomness of tree b: its bootstrap sample and its feature subsets at every node</td></tr>
+          <tr><td>m, d</td><td>features tried per split, total features (<code>max_features</code>)</td></tr>
+          <tr><td><span class="tex">n_t/N</span></td><td>fraction of training rows reaching node t</td></tr>
+          <tr><td><span class="tex">\Delta\mathrm{imp}_t</span></td><td>impurity decrease from the split at node t</td></tr>
+        </table>
+        <p><b>Pipeline view.</b> <i>Stored:</i> B trees, typically 100–1000 trees, each with up to ~N leaves (a forest on 1M rows can be gigabytes: this is its main weakness). <i>Training:</i> <span class="tex">O(B\cdot m N\log N)</span> — smaller m also makes it faster; embarrassingly parallel. <i>Inference:</i> B × depth per row, no sequential dependency. <i>Preprocessing:</i> none for scaling or outliers; needs numeric encoding of categories and imputation (most libraries). <i>Strengths:</i> hard to ruin, few hyper-parameters, OOB score, importance. <i>Weaknesses:</i> large and slower to predict than boosting of small trees, cannot extrapolate beyond the training range, usually a little less accurate than tuned gradient boosting.</p>
+        <table class="tbl"><tr><th>Hyper-parameter</th><th>Effect</th><th>Typical</th></tr>
+        <tr><td>n_estimators (B)</td><td>more = lower variance, no overfit; stop when OOB flattens</td><td>200–1000</td></tr>
+        <tr><td>max_features (m)</td><td>smaller = more decorrelation, more bias</td><td>√d (clf), d/3 (reg)</td></tr>
+        <tr><td>min_samples_leaf</td><td>larger = smoother, smaller model</td><td>1–5 (more for noisy data)</td></tr>
+        <tr><td>max_depth</td><td>cap for memory/latency</td><td>None or 15–30</td></tr>
+        <tr><td>class_weight</td><td>imbalance</td><td>"balanced_subsample"</td></tr></table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: decorrelating the trees</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Set features-per-split to 2 (all). Notice every tree uses the same strong feature; the correlation reading is high and the OOB error flattens early.</li>
+        <li>Set it to 1: trees become more different (correlation drops) but each is weaker. Find the setting that gives the lowest OOB error.</li>
+        <li>Watch the importance bars settle as trees are added: the two informative features dominate; the noise features stay small.</li></ol></div>
+      <div data-lab="mlForest"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Impurity importance ranks a random ID column surprisingly high when it has many unique values. Cross-check with permutation importance.</li>
+          <li>Correlated features share importance between them, so each looks less important than it is.</li>
+          <li>A forest predicts averages of training targets: it can never predict outside the observed y-range, and it is flat beyond the data in x.</li>
+          <li>Tuning B on the test set — use OOB or CV instead.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Strong tabular baseline</b>: the first model to try after a linear baseline; used for credit risk, churn, fraud triage.</li>
+          <li><b>Isolation forests</b> (anomaly detection) and <b>quantile regression forests</b> reuse the random-tree machinery.</li>
+          <li><b>Feature selection</b> and data exploration via importance; <b>proximity</b> (rows ending in the same leaves) as a similarity measure.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A dataset has 16 features. What is the default m for a classification forest?</summary><div class="ans">⌊√16⌋ = 4 features per split.</div></details>
+        <details class="check"><summary>2. Why can individually worse trees give a better forest?</summary><div class="ans">Lower correlation ρ reduces the shared-error floor ρσ²; if that gain exceeds the increase in each tree's own variance/bias, the average improves.</div></details>
+        <details class="check"><summary>3. Name two reasons not to read impurity importance literally.</summary><div class="ans">It is biased toward high-cardinality/continuous features, and correlated features split the credit. It is also computed on training data, so it can credit features that only help overfitting.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Random forest = bagging + random feature subset at every split → lower ρ.</li><li>OOB score, importance and almost no tuning: the safe default.</li><li>Costly in memory (B full trees) and cannot extrapolate.</li><li>m is the key knob; B just needs to be big enough.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 gradient boosting ===================== -->
+    <section class="lesson" id="gradient-boosting" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.3</span><h2>Gradient boosting</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Bagging averages many <i>strong, independent</i> trees to cut variance. What if instead we used many <i>weak, tiny</i> trees — each of which is badly biased — but built them <i>one after another</i>, each fixing what the previous ones got wrong? Can a chain of stumps become a state-of-the-art model?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a golfer. The first shot goes roughly toward the hole; you do not start over, you take the next shot <b>from where the ball landed</b>, aiming at the remaining gap. Each shot is crude, but each one reduces the distance. Boosting is exactly this: the current prediction is where the ball is; the <b>residual</b> (truth minus prediction) is the remaining distance; each new small tree is a crude shot at the residual, and we add a <i>fraction</i> of it (the learning rate) so we never overshoot.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Start with the simplest model, a constant <span class="tex">F_0</span> (the mean of y for squared loss). Then repeat: compute residuals, fit a small tree to them, add a shrunken version of it to the model.</p>
+        <div class="worked"><b>Worked example — two full boosting rounds, squared loss</b>
+          <p>Data: x = 1…6, y = 3, 5, 4, 10, 12, 11. Learning rate <span class="tex">\eta=0.5</span>, base learner = stump.</p>
+          <p><b>Round 0.</b> <span class="tex">F_0=\text{mean}(y)=7.5</span> for every row. MSE = (20.25+6.25+12.25+6.25+20.25+12.25)/6 = 12.917.</p>
+          <p><b>Round 1.</b> Residuals <span class="tex">r=y-F_0</span> = −4.5, −2.5, −3.5, +2.5, +4.5, +3.5. Try every split of the residuals by the sum of squared errors (SSE) left after predicting each side's mean: split x&lt;1.5 → 53.2; x&lt;2.5 → 40.75; <b>x&lt;3.5 → 4.0</b>; x&lt;4.5 → 29.5; x&lt;5.5 → 62.8. Best: x&lt;3.5, with leaf values mean(−4.5,−2.5,−3.5) = −3.5 and mean(2.5,4.5,3.5) = +3.5. Update <span class="tex">F_1=F_0+\eta\cdot\text{leaf}</span>: left rows 7.5 + 0.5(−3.5) = <b>5.75</b>, right rows 7.5 + 0.5(3.5) = <b>9.25</b>. MSE falls 12.917 → 3.729.</p>
+          <p><b>Round 2.</b> New residuals <span class="tex">y-F_1</span> = −2.75, −0.75, −1.75, +0.75, +2.75, +1.75. The best split is again x&lt;3.5 (SSE 4.0) with leaves −1.75 and +1.75. <span class="tex">F_2</span> = 5.75 + 0.5(−1.75) = <b>4.875</b> (left), 9.25 + 0.875 = <b>10.125</b> (right). MSE = 1.432.</p>
+          <p>Each round with the same split shrinks the remaining gap by a factor <span class="tex">(1-\eta)=0.5</span>. The stump cannot go below the noise inside each group: two groups with SSE 2 each → MSE floor 4/6 = 0.667. In round 3 the best split changes to x&lt;4.5 (SSE 2.92) — the trees start chasing individual points, and MSE falls to 0.723. This is the start of overfitting: <b>more rounds can hurt</b>.</p></div>
+        <p><b>Why "gradient"?</b> For squared loss <span class="tex">L=\tfrac12(y-F)^2</span>, the derivative with respect to the prediction is <span class="tex">\partial L/\partial F=-(y-F)</span>: the <b>residual is the negative gradient</b>. So boosting is gradient descent <i>in function space</i>: instead of nudging parameters <span class="tex">\theta</span> (<a href="math-optimization.html#gradient-descent">gradient descent</a>), we nudge the function itself, in the direction of steepest loss decrease, but because a function can only be moved at the training points we fit a tree to the negative gradient values to generalise the step to new x. For <i>any</i> differentiable loss the recipe is the same: compute <span class="tex">r_i=-\partial L(y_i,F)/\partial F\big|_{F=F_{m-1}(x_i)}</span> (the "pseudo-residual") and fit a tree to it.</p>
+        <div class="worked"><b>Worked example — log-loss boosting (classification)</b>
+          <p>Labels on x = 1…6: y = 0, 1, 0, 0, 1, 1. The model outputs a log-odds score F; probability <span class="tex">p=\sigma(F)</span>. Log-loss <span class="tex">L=-[y\ln p+(1-y)\ln(1-p)]</span> has gradient <span class="tex">\partial L/\partial F=p-y</span>, so the pseudo-residual is <b>y − p</b>.</p>
+          <p><span class="tex">F_0=\ln\frac{p_0}{1-p_0}</span> with <span class="tex">p_0=\text{mean}(y)=0.5</span> gives F₀ = 0, p = 0.5 everywhere, log-loss ln 2 = 0.6931. Residuals y−p = −0.5, +0.5, −0.5, −0.5, +0.5, +0.5. Best stump of these (SSE): x&lt;4.5 (0.75), leaves mean(−.5,.5,−.5,−.5) = −0.25 and mean(.5,.5) = +0.5. With η = 0.5: F₁ = −0.125 for x = 1…4 and +0.25 for x = 5, 6, i.e. p = 0.469 and 0.562. Log-loss = 0.6345 (down from 0.6931). Next residuals: −0.469, +0.531, −0.469, −0.469, +0.438, +0.438.</p>
+          <p>(Real libraries refine the leaf value with a Newton step: <span class="tex">\sum r/\sum p(1-p)</span>, here −1/1 = −1 and 1/0.5 = 2, as developed in lesson 4.4.)</p></div>
+        <p><b>AdaBoost: the same idea, older view.</b> AdaBoost boosts classifiers with exponential loss <span class="tex">e^{-y F}</span> (y = ±1) by <i>reweighting rows</i> instead of fitting residuals: after a stump with weighted error <span class="tex">\varepsilon</span>, its vote is <span class="tex">\alpha=\tfrac12\ln\frac{1-\varepsilon}{\varepsilon}</span>, wrong rows are multiplied by <span class="tex">e^{\alpha}</span>, right rows by <span class="tex">e^{-\alpha}</span>, then weights are renormalised.</p>
+        <div class="worked"><b>Worked example — one AdaBoost reweighting</b>
+          <p>Five rows, weights 0.2 each. A stump gets one row wrong: <span class="tex">\varepsilon=0.2</span>. <span class="tex">\alpha=\tfrac12\ln(0.8/0.2)=\tfrac12\ln4=0.693</span>, so <span class="tex">e^{\alpha}=2</span> and <span class="tex">e^{-\alpha}=0.5</span>. New weights: four right rows 0.2·0.5 = 0.1; the wrong row 0.2·2 = 0.4. Sum = 0.8, so normalise: 0.125 each and 0.5 for the wrong row. The next stump now faces a problem in which the previously missed row carries half of all weight.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">F_m(x)=F_{m-1}(x)+\eta\,h_m(x),\qquad h_m=\arg\min_h\sum_i\big(r_{im}-h(x_i)\big)^2,\qquad r_{im}=-\frac{\partial L(y_i,F)}{\partial F}\Big|_{F=F_{m-1}(x_i)}</div>
+        <table class="sym">
+          <tr><td><span class="tex">F_m</span></td><td>the ensemble after m rounds (a <i>sum</i> of trees, not an average)</td></tr>
+          <tr><td><span class="tex">\eta</span></td><td>learning rate / shrinkage, 0 &lt; η ≤ 1; smaller needs more rounds but generalises better</td></tr>
+          <tr><td><span class="tex">h_m</span></td><td>the m-th small tree (depth 3–8 typically), fitted to pseudo-residuals</td></tr>
+          <tr><td><span class="tex">r_{im}</span></td><td>pseudo-residual of row i: negative gradient of the loss at the current prediction</td></tr>
+          <tr><td>L</td><td>loss: squared (r = y−F), absolute (r = sign), Huber, log-loss (r = y−p), softmax (one tree per class per round)</td></tr>
+        </table>
+        <p><b>Pipeline view.</b> <i>Stored:</i> M trees (typically 100–5000, small: ≤ 2<sup>depth</sup> leaves each) plus F₀ — often a few MB. <i>Training:</i> inherently <b>sequential</b> across trees (each needs the previous residuals), cost ≈ <span class="tex">O(M\cdot dN\log N)</span>, parallel only inside a tree. <i>Inference:</i> M × depth comparisons, summed; latency scales with trees × depth, e.g. 500 trees × depth 6 = 3000 comparisons. <i>Preprocessing:</i> none for scaling; categories need encoding (unless CatBoost/LightGBM native). <i>Regularisation:</i> small η, shallow trees, row/column subsampling ("stochastic" gradient boosting), early stopping on a validation set. <i>Use when:</i> tabular data and you want the best accuracy. <i>Avoid when:</i> images/text/audio raw inputs, extremely noisy labels (it will chase them), or when you need strict extrapolation.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: trees added one at a time</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In <b>regression</b> mode press Step. Follow the caption: current prediction (line) → residuals (vertical segments) → the new stump fitted to those segments → the line moves by η × stump. Repeat. The loss plot falls.</li>
+        <li>Halve the learning rate: each step moves less, you need twice the rounds, but the curve is smoother.</li>
+        <li>Run many rounds with the noisy data: the training loss keeps dropping, the <i>validation</i> loss turns up — overfitting. Early stopping would stop at the minimum.</li>
+        <li>Switch to <b>classification</b>: the boundary refines as stumps accumulate.</li></ol></div>
+      <div data-lab="mlBoost"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Boosting <i>does</i> overfit with many rounds, unlike bagging. Always use a validation set and early stopping.</li>
+          <li>Learning rate and number of trees trade off — tune them together (lower η, more trees).</li>
+          <li>Fitting residuals only equals gradient boosting for squared loss. For other losses, the thing being fit is the negative gradient.</li>
+          <li>Boosting is sequential: you cannot parallelise over trees, so training can be slower than a forest for the same M.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Tabular state of the art</b>: GBDTs (XGBoost, LightGBM, CatBoost) win most structured-data competitions and power fraud, ranking, ads CTR and credit models.</li>
+          <li><b>Learning to rank</b>: LambdaMART is gradient boosting with a ranking gradient — used in web search.</li>
+          <li><b>Functional gradient idea</b> reappears in residual networks (each block adds a correction, <a href="cv-cnn.html">ResNet</a>) and in diffusion denoising steps.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. After round 1 of the worked example the prediction for x = 1 is 5.75 while y = 3. What is the residual that round 2 fits for that row?</summary><div class="ans">3 − 5.75 = −2.75.</div></details>
+        <details class="check"><summary>2. Squared loss ½(y−F)². Show that the negative gradient equals the residual.</summary><div class="ans">d/dF ½(y−F)² = −(y−F), so −d/dF = y−F, the residual.</div></details>
+        <details class="check"><summary>3. AdaBoost: weighted error ε = 0.1. Compute α.</summary><div class="ans">½ ln(0.9/0.1) = ½ ln 9 = 1.099.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Boosting adds small trees sequentially, each fitted to the negative gradient (residuals for squared loss, y−p for log-loss).</li><li>η shrinks every step; small η + many trees generalises best; early stopping is essential.</li><li>It reduces bias; bagging reduces variance.</li><li>Cost: sequential training, inference = trees × depth.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 xgboost ===================== -->
+    <section class="lesson" id="xgboost-lightgbm" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.4</span><h2>XGBoost, LightGBM &amp; CatBoost</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Plain gradient boosting uses only the slope of the loss and has no built-in brake against complex trees. Can we also use the <i>curvature</i> to take better steps, price every split by its true benefit, penalise complexity inside the objective — and make training fast enough for millions of rows?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Gradient descent looks at the slope; Newton's method also looks at how fast the slope changes, and jumps closer to the minimum. XGBoost does a Newton step on the loss for the new tree and, because everything is a sum over leaves, can compute in closed form <b>how good each leaf is and how much a candidate split gains</b>. The same formulas then double as a regulariser: a split must earn more than γ, and leaf values are shrunk by λ.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>At round m, approximate the loss around the current prediction with a second-order Taylor expansion. For each row define the <b>gradient</b> <span class="tex">g_i=\partial L/\partial F</span> and the <b>hessian</b> <span class="tex">h_i=\partial^2L/\partial F^2</span>, both at <span class="tex">F_{m-1}(x_i)</span>. For squared loss <span class="tex">\tfrac12(F-y)^2</span>: <span class="tex">g_i=F-y_i</span>, <span class="tex">h_i=1</span>. For log-loss: <span class="tex">g_i=p_i-y_i</span>, <span class="tex">h_i=p_i(1-p_i)</span>.</p>
+        <p>The objective of a new tree with leaves <i>j</i> (each with weight <span class="tex">w_j</span> and the set <span class="tex">I_j</span> of rows in it), including a penalty <span class="tex">\gamma</span> per leaf and <span class="tex">\tfrac12\lambda w_j^2</span>:</p>
+        <div class="eq">\mathcal L\approx\sum_{j}\Big[G_jw_j+\tfrac12(H_j+\lambda)w_j^2\Big]+\gamma T,\qquad G_j=\sum_{i\in I_j}g_i,\ H_j=\sum_{i\in I_j}h_i</div>
+        <p>For one leaf this is a parabola in <span class="tex">w_j</span>; its minimum is at</p>
+        <div class="eq">w_j^\star=-\frac{G_j}{H_j+\lambda},\qquad \mathcal L^\star_j=-\frac12\frac{G_j^2}{H_j+\lambda}</div>
+        <p>(Check: derivative <span class="tex">G+(H+\lambda)w=0</span>.) A node's "score" is thus <span class="tex">\tfrac12G^2/(H+\lambda)</span>. Splitting a node into left and right replaces one score with two, and costs one extra leaf (γ):</p>
+        <div class="eq">\text{Gain}=\tfrac12\Big[\frac{G_L^2}{H_L+\lambda}+\frac{G_R^2}{H_R+\lambda}-\frac{(G_L+G_R)^2}{H_L+H_R+\lambda}\Big]-\gamma</div>
+        <p>Grow the split with the largest gain; if the best gain is negative, <b>do not split</b> (pruning built into the objective).</p>
+        <div class="worked"><b>Worked example — splitting with gradients</b>
+          <p>Use the boosting data of 4.3 at <span class="tex">F_0=7.5</span>, squared loss: <span class="tex">g=F-y</span> = 4.5, 2.5, 3.5, −2.5, −4.5, −3.5 and all h = 1. Totals: G = 0, H = 6. Candidate split x&lt;3.5: <span class="tex">G_L=4.5+2.5+3.5=10.5,\ H_L=3,\ G_R=-10.5,\ H_R=3</span>.</p>
+          <p><b>λ = 1, γ = 0:</b> <span class="tex">\frac{10.5^2}{3+1}=27.5625</span> for each side, parent term <span class="tex">0^2/(6+1)=0</span>. Gain = ½(27.5625+27.5625−0) = <b>27.5625</b>. Leaf weights <span class="tex">-10.5/4=-2.625</span> and <span class="tex">+2.625</span> (compare plain boosting: −3.5/+3.5 — λ shrinks them).</p>
+          <p><b>λ = 0:</b> gain = ½(36.75+36.75) = 36.75, weights ∓3.5 (exactly the residual means, so XGBoost with λ = 0 and squared loss <i>is</i> the 4.3 algorithm). <b>λ = 5:</b> ½(13.78+13.78) = 13.78.</p>
+          <p>All five candidates at λ = 1: x&lt;1.5 → 6.75; x&lt;2.5 → 13.07; <b>x&lt;3.5 → 27.56</b>; x&lt;4.5 → 17.07; x&lt;5.5 → 4.08. With γ = 30 even the best split has gain 27.56 − 30 &lt; 0, so the tree stays a single leaf; with γ = 5 the best split survives.</p></div>
+        <p><b>Engineering that makes it fast.</b></p>
+        <ul>
+          <li><b>Histogram splits</b> (LightGBM, XGBoost <code>hist</code>): bucket each feature into ≤ 256 bins once; for each node, accumulate (G, H) per bin and scan bins. Cost per feature drops from sorting N values to O(N + bins), and a child's histogram = parent's minus sibling's ("subtraction trick").</li>
+          <li><b>Leaf-wise growth</b> (LightGBM): always split the leaf with the largest gain, anywhere in the tree, rather than level by level. Reaches lower loss with the same number of leaves but can build deep lopsided trees and overfit small data — control with <code>num_leaves</code> and <code>min_data_in_leaf</code>. XGBoost default is level-wise; CatBoost uses <i>oblivious</i> trees (the same split at every node of a level), which are slow to overfit and extremely fast at inference.</li>
+          <li><b>GOSS / EFB</b> (LightGBM): keep rows with large gradients, subsample small ones; bundle mutually exclusive sparse features.</li>
+          <li><b>Native categoricals</b>: LightGBM finds the best partition of category values; CatBoost uses <i>ordered target statistics</i> (each row's category encoding computed only from earlier rows, avoiding target leakage) and ordered boosting.</li>
+          <li><b>Missing values</b>: each split learns a default direction for NaN, so no imputation is required.</li>
+        </ul>
+        <table class="tbl"><tr><th></th><th>XGBoost</th><th>LightGBM</th><th>CatBoost</th></tr>
+        <tr><td>Tree growth</td><td>level-wise (also leaf-wise option)</td><td>leaf-wise</td><td>oblivious, level-wise</td></tr>
+        <tr><td>Split search</td><td>exact or histogram</td><td>histogram</td><td>histogram</td></tr>
+        <tr><td>Categoricals</td><td>one-hot (recent: experimental native)</td><td>native partition</td><td>native, ordered target stats</td></tr>
+        <tr><td>Strength</td><td>robust, wide ecosystem</td><td>fastest on big data</td><td>best defaults, categoricals, fast inference</td></tr></table>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">w_j^\star=-\frac{G_j}{H_j+\lambda},\qquad \text{Gain}=\tfrac12\Big[\tfrac{G_L^2}{H_L+\lambda}+\tfrac{G_R^2}{H_R+\lambda}-\tfrac{(G_L+G_R)^2}{H_L+H_R+\lambda}\Big]-\gamma</div>
+        <table class="sym">
+          <tr><td><span class="tex">g_i,h_i</span></td><td>first and second derivative of the loss for row i at the current prediction</td></tr>
+          <tr><td><span class="tex">G,H</span></td><td>sums of g and h over the rows in a node (L/R = left/right child)</td></tr>
+          <tr><td><span class="tex">\lambda</span></td><td>L2 penalty on leaf weights (<code>reg_lambda</code>): shrinks leaves and gains, especially for small H</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>cost of adding a leaf (<code>gamma</code>/<code>min_split_loss</code>): minimum gain to split</td></tr>
+          <tr><td>H as "cover"</td><td>for squared loss H = row count; <code>min_child_weight</code> requires H ≥ some minimum</td></tr>
+        </table>
+        <p><b>Pipeline view.</b> <i>Stored:</i> M trees with split feature, threshold, default direction and leaf weight per node (a 1000-tree depth-6 model ≈ 64k leaves × a few bytes ≈ a few MB). <i>Training:</i> histogram GBDT ≈ <span class="tex">O(M\cdot(N\cdot d+\text{bins}\cdot d\cdot\text{leaves}))</span> — minutes on millions of rows, GPU support. <i>Inference:</i> trees × depth lookups, trivially batched; microseconds per row on CPU with compiled predictors (treelite, ONNX). <i>Preprocessing:</i> none for scale/outliers/NaN; keep categories as such for LightGBM/CatBoost.</p>
+        <table class="tbl"><tr><th>Practical tuning guide</th><th>Start</th><th>If overfitting</th><th>If underfitting</th></tr>
+        <tr><td>learning_rate η</td><td>0.05–0.1</td><td>lower (0.02), more trees</td><td>raise a little</td></tr>
+        <tr><td>n_estimators</td><td>large (2000) + early stopping</td><td>fewer / stop earlier</td><td>more</td></tr>
+        <tr><td>max_depth / num_leaves</td><td>6 / 31</td><td>lower (4 / 15)</td><td>higher (8 / 63)</td></tr>
+        <tr><td>min_child_weight / min_data_in_leaf</td><td>1 / 20</td><td>raise (10 / 100)</td><td>lower</td></tr>
+        <tr><td>subsample, colsample_bytree</td><td>0.8, 0.8</td><td>0.5–0.7</td><td>1.0</td></tr>
+        <tr><td>reg_lambda (λ), gamma (γ)</td><td>1, 0</td><td>raise λ (5–20), γ &gt; 0</td><td>lower</td></tr></table>
+        <p>Order that works: fix η = 0.05–0.1 and use early stopping to find the tree count; tune depth/leaves and min-child-weight; then subsampling; then λ/γ; finally lower η and refit.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: price every split</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The table lists gradients and hessians per row (editable). The bars show the gain of each candidate threshold. Check the highlighted best split against the hand calculation above (27.56 at λ = 1).</li>
+        <li>Raise λ: all gains shrink and the leaf weights are pulled to zero; the ranking of splits may change when hessians differ.</li>
+        <li>Raise γ until the best gain turns negative: the tree refuses to split (pruning).</li>
+        <li>Edit a gradient to make one outlier: see how the best split isolates it.</li></ol></div>
+      <div data-lab="mlXgbGain"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Leaf-wise trees with default <code>num_leaves</code> on a few thousand rows overfit; lower <code>num_leaves</code> and raise <code>min_data_in_leaf</code>.</li>
+          <li>Early stopping on the same validation set you report is optimistic; keep a separate final test set.</li>
+          <li>One-hot encoding a high-cardinality column for a boosted model explodes the feature count; use native categoricals or target encoding with out-of-fold statistics.</li>
+          <li>Feature "gain" importance has the same biases as impurity importance; check with permutation importance or SHAP.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Kaggle tabular winners and production scoring: credit risk, insurance pricing, click-through prediction, demand forecasting with lag features.</li>
+          <li>Ranking (LightGBM/XGBoost <code>lambdarank</code>) in search and recommendation.</li>
+          <li>The second-order objective is the same Newton idea used in second-order optimisers; leaf regularisation parallels weight decay.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A leaf has G = −6, H = 4, λ = 2. What is its optimal weight?</summary><div class="ans">−G/(H+λ) = 6/6 = 1.</div></details>
+        <details class="check"><summary>2. For the 4.3 data, why is G = 0 at the root?</summary><div class="ans">F₀ is the mean of y, so the residuals y−F₀ sum to zero, hence g = F−y also sums to zero.</div></details>
+        <details class="check"><summary>3. With λ = 1, γ = 0, the split x&lt;1.5 has G_L = 4.5, H_L = 1, G_R = −4.5, H_R = 5. Compute its gain.</summary><div class="ans">½[20.25/2 + 20.25/6 − 0] = ½[10.125 + 3.375] = 6.75.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>XGBoost uses g and h: leaf weight −G/(H+λ), split gain ½[…]−γ.</li><li>λ shrinks leaves, γ prunes splits; λ=0 squared loss recovers plain boosting.</li><li>LightGBM = histograms + leaf-wise; CatBoost = ordered statistics + oblivious trees.</li><li>Tune η with early stopping first, then depth, min-child-weight, subsampling, λ/γ.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 stacking ===================== -->
+    <section class="lesson" id="stacking-blending" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.5</span><h2>Stacking &amp; blending</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have a random forest, a boosted model and a linear model, each good at something different. Averaging them equally ignores that one is better. Can we <i>learn</i> how much to trust each — without cheating by judging them on data they were trained on?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine three doctors who each give an opinion, and a senior physician (the <b>meta-model</b>) who has learned over many past cases which doctor to believe for which kind of patient. The senior physician must learn from cases in which the doctors had <i>not seen the answer</i>: if the doctors had memorised the cases, they would all look perfect and the physician would learn to trust the biggest memoriser — the most overfit model.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Stacking</b> trains <i>level-0</i> (base) models, then trains a <i>level-1</i> (meta) model whose input features are the base models' predictions. The central rule: <b>meta-features must be out-of-fold (OOF) predictions</b>. Split the training data into K folds; for each fold, train every base model on the other K−1 folds and predict the held-out fold. Concatenating the K held-out predictions gives one honest prediction per training row. Then, for the test set, refit the base models on all training data (or average the K fold models) and feed their predictions to the meta-model.</p>
+        <div class="worked"><b>Worked example — OOF predictions and a meta-weight</b>
+          <p>Data x = 1…6, y = 3, 5, 4, 10, 12, 11. Folds: {1,2}, {3,4}, {5,6}. Base model A = least-squares line; base model B = 1-nearest-neighbour. For each fold, train on the other four rows.</p>
+          <p>Fold {1,2}: the line fitted to rows 3–6 is ŷ = −1.1 + 2.3x → A(1) = 1.2, A(2) = 3.5; 1-NN: nearest training row to x=1 and x=2 is x=3 (y=4) → B = 4, 4. Fold {3,4}: line fitted to rows 1,2,5,6: slope 1.794, intercept 1.471 → A(3) = 6.853, A(4) = 8.647; 1-NN: x=3→x=2 (y=5), x=4→x=5 (y=12) → B = 5, 12. Fold {5,6}: line on rows 1–4: ŷ = 0.5+2x → A = 10.5, 12.5; 1-NN: x=5,6→x=4 (y=10) → B = 10, 10.</p>
+          <table class="tbl"><tr><th>x</th><th>y</th><th>A (OOF)</th><th>B (OOF)</th></tr>
+          <tr><td>1</td><td>3</td><td>1.200</td><td>4</td></tr><tr><td>2</td><td>5</td><td>3.500</td><td>4</td></tr><tr><td>3</td><td>4</td><td>6.853</td><td>5</td></tr><tr><td>4</td><td>10</td><td>8.647</td><td>12</td></tr><tr><td>5</td><td>12</td><td>10.500</td><td>10</td></tr><tr><td>6</td><td>11</td><td>12.500</td><td>10</td></tr></table>
+          <p>OOF MSE: A = 3.327, B = 2.000. The simplest meta-model: a blend <span class="tex">w A+(1-w)B</span>. Minimising squared error gives <span class="tex">w^\star=\frac{\sum(A-B)(y-B)}{\sum(A-B)^2}=0.364</span>, MSE <b>1.354</b> — better than either alone (3.33, 2.00) and better than a plain 50/50 average (1.444). Had we trained A and B on all six rows and predicted those same rows, 1-NN would be perfect (error 0) and the meta-model would learn "trust B completely": the leak this protocol prevents.</p></div>
+        <p><b>Blending</b> is the cheaper cousin: hold out one fixed validation split (say 10–20%), train base models on the rest, and fit the meta-model on the base models' predictions for the hold-out. Simpler and leak-safe, but the meta-model sees less data and the estimate is noisier.</p>
+        <p><b>Diversity is what pays.</b> By the formula of 4.1, the gain comes from low correlation between errors. Averaging a forest with a slightly different forest buys almost nothing; averaging a tree model with a linear model and a k-NN buys a lot. Check the correlation of OOF residuals before adding a model. <b>Keep the meta-model simple</b> (ridge/logistic regression with non-negative weights, or a small GBM with strong regularisation): it has few rows of low-dimensional features and overfits easily.</p>
+        <p><b>When ensembling stops helping.</b> When base models make the same mistakes (error correlation near 1); when the remaining error is label noise; or when the extra 0.1% costs 10× the inference time and maintenance. Production teams often stop at a single tuned GBDT, or distil the ensemble into one model.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat y(x)=g\big(\hat f_1(x),\dots,\hat f_M(x)\big),\qquad z_{im}=\hat f_m^{(-k(i))}(x_i)</div>
+        <table class="sym">
+          <tr><td><span class="tex">\hat f_m</span></td><td>base model m (level 0)</td></tr>
+          <tr><td>g</td><td>the meta-model (level 1), trained on <span class="tex">(z_{i1},\dots,z_{iM})\to y_i</span></td></tr>
+          <tr><td><span class="tex">k(i)</span></td><td>the fold containing row i</td></tr>
+          <tr><td><span class="tex">\hat f_m^{(-k)}</span></td><td>model m trained with fold k left out: the OOF prediction</td></tr>
+        </table>
+        <p><b>Pipeline view.</b> <i>Stored:</i> M base models + 1 meta-model (and K fold models if you average them for test). <i>Training:</i> M × K base fits (K = 5 → 5× the cost of one set of base models) plus a cheap meta fit. <i>Inference:</i> the <b>sum</b> of all base-model latencies plus the meta-model: three ensembles of 500 trees each is 1500 trees × depth — a real cost in a low-latency service. <i>Preprocessing:</i> whatever each base model needs; the meta-model needs only predictions (scale-free for trees, probabilities or logits for linear). <i>Use when:</i> competitions or accuracy is worth the latency. <i>Avoid when:</i> latency/memory budgets are tight, models are similar, or interpretability matters.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: predictions flowing into a meta-model</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: the folds rotate. In each round one fold is held out, the base models train on the rest and write their predictions into the OOF columns — watch the table fill, fold by fold.</li>
+        <li>Then the meta-model weights appear and the stacked prediction (purple) is drawn against the base models.</li>
+        <li>Toggle <b>leaky mode</b> (train and predict on the same rows): the 1-NN looks perfect and the meta-model puts all weight on it — and the honest score is worse.</li></ol></div>
+      <div data-lab="mlStacking"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Leakage</b>: fitting the meta-model on in-sample base predictions. Always OOF.</li>
+          <li>Using a complex meta-model on a few hundred rows.</li>
+          <li>Validating the stack on rows that were used anywhere in training (including hyper-parameter selection); nest your CV.</li>
+          <li>Time-series: folds must respect time order (<a href="ml-evaluation.html">Module 5</a>).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Competition-winning pipelines (Kaggle, KDD, Netflix Prize) are multi-layer stacks of GBDTs, neural networks and linear models.</li>
+          <li><b>Mixture of experts</b> in large language models is a learned, gated version of "meta-model chooses among experts".</li>
+          <li><b>Knowledge distillation</b> compresses an ensemble into one cheaper student for deployment.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why must the meta-model be trained on out-of-fold predictions?</summary><div class="ans">In-sample predictions of flexible models are too good; the meta-model would over-trust the most overfit model. OOF predictions mimic how base models will behave on unseen data.</div></details>
+        <details class="check"><summary>2. Two models have OOF residual correlation 0.98. Should you stack them?</summary><div class="ans">Probably not: errors are nearly identical, so by the 4.1 formula averaging cannot reduce much variance, and you double the inference cost.</div></details>
+        <details class="check"><summary>3. 5-fold stacking of 3 base models: how many base-model training runs (excluding the final refit)?</summary><div class="ans">3 × 5 = 15, plus one meta-model fit.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Stacking = base models → OOF predictions → meta-model; blending = same with one hold-out.</li><li>Diversity beats count; keep the meta-model simple.</li><li>Cost adds up: K× training, sum of latencies at inference.</li><li>For most tabular production work a tuned GBDT is the sweet spot.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now derive why averaging helps, build a forest, run a boosting round by hand, compute an XGBoost split gain and stack models without leakage. Next, <b>Module 5 · Evaluation &amp; model selection</b> shows how to measure and compare these models honestly.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

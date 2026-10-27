@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 · Evaluation &amp; model selection · Machine Learning</title>
+<meta name="description" content="Confusion matrices, ROC and PR curves, regression metrics, cross-validation, hyper-parameter search, learning curves, calibration and fairness — how to know whether a model is actually good.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-evaluation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="5">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 5</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">5</div>
+      <div style="flex:1">
+        <h1>Module 5 · Evaluation &amp; model selection</h1>
+        <p>Training a model is easy; knowing whether it is <i>good</i> is the hard part. This module teaches you to measure a model honestly: the right metric for the job, a trustworthy estimate of future performance, a disciplined way to tune, a way to diagnose what is wrong, probabilities you can believe, and a check that the model treats groups fairly.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">8 animated labs</span><span class="chip">Every metric computed by hand</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 5.1 ===================== -->
+    <section class="lesson" id="metrics-classification" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">5.1</span><h2>Classification metrics</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A screening model flags patients for a rare disease that affects 1 in 100 people. A colleague proudly reports "99% accuracy". Should you be impressed? And if not, which number <i>should</i> you look at — and where exactly do you cut the model's score to turn it into a yes/no decision?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A classifier can be wrong in <b>two different ways</b>, and they rarely cost the same. Telling a healthy person "you might be ill" (a <i>false alarm</i>) costs a worry and a follow-up test. Telling a sick person "you are fine" (a <i>miss</i>) can cost a life. A single number like accuracy mixes both errors together and hides which one you are making. So we first <b>count each kind of outcome separately</b> — that table of counts is the <b>confusion matrix</b> — and then summarise it in different ways, each answering a different question:</p>
+        <ul>
+          <li><b>Precision</b>: "when the model raises an alarm, how often is it right?" (trust in alarms)</li>
+          <li><b>Recall</b> (sensitivity): "of all the real cases, how many did it catch?" (coverage)</li>
+          <li><b>F1</b>: one number balancing the two.</li>
+          <li><b>MCC</b>: one number that uses all four cells and stays honest on imbalanced data.</li>
+        </ul>
+        <p>Most models do not output yes/no; they output a <b>score</b> (a probability or a margin). You turn it into a decision with a <b>threshold</b>: "alarm if score ≥ t". Moving t trades false alarms for misses. ROC and precision–recall curves show <i>all</i> thresholds at once.</p>
+
+        <h3 class="sec">Build it up: 20 predictions by hand</h3>
+        <p>Call "disease" the <i>positive</i> class. For each of 20 patients we have the truth and the model's yes/no answer. Counting gives four cells:</p>
+        <table class="tbl"><tr><th></th><th>predicted positive</th><th>predicted negative</th><th>total</th></tr>
+          <tr><td><b>actually positive</b></td><td>TP = 6</td><td>FN = 4</td><td>10</td></tr>
+          <tr><td><b>actually negative</b></td><td>FP = 2</td><td>TN = 8</td><td>10</td></tr>
+          <tr><td>total</td><td>8</td><td>12</td><td>20</td></tr></table>
+        <div class="worked"><b>Worked example</b>
+          <p>Accuracy = (TP+TN)/N = (6+8)/20 = <b>0.70</b>.</p>
+          <p>Precision = TP/(TP+FP) = 6/8 = <b>0.75</b> — three alarms in four are real.</p>
+          <p>Recall = TP/(TP+FN) = 6/10 = <b>0.60</b> — it caught 6 of the 10 sick patients. Specificity = TN/(TN+FP) = 8/10 = 0.80.</p>
+          <p>F1 = 2PR/(P+R) = 2·0.75·0.60/1.35 = 0.90/1.35 = <b>0.667</b> (the harmonic mean, always closer to the smaller of the two).</p>
+          <p>MCC = (TP·TN − FP·FN)/√((TP+FP)(TP+FN)(TN+FP)(TN+FN)) = (48 − 8)/√(8·10·10·12) = 40/√9600 = 40/97.98 = <b>0.408</b>.</p></div>
+
+        <h3 class="sec">The accuracy paradox</h3>
+        <p>Now return to the rare disease: 1000 patients, 10 sick, 990 healthy. A model that <b>always says "healthy"</b> gets TN = 990, FN = 10, TP = FP = 0: accuracy = 990/1000 = <b>99%</b>, recall = 0/10 = <b>0</b>. It never finds a single sick patient. A genuinely useful model with TP = 8, FN = 2, FP = 30, TN = 960 has accuracy 968/1000 = <b>96.8%</b> — <i>lower</i> — yet recall 0.80 and precision 8/38 = 0.21. The accuracy number rewarded the useless model. When classes are imbalanced, look at recall, precision, PR curves or MCC. (MCC of the always-healthy model is 0 — it correctly says "no better than chance".)</p>
+
+        <h3 class="sec">Threshold, ROC and AUC by hand</h3>
+        <p>Six examples with scores (three positive, three negative). Sort by score, high to low:</p>
+        <table class="tbl"><tr><th>rank</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr>
+          <tr><td>score</td><td>0.9</td><td>0.8</td><td>0.7</td><td>0.6</td><td>0.4</td><td>0.3</td></tr>
+          <tr><td>truth</td><td>P</td><td>P</td><td>N</td><td>P</td><td>N</td><td>N</td></tr></table>
+        <p>Lower the threshold past one example at a time. Each positive passed moves the point <b>up</b> by 1/3 (TPR), each negative passed moves it <b>right</b> by 1/3 (FPR):</p>
+        <table class="tbl"><tr><th>threshold t</th><th>&gt;0.9</th><th>≥0.9</th><th>≥0.8</th><th>≥0.7</th><th>≥0.6</th><th>≥0.4</th><th>≥0.3</th></tr>
+          <tr><td>(FPR, TPR)</td><td>(0,0)</td><td>(0,⅓)</td><td>(0,⅔)</td><td>(⅓,⅔)</td><td>(⅓,1)</td><td>(⅔,1)</td><td>(1,1)</td></tr></table>
+        <div class="worked"><b>Worked example — AUC</b>
+          <p>The area under the staircase is the sum, over each negative, of the TPR height when that step moves right (width ⅓): 0.7 → ⅔, 0.4 → 1, 0.3 → 1. Area = ⅓(⅔ + 1 + 1) = ⅓·(8/3) = <b>8/9 = 0.889</b>.</p>
+          <p>Equivalent meaning: AUC is the probability that a random positive is scored above a random negative. There are 3×3 = 9 pairs; the positive 0.9 wins 3, 0.8 wins 3, 0.6 wins 2 (it loses to the negative 0.7): 8 of 9 = 0.889 ✓.</p>
+          <p><b>Precision–recall</b> on the same list: after rank 1 precision 1/1 at recall ⅓; after rank 2 precision 2/2 at recall ⅔; after rank 4 precision 3/4 at recall 1. Average precision AP = ⅓(1 + 1 + 0.75) = <b>0.917</b>.</p></div>
+        <p><b>Choosing t by cost.</b> If a miss costs <span class="tex">c_{FN}</span> and a false alarm costs <span class="tex">c_{FP}</span>, pick the threshold that minimises total expected cost <span class="tex">c_{FP}\,FP+c_{FN}\,FN</span>. With a calibrated probability <i>p</i> the rule is "alarm when <span class="tex">p\ge c_{FP}/(c_{FP}+c_{FN})</span>": if a miss is 9× worse than a false alarm, alarm whenever p ≥ 0.1, not 0.5.</p>
+
+        <div class="callout"><b>Pipeline view — post-processing.</b> The threshold is not part of the trained model; it is <b>stored configuration applied after inference</b>: <code>score = model(x)</code> (inference), then <code>decision = score ≥ t[segment]</code> (post-processing). Keep it in a config store so business can change the cost trade-off without retraining. <b>Log</b> for every request: model version, raw score, threshold used, decision, timestamp and (later) the true label — otherwise you can never recompute precision/recall in production or re-tune t.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P=\frac{TP}{TP+FP},\quad R=\frac{TP}{TP+FN},\quad F_1=\frac{2PR}{P+R},\quad F_\beta=\frac{(1+\beta^2)PR}{\beta^2P+R}</div>
+        <div class="eq">MCC=\frac{TP\cdot TN-FP\cdot FN}{\sqrt{(TP+FP)(TP+FN)(TN+FP)(TN+FN)}},\quad AUC=\Pr\big(s(x^+)&gt;s(x^-)\big)</div>
+        <table class="sym">
+          <tr><td>TP, FP, FN, TN</td><td>counts of true/false positives and negatives; "positive" is the class you want to find</td></tr>
+          <tr><td>P, R</td><td>precision and recall; recall equals the true-positive rate TPR = TP/(TP+FN)</td></tr>
+          <tr><td>FPR</td><td>false-positive rate FP/(FP+TN) = 1 − specificity</td></tr>
+          <tr><td>β</td><td>F<sub>β</sub> weights recall β times as much as precision (β=2 favours recall)</td></tr>
+          <tr><td>MCC</td><td>Matthews correlation, from −1 to +1; 0 = no better than chance</td></tr>
+          <tr><td>s(x)</td><td>the model's score; x⁺ a random positive, x⁻ a random negative</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1 — drag the threshold, watch the matrix fill</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the threshold right: false positives shrink but false negatives grow. Find where F1 peaks and notice it is <i>not</i> where accuracy peaks when positives are rare.</li>
+        <li>Set the prevalence to 1%: accuracy shoots up while recall collapses — the paradox, live.</li>
+        <li>Edit the cost matrix (make a miss cost 10× a false alarm) and press "use optimal t": the marker jumps left, accepting more false alarms.</li></ol></div>
+      <div data-lab="confmatrix"></div>
+      <h3 class="sec" style="max-width:780px">Lab 2 — build the ROC and PR curves</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the ROC curve being drawn one point at a time as the threshold sweeps from high to low; the area under it is shaded.</li>
+        <li>Slide the class imbalance towards 1% positives. The ROC curve barely changes, but the PR curve collapses — ROC hides what imbalance does to precision.</li>
+        <li>Increase separation and watch AUC and AP rise toward 1.</li></ol></div>
+      <div data-lab="rocpr"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Accuracy on imbalanced data</b> — see above. Always compare with the "predict the majority" baseline.</li>
+          <li><b>Threshold 0.5 is a default, not a law.</b> It is only optimal when both errors cost the same and probabilities are calibrated.</li>
+          <li><b>ROC-AUC flatters rare-positive problems</b>: the huge number of negatives keeps FPR tiny even when most alarms are false. Use PR-AUC/AP there.</li>
+          <li><b>Averaging metrics across classes</b> (macro vs micro vs weighted) gives different answers; state which one you report.</li>
+          <li><b>Tuning t on the test set</b> leaks. Choose it on validation data.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Fraud, spam and medical screening report precision/recall at an operating point; search and retrieval report precision@k.</li>
+          <li>Object detectors report AP (area under a PR curve) per class; the mean is mAP.</li>
+          <li>Logistic regression, gradient boosting and neural nets all output scores; the threshold is the product decision layered on top.</li>
+          <li>LLM safety classifiers are tuned to a recall target (e.g. catch 99% of unsafe content) and then judged by the precision they leave.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. TP=30, FP=10, FN=20, TN=940. Compute precision, recall and F1.</summary><div class="ans">P = 30/40 = 0.75, R = 30/50 = 0.60, F1 = 2·0.75·0.6/1.35 = 0.667.</div></details>
+        <details class="check"><summary>2. A miss costs 5 and a false alarm costs 1. With calibrated probabilities, at what probability should you raise an alarm?</summary><div class="ans">p ≥ c<sub>FP</sub>/(c<sub>FP</sub>+c<sub>FN</sub>) = 1/6 ≈ 0.167.</div></details>
+        <details class="check"><summary>3. Scores 0.9(P) 0.6(N) 0.5(P) 0.2(N). What is the AUC?</summary><div class="ans">Pairs: 0.9 beats both negatives (2); 0.5 beats 0.2 but loses to 0.6 (1). 3 of 4 = 0.75.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Start from the confusion matrix; every other metric is a ratio of its cells.</li>
+          <li>Accuracy lies on imbalanced data; use precision, recall, F1, MCC and PR curves.</li>
+          <li>The threshold is a stored post-processing config chosen by cost, separate from training; log scores and thresholds.</li>
+          <li>ROC-AUC = probability a positive outranks a negative; PR-AUC is more honest when positives are rare.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.2 ===================== -->
+    <section class="lesson" id="metrics-regression" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">5.2</span><h2>Regression &amp; ranking metrics</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model predicts delivery times in minutes. It is off by 1, 0, 2, 2 and 10 minutes on five orders. Is it "about 3 minutes off" or "about 4.7 minutes off"? Both are correct answers to different questions — which one should you report, and how do you say it is better than just guessing the average?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>For numbers there is no "right or wrong", only <b>how far off</b>. The residual <span class="tex">e_i=y_i-\hat y_i</span> is the signed miss. Different metrics summarise the five misses differently:</p>
+        <ul>
+          <li><b>MAE</b> averages the <i>sizes</i> of the misses. Easy to read: "typically 3 minutes off". Every minute counts equally.</li>
+          <li><b>RMSE</b> squares first, then averages, then takes the root. Squaring makes big misses count much more: a 10-minute miss weighs 100 while a 2-minute miss weighs only 4, so RMSE says "watch out for big errors".</li>
+          <li><b>R²</b> asks: "how much of the variation did I explain compared to always predicting the mean?" 1 is perfect, 0 is no better than the mean, negative is worse.</li>
+          <li><b>MAPE</b> reports errors as a percentage of the true value — scale-free, but explodes when y is near 0.</li></ul>
+
+        <h3 class="sec">Build it up: five points by hand</h3>
+        <table class="tbl"><tr><th>i</th><th>y</th><th>ŷ</th><th>e = y−ŷ</th><th>|e|</th><th>e²</th><th>|e|/y</th></tr>
+          <tr><td>1</td><td>10</td><td>11</td><td>−1</td><td>1</td><td>1</td><td>0.100</td></tr>
+          <tr><td>2</td><td>12</td><td>12</td><td>0</td><td>0</td><td>0</td><td>0.000</td></tr>
+          <tr><td>3</td><td>15</td><td>13</td><td>2</td><td>2</td><td>4</td><td>0.133</td></tr>
+          <tr><td>4</td><td>20</td><td>22</td><td>−2</td><td>2</td><td>4</td><td>0.100</td></tr>
+          <tr><td>5</td><td>40</td><td>30</td><td>10</td><td>10</td><td>100</td><td>0.250</td></tr>
+          <tr><td>sum</td><td>97</td><td></td><td>9</td><td>15</td><td>109</td><td>0.583</td></tr></table>
+        <div class="worked"><b>Worked example</b>
+          <p>MAE = 15/5 = <b>3</b>. MSE = 109/5 = 21.8, RMSE = √21.8 = <b>4.669</b>. MAPE = 0.583/5 = <b>11.7%</b>.</p>
+          <p>Mean of y = 97/5 = 19.4. Total variation SS<sub>tot</sub> = 9.4²+7.4²+4.4²+0.6²+20.6² = 88.36+54.76+19.36+0.36+424.36 = 587.2. Residual SS<sub>res</sub> = 109. R² = 1 − 109/587.2 = <b>0.814</b>.</p>
+          <p><b>Outlier sensitivity.</b> Drop the point with the 10-minute miss: MAE of the other four = 5/4 = 1.25, RMSE = √(9/4) = 1.5. With the outlier MAE went 1.25 → 3 (×2.4) while RMSE went 1.5 → 4.67 (×3.1). RMSE reacts harder, as designed.</p></div>
+        <p><b>Residual analysis</b> matters more than any single number: plot residuals against the prediction. They should look like shapeless noise around zero. A curve means the model missed a pattern; a funnel (spread growing with ŷ) means errors are proportional — consider predicting log y; a few huge points mean outliers or data errors. The mean of the residuals above is 9/5 = 1.8 &gt; 0: the model under-predicts on average (bias).</p>
+        <p><b>Ranking metrics</b> judge ordered lists (search results, recommendations) where only the top matters. <b>Precision@k</b> = fraction of the top k that are relevant. <b>NDCG</b> uses graded relevance <i>rel</i> and discounts lower positions: <span class="tex">DCG=\sum_i \frac{2^{rel_i}-1}{\log_2(i+1)}</span>, divided by the DCG of the perfect ordering.</p>
+        <div class="worked"><b>Worked example — NDCG@5</b>
+          <p>The system returns documents with relevance (3, 2, 3, 0, 1). DCG = 7/1 + 3/1.585 + 7/2 + 0 + 1/2.585 = 7 + 1.893 + 3.5 + 0 + 0.387 = 12.780. The ideal order (3,3,2,1,0) has DCG = 7 + 7/1.585 + 3/2 + 1/2.322 + 0 = 7 + 4.416 + 1.5 + 0.431 = 13.347. NDCG = 12.780/13.347 = <b>0.957</b>. <b>MAP</b> averages precision at each relevant hit, then averages over queries — it is the ranking cousin of AP from 5.1.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">MAE=\frac1N\sum_i|y_i-\hat y_i|,\quad RMSE=\sqrt{\frac1N\sum_i(y_i-\hat y_i)^2},\quad R^2=1-\frac{\sum_i(y_i-\hat y_i)^2}{\sum_i(y_i-\bar y)^2}</div>
+        <div class="eq">MAPE=\frac{100\%}{N}\sum_i\frac{|y_i-\hat y_i|}{|y_i|}</div>
+        <table class="sym">
+          <tr><td>y<sub>i</sub>, ŷ<sub>i</sub></td><td>true value and prediction for example i</td></tr>
+          <tr><td>ȳ</td><td>mean of the true values (the "predict the average" baseline)</td></tr>
+          <tr><td>N</td><td>number of examples</td></tr>
+          <tr><td>R²</td><td>fraction of variance explained, measured on <i>held-out</i> data (can be negative there)</td></tr>
+          <tr><td>rel<sub>i</sub></td><td>graded relevance of the document at rank i</td></tr>
+        </table>
+        <p>MAE is the optimal-score metric for the <i>median</i> and RMSE for the <i>mean</i> of the conditional distribution — so training with squared loss targets the mean and absolute loss targets the median (see <a href="math-statistics.html#estimation-mle">maximum likelihood</a>).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab — drag points, watch metrics and residuals</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the five points; red dashes show residuals, the middle panel plots them, and the bars below show MAE, RMSE, R² and MAPE live.</li>
+        <li>Drag the last point far from the line: RMSE climbs much faster than MAE.</li>
+        <li>Press "fit line" to animate the least-squares line: R² rises and residuals shrink.</li></ol></div>
+      <div data-lab="regmetrics"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>R² on training data always looks good</b> and never decreases when you add features; report it on held-out data.</li>
+          <li><b>MAPE</b> blows up when y≈0 and penalises over-prediction less than under-prediction; consider sMAPE or MAE.</li>
+          <li><b>Comparing RMSE across datasets</b> with different scales is meaningless; compare with a baseline on the same data.</li>
+          <li><b>One average hides subgroups</b>: the model can be fine on typical orders and terrible on rush hour.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Demand and price forecasting (RMSE, MAPE, quantile loss); regression heads inside detectors use L1/Huber losses.</li>
+          <li>Search, recommendation and RAG retrieval are scored with NDCG, MAP and recall@k.</li>
+          <li>Huber loss blends the two: quadratic for small errors, linear for large ones — a trained-in compromise between RMSE and MAE.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. y = (2, 4, 6), ŷ = (3, 4, 4). Compute MAE and RMSE.</summary><div class="ans">Errors −1, 0, 2. MAE = 1. RMSE = √((1+0+4)/3) = √1.667 = 1.291.</div></details>
+        <details class="check"><summary>2. A model has R² = −0.2 on the test set. What does it tell you?</summary><div class="ans">It predicts worse than always outputting the training mean — it has overfit or is broken.</div></details>
+        <details class="check"><summary>3. Why prefer MAE over RMSE for data with a few corrupt outliers?</summary><div class="ans">Squaring lets a few huge errors dominate RMSE; MAE grows only linearly with them and reflects the typical error.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>MAE = typical miss; RMSE punishes big misses; R² compares with the mean baseline; MAPE is relative.</li>
+          <li>Residual plots reveal what a single number hides.</li>
+          <li>Ranking tasks use precision@k, MAP and NDCG, which reward putting relevant items first.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.3 ===================== -->
+    <section class="lesson" id="cross-validation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">5.3</span><h2>Cross-validation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have only 20 labelled examples. One random 16/4 split gives 100% accuracy; another gives 50%. Which number do you believe? How can you use <i>all</i> the data for both training and honest testing?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A single validation split is one roll of a die: with few examples, luck decides. <b>k-fold cross-validation</b> rolls it k times in a way that every example is used for validation exactly once. Cut the data into k equal <b>folds</b>. Round 1: train on folds 2..k, test on fold 1. Round 2: train on all but fold 2, test on fold 2. And so on. You get k scores; their <b>mean</b> is your estimate of performance, and their <b>spread</b> tells you how much to trust it.</p>
+
+        <h3 class="sec">Build it up: exact folds by hand</h3>
+        <p>20 examples numbered 1–20, shuffled once with a fixed seed, then dealt into k = 5 folds of 4:</p>
+        <table class="tbl"><tr><th>fold</th><th>validation examples</th><th>correct / 4</th><th>accuracy</th></tr>
+          <tr><td>1</td><td>7, 14, 3, 19</td><td>3</td><td>0.75</td></tr>
+          <tr><td>2</td><td>1, 11, 16, 8</td><td>4</td><td>1.00</td></tr>
+          <tr><td>3</td><td>20, 5, 12, 2</td><td>3</td><td>0.75</td></tr>
+          <tr><td>4</td><td>9, 17, 4, 13</td><td>2</td><td>0.50</td></tr>
+          <tr><td>5</td><td>15, 6, 10, 18</td><td>4</td><td>1.00</td></tr></table>
+        <div class="worked"><b>Worked example</b>
+          <p>Mean accuracy = (0.75+1+0.75+0.5+1)/5 = 4/5 = <b>0.80</b>. Deviations: −0.05, +0.20, −0.05, −0.30, +0.20; squares sum to 0.0025+0.04+0.0025+0.09+0.04 = 0.175. Sample variance = 0.175/(5−1) = 0.04375, std = <b>0.209</b>.</p>
+          <p>Standard error of the mean = std/√k = 0.209/√5 = <b>0.094</b>. So "0.80 ± 0.09". A competitor scoring 0.83 is <i>not</i> clearly better. Caveat: the folds share training data and are not independent, so this standard error is somewhat <i>optimistic</i> — treat it as a lower bound on the uncertainty.</p>
+          <p>Cost: k models trained instead of one. Each trains on (k−1)/k of the data = 16 examples here.</p></div>
+        <p><b>Choosing k.</b> Larger k (e.g. 10, or leave-one-out k = N) trains on nearly all data, so each score is less pessimistic, but costs more and the estimates are more correlated. k = 5 or 10 is the usual compromise.</p>
+        <p><b>Variants — match the split to how the model will be used:</b></p>
+        <ul>
+          <li><b>Stratified k-fold</b>: keep the class ratio in every fold. With 5 positives and 15 negatives and k = 5, each fold gets exactly 1 positive and 3 negatives; unstratified folds could contain none.</li>
+          <li><b>Group k-fold</b>: all rows of one patient/user/site stay in the same fold, otherwise the model "recognises" the person and the score is inflated.</li>
+          <li><b>Time-series (rolling-origin) CV</b>: only train on the past: train [1..4]→test 5, train [1..5]→test 6, … Never shuffle time.</li>
+          <li><b>Nested CV</b>: an inner CV picks hyper-parameters, an outer CV measures the whole procedure — the honest way to report a tuned model's performance (lesson 5.4).</li></ul>
+        <div class="callout"><b>Pipeline view.</b> Everything learned from data — imputation means, scalers, encoders, feature selection — must be fitted <i>inside</i> each training fold and only applied to the validation fold. Fitting a scaler on all data first leaks validation statistics. In code: put preprocessing and model in one pipeline object and cross-validate that.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\widehat{CV}=\frac1k\sum_{j=1}^{k}\ell\big(\mathcal D_j;\,f^{(-j)}\big),\qquad SE=\frac{s}{\sqrt k},\quad s^2=\frac1{k-1}\sum_j\big(\ell_j-\widehat{CV}\big)^2</div>
+        <table class="sym">
+          <tr><td>𝒟<sub>j</sub></td><td>the j-th fold, used only for validation in round j</td></tr>
+          <tr><td>f<sup>(−j)</sup></td><td>the model trained on all folds <i>except</i> j</td></tr>
+          <tr><td>ℓ<sub>j</sub></td><td>the metric (loss or accuracy) of that model on fold j</td></tr>
+          <tr><td>s, SE</td><td>spread across folds and the standard error of the mean</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab — watch the folds rotate</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: the validation block (orange) moves across the data one fold at a time, a score appears per fold, and the mean ± std updates.</li>
+        <li>Switch to "stratified" with imbalanced classes: folds keep the same positive fraction. Switch to "time-series": the training window only ever looks backwards.</li>
+        <li>Lower the class separation: the fold scores spread out and the ± grows.</li></ol></div>
+      <div data-lab="cvlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Leakage through preprocessing</b> fitted before the split; or duplicates of the same item in train and validation folds.</li>
+          <li><b>Shuffling time-series</b> lets the model peek at the future.</li>
+          <li><b>Reporting the best fold</b> or the CV score of a model you tuned on the same folds — optimistic; use nested CV.</li>
+          <li><b>Treating ±SE as exact</b>: folds are correlated; for model comparison use the <i>paired</i> differences on the same folds.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every tabular benchmark and Kaggle workflow (out-of-fold predictions also feed stacking ensembles).</li>
+          <li>Medical and geospatial ML use group/spatial CV so neighbouring samples do not leak.</li>
+          <li>Forecasting uses rolling-origin evaluation; deep learning with huge data usually uses one fixed validation set because k trainings are too expensive.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Fold accuracies 0.6, 0.8, 0.7, 0.9. Compute the mean and the standard error.</summary><div class="ans">Mean 0.75. Deviations −0.15, 0.05, −0.05, 0.15 → squares 0.0225+0.0025+0.0025+0.0225 = 0.05; var = 0.05/3 = 0.01667, s = 0.129; SE = 0.129/2 = 0.065.</div></details>
+        <details class="check"><summary>2. Why group k-fold for 50 patients with 20 scans each?</summary><div class="ans">Scans of one patient are highly similar; if some are in train and others in validation the model is rewarded for recognising the patient, inflating the score. Keeping each patient in one fold measures generalisation to new patients.</div></details>
+        <details class="check"><summary>3. How many models are trained by 10-fold CV with a 6-value grid search on one hyper-parameter?</summary><div class="ans">10 × 6 = 60 (plus one final refit on all data if you want the deployable model).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>k-fold uses every example for validation once; report mean ± standard error.</li>
+          <li>Choose stratified, group or time-series splits to mimic deployment.</li>
+          <li>Fit preprocessing inside each fold; use nested CV when tuning.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.4 ===================== -->
+    <section class="lesson" id="hyperparameter-tuning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">5.4</span><h2>Hyper-parameter tuning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your gradient-boosting model has a learning rate, a tree depth and a regularisation strength. Each run takes minutes. You can afford about 60 runs. Where do you put them — and how do you avoid fooling yourself with a validation score you have optimised against?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Parameters</b> (weights, split points) are learned by training; <b>hyper-parameters</b> (depth, learning rate, k in k-NN, C in an SVM) are set <i>before</i> training and control how learning happens. Tuning is itself a search problem: the unknown function <i>validation score = g(hyper-parameters)</i> is expensive to evaluate and noisy. Think of hunting for the highest hilltop in fog with a limited number of altitude readings.</p>
+        <ul>
+          <li><b>Grid search</b>: lay a regular lattice of values and try them all. Simple and reproducible, but the cost multiplies with every added hyper-parameter.</li>
+          <li><b>Random search</b>: draw each setting at random from a range (often log-uniform for rates). Every trial tests a <i>new value of every</i> hyper-parameter.</li>
+          <li><b>Bayesian optimisation</b>: build a cheap model of g from the trials so far (a Gaussian process or TPE), then pick the next trial where improvement looks most promising (explore uncertain regions, exploit good ones).</li></ul>
+
+        <h3 class="sec">Build it up: counting trials</h3>
+        <div class="worked"><b>Worked example — grid vs random</b>
+          <p>Three hyper-parameters with 5 values each: the grid needs 5³ = <b>125</b> runs. Add a 4th and it is 625; with d = 6 it is 5⁶ = 15,625.</p>
+          <p>Suppose only one of the three really matters (common in practice). The 125 grid runs test just <b>5 distinct values</b> of it, each repeated 25 times. 125 random runs test <b>125 distinct values</b> of it.</p>
+          <p>Budget 60 runs. If the "good region" is the best 5% of the search space, one random trial misses it with probability 0.95, so all 60 miss it with 0.95⁶⁰ = 0.046: a <b>95.4%</b> chance of at least one hit, regardless of dimension d. (59 trials give 95.1%; the break-even is n ≥ ln 0.05/ln 0.95 = 58.4, so 59.) A grid with the same budget in d = 6 could afford only 2 values per axis (2⁶ = 64) — it would barely sample the space.</p></div>
+        <div class="worked"><b>Worked example — one Bayesian step (expected improvement)</b>
+          <p>The best score so far is f* = 0.82. The surrogate says a candidate has predicted mean μ = 0.80, uncertainty σ = 0.05. Its mean is below f*, but uncertainty gives a chance. With z = (μ − f*)/σ = −0.4, Φ(−0.4) = 0.3446, φ(−0.4) = 0.3683:</p>
+          <p>EI = (μ − f*)Φ(z) + σφ(z) = (−0.02)(0.3446) + 0.05(0.3683) = −0.0069 + 0.0184 = <b>0.0115</b>. The next trial goes where EI is highest.</p></div>
+        <p><b>Budgets and early stopping.</b> Most configurations are clearly bad after a little training. <b>Successive halving</b>: start 27 configurations at 1 epoch, keep the best third and give them 3 epochs, keep the best third → 9 epochs, then the last survivor gets 27. Total cost 27·1+9·3+3·9+1·27 = <b>108</b> epochs, versus 27·27 = 729 for training all fully — about 7× cheaper. (Hyperband runs several such brackets.) Early stopping during one run is the same idea: stop when validation loss stops improving.</p>
+        <p><b>Over-tuning the validation set.</b> Every trial peeks at the validation score. Suppose 100 configurations all have a true accuracy of 0.80 and the validation set has 400 examples, so each measured score has noise σ = √(0.8·0.2/400) = 0.02. The <i>maximum</i> of 100 such scores is about 2.5σ above the mean: ≈ <b>0.85</b>. You "found" 0.85 when the truth is 0.80. Remedies: a final untouched test set, nested CV, fewer trials, and being suspicious of tiny gains.</p>
+        <div class="callout"><b>Pipeline view.</b> The chosen hyper-parameters are stored with the model artifact (model card + config) so training is reproducible; log every trial (params, seed, score, time) in an experiment tracker. The search lives in the training pipeline, never in inference.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\lambda^\*=\arg\min_{\lambda\in\Lambda}\;\widehat{CV}\big(A_\lambda,\mathcal D\big),\qquad EI(\lambda)=\mathbb E\big[\max(0,\,f^\*-g(\lambda))\big]\;\text{(for a loss; mirrored for a score)}</div>
+        <table class="sym">
+          <tr><td>λ</td><td>a hyper-parameter setting; Λ the search space</td></tr>
+          <tr><td>A<sub>λ</sub></td><td>the learning algorithm configured by λ</td></tr>
+          <tr><td>CV</td><td>cross-validated loss (lesson 5.3)</td></tr>
+          <tr><td>f*</td><td>best value seen so far</td></tr>
+          <tr><td>EI</td><td>expected improvement: the acquisition function used to choose the next λ</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab — three searches on one landscape</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Run grid and random with the same budget on a landscape where only one axis matters: compare the best score each found and how many distinct values of the important axis each tested.</li>
+        <li>Run Bayesian search: early points are spread out, later points cluster near the peak.</li>
+        <li>Switch to the narrow-ridge landscape and add noise: all methods struggle; the best-so-far curve flattens.</li></ol></div>
+      <div data-lab="searchlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Linear grids for rates</b>: learning rates and regularisation span orders of magnitude; search on a log scale.</li>
+          <li><b>Tuning on the test set</b> or reporting the validation score of the winner as the expected performance.</li>
+          <li><b>Ignoring noise</b>: a 0.3-point difference between two trials may be seed luck; average over seeds or folds.</li>
+          <li><b>Search ranges too narrow</b>: if the best value sits on the boundary, extend the range.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>AutoML (Optuna, Hyperopt, Ray Tune, Vizier) = random/TPE/Bayesian search plus Hyperband pruning.</li>
+          <li>Neural architecture search and learning-rate schedules are tuned the same way, at scale, with early stopping.</li>
+          <li>Large-model training cannot afford many full runs: hyper-parameters are tuned on small models and transferred.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A grid with 4 values for each of 5 hyper-parameters: how many runs? With 5-fold CV?</summary><div class="ans">4⁵ = 1024 configurations; × 5 folds = 5120 trainings.</div></details>
+        <details class="check"><summary>2. Why does random search beat grid when only a few hyper-parameters matter?</summary><div class="ans">Each random trial uses a new value of the important parameter; a grid wastes most runs repeating the same few values of it while varying unimportant ones.</div></details>
+        <details class="check"><summary>3. Successive halving, 16 configs, keep the best half, epochs 1, 2, 4, 8 per round. Total epochs?</summary><div class="ans">16·1 + 8·2 + 4·4 + 2·8 = 16+16+16+16 = 64 (versus 16·8 = 128 for full training of all).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Random search beats grid in high dimensions; Bayesian search spends trials wisely when runs are expensive.</li>
+          <li>Early stopping and successive halving cut cost by abandoning bad configurations early.</li>
+          <li>The more you tune, the more optimistic the validation score: keep a final test set or use nested CV.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.5 ===================== -->
+    <section class="lesson" id="learning-curves-diagnosis" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">5.5</span><h2>Diagnosing models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your model scores 85% on validation and you need 95%. Should you collect more data, build a bigger model, add features, regularise more, or clean labels? Guessing wastes weeks. Is there a measurement that tells you which lever to pull?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Compare two numbers: the error on the data the model <b>trained on</b> and the error on <b>unseen</b> validation data.</p>
+        <ul>
+          <li>Both high and close together: the model is <b>too simple</b> to capture the pattern even on its own training data — <b>high bias</b> (underfitting). It is like a student who only read the chapter titles: poor on homework and on the exam.</li>
+          <li>Training error low, validation error much higher: the model <b>memorised</b> the training set — <b>high variance</b> (overfitting). The student who memorised last year's answers: perfect homework, fails the exam.</li></ul>
+        <p>A <b>learning curve</b> plots both errors against the <i>amount of training data</i>. A <b>validation curve</b> plots them against a <i>complexity</i> knob (tree depth, polynomial degree). The shape of the curves tells you which problem you have and whether more data would help.</p>
+
+        <h3 class="sec">Build it up: reading numbers</h3>
+        <table class="tbl"><tr><th>case</th><th>train error</th><th>val error</th><th>gap</th><th>diagnosis</th></tr>
+          <tr><td>A</td><td>18%</td><td>20%</td><td>2 pts</td><td>high bias — both high, tiny gap</td></tr>
+          <tr><td>B</td><td>2%</td><td>15%</td><td>13 pts</td><td>high variance — big gap</td></tr>
+          <tr><td>C</td><td>3%</td><td>5%</td><td>2 pts</td><td>healthy (compare with target / human level)</td></tr></table>
+        <div class="worked"><b>Worked example — decomposing 15% error</b>
+          <p>Suppose the best achievable error (humans / label noise floor) is 1%. In case B: <i>avoidable bias</i> = train error − floor = 2 − 1 = 1 pt; <i>variance</i> = val − train = 13 pts. The gap is the problem: attack variance. In case A: avoidable bias = 18 − 1 = 17 pts, variance = 2 pts: attack bias.</p>
+          <p>Learning-curve reading: if, as data grows from 100 to 1000 to 10000 examples, validation error falls 25% → 18% → 15% while training error rises 0% → 1% → 2%, the curves are converging slowly with a 13-pt gap: more data helps. If instead both curves have already flattened at 20% and sit together, more data is useless — you need a more expressive model or better features.</p></div>
+        <table class="tbl"><tr><th>symptom</th><th>likely cause</th><th>remedies that help</th><th>remedies that do <i>not</i> help</th></tr>
+          <tr><td>train high, val high, small gap</td><td>high bias</td><td>bigger/more flexible model, more or better features, less regularisation, longer training, fix the objective</td><td>more data, stronger regularisation</td></tr>
+          <tr><td>train low, val high, big gap</td><td>high variance</td><td>more data, augmentation, stronger regularisation, simpler model, fewer features, early stopping, ensembling/bagging</td><td>a bigger model alone</td></tr>
+          <tr><td>train low, val low, test/prod high</td><td>validation leakage or distribution shift</td><td>fix the split, check duplicates, collect representative data</td><td>tuning more</td></tr>
+          <tr><td>train error itself high with noisy labels</td><td>label noise / irreducible error</td><td>clean labels, better annotation guidelines</td><td>any modelling change beyond the noise floor</td></tr></table>
+        <p><b>Error analysis.</b> Take 100 validation mistakes and tag each by cause. Example tally: 40 blurry photos, 30 mislabelled, 20 rare class, 10 other. Fixing the 30 mislabelled cases can remove at most 30% of all errors (30 of 100), an upper bound on the gain of each fix. Work on the biggest bucket first; this beats guessing. Also check slices (by region, device, class) for hidden weak spots.</p>
+        <p><b>Data fix or model fix?</b> If a human can solve the example from the same input, the model can learn it: look at data quantity/quality. If even humans cannot (information is missing from the features), no model change will help; add a feature or accept the floor.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbb E\big[(y-\hat f(x))^2\big]=\underbrace{\big(\mathbb E\hat f(x)-f(x)\big)^2}_{\text{bias}^2}+\underbrace{\operatorname{Var}\big(\hat f(x)\big)}_{\text{variance}}+\underbrace{\sigma^2}_{\text{noise}}</div>
+        <table class="sym">
+          <tr><td>f(x)</td><td>the true underlying relationship</td></tr>
+          <tr><td>f̂(x)</td><td>the learned model; its expectation 𝔼 is over different random training sets</td></tr>
+          <tr><td>bias²</td><td>systematic error: how far the <i>average</i> model is from the truth (too-simple models)</td></tr>
+          <tr><td>variance</td><td>how much the model changes with the training sample (too-flexible models)</td></tr>
+          <tr><td>σ²</td><td>irreducible noise in y; no model can beat it</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab — curves, complexity and a diagnosis</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Complexity at 1 (a straight line on curved data): both curves flatten high and close — the lab says "high bias" and suggests a richer model.</li>
+        <li>Complexity at 9: training error is near zero, validation error stays high — "high variance"; raise the data size to watch the gap shrink.</li>
+        <li>Move to the middle: the validation error is lowest. This is the sweet spot of the bias–variance trade-off. Press play to watch the curves being drawn as data grows.</li></ol></div>
+      <div data-lab="learncurve"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"More data always helps"</b> — not when bias dominates.</li>
+          <li><b>"Bigger model always helps"</b> — not when variance dominates, and it costs inference time.</li>
+          <li><b>Comparing with the wrong yardstick</b>: 15% error may be excellent if humans reach 14%.</li>
+          <li><b>Diagnosing from one noisy run</b>: repeat with different seeds/folds before concluding.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Deep-learning practice (the "train/dev gap" recipe): reduce avoidable bias with bigger nets and longer training, then reduce variance with data and regularisation.</li>
+          <li>Scaling-law studies are learning curves on a log-log scale: error versus data and parameters.</li>
+          <li>Model debugging dashboards track train vs validation loss every epoch — the same diagnosis in time.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Train error 1%, validation error 12%. Name the problem and two remedies.</summary><div class="ans">High variance (gap of 11 pts). More data/augmentation, stronger regularisation, simpler model, early stopping.</div></details>
+        <details class="check"><summary>2. Train 22%, validation 24%, human level 2%. Will 10× more data fix it?</summary><div class="ans">Unlikely: avoidable bias is 20 pts and the gap only 2. Use a more flexible model, better features or longer training.</div></details>
+        <details class="check"><summary>3. Of 200 validation errors, 60 are label mistakes. What is the maximum gain from fixing the labels, if overall error is 10%?</summary><div class="ans">60/200 = 30% of errors, i.e. at most 3 points (10% → 7%).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Small gap, high error = bias; large gap = variance.</li>
+          <li>Learning curves say whether more data helps; validation curves find the right complexity.</li>
+          <li>Error analysis by category ranks the fixes by their upper-bound payoff.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.6 ===================== -->
+    <section class="lesson" id="calibration-uncertainty" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">5.6</span><h2>Calibration &amp; uncertainty</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model says "90% chance of rain" on 100 days. On how many of those days should it actually rain for you to trust the number? If it rained on only 67, your decisions (umbrellas, loans, treatments) built on "90%" are wrong even if the model <i>ranks</i> days well. How do we measure and repair this?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A model is <b>calibrated</b> if its stated probabilities match reality: among all cases where it says 0.8, about 80% are positive. Ranking quality (AUC) and calibration are separate properties: a model can order cases perfectly yet be wildly over-confident — typical for boosted trees, SVMs and big neural networks. Calibration matters whenever the number itself feeds a decision: expected-cost thresholds (5.1), risk scores, or combining models.</p>
+        <p>A <b>reliability diagram</b> puts predicted probability on the x-axis and the observed frequency on the y-axis, one dot per bin. A perfect model lies on the diagonal. Points <b>below</b> the diagonal = over-confident; <b>above</b> = under-confident.</p>
+
+        <h3 class="sec">Build it up: Brier score and bins by hand</h3>
+        <p>Ten predictions: probabilities p = (0.9, 0.9, 0.8, 0.8, 0.7, 0.7, 0.3, 0.3, 0.2, 0.1) with outcomes y = (1, 1, 1, 0, 1, 0, 0, 1, 0, 0).</p>
+        <div class="worked"><b>Worked example</b>
+          <p><b>Brier score</b> = mean of (p − y)²: 0.01, 0.01, 0.04, 0.64, 0.09, 0.49, 0.09, 0.49, 0.04, 0.01 → sum 1.91 → <b>0.191</b>. Reference: always saying the base rate 0.5 gives 0.25, so 0.191 is better than that baseline (0 is perfect).</p>
+          <p><b>Reliability bins.</b> High bin (p ≥ 0.5): six predictions, mean p = (0.9+0.9+0.8+0.8+0.7+0.7)/6 = <b>0.80</b>, observed positives 4 of 6 = <b>0.667</b>. Low bin (p &lt; 0.5): four predictions, mean p = 0.225, observed 1 of 4 = 0.25.</p>
+          <p><b>Expected calibration error</b> ECE = Σ (n<sub>b</sub>/N)·|mean p<sub>b</sub> − freq<sub>b</sub>| = 0.6·|0.80−0.667| + 0.4·|0.225−0.25| = 0.08 + 0.01 = <b>0.09</b>. The high bin sits below the diagonal: over-confident.</p></div>
+        <p><b>Repairing it (post-hoc, on held-out data).</b> Keep the trained model, learn a small map from raw score to calibrated probability on a <i>calibration set</i> that was not used for training:</p>
+        <ul>
+          <li><b>Platt scaling</b>: fit <span class="tex">p'=\sigma(a\,s+b)</span> — two numbers; smooth, works with little data; good when the distortion is sigmoid-shaped.</li>
+          <li><b>Isotonic regression</b>: fit a monotonically increasing staircase to (score, outcome) — flexible, needs more data (hundreds+) and can overfit. In the example the high bin would be mapped from 0.80 down to ≈0.67.</li>
+          <li><b>Temperature scaling</b> for neural nets: divide logits by T &gt; 1 before the softmax to soften over-confidence; one parameter, ranking unchanged.</li></ul>
+        <p><b>Uncertainty beyond one probability.</b> For regression we want a <b>prediction interval</b>. <i>Conformal prediction</i> gives one with a guarantee using only a calibration set: compute the absolute residuals on held-out data, take a high quantile q, and report ŷ ± q.</p>
+        <div class="worked"><b>Worked example — split conformal</b>
+          <p>Nine calibration residuals: 0.4, 1.1, 0.2, 0.7, 1.5, 0.3, 0.9, 0.6, 2.0. Want 80% coverage (α = 0.2). Sort: 0.2, 0.3, 0.4, 0.6, 0.7, 0.9, 1.1, 1.5, 2.0. Take the ⌈(n+1)(1−α)⌉ = ⌈10·0.8⌉ = 8-th smallest: q = <b>1.5</b>. A new prediction of 20.0 becomes the interval [18.5, 21.5]. Under exchangeability, it covers the truth at least 80% of the time — whatever the model.</p></div>
+        <div class="callout"><b>Pipeline view — post-processing again.</b> The calibrator (Platt <i>a, b</i>, isotonic table, temperature T, conformal q) is a few stored numbers applied after inference: <code>raw → calibrated probability → threshold → decision</code>. Version it together with the model; re-fit it when the data drifts. <b>Log</b> raw and calibrated scores, bin-wise observed rates (once labels arrive) and ECE over time — a rising ECE is an early drift alarm.</div>
+        <div data-lab="pipeline" data-id="ml"></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\Pr(y=1\mid \hat p=p)=p\;\;\forall p,\qquad Brier=\frac1N\sum_i(\hat p_i-y_i)^2,\qquad ECE=\sum_{b=1}^{B}\frac{n_b}{N}\,\big|\overline{p}_b-\overline{y}_b\big|</div>
+        <div class="eq">C(x)=\big[\hat y(x)-q,\;\hat y(x)+q\big],\quad q=\text{the }\lceil (n+1)(1-\alpha)\rceil\text{-th smallest of }|y_j-\hat y_j|</div>
+        <table class="sym">
+          <tr><td>p̂</td><td>the model's predicted probability of the positive class</td></tr>
+          <tr><td>b, n<sub>b</sub></td><td>a probability bin and the number of predictions in it</td></tr>
+          <tr><td>p̄<sub>b</sub>, ȳ<sub>b</sub></td><td>mean predicted probability and observed positive fraction in bin b</td></tr>
+          <tr><td>α</td><td>miscoverage level (α = 0.2 → 80% intervals)</td></tr>
+          <tr><td>q</td><td>the conformal half-width from calibration residuals</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab — slide a miscalibrated model onto the diagonal</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Make the model over-confident with the slider: the reliability curve bends below the diagonal and ECE and Brier rise.</li>
+        <li>Choose Platt, then slide the correction strength from 0 to 1: the curve glides onto the diagonal. Isotonic gives a staircase that fits the bins more tightly.</li>
+        <li>Notice AUC does not change — calibration is monotone, so ranking is untouched.</li></ol></div>
+      <div data-lab="calibration"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Calibrating on the training or test data</b>: use a separate calibration split (or CV).</li>
+          <li><b>Too few points per bin</b> gives a noisy reliability diagram; check bin counts, use quantile bins.</li>
+          <li><b>Good calibration ≠ good model</b>: always predicting the base rate is perfectly calibrated and useless.</li>
+          <li><b>Calibration drifts</b> when prevalence or data changes; re-check periodically.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Modern deep nets are typically over-confident; temperature scaling is the standard fix.</li>
+          <li>Medical risk scores, credit default and weather forecasts are judged by Brier score and reliability diagrams.</li>
+          <li>Active learning, abstention ("I don't know") and LLM-as-classifier confidence all rely on probabilities meaning something.</li>
+          <li>Conformal prediction wraps any model (including LLM-based) with coverage-guaranteed sets or intervals.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. p = (0.8, 0.4), y = (1, 1). Brier score?</summary><div class="ans">((0.8−1)² + (0.4−1)²)/2 = (0.04+0.36)/2 = 0.20.</div></details>
+        <details class="check"><summary>2. Of 50 cases scored 0.9, 40 were positive. Over- or under-confident, and what is the gap?</summary><div class="ans">Observed 0.80 &lt; 0.90: over-confident by 0.10 (point below the diagonal).</div></details>
+        <details class="check"><summary>3. Can calibration change AUC?</summary><div class="ans">No. Platt, isotonic (strictly monotone parts) and temperature scaling preserve the order of scores, so ROC-AUC is unchanged (isotonic ties can slightly flatten it).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Calibrated means "says 80% → right 80% of the time"; reliability diagram, ECE and Brier measure it.</li>
+          <li>Fix with Platt, isotonic or temperature scaling on a held-out calibration set; it is a stored post-processing step.</li>
+          <li>Conformal prediction turns any model into one with intervals/sets of guaranteed coverage.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.7 ===================== -->
+    <section class="lesson" id="interpretability-fairness" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">5.7</span><h2>Interpretability &amp; fairness</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A loan model has 94% accuracy. A regulator asks two things: "<i>Why</i> did it reject this applicant?" and "Does it treat the two demographic groups equally?" A single accuracy number answers neither. What can we compute?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Interpretability</b> asks which inputs drive the model. <b>Global</b> methods describe the whole model ("income matters most"); <b>local</b> ones explain one prediction ("this applicant was rejected mostly because of debt ratio"). <b>Fairness</b> asks whether error rates and decisions are distributed acceptably across groups. Both start from simple counting.</p>
+
+        <h3 class="sec">Build it up: permutation importance by hand</h3>
+        <p>Idea: if a feature matters, <b>shuffling</b> it (breaking its link to the target) should hurt the score. Take a fitted model <span class="tex">\hat y=2x_1+0.5x_2</span> and five validation rows:</p>
+        <table class="tbl"><tr><th>row</th><th>x₁</th><th>x₂</th><th>y</th><th>ŷ</th><th>error</th></tr>
+          <tr><td>1</td><td>1</td><td>5</td><td>4.5</td><td>4.5</td><td>0</td></tr>
+          <tr><td>2</td><td>2</td><td>3</td><td>5.5</td><td>5.5</td><td>0</td></tr>
+          <tr><td>3</td><td>3</td><td>4</td><td>7.5</td><td>8.0</td><td>−0.5</td></tr>
+          <tr><td>4</td><td>4</td><td>1</td><td>8.0</td><td>8.5</td><td>−0.5</td></tr>
+          <tr><td>5</td><td>5</td><td>2</td><td>11.5</td><td>11.0</td><td>0.5</td></tr></table>
+        <div class="worked"><b>Worked example</b>
+          <p>Baseline MSE = (0+0+0.25+0.25+0.25)/5 = <b>0.15</b>.</p>
+          <p>Permute x₁ by rotating it up one row → (2,3,4,5,1), keep x₂: predictions become 2·2+2.5 = 6.5, 7.5, 10, 10.5, 3 → errors y−ŷ = −2, −2, −2.5, −2.5, 8.5 → squares 4+4+6.25+6.25+72.25 = 92.75 → MSE = <b>18.55</b>. Importance of x₁ = 18.55 − 0.15 = <b>18.40</b>.</p>
+          <p>Permute x₂ → (3,4,1,2,5): errors 1, −0.5, 1, −1, −1 → squares 1+0.25+1+1+1 = 4.25 → MSE = <b>0.85</b>. Importance of x₂ = 0.85 − 0.15 = <b>0.70</b>.</p>
+          <p>So x₁ matters about 26× more than x₂ (coefficient 2 vs 0.5, and bigger spread). In practice repeat with several random shuffles and average. Caveat: correlated features share importance and shuffling creates unrealistic rows.</p></div>
+        <p><b>Partial dependence (PDP)</b>: set one feature to a value v for <i>every</i> row, predict, average; sweep v to get the curve "average prediction vs feature". <b>SHAP idea</b>: split a prediction fairly among features using Shapley values from game theory — each feature's share is its average marginal contribution over all orderings. For our linear model it is exact and simple: φ<sub>j</sub> = w<sub>j</sub>(x<sub>j</sub> − mean x<sub>j</sub>). With means x̄₁ = 3, x̄₂ = 3, the average prediction is 7.5; for the point (5, 2): φ₁ = 2(5−3) = +4, φ₂ = 0.5(2−3) = −0.5, and 7.5 + 4 − 0.5 = 11 = ŷ ✓. The contributions add up to the prediction — that is why SHAP is popular.</p>
+
+        <h3 class="sec">Fairness metrics from a small table</h3>
+        <p>100 applicants per group. Group A has 60 truly creditworthy, group B has 30. The model's outcomes:</p>
+        <table class="tbl"><tr><th></th><th>TP</th><th>FN</th><th>FP</th><th>TN</th><th>selected</th></tr>
+          <tr><td>group A</td><td>48</td><td>12</td><td>8</td><td>32</td><td>56</td></tr>
+          <tr><td>group B</td><td>18</td><td>12</td><td>7</td><td>63</td><td>25</td></tr></table>
+        <div class="worked"><b>Worked example</b>
+          <p><b>Demographic (statistical) parity</b>: selection rates A = 56/100 = 0.56, B = 25/100 = 0.25; difference = <b>0.31</b>, ratio 0.25/0.56 = 0.446 (below the "four-fifths" rule-of-thumb 0.8).</p>
+          <p><b>Equal opportunity</b>: true-positive rates A = 48/60 = 0.80, B = 18/30 = 0.60; difference = <b>0.20</b> — qualified people in B are missed more often. <b>Equalised odds</b> also compares FPR: A 8/40 = 0.20, B 7/70 = 0.10.</p>
+          <p><b>Predictive parity</b>: precision A = 48/56 = 0.857, B = 18/25 = 0.72.</p>
+          <p>The groups have different base rates (0.60 vs 0.30), and that has a consequence: with unequal base rates and an imperfect model, you <b>cannot</b> satisfy parity of selection rates, equal error rates and equal precision at the same time (the impossibility results of Kleinberg et al. and Chouldechova). Choosing which fairness notion applies is a <i>policy and ethics</i> decision, not a statistical one.</p></div>
+        <div class="callout"><b>Pipeline view and documentation.</b> Group-specific thresholds, if used, are stored post-processing config just like 5.1's threshold — and are legally sensitive in some jurisdictions. Log decisions with group membership (where lawful) to monitor these gaps over time. Document limits in a <b>model card</b>: intended use, training data, metrics per slice and group, known failure modes, and what the model must not be used for.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">DPD=\Pr(\hat y=1\mid A)-\Pr(\hat y=1\mid B),\qquad EOD=\Pr(\hat y=1\mid y=1,A)-\Pr(\hat y=1\mid y=1,B)</div>
+        <div class="eq">PI_j=\mathrm{score}(\text{shuffled }x_j)-\mathrm{score}(\text{original}),\qquad \phi_j=\sum_{S\subseteq F\setminus\{j\}}\frac{|S|!\,(|F|-|S|-1)!}{|F|!}\big[v(S\cup\{j\})-v(S)\big]</div>
+        <table class="sym">
+          <tr><td>A, B</td><td>the two groups (a protected attribute such as gender or age band)</td></tr>
+          <tr><td>ŷ=1</td><td>the favourable decision (approve, hire, flag)</td></tr>
+          <tr><td>DPD</td><td>demographic parity difference (0 = equal selection rates)</td></tr>
+          <tr><td>EOD</td><td>equal-opportunity difference (0 = equal true-positive rates)</td></tr>
+          <tr><td>PI<sub>j</sub></td><td>permutation importance of feature j: the loss increase when its link to y is broken</td></tr>
+          <tr><td>φ<sub>j</sub>, F, S, v</td><td>Shapley value of feature j; F all features; S a subset; v(S) the model output using only the features in S</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab — two groups, one threshold, a trade-off</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With one shared threshold, find the accuracy-maximising value and read the parity and equal-opportunity gaps.</li>
+        <li>Unlock separate group thresholds: slide group B's threshold left until the true-positive rates match (equal opportunity) and note what happens to accuracy and to selection rates.</li>
+        <li>Try to make selection rate, TPR and precision all equal at once — you cannot when base rates differ.</li></ol></div>
+      <div data-lab="fairness"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Remove the protected attribute and the model is fair."</b> Proxies (postcode, school) carry it back in; check outcomes, not inputs.</li>
+          <li><b>Importance is not causation</b>: a feature can be important because it is a proxy for something else.</li>
+          <li><b>Correlated features</b> split or hide importance; permute them as a group.</li>
+          <li><b>One fairness metric is never "the" answer</b>; they conflict, and groups are not the only slices that matter.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Tree ensembles ship with feature importance; TreeSHAP and permutation importance are standard audit tools for credit, insurance and clinical models.</li>
+          <li>Regulation (EU AI Act, equal-credit and anti-discrimination law, GDPR "meaningful information about the logic") pushes explanations and bias audits.</li>
+          <li>Toolkits (Fairlearn, AIF360) compute these gaps and provide post-processing threshold optimisers; image/LLM systems are audited per demographic slice.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Group A selected 30 of 60 applicants, group B 10 of 40. Demographic parity difference?</summary><div class="ans">0.50 − 0.25 = 0.25 (ratio 0.5).</div></details>
+        <details class="check"><summary>2. Shuffling feature f leaves the validation error unchanged. What does that suggest?</summary><div class="ans">The model does not rely on f (it may still be informative but redundant with a correlated feature that carries the signal).</div></details>
+        <details class="check"><summary>3. Why can't we equalise selection rate, TPR and precision when base rates differ?</summary><div class="ans">Precision depends on base rate through Bayes' rule; with different base rates, equal TPR/FPR forces unequal precision, and equal selection rates forces unequal TPR or FPR (unless the model is perfect).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Permutation importance, PDP and SHAP explain what the model uses; shuffling a feature and measuring the loss is the simplest honest test.</li>
+          <li>Fairness metrics compare selection rates, TPR, FPR or precision across groups; they cannot all be satisfied together.</li>
+          <li>Thresholds per group and calibration are stored post-processing config; document limits in a model card and monitor gaps in production.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now measure a model honestly: the right metric, an unbiased estimate, a disciplined search, a diagnosis, calibrated probabilities and a fairness audit. Next, <a href="ml-neural.html"><b>Module 6 · Neural networks</b></a> builds the flexible models whose training you now know how to judge.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · What machine learning is · Machine Learning</title>
+<meta name="description" content="What machine learning is, the kinds of learning and tasks, the six-stage pipeline every model lives in, data as a matrix X and vector y, and why we split data into train, validation and test.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-foundations.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">0</div>
+      <div style="flex:1">
+        <h1>Module 0 · What machine learning is</h1>
+        <p>The whole subject in five steps, starting from nothing. You will see why we let computers <i>learn rules from examples</i> instead of writing the rules, meet the kinds of problems ML solves, follow a dataset through the six-stage <b>pipeline</b> that every real system uses, learn to see data as a matrix <span class="tex">X</span> and a vector <span class="tex">y</span>, and finally understand why a model that is perfect on its training data can still be useless.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">No prerequisites</span><span class="chip">Pipeline view</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="what-is-ml" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">0.1</span><h2>What is machine learning?</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You want a program that estimates the price of a flat from its size. You could sit down and write the rule yourself — "price = 2.5 × size". But where did 2.5 come from? And what happens next year when the market moves and every flat costs more? Is there a way for the computer to find the rule <i>itself</i>, from past sales?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Ordinary programming is a recipe. A person works out the steps, writes them down, and the computer follows them exactly: <b>rules + data → answers</b>. This works wonderfully when you <i>know</i> the rules (add up a bill, sort a list). It fails when the rules are too many, too subtle, or secretly unknown: what makes an email spam? what makes a photo a cat? You can feel the answer but cannot write it down.</p>
+        <p>Machine learning flips the arrangement: <b>data + answers → rules</b>. You show the computer many examples where the answer is known — flats with their real selling prices — and it works out a rule that fits them. The rule it finds is called the <b>model</b>. Then you hand the model a flat it has never seen and it produces an estimate.</p>
+        <p>Think of how a child learns "dog". Nobody gives the child a definition. They are shown many dogs and non-dogs and told which is which; their brain adjusts until the word fits. A model does the same, only with numbers, and the "adjusting" is arithmetic.</p>
+
+        <h3 class="sec">Build it up: a model is a function with knobs</h3>
+        <p>In the maths course you met functions with <i>knobs</i> (<a href="math-foundations.html#functions">Functions</a>): <span class="tex">f(x;a,b)=ax+b</span>. Here <i>x</i> is the input that changes from example to example; <i>a</i> and <i>b</i> are the knobs that decide which line we have. A <b>model</b> is exactly that: a function <span class="tex">\hat y=f(x;\theta)</span> where <span class="tex">x</span> describes the thing (size of the flat), <span class="tex">\theta</span> (theta) is the list of all knobs (called <b>parameters</b>), and <span class="tex">\hat y</span> ("y-hat") is the prediction. <b>Learning is choosing <span class="tex">\theta</span></b> — and to choose we need a way to say how good a choice is.</p>
+        <p>The usual way: for each training example compare the prediction with the true answer, square the difference, and average. This is the <b>loss</b> (here the mean squared error, <a href="math-foundations.html#sums-products">Σ notation</a>). A small loss means the model fits the examples; learning means searching for the knobs with the smallest loss.</p>
+        <div class="worked"><b>Worked example — four flats</b>
+          <p>Sizes (m²) and prices (k$): (50, 150), (70, 190), (90, 250), (110, 290). Model: <span class="tex">\hat y=wx+b</span>.</p>
+          <p><b>Guess 1 — hand-written rule</b> <span class="tex">w=2.5,b=0</span>: predictions 125, 175, 225, 275; errors −25, −15, −25, −15; squares 625, 225, 625, 225; loss = 1700/4 = <b>425</b>.</p>
+          <p><b>Guess 2</b> <span class="tex">w=2,b=50</span>: predictions 150, 190, 230, 270; errors 0, 0, −20, −20; loss = (0+0+400+400)/4 = <b>200</b>.</p>
+          <p><b>Guess 3</b> <span class="tex">w=3,b=0</span>: predictions 150, 210, 270, 330; errors 0, 20, 20, 40; loss = 2400/4 = <b>600</b>.</p>
+          <p><b>The best line</b> (the one with the smallest possible loss): mean size 80, mean price 220; deviations from the means are −30, −10, 10, 30 and −70, −30, 30, 70. Slope <span class="tex">w=\frac{\sum(x-\bar x)(y-\bar y)}{\sum (x-\bar x)^2}=\frac{4800}{2000}=2.4</span>, intercept <span class="tex">b=220-2.4\cdot80=28</span>. Predictions 148, 196, 244, 292; errors −2, 6, −6, 2; loss = 80/4 = <b>20</b>. For a new 100 m² flat the model says 2.4·100+28 = <b>268</b> k$.</p>
+          <p>Nobody wrote "2.4" and "28" — they were <i>found</i> by minimising the loss. That is learning.</p></div>
+        <p><b>When the market moves</b>, the hand-written rule is stuck until a person edits it. The learned model is simply <i>re-fitted</i> on fresh data. This — rules that update themselves from data — is the practical superpower. It comes with a price: you need enough good data, the model can be wrong in ways you cannot easily inspect, and it only knows what the examples taught it.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat\theta=\arg\min_{\theta}\;L(\theta),\qquad L(\theta)=\frac1N\sum_{i=1}^{N}\ell\big(f(x_i;\theta),\,y_i\big)</div>
+        <table class="sym">
+          <tr><td>(x<sub>i</sub>, y<sub>i</sub>)</td><td>the <i>i</i>-th training example: its input description and its known answer; there are N of them</td></tr>
+          <tr><td>f(x; θ)</td><td>the model: a function of the input with parameters θ</td></tr>
+          <tr><td>ŷ = f(x; θ)</td><td>the prediction for input x</td></tr>
+          <tr><td>ℓ(ŷ, y)</td><td>the loss for one example: how wrong one prediction is (e.g. (ŷ−y)²)</td></tr>
+          <tr><td>L(θ)</td><td>the average loss over the training set; a function of the knobs</td></tr>
+          <tr><td>argmin<sub>θ</sub></td><td>"the value of θ that makes what follows smallest" — the answer is a θ, not a number</td></tr>
+          <tr><td>θ̂</td><td>the chosen (learned) parameters</td></tr>
+        </table>
+        <p>How do we actually find the smallest loss when there is no neat formula? We take small downhill steps — gradient descent (<a href="math-optimization.html#gradient-descent">Optimisation</a>). You will watch it work in the third lab below.</p>
+        <p><b>When is ML the right tool?</b> Use it when (1) the rule is hard to write but examples are plentiful, (2) the world changes so rules need constant updating, (3) a good-but-imperfect answer is valuable. Do <i>not</i> use it when the rule is known and exact (tax arithmetic), when you have almost no data, when mistakes are intolerable and cannot be checked, or when a simple rule already does the job.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: a hand-written rule versus a learned model</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play with few examples (n ≈ 4): the learned line (solid) is shaky. Slide <b>examples n</b> up slowly and watch it settle while the accuracy curve on the right climbs.</li>
+        <li>Tune the hand-written rule (dashed) with its two sliders until you match the learned model. Skilled humans can — in two dimensions. Think about doing that for 784 pixels.</li>
+        <li>Press <b>Shift the world</b>. The data moves; your rule is now wrong, and the model — retrained on new examples — recovers.</li></ol></div>
+      <div data-lab="rulesvslearn"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: learning from examples (drag them!)</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the cycle caption: predict → measure error → update. The line glides toward the data.</li>
+        <li><b>Drag a point</b> far away: one odd example drags the whole model. Release and watch it recover.</li>
+        <li>Raise the <b>number of examples</b>: the curve on the right ("error on new data vs examples") falls — more data, better model — then flattens at the noise floor no model can beat.</li></ol></div>
+      <div data-lab="fitexamples"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 3: turn the knobs by gradient descent</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Read the four captions as they cycle. Compare the final w, b with the line you would draw by eye.</li>
+        <li>Change the model to <code>w*x^2 + b*x + c</code> on the parabola data: the <i>family</i> of functions is your choice; training only finds the knobs.</li></ol></div>
+      <div data-lab="regression"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"The model understands."</b> It has found a rule that fits the examples. Outside the range of its examples it can be confidently wrong.</li>
+          <li><b>Confusing the model with the algorithm.</b> The <i>algorithm</i> (gradient descent) searches; the <i>model</i> (the line with w=2.4, b=28) is what it found.</li>
+          <li><b>ML for everything.</b> If you can state the rule exactly, write the rule; it is cheaper, testable and explainable.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Spam filters, credit scoring, recommendations</b>: a model trained on past labelled examples, re-trained regularly as behaviour changes.</li>
+          <li><b>Deep learning</b> is the same recipe with a very large f: a network with millions of knobs θ, the same loss, the same descent.</li>
+          <li><b>Language models</b> learn by minimising a loss on predicting the next word of enormous text collections — "data + answers → rules" at scale.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the four flats, what is the loss of the model w = 2, b = 60? Is it better than w = 2.4, b = 28?</summary><div class="ans">Predictions 160, 200, 240, 280; errors 10, 10, −10, −10; loss = 400/4 = 100. Worse than 20, which is the minimum for a straight line.</div></details>
+        <details class="check"><summary>2. Name the three things that make "ML is the right tool" a good bet.</summary><div class="ans">The rule is hard to write down, examples are plentiful, and the world changes so the rule must keep updating (also: an imperfect answer is still valuable).</div></details>
+        <details class="check"><summary>3. In ŷ = f(x; θ), which part changes while learning and which changes from example to example?</summary><div class="ans">θ (the knobs) changes during learning and is then fixed; the input x changes from example to example.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Programming: rules + data → answers. ML: data + answers → rules (the model).</li><li>A model is a function ŷ = f(x; θ); learning is choosing θ to minimise the average loss on examples.</li><li>More (good) data improves the model until noise or model limits dominate.</li><li>Use ML when rules are hard to write, data is plentiful and the world changes.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="types-of-learning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">0.2</span><h2>Types of learning &amp; tasks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have a table of students: hours studied, hours slept, exam score. Your manager says "do something useful with it." Useful how? Predict who will pass? Predict the score? Group similar students? Rank them? The same table supports completely different problems — how do we choose, and what changes in the method?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Two questions classify any ML problem. First: <b>what kind of feedback does the learner get?</b> Second: <b>what kind of answer must it produce?</b></p>
+        <ul>
+          <li><b>Supervised learning</b> — every training example comes with the right answer (a <i>label</i>), like a teacher marking homework. Most commercial ML is this.</li>
+          <li><b>Unsupervised learning</b> — no answers, only inputs. The learner finds structure itself: groups, outliers, simpler summaries. Like sorting a pile of unlabelled coins by looking at them.</li>
+          <li><b>Self-supervised learning</b> — the data supplies its <i>own</i> labels: hide a word of a sentence and learn to predict it; hide part of an image and learn to fill it in. Labelling is free, so it scales to the internet — the basis of modern language models.</li>
+          <li><b>Reinforcement learning</b> — no labelled answers, but an agent acts and receives <i>rewards</i> (a game score, a robot reaching the goal). It learns a strategy by trial and error.</li>
+        </ul>
+        <p>Within supervised learning the <b>type of answer</b> defines the task: <b>classification</b> (pick a category: pass/fail, spam/not-spam), <b>regression</b> (predict a number: the exam score, a price). Unsupervised tasks include <b>clustering</b> (group similar items). Others: <b>ranking</b> (order items by relevance, as search engines do) and <b>generation</b> (produce new text, images or audio resembling the data).</p>
+
+        <h3 class="sec">Build it up: one table, three questions</h3>
+        <div class="worked"><b>Worked example — six students</b>
+          <table class="tbl"><tr><th>student</th><th>hours h</th><th>score</th><th>passed (score ≥ 50)</th></tr>
+          <tr><td>A</td><td>1</td><td>30</td><td>0</td></tr><tr><td>B</td><td>2</td><td>40</td><td>0</td></tr><tr><td>C</td><td>3</td><td>45</td><td>0</td></tr>
+          <tr><td>D</td><td>6</td><td>66</td><td>1</td></tr><tr><td>E</td><td>8</td><td>80</td><td>1</td></tr><tr><td>F</td><td>9</td><td>88</td><td>1</td></tr></table>
+          <p>A new student studied <b>h = 5</b> hours. Three framings, three different answers.</p>
+          <p><b>Classification</b> (label: passed). All fails are at h ≤ 3 and all passes at h ≥ 6, so a threshold halfway, h = 4.5, separates them perfectly (6/6 correct). h = 5 &gt; 4.5 → <b>pass</b>.</p>
+          <p><b>Regression</b> (target: score). The best line through (h, score) has slope 7.04 and intercept 24.13, so <span class="tex">\hat y=24.13+7.04\cdot5=59.3</span> → <b>score ≈ 59.3</b>.</p>
+          <p><b>Clustering</b> (no labels at all, k = 2). Start with centres at h = 1 and h = 9. Assign each student to the nearer centre: A, B, C → centre 1; D (|6−1|=5 vs |6−9|=3), E, F → centre 2. Move centres to the means: (1+2+3)/3 = 2 and (6+8+9)/3 = 7.67. Re-assign: nothing changes — converged. The new student at h = 5 is |5−2| = 3 from the first centre and |5−7.67| = 2.67 from the second → <b>cluster 2</b> ("studies a lot").</p>
+          <p>The same input, but the answers are a <i>category</i>, a <i>number</i> and a <i>group id</i>. The data, not the maths, decides which are possible: clustering needed no labels; the other two needed them.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{supervised: } \{(x_i,y_i)\}_{i=1}^N,\; f:\mathcal X\to\mathcal Y\qquad \text{unsupervised: } \{x_i\}_{i=1}^N</div>
+        <table class="sym">
+          <tr><td>x<sub>i</sub> ∈ 𝒳</td><td>input (features) of example i; 𝒳 is the set of all possible inputs</td></tr>
+          <tr><td>y<sub>i</sub> ∈ 𝒴</td><td>the label / target. Classification: 𝒴 is a finite set of classes {0,1,…}. Regression: 𝒴 = ℝ</td></tr>
+          <tr><td>f : 𝒳 → 𝒴</td><td>the function we want to learn</td></tr>
+          <tr><td>unsupervised</td><td>only the x<sub>i</sub>; the goal is structure (clusters, low-dimensional summary, density)</td></tr>
+        </table>
+        <p>Self-supervised learning is supervised learning where <i>y</i> is carved out of <i>x</i> (e.g. the next word). Reinforcement learning replaces labels by a reward signal and a sequence of actions.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the same data, four framings</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Switch between the tabs. The points never change; the <i>question</i> does, and so does what the model draws.</li>
+        <li>Click inside the plot to place a new student and read the output: a class and probability, a number, a cluster, a rank.</li>
+        <li>In clustering, change k and watch the assign / update phases. With k = 5 you get five groups — clustering has no "right" answer, only useful ones.</li></ol></div>
+      <div data-lab="taskgallery"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Turning a regression into a classification carelessly.</b> "Passed" throws away how close each score was to the line.</li>
+          <li><b>Labels that are really outcomes of the model.</b> If you only label what the current system flagged, you never learn about what it missed.</li>
+          <li><b>Calling anything "AI" supervised.</b> Always ask: where do the labels come from, and who pays for them?</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Classification</b>: fraud/not fraud, tumour/not tumour, which of 1000 ImageNet classes (<a href="computer-vision.html">Computer Vision</a>).</li>
+          <li><b>Regression</b>: house prices, delivery time, demand forecasts.</li>
+          <li><b>Clustering</b>: customer segments, grouping documents; also used to compress colours or build vocabularies.</li>
+          <li><b>Self-supervised</b>: GPT-style next-token prediction, masked image models. <b>RL</b>: game agents, robot control, RLHF for chat models.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Which task is it: predicting tomorrow's temperature; deciding if an X-ray shows pneumonia; grouping news articles by topic with no labels?</summary><div class="ans">Regression; classification; clustering (unsupervised).</div></details>
+        <details class="check"><summary>2. In the six-student example, what is the regression prediction for h = 7?</summary><div class="ans">24.13 + 7.04·7 ≈ 73.4.</div></details>
+        <details class="check"><summary>3. Why is predicting the next word "self-supervised" rather than unsupervised?</summary><div class="ans">The correct answer (the actual next word) is already in the text, so the model is trained against labels — but nobody had to label anything by hand.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Feedback type: supervised (labels), unsupervised (none), self-supervised (labels from the data itself), reinforcement (rewards).</li><li>Answer type: classification (category), regression (number), clustering (groups), ranking (order), generation (new data).</li><li>The same table can be framed several ways; choose from the decision you must support.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="ml-pipeline" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">0.3</span><h2>The ML pipeline end to end</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A data scientist says "my model has 94% accuracy" and the team celebrates — yet six months after launch the product is losing money. What did the 94% leave out? Where does a model really live, what does each step of its life cost in compute and storage, and where can things silently break?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A trained model is like a <b>chef</b>, but a restaurant is more than a chef. Ingredients must be bought (data), washed and chopped (preprocessing), the chef trains on recipes (training), customers order (inference), the plate is arranged and checked (post-processing), and the kitchen keeps records of orders, waste and complaints that decide tomorrow's menu (storage and monitoring). Most failures happen in the kitchen around the chef, not in the chef.</p>
+        <p>Every machine-learning system — a spam filter, a face unlock, a language model — runs the same six stages, which this whole course is organised around. Click each one below to see what it computes and what it stores.</p>
+        <div data-lab="pipeline" data-id="ml"></div>
+        <ol>
+          <li><b>Data collection</b>: gather examples <span class="tex">(x,y)</span> from databases, sensors, logs, people. Version them.</li>
+          <li><b>Preprocessing</b>: clean, encode, scale — turn raw records into a numeric matrix <span class="tex">X</span> (next lesson). Fit these transforms on training data <i>only</i>.</li>
+          <li><b>Training</b>: search for parameters <span class="tex">\theta</span> that minimise the loss. Heavy compute, done <i>offline</i>, rarely.</li>
+          <li><b>Inference</b>: apply the frozen model to new inputs. Light per request, but done <i>millions</i> of times, often under a time limit.</li>
+          <li><b>Post-processing</b>: scores become decisions — thresholds, ranking, explanations, business rules.</li>
+          <li><b>Storage &amp; monitoring</b>: log inputs and outcomes, watch for drift, feed fresh labelled data back to stage 1. The loop never ends.</li>
+        </ol>
+
+        <h3 class="sec">Build it up: shapes, sizes and costs</h3>
+        <p>Each stage changes the <b>shape</b> of the data and has its own <b>cost</b>. Learning to estimate these on a napkin is a core engineering skill.</p>
+        <div class="worked"><b>Worked example — a small tabular project</b>
+          <p><b>Data</b>: N = 10 000 customers, 10 raw columns: 8 numbers and 2 categories with 4 and 6 values. Raw: 10 000 × 10.</p>
+          <p><b>Preprocessing</b>: one-hot encode the categories (4 + 6 = 10 columns) → d = 8 + 10 = 18 numeric features. <span class="tex">X</span> is 10 000 × 18; stored as 32-bit floats (4 bytes): 10 000 · 18 · 4 = <b>720 000 bytes ≈ 0.7 MB</b>.</p>
+          <p><b>Training</b>: a tiny neural network 18 → 32 → 1 has P = 18·32 + 32 + 32·1 + 1 = <b>609 parameters</b>. One pass over the data costs about 6·P·N = 6 · 609 · 10 000 ≈ 3.7 × 10⁷ floating-point operations (≈2 for the forward pass, ≈4 for gradients per parameter and example). A laptop does that in milliseconds; checkpoints weigh 609 · 4 = 2 436 bytes.</p>
+          <p><b>Inference</b>: one request ≈ 2·P = 1 218 operations — microseconds. The cost is dominated by <i>moving data</i> and network time, not the maths.</p>
+          <p><b>Storage</b>: logging each request with 200 bytes at 1 000 000 requests/day = 200 MB/day → 73 GB/year. Monitoring storage dwarfs the model.</p>
+          <p>Scale N to 10⁸ rows and P to 10⁹ parameters and everything flips: training needs GPUs for weeks, while the model alone no longer fits in one machine's memory. Same pipeline, different bottleneck.</p></div>
+        <p><b>Offline versus online.</b> <i>Offline (batch)</i> work runs on a schedule over big piles of data — training, nightly scoring. <i>Online</i> work responds to one request now — inference behind an API with a latency budget (say 50 ms). Many systems mix them: train offline weekly, serve online, monitor continuously.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: a dataset flows through the whole pipeline</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and follow the packet. Its <i>width</i> shows data size: watch it widen at one-hot encoding and shrink to a tiny model file at training.</li>
+        <li>Change <b>model</b> from linear to MLP, raise <b>rows N</b> to 10 million: the training cost jumps by orders of magnitude, inference barely moves.</li>
+        <li>Click any stage box to see its formulas. Change <b>requests/day</b> and <b>retention</b>: storage and monitoring grow without touching the model. Costs are <i>illustrative estimates</i>, not benchmarks.</li></ol></div>
+      <div data-lab="mlflow"></div>
+
+      <div class="prose">
+        <h3 class="sec">The formal view</h3>
+        <div class="eq">\text{predict}(x_{\text{raw}})=\text{post}\big(f(\text{pre}(x_{\text{raw}});\hat\theta)\big)</div>
+        <table class="sym">
+          <tr><td>pre(·)</td><td>the preprocessing function, with parameters (means, vocabularies) <i>learned from training data</i> and then frozen</td></tr>
+          <tr><td>f(·; θ̂)</td><td>the trained model, parameters fixed</td></tr>
+          <tr><td>post(·)</td><td>post-processing: threshold, rank, calibrate, format</td></tr>
+          <tr><td>x<sub>raw</sub></td><td>one new raw record as it arrives</td></tr>
+        </table>
+        <p>The crucial point: <b>the same <span class="tex">\text{pre}</span> must run in training and in production</b>. A mismatch ("training-serving skew") is one of the most common silent bugs.</p>
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Only measuring the model.</b> A production system also has latency, cost, freshness and failure handling.</li>
+          <li><b>Fitting preprocessing on all data</b> including the test rows (leakage, lesson 0.5).</li>
+          <li><b>No monitoring.</b> Inputs drift (customers change), accuracy decays quietly, nobody notices for months.</li>
+          <li><b>Forgetting the loop.</b> Without logging outcomes there will be no new labels to improve the model.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every deployed model</b>: recommenders, fraud detection, voice assistants, vision systems (<a href="computer-vision.html">the vision pipeline</a> is the same six stages with image-specific steps).</li>
+          <li><b>LLM products</b>: tokenisation (pre), the transformer (inference), sampling and safety filters (post), prompt/response logging and evaluation (monitoring).</li>
+          <li><b>MLOps tooling</b>: feature stores, experiment trackers, model registries and drift monitors each exist to manage one stage — see Module 9.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With N = 50 000 rows, d = 30 float32 features, how many MB is X?</summary><div class="ans">50 000 · 30 · 4 = 6 000 000 bytes = 6 MB.</div></details>
+        <details class="check"><summary>2. Which stage typically costs the most compute per <i>model version</i>, and which costs the most per <i>year</i> of operation?</summary><div class="ans">Training dominates per version (heavy, offline). Over a year, inference (millions of requests) and storage/monitoring of logs often dominate the total bill.</div></details>
+        <details class="check"><summary>3. Why must the mean used for scaling be computed from the training data only, then reused for new data?</summary><div class="ans">New data arrives one record at a time with no dataset to average, and using test rows would leak information the model cannot have in production. The frozen training statistics are part of the model.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Six stages: data → preprocessing → training → inference → post-processing → storage &amp; monitoring, looping back to data.</li><li>Each stage changes the data's shape and has its own compute and storage cost; training is heavy and offline, inference is light but frequent.</li><li>Preprocessing learned on training data is part of the model and must be identical in production.</li><li>Monitoring closes the loop; without it models rot silently.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="data-and-features" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">0.4</span><h2>Data, features &amp; labels</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A property agency gives you a spreadsheet: size, bedrooms, neighbourhood name, "has garden: yes/no", and the sale price. A model can only eat numbers arranged in a very particular way. How do you turn this spreadsheet into what the algorithm needs — and what can go wrong with the data itself before any algorithm runs?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A dataset is a <b>table</b>. Each <b>row</b> is one example (one flat). Each <b>column</b> is one measurement (size, bedrooms…). One special column is the thing we want to predict — the <b>label</b> or <b>target</b> (price). The other columns are the <b>features</b>: the clues we give the model.</p>
+        <p>The model sees the clues, never the answer, during prediction. During training it also sees the answer so it can check itself.</p>
+
+        <h3 class="sec">Build it up: from a spreadsheet to X and y</h3>
+        <p>Algorithms need numbers. Features come in different <b>types</b>, each needing its own treatment:</p>
+        <ul>
+          <li><b>Numeric</b> (size, age): already numbers; often rescaled.</li>
+          <li><b>Binary</b> (has garden): 0 or 1.</li>
+          <li><b>Categorical</b> (neighbourhood A/B/C): no order. Writing A=1, B=2, C=3 would claim that C is "three times" A (<a href="math-foundations.html#numbers-sets">the trap from Mathematics</a>). Instead use <b>one-hot encoding</b>: one 0/1 column per category.</li>
+          <li><b>Ordinal</b> (small/medium/large): ordered categories; integers 1,2,3 are fine.</li>
+          <li><b>Text, images, dates</b>: need their own transformations into numbers (later modules).</li>
+        </ul>
+        <div class="worked"><b>Worked example — five flats</b>
+          <table class="tbl"><tr><th>size m²</th><th>bedrooms</th><th>area</th><th>garden</th><th>price k$ (label)</th></tr>
+          <tr><td>50</td><td>1</td><td>A</td><td>no</td><td>150</td></tr><tr><td>70</td><td>2</td><td>B</td><td>no</td><td>190</td></tr><tr><td>90</td><td>3</td><td>A</td><td>yes</td><td>250</td></tr>
+          <tr><td>110</td><td>3</td><td>C</td><td>yes</td><td>290</td></tr><tr><td>80</td><td>2</td><td>B</td><td>yes</td><td>220</td></tr></table>
+          <p><b>Encode</b>: garden → 0/1; area → three one-hot columns (A,B,C). The feature matrix has d = size, bedrooms, garden, A, B, C = 6 columns:</p>
+          <div class="eq">X=\begin{pmatrix}50&amp;1&amp;0&amp;1&amp;0&amp;0\\70&amp;2&amp;0&amp;0&amp;1&amp;0\\90&amp;3&amp;1&amp;1&amp;0&amp;0\\110&amp;3&amp;1&amp;0&amp;0&amp;1\\80&amp;2&amp;1&amp;0&amp;1&amp;0\end{pmatrix},\qquad y=\begin{pmatrix}150\\190\\250\\290\\220\end{pmatrix}</div>
+          <p>So <span class="tex">X\in\mathbb R^{5\times6}</span> (N = 5 rows, d = 6 columns) and <span class="tex">y\in\mathbb R^{5}</span>. Row <i>i</i> of X is the vector <span class="tex">x_i</span> — one point in <span class="tex">\mathbb R^6</span>.</p>
+          <p><b>Scale</b> the size column: mean = 80; deviations −30, −10, 10, 30, 0; variance = (900+100+100+900+0)/5 = 400; standard deviation = 20; standardised sizes <span class="tex">z=(x-80)/20</span> = −1.5, −0.5, 0.5, 1.5, 0. Now size is on the same footing as the 0/1 columns.</p></div>
+
+        <p><b>Labels have a cost.</b> Prices come free from sales records; "is this scan cancerous" needs an expert for ten minutes each. Label cost shapes the project: how many examples can we afford, can we reuse existing signals, can we label only the most informative ones?</p>
+        <p><b>Data is never neutral.</b> Models copy their data. If the training flats are mostly in one city, predictions elsewhere are unreliable; if past loan decisions were unfair, a model trained to imitate them reproduces the unfairness. Typical problems: <i>sampling bias</i> (examples not representative), <i>label noise</i> (wrong answers), <i>missing values</i>, <i>duplicates</i>, <i>leakage</i> (a feature that secretly contains the answer, like "price per m²" when predicting price) and <i>drift</i> (the world changes after collection).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">X=\begin{pmatrix}x_{11}&amp;\cdots&amp;x_{1d}\\\vdots&amp;&amp;\vdots\\x_{N1}&amp;\cdots&amp;x_{Nd}\end{pmatrix}\in\mathbb R^{N\times d},\qquad y=(y_1,\dots,y_N)^\top,\qquad \mathcal D=\{(x_i,y_i)\}_{i=1}^N</div>
+        <table class="sym">
+          <tr><td>N</td><td>number of examples (rows)</td></tr>
+          <tr><td>d</td><td>number of features (columns) after encoding</td></tr>
+          <tr><td>x<sub>ij</sub></td><td>value of feature j for example i</td></tr>
+          <tr><td>x<sub>i</sub></td><td>the i-th row of X, a vector in ℝ<sup>d</sup> (see <a href="math-linear-algebra.html">Linear algebra</a>)</td></tr>
+          <tr><td>y</td><td>vector of N labels (numbers for regression, class ids for classification)</td></tr>
+          <tr><td>𝒟</td><td>the dataset, the set of (x, y) pairs</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: from table to matrix</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Convert</b>: rows fly out of the table into X and y one at a time. Note N × d and the memory it takes.</li>
+        <li>Switch the area encoding from <b>one-hot</b> to <b>integer</b> and read the warning: the model would now think B is the average of A and C.</li>
+        <li>Edit a cell (change a size, a category, a price) and convert again. Untick a feature to leave it out; watch d shrink.</li></ol></div>
+      <div data-lab="tableexplorer"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: scaling a feature</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick <code>latency</code> (a skewed feature with outliers). Try <b>Standardize</b>, then <b>Log</b>, then <b>Clip</b>: compare the before/after statistics.</li>
+        <li>Notice that standardising does not change the <i>shape</i>, only the position and spread; log does change the shape.</li></ol></div>
+      <div data-lab="preprocess"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Integer codes for categories</b> (A=1, B=2, C=3) invent an order and distances.</li>
+          <li><b>Leakage</b>: any feature computed from the label or from the future. It makes training look brilliant and production useless.</li>
+          <li><b>High-cardinality categories</b> (ZIP codes, user IDs): one-hot produces thousands of mostly-zero columns; other encodings exist (Module 1).</li>
+          <li><b>Believing "more data" fixes bias.</b> A million examples from the wrong population are still the wrong population.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every tabular model</b> (linear, trees, boosting) reads exactly this X and y — Modules 2–4.</li>
+          <li><b>An image</b> is an X row of 784 or 150 528 numbers; a sentence becomes token ids then embeddings: the "table" idea at larger scale.</li>
+          <li><b>Data-centric AI</b>: in practice improving labels and coverage often beats switching algorithms. ImageNet's and web-text's quality filters are examples.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A dataset has 1 000 rows, 5 numeric columns and a categorical column with 8 values. What is the shape of X after one-hot encoding?</summary><div class="ans">1 000 × 13 (5 + 8 columns); y has length 1 000.</div></details>
+        <details class="check"><summary>2. Standardise the values 10, 20, 30, 40 (population std).</summary><div class="ans">Mean 25, deviations −15, −5, 5, 15, variance = (225+25+25+225)/4 = 125, std ≈ 11.18; z ≈ −1.34, −0.45, 0.45, 1.34.</div></details>
+        <details class="check"><summary>3. You predict whether a customer will cancel, and one feature is "days since cancellation request". What is wrong?</summary><div class="ans">Leakage: the feature is only known when the outcome has already happened, so the model will look perfect offline and have no such feature in production.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Rows are examples, columns are features; one column (or more) is the label.</li><li>Models need a numeric matrix X (N × d) and a vector y of N labels; categories become one-hot columns.</li><li>Labels cost money and effort; bias, noise, leakage and drift live in the data, not the algorithm.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="generalization-basics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">0.5</span><h2>Generalisation: train, validation, test</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A student memorises last year's exam answers word for word and scores 100% on that paper. On this year's exam, with new questions, they fail. Has the student learned? A model can do exactly the same: perfect on its training data, useless on new data. How do we tell the difference <i>before</i> deploying?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>What we really want is not low error on the examples we <i>have</i>, but low error on examples we have <i>not yet seen</i>. This ability is <b>generalisation</b>. Memorising the training set is easy and worthless; spotting the pattern behind it is the goal.</p>
+        <p>The cure is simple: <b>hide some data</b>. Before training, set aside examples the model will never touch. Judge it on those. A student who is marked on a surprise paper cannot have memorised it.</p>
+        <ul>
+          <li><b>Training set</b> — the textbook: the model learns from it.</li>
+          <li><b>Validation set</b> — the practice exam: we use it to <i>choose</i> between models and settings (how flexible to be, how long to train).</li>
+          <li><b>Test set</b> — the real exam: used <b>once</b>, at the very end, to report the honest score. If we peek and then adjust, it becomes just another practice exam and the final score is optimistic.</li>
+        </ul>
+
+        <h3 class="sec">Build it up: under- and overfitting</h3>
+        <p>Give a model too little flexibility — a straight line through a curved pattern — and it misses the shape even on the training data: <b>underfitting</b> (high error everywhere). Give it too much flexibility — a wiggly curve with a knob for every point — and it passes through every training point <i>including the random noise</i>, then swings wildly between and beyond them: <b>overfitting</b> (tiny training error, large error on new data). In between is the sweet spot.</p>
+        <div class="worked"><b>Worked example — five points, three models</b>
+          <p>Training data (x, y): (0, 1.0), (1, 2.6), (2, 2.7), (3, 4.4), (4, 4.6). Validation data: (0.5, 1.9), (2.5, 3.6), (5, 5.9). We fit polynomials of degree 1, 2 and 4 by least squares and compute the mean squared error on both sets.</p>
+          <table class="tbl"><tr><th>degree</th><th>curve</th><th>train MSE</th><th>validation MSE</th></tr>
+          <tr><td>1</td><td>y = 1.26 + 0.90x</td><td>0.130</td><td><b>0.021</b></td></tr>
+          <tr><td>2</td><td>y = 1.089 + 1.243x − 0.086x²</td><td>0.110</td><td>0.199</td></tr>
+          <tr><td>4</td><td>y = 1 + 4.933x − 5.142x² + 2.067x³ − 0.258x⁴</td><td><b>0.000</b></td><td><b>47.3</b></td></tr></table>
+          <p>Degree 4 has five knobs for five points and threads every one exactly — training error zero — yet its validation error (47) is thousands of times worse than the plain line's (0.021). Judged on training error alone we would pick the worst model. Judged on validation error we pick the line. (With only 5 points the numbers are noisy; the lab uses many.)</p></div>
+        <p><b>Learning curves.</b> Plot training and validation error against the <i>amount of data</i>. Training error starts near zero (easy to fit few points) and rises; validation error starts huge and falls; they approach each other. A big gap that closes with more data → <i>overfitting</i>: collect data or simplify. Both curves high and flat, close together → <i>underfitting</i>: more data will not help, use a richer model or better features.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat R_{\text{train}}=\frac1{N_{\text{tr}}}\sum_{i\in\text{train}}\ell\big(f(x_i;\hat\theta),y_i\big),\qquad \hat R_{\text{val}}=\frac1{N_{\text{val}}}\sum_{i\in\text{val}}\ell\big(f(x_i;\hat\theta),y_i\big)</div>
+        <div class="eq">\text{generalisation gap}=\hat R_{\text{val}}-\hat R_{\text{train}}</div>
+        <table class="sym">
+          <tr><td>θ̂</td><td>parameters chosen using <i>training</i> data only</td></tr>
+          <tr><td>R̂<sub>train</sub></td><td>average loss on the training examples (optimistic)</td></tr>
+          <tr><td>R̂<sub>val</sub></td><td>average loss on held-out examples: an estimate of the error on new data</td></tr>
+          <tr><td>gap</td><td>how much worse the model is on unseen data; a large gap signals overfitting</td></tr>
+          <tr><td>N<sub>tr</sub>, N<sub>val</sub></td><td>sizes of the two sets; a small validation set gives a noisy estimate</td></tr>
+        </table>
+        <p>Typical splits: 60/20/20 or 70/15/15; for huge datasets a few percent is enough for validation and test. Data must be split <b>randomly</b> (or by time/group where examples are not independent — Module 1) and <b>before</b> any preprocessing that learns from the data.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: split, degree, and the three errors</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Sweep degree</b>: the model curve morphs slowly from a line to a wiggle. Watch the training error (blue) fall steadily while validation error (orange) falls, then rises.</li>
+        <li>Make the training share very small: even degree 3 overfits. Make it large: the validation curve calms down.</li>
+        <li>Pick the degree with the lowest <i>validation</i> error, then press <b>Reveal test error</b> once. Press it after every change and the lab counts your peeks: that is how test sets get ruined.</li></ol></div>
+      <div data-lab="overfit"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: learning curves</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With degree 1, both curves flatten at a high level: underfitting, more data does not help.</li>
+        <li>With degree 9, there is a wide gap at small n that slowly closes as data grows: more data cures overfitting.</li>
+        <li>Press play to grow the dataset slowly and watch the fitted curve settle.</li></ol></div>
+      <div data-lab="learncurve"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reporting training accuracy.</b> It rewards memorisation.</li>
+          <li><b>Tuning on the test set.</b> Every peek-and-adjust leaks test information into the model; the final score is no longer honest.</li>
+          <li><b>Preprocessing before splitting</b> (e.g. scaling with the global mean): validation information leaks into training.</li>
+          <li><b>Related examples on both sides</b> (the same patient in train and test): the model recognises people, not disease.</li>
+          <li><b>A tiny validation set</b>: one lucky split can mislead; later modules introduce cross-validation.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every benchmark</b> (ImageNet, GLUE) has a held-out test set; leaderboard contamination — test data leaking into training — is a serious concern for large language models.</li>
+          <li><b>Early stopping</b> in neural networks: stop training when validation loss stops improving.</li>
+          <li><b>Regularisation, dropout, data augmentation</b> are all tools against overfitting (Modules 2, 6). <b>Double descent</b> and modern huge models complicate the classic picture, but the held-out test remains the arbiter.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Model A: train error 2%, validation error 3%. Model B: train 0%, validation 15%. Which do you prefer and why?</summary><div class="ans">A. B overfits (gap 15 points); A's validation error is the honest estimate and is much lower.</div></details>
+        <details class="check"><summary>2. You try 20 model settings, pick the best by test error, and report it. What is wrong?</summary><div class="ans">The test set was used for selection, so the reported error is optimistically biased. Use validation for choosing; touch the test set once.</div></details>
+        <details class="check"><summary>3. Both training and validation error are high and nearly equal, and more data does not move them. What now?</summary><div class="ans">Underfitting: increase model capacity, add informative features, train longer, or reduce regularisation.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>The goal is generalisation: low error on unseen data, not on training data.</li><li>Split into train (learn), validation (choose), test (report once). Split before any preprocessing.</li><li>Underfit = high error everywhere; overfit = low train error, high validation error. Learning curves tell which you have.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You now know what a model is, what kinds of problems exist, the six-stage pipeline, how data becomes <span class="tex">X</span> and <span class="tex">y</span>, and why we hold out data. Next, <a href="machine-learning.html#curriculum"><b>Module 1 · Data preparation &amp; feature engineering</b></a> zooms into stage 2 of the pipeline: exploring, cleaning, encoding and scaling data properly.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

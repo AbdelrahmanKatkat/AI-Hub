@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 · Beyond supervised learning · Machine Learning</title>
+<meta name="description" content="Semi- and self-supervised learning, transfer learning, recommender systems, time-series forecasting, Bayesian machine learning, and causal thinking with A/B tests.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-advanced.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="8">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 8</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">8</div>
+      <div style="flex:1">
+        <h1>Module 8 · Beyond supervised learning &amp; special problems</h1>
+        <p>Real projects rarely look like "a tidy table with a label column". Labels are scarce, data has a time axis, the question is "what should we show this user?", the model must say how unsure it is, and the business really asks "did our change <i>cause</i> this?". This module gives you the tool for each of those six situations, every one worked by hand on tiny numbers and animated.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">7 new animated labs</span><span class="chip">Hand-worked numbers</span><span class="chip">Pipeline view in each lesson</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 8.1 ===================== -->
+    <section class="lesson" id="semi-self-supervised" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.1</span><h2>Semi- &amp; self-supervised learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 1,000,000 photos but a doctor has labelled only 50 of them. Labelling costs money; photos are free. Is there any way the 999,950 unlabelled photos can still make the model better?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Unlabelled data has no answers, but it still tells you <b>the shape of the world</b>: which points cluster together, which are near each other, which look like slightly altered copies of the same thing. Three ideas turn that shape into learning signal.</p>
+        <ul>
+          <li><b>Label propagation (smoothness).</b> If two points are close, they probably share a label. Put a few labels on a similarity graph and let them <i>flow</i> along the edges, like dye spreading through a network of pipes.</li>
+          <li><b>Pseudo-labelling (self-training).</b> Train on the few labels, let the model label the rest, <i>keep only the predictions it is very sure about</i>, add them to the training set and repeat. The model teaches itself — which is dangerous if it is confidently wrong.</li>
+          <li><b>Self-supervised / contrastive learning.</b> Invent the labels from the data itself: two augmented crops of the <i>same</i> photo should have similar embeddings, crops of <i>different</i> photos should not. No human label is needed, and the learned embedding is useful for later tasks. Language models do the same with "predict the next/masked word".</li>
+        </ul>
+
+        <h3 class="sec">Build it up: three hand-worked examples</h3>
+        <p><b>1. Label propagation.</b> Five points on a chain: 1 — 2 — 3 — 4 — 5. Only point 1 is labelled <span class="tex">+1</span> and point 5 is labelled <span class="tex">-1</span>. Rule: each unlabelled node takes the <i>average of its neighbours</i>; labelled nodes stay clamped. Start with the unlabelled ones at 0.</p>
+        <table class="tbl"><tr><th>iteration</th><th>f₁</th><th>f₂</th><th>f₃</th><th>f₄</th><th>f₅</th></tr>
+          <tr><td>0</td><td>+1</td><td>0</td><td>0</td><td>0</td><td>−1</td></tr>
+          <tr><td>1</td><td>+1</td><td>(1+0)/2 = 0.5</td><td>(0+0)/2 = 0</td><td>(0−1)/2 = −0.5</td><td>−1</td></tr>
+          <tr><td>2</td><td>+1</td><td>(1+0)/2 = 0.5</td><td>(0.5−0.5)/2 = 0</td><td>(0−1)/2 = −0.5</td><td>−1</td></tr></table>
+        <p>It has already stopped changing: node 2 is half way to "+", node 4 half way to "−", and node 3 sits exactly on the fence (0). Predicted labels: 2 → +, 3 → undecided, 4 → −. In a longer chain the values would form a straight ramp; in a clustered graph the labels fill each cluster and drop sharply at the thin gap between clusters — that is the "cluster assumption".</p>
+
+        <div class="worked"><b>Worked example · pseudo-label thresholds</b>
+          <p>A model trained on the labelled data outputs the probability of its top class for 6 unlabelled points: 0.97, 0.91, 0.84, 0.62, 0.55, 0.99. Suppose (we secretly know) predictions 3 and 4 are wrong, the other four right.</p>
+          <table class="tbl"><tr><th>threshold τ</th><th>accepted</th><th>coverage</th><th>pseudo-label accuracy</th></tr>
+            <tr><td>0.90</td><td>0.97, 0.91, 0.99</td><td>3/6 = 50%</td><td>3/3 = 100%</td></tr>
+            <tr><td>0.80</td><td>+ 0.84 (wrong)</td><td>4/6 = 67%</td><td>3/4 = 75%</td></tr>
+            <tr><td>0.50</td><td>all six</td><td>6/6 = 100%</td><td>4/6 = 67%</td></tr></table>
+          <p>A high threshold gives few but clean new labels; a low one gives many labels but poisons training with wrong ones that the next round then reinforces (<b>confirmation bias</b>). Real systems often use a high τ (0.95) and raise coverage over rounds.</p></div>
+
+        <div class="worked"><b>Worked example · contrastive loss on 3 pairs</b>
+          <p>Three images, each shown in two augmented views, are embedded as unit vectors in 2-D (angles: view A = 0°, 90°, 200°; view B = 20°, 70°, 180°). The similarity of two unit vectors is the cosine of their angle difference. Row <i>i</i> compares image <i>i</i>'s view A with all three B views; the <i>matching</i> view <i>i</i> is the positive, the other two are negatives. Temperature τ = 0.5.</p>
+          <table class="tbl"><tr><th>row</th><th>similarities to B₁, B₂, B₃</th><th>÷ τ → exp</th><th>p(positive)</th><th>loss −ln p</th></tr>
+            <tr><td>1</td><td>0.940, 0.342, −1.000</td><td>6.549, 1.982, 0.135</td><td>6.549/8.666 = 0.756</td><td>0.280</td></tr>
+            <tr><td>2</td><td>0.342, 0.940, 0.000</td><td>1.982, 6.549, 1.000</td><td>6.549/9.531 = 0.687</td><td>0.375</td></tr>
+            <tr><td>3</td><td>−1.000, −0.643, 0.940</td><td>0.135, 0.276, 6.549</td><td>6.549/6.960 = 0.941</td><td>0.061</td></tr></table>
+          <p>Mean loss = (0.280 + 0.375 + 0.061)/3 = <b>0.239</b>. It is simply a softmax cross-entropy where the "correct class" is "my other view". Gradient descent pulls matching views together and pushes the others apart. Row 2 is worst because image 1's view is also fairly similar (0.342) to it.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">f^{(t+1)}_i=\frac{1}{\sum_j w_{ij}}\sum_j w_{ij}f^{(t)}_j\ \ (i\ \text{unlabelled}),\qquad f_i=y_i\ (i\ \text{labelled})</div>
+        <div class="eq">\mathcal L_i=-\log\frac{\exp(\mathrm{sim}(z_i,z_i')/\tau)}{\sum_{k=1}^{B}\exp(\mathrm{sim}(z_i,z_k')/\tau)}</div>
+        <table class="sym">
+          <tr><td><span class="tex">w_{ij}</span></td><td>similarity (edge weight) between points i and j; 0 if not neighbours</td></tr>
+          <tr><td><span class="tex">f_i</span></td><td>current soft label ("score") of node i; the sign gives the class</td></tr>
+          <tr><td><span class="tex">z_i,z_i'</span></td><td>embeddings of the two augmented views of example i</td></tr>
+          <tr><td>sim</td><td>cosine similarity <span class="tex">\frac{z\cdot z'}{\lVert z\rVert\lVert z'\rVert}</span> (see <a href="math-linear-algebra.html">linear algebra</a>)</td></tr>
+          <tr><td>τ</td><td>temperature: small τ makes the softmax sharper, punishing hard negatives more</td></tr>
+          <tr><td>B</td><td>number of pairs in the batch; the other B−1 items are the negatives</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline view</b>Preprocessing: build a similarity graph (k-NN, cost O(N²) naively) or define augmentations (crop, flip, colour jitter, mask). <b>Stored:</b> for label propagation, the graph and the score per node (it is <i>transductive</i> — no model for new points); for contrastive learning, an <i>encoder</i> whose embeddings you later reuse with a small classifier trained on the few labels. Contrastive training needs large batches (many negatives) and heavy compute; <b>inference</b> is one encoder pass. Prefer it when labels are scarce and unlabelled data is plentiful; avoid pseudo-labelling when the base model is poor (errors compound).</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: labels spreading across a graph</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: two labelled points (green and orange rings) push their colour into their neighbours, a little each round. Watch the caption: ① average neighbours → ② clamp the labelled points → repeat.</li>
+        <li>Choose "two clusters" and then "two moons": the labels fill each cluster and stop at the gap. Now raise the neighbours slider <i>k</i> until the graph bridges the gap — labels leak across and accuracy drops.</li>
+        <li>Click a point to toggle it as a labelled seed of the active class. Add a few more seeds and see how fewer rounds are needed.</li></ol></div>
+      <div data-lab="mlLabelProp"></div>
+      <div class="try" style="margin-top:12px"><b>Try this · contrastive loss</b><ol>
+        <li>Set s+ = 0.94 and the two negatives as in row 1 (0.34, −1.0): loss ≈ 0.28. Now raise a negative's similarity to 0.9: the loss jumps — that negative is "hard".</li>
+        <li>Lower τ: hard negatives are punished even harder.</li></ol></div>
+      <div data-lab="calc" data-title="One row of the contrastive loss" data-params="sp=0.94:-1..1:0.01; n1=0.34:-1..1:0.01; n2=-1:-1..1:0.01; tau=0.5:0.1..2:0.05" data-rows="p(positive) = exp(sp/tau)/(exp(sp/tau)+exp(n1/tau)+exp(n2/tau)); loss = -log(exp(sp/tau)/(exp(sp/tau)+exp(n1/tau)+exp(n2/tau)))" data-note="loss = −ln p(positive). With three candidates, a random guess would give ln 3 = 1.10."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Confirmation bias:</b> pseudo-labelling a wrong prediction trains the model to repeat it. Keep τ high, and always evaluate on <i>truly labelled</i> held-out data.</li>
+          <li><b>A graph that bridges classes</b> destroys label propagation; the quality of the similarity measure is everything.</li>
+          <li>Unlabelled data only helps if it comes from the <i>same distribution</i> as your target data.</li>
+          <li>Contrastive learning with too few negatives, or augmentations that are too weak, collapses to trivial solutions.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>SimCLR / MoCo / CLIP</b> use contrastive losses (CLIP pairs an image with its caption). <b>BERT / GPT</b> are self-supervised: the label is a masked or next word taken from the text itself.</li>
+          <li><b>FixMatch / Noisy Student</b> are pseudo-labelling with a confidence threshold and strong augmentation. Label propagation is used for graph data (fraud rings, social networks).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the chain example, what would f₃ be if point 5 were also +1?</summary><div class="ans">All unlabelled nodes would converge to +1 (the ramp is flat), so f₃ = +1.</div></details>
+        <details class="check"><summary>2. Why does a lower pseudo-label threshold increase coverage but risk lower accuracy?</summary><div class="ans">Less-confident predictions are accepted; they are more often wrong (0.84 and 0.62 were wrong in our example), and wrong labels are then learned as truth.</div></details>
+        <details class="check"><summary>3. Row 3 has loss 0.061 and row 2 has 0.375. What does that say about the embeddings?</summary><div class="ans">In row 3 the positive (cos 0.94) is far ahead of both negatives (−1, −0.64), so the softmax is confident. In row 2 a negative (0.342) is closer to the anchor, so the positive gets only 69% of the probability.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Unlabelled data supplies structure: neighbourhood, confidence, or invented pretext tasks.</li><li>Propagation = neighbour averaging with labelled nodes clamped; pseudo-labels trade coverage against accuracy; contrastive loss = softmax over "which view is mine?".</li><li>Store the encoder (contrastive) or the graph (propagation); evaluate only on real labels.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.2 ===================== -->
+    <section class="lesson" id="transfer-learning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.2</span><h2>Transfer learning &amp; fine-tuning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You must recognise 10 kinds of crop disease from 500 leaf photos. Training a network from scratch needs millions of images. Yet someone already trained a network on 1.2 million everyday photos. Can you borrow what it already knows?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A network learns in layers. The first layers learn <b>generic</b> things — edges, colours, textures — that every image task needs. Later layers learn <b>task-specific</b> things (a dog's snout). A person who can already draw does not relearn "what a line is" to learn to draw leaves. So we <b>reuse the early layers</b> of a pretrained model and only retrain the end. Two recipes:</p>
+        <ul>
+          <li><b>Feature extraction:</b> freeze the whole backbone; train only a new final layer (the "head") on top of its outputs. Cheap, safe with very little data.</li>
+          <li><b>Fine-tuning:</b> also unfreeze some or all backbone layers and train them gently (small learning rate), so they bend toward the new domain. Better with more data, riskier (can forget — "catastrophic forgetting").</li>
+        </ul>
+        <p>It works to the degree that the new <b>domain</b> resembles the old one. A model pretrained on photos transfers well to leaf photos, less to X-rays, and poorly to audio spectrograms. A mismatch between pretraining and target data distributions is called <b>domain shift</b>.</p>
+
+        <h3 class="sec">Build it up: counting what is trained</h3>
+        <p>Take a small CNN pretrained on a big dataset. A convolution with <i>c<sub>in</sub></i> input channels, <i>c<sub>out</sub></i> filters of size 3×3 has <span class="tex">c_{in}\,c_{out}\cdot 9+c_{out}</span> parameters (weights plus biases). We replace the old 1000-class head by a new 10-class one: <span class="tex">128\cdot10+10=1290</span>.</p>
+        <table class="tbl"><tr><th>layer</th><th>parameters</th><th>feature extraction</th><th>fine-tune last block</th><th>fine-tune all</th><th>learning rate (all, ×0.3 per layer down)</th></tr>
+          <tr><td>conv1 3→16</td><td>448</td><td>frozen</td><td>frozen</td><td>trained</td><td>8.1×10⁻⁶</td></tr>
+          <tr><td>conv2 16→32</td><td>4,640</td><td>frozen</td><td>frozen</td><td>trained</td><td>2.7×10⁻⁵</td></tr>
+          <tr><td>conv3 32→64</td><td>18,496</td><td>frozen</td><td>frozen</td><td>trained</td><td>9.0×10⁻⁵</td></tr>
+          <tr><td>conv4 64→128</td><td>73,856</td><td>frozen</td><td>trained</td><td>trained</td><td>3.0×10⁻⁴</td></tr>
+          <tr><td>new head 128→10</td><td>1,290</td><td>trained</td><td>trained</td><td>trained</td><td>1.0×10⁻³</td></tr>
+          <tr><td><b>trained / total</b></td><td>98,730</td><td><b>1,290 (1.3%)</b></td><td><b>75,146 (76.1%)</b></td><td><b>98,730 (100%)</b></td><td></td></tr></table>
+        <p>Two practical rules visible in the last column. The <b>new head</b> starts random so it needs a normal learning rate; the pretrained layers are already good, so they get smaller rates, smaller the earlier (more generic) they are — <b>discriminative learning rates</b>. Often you first train only the head for a few epochs (so random head gradients do not wreck the backbone), then unfreeze.</p>
+        <div class="worked"><b>Worked example · data vs method (illustrative)</b>
+          <p>With 100 target images the head alone (1,290 numbers) can be fitted reliably, whereas 98,730 free numbers would overfit: the data has 100 labels, far fewer than parameters. With 100,000 images, fine-tuning everything can gain several points because the features adapt. Rule of thumb: <i>little data + similar domain → feature extraction; more data or a different domain → fine-tune, with small learning rates.</i> The lab below shows this trade-off with an illustrative curve.</p></div>
+        <p><b>Adapters and LoRA.</b> Huge models (billions of parameters) cannot be fully fine-tuned by most people. <b>Adapters</b> insert tiny trainable modules between frozen layers; <b>LoRA</b> learns a low-rank update <span class="tex">W+BA</span> to a frozen weight matrix: for a 4096×4096 matrix (16.8 M numbers) a rank-8 update trains only <span class="tex">2\cdot4096\cdot8=65{,}536</span> numbers (0.39%).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\theta=(\theta_{\text{backbone}},\theta_{\text{head}}),\qquad \theta_{\text{backbone}}\leftarrow\theta^{\text{pre}}\ \text{(copied)},\qquad \theta_\ell\leftarrow\theta_\ell-\eta_\ell\nabla_{\theta_\ell}\mathcal L\ \text{for unfrozen layers}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\theta^{\text{pre}}</span></td><td>parameters learned on the large source task and downloaded</td></tr>
+          <tr><td><span class="tex">\theta_{\text{head}}</span></td><td>new randomly initialised output layer for your classes</td></tr>
+          <tr><td><span class="tex">\eta_\ell</span></td><td>learning rate for layer ℓ; 0 for frozen layers (equivalently: no gradient is computed)</td></tr>
+          <tr><td><span class="tex">\mathcal L</span></td><td>loss on your small target dataset</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline view</b>Preprocess exactly like the source model (same image size, mean/std normalisation, tokeniser) or its features mean nothing. <b>Stored:</b> one pretrained checkpoint (shared, versioned in the registry) plus your small delta — the head, or adapter/LoRA weights (kilobytes–megabytes). Training cost drops from days to minutes–hours; inference cost equals the backbone's. With frozen backbones you can even cache the backbone's features once and train the head on them in seconds.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: freeze, fine-tune, compare</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Click layers to toggle frozen (blue) / trained (orange). Watch the trained-parameter count and percentage update; the table matches the one above.</li>
+        <li>Press play: the animation highlights "forward pass", then "gradients flow back only through unfrozen layers" — frozen layers receive none.</li>
+        <li>Slide "target images" from 20 to 5000 and compare the three curves (from scratch, head only, fine-tune all). Notice where each wins. <b>The curves are illustrative, not measured.</b></li></ol></div>
+      <div data-lab="mlTransfer"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Wrong preprocessing (different normalisation) silently ruins the features.</li>
+          <li>Fine-tuning everything with a large learning rate on a tiny dataset erases the pretrained knowledge. Use small η, and unfreeze gradually.</li>
+          <li>Batch-norm statistics: frozen layers in "train mode" still update running means — freeze them in eval mode, or the "frozen" layer changes.</li>
+          <li>Leakage: the pretraining data may contain your test images. Check licences and overlap.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Almost every vision project starts from an ImageNet or CLIP backbone (<a href="cv-cnn.html">CNN lessons</a>); NLP starts from BERT/GPT-style checkpoints; speech from wav2vec.</li>
+          <li><b>LoRA/QLoRA</b> adapt large language models on a single GPU. Domain adaptation for satellite or medical images is transfer with domain shift.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters train when only conv4 and the head are unfrozen? What share is that?</summary><div class="ans">73,856 + 1,290 = 75,146 of 98,730, i.e. 76.1%. (Note that "just the last block" is still most of this tiny network, because the last block is the widest; in a real ResNet-50 the last stage is also a large share.)</div></details>
+        <details class="check"><summary>2. Why does the head get a larger learning rate than conv1?</summary><div class="ans">The head is random and must learn from scratch; conv1 already detects generic edges and needs only tiny adjustments, and larger steps would destroy it.</div></details>
+        <details class="check"><summary>3. A rank-8 LoRA on a 1000×1000 matrix trains what fraction of its 1,000,000 numbers?</summary><div class="ans">2·1000·8 = 16,000 → 1.6%.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Reuse generic early layers; train a new head (feature extraction) or also gently fine-tune the backbone.</li><li>Less data / similar domain → freeze more; more data / larger shift → unfreeze more with small, layer-wise learning rates.</li><li>You store a shared checkpoint plus a small task-specific delta; preprocessing must match the source model.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.3 ===================== -->
+    <section class="lesson" id="recommender-systems" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.3</span><h2>Recommender systems</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop has 4 users, 4 films and a table of star ratings where most cells are empty. Which film should we show Ann next? Nobody told us what "action" or "romance" mean — can the machine discover such tastes by itself?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Collaborative filtering</b> says: people who agreed in the past will agree again. Ann and Bob both loved film 1 and hated film 4, so Bob's opinion on film 2 is a good guess for Ann's. <b>Matrix factorisation</b> makes this precise by giving every user and every item a short list of hidden numbers — <b>latent factors</b>, like (how much action, how much romance). A user's predicted rating for an item is how well their taste vector <i>points the same way</i> as the item's feature vector: a dot product. We never name the factors; training discovers whichever directions best explain the observed ratings. Imagine users and items as points in a shared map: a user is happy with items that lie in their direction.</p>
+
+        <h3 class="sec">Build it up: factorising a 4×4 ratings matrix by hand</h3>
+        <p>Rows = users U1–U4, columns = items I1–I4, "·" means unrated (1–5 stars).</p>
+        <table class="tbl"><tr><th></th><th>I1</th><th>I2</th><th>I3</th><th>I4</th></tr>
+          <tr><td>U1</td><td>5</td><td>3</td><td>·</td><td>1</td></tr><tr><td>U2</td><td>4</td><td>·</td><td>·</td><td>1</td></tr>
+          <tr><td>U3</td><td>1</td><td>1</td><td>·</td><td>5</td></tr><tr><td>U4</td><td>·</td><td>1</td><td>5</td><td>4</td></tr></table>
+        <p>We have <b>11 observed</b> ratings out of 16. We look for user vectors <span class="tex">p_u\in\mathbb R^2</span> and item vectors <span class="tex">q_i\in\mathbb R^2</span> such that <span class="tex">\hat r_{ui}=p_u\cdot q_i</span> is near the observed rating, using <b>only observed cells</b> in the loss. Start from small arbitrary values:</p>
+        <p>p₁=(0.5, 0.2), p₂=(0.4, 0.1), p₃=(0.3, 0.6), p₄=(0.1, 0.5); q₁=(0.6, 0.1), q₂=(0.2, 0.3), q₃=(0.1, 0.8), q₄=(0.4, 0.5).</p>
+        <p>Predictions are tiny (e.g. <span class="tex">\hat r_{11}=0.5\cdot0.6+0.2\cdot0.1=0.32</span> vs. true 5). Over the 11 observed cells the RMSE is <span class="tex">\sqrt{\tfrac1{11}\sum(r-\hat r)^2}=\mathbf{3.06}</span> stars — useless, as expected.</p>
+        <div class="worked"><b>Worked example · one SGD update</b>
+          <p>Take observed cell (U1, I1): <i>r</i>=5, <span class="tex">\hat r=0.32</span>, error <span class="tex">e=r-\hat r=4.68</span>. Learning rate α=0.1, regularisation λ=0.02. Update both vectors using their <i>old</i> values:</p>
+          <p><span class="tex">p_1\leftarrow p_1+\alpha(e\,q_1-\lambda p_1)</span>: first entry 0.5 + 0.1·(4.68·0.6 − 0.02·0.5) = <b>0.7798</b>; second 0.2 + 0.1·(4.68·0.1 − 0.02·0.2) = <b>0.2464</b>.</p>
+          <p><span class="tex">q_1\leftarrow q_1+\alpha(e\,p_1-\lambda q_1)</span>: 0.6 + 0.1·(4.68·0.5 − 0.02·0.6) = <b>0.8328</b>; 0.1 + 0.1·(4.68·0.2 − 0.02·0.1) = <b>0.1934</b>.</p>
+          <p>New prediction: 0.7798·0.8328 + 0.2464·0.1934 = <b>0.697</b>, error 4.30 (was 4.68). One step moved the prediction toward 5; sweeping over all observed cells for many epochs drives the RMSE down.</p></div>
+
+        <h3 class="sec">Ranking, not just rating</h3>
+        <p>Shops show a <i>list</i>, so quality is judged on the ranking. Suppose we recommend 5 items and the user liked those at positions 1 and 3 (relevance 1,0,1,0,0). <b>Precision@5</b> = 2/5 = 0.4. <b>NDCG@5</b> rewards putting hits near the top: <span class="tex">\mathrm{DCG}=\sum_k \frac{rel_k}{\log_2(k+1)}=1+\tfrac{1}{\log_2 4}=1.5</span>; the ideal order (1,1,0,0,0) gives 1+0.631=1.631; so NDCG = 1.5/1.631 = <b>0.920</b>. Always evaluate by a <b>held-out</b> set (and in time order for real systems), not on the training ratings.</p>
+        <p><b>Implicit feedback.</b> Mostly you have clicks, views and purchases, not stars. A missing click does not mean "dislike". Treat observed interactions as positives with confidence weights and sample unobserved items as negatives (ALS with confidence, or BPR: "the clicked item should score higher than a random one").</p>
+        <p><b>Cold start.</b> A <i>new user</i> has no row; a <i>new item</i> has no column, so no vector can be learned. Fixes: recommend by popularity (item averages here: I3 5.0, I1 3.33, I4 2.75, I2 1.67), ask a few onboarding questions, use <b>content features</b> (genre, text, image embeddings) to predict a vector, and use bandits to explore. In the lab, drop a new user onto the map: their vector starts at the average and moves as ratings arrive.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\min_{P,Q}\ \sum_{(u,i)\in\Omega}\big(r_{ui}-p_u\!\cdot q_i\big)^2+\lambda\big(\lVert p_u\rVert^2+\lVert q_i\rVert^2\big)</div>
+        <table class="sym">
+          <tr><td>Ω</td><td>the set of <i>observed</i> (user, item) pairs; unobserved cells are ignored</td></tr>
+          <tr><td><span class="tex">p_u, q_i</span></td><td>k-dimensional latent vectors of user u and item i (the parameters)</td></tr>
+          <tr><td><span class="tex">p_u\cdot q_i</span></td><td>predicted rating (dot product)</td></tr>
+          <tr><td>λ</td><td>regularisation strength, prevents overfitting sparse users</td></tr>
+          <tr><td>e, α</td><td>error <span class="tex">r-\hat r</span> and learning rate in the SGD step above (the gradient of the squared error is −2e·q; the factor 2 is folded into α)</td></tr>
+        </table>
+        <p>Related maths: this is a low-rank approximation, see <a href="math-linear-algebra.html#svd-pca">SVD</a>; the optimisation is <a href="math-optimization.html#gradient-descent">gradient descent</a>.</p>
+        <div class="callout"><b>Pipeline view</b>Offline: collect interaction logs, train factors (cost O(|Ω|·k) per epoch), evaluate with a time-based split. <b>Stored:</b> one k-vector per user and per item (users × k floats — for 10 M users and k=64 about 2.5 GB), usually in a vector index / feature store. Online: retrieval (nearest items to the user's vector, via approximate nearest neighbour search) then a re-ranking model, then business rules. Re-train regularly: tastes and catalogues move. Prefer factorisation for dense interaction logs; prefer content-based or hybrid models when items are new or interactions are sparse.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: users and items in a shared space</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag a user (circle) or an item (square) on the map: predicted ratings in the matrix change at once because they are dot products.</li>
+        <li>Press <b>Train</b>: SGD visits one observed rating at a time (highlighted), and you see the two vectors involved nudge toward fitting it, while RMSE falls. The caption names each step.</li>
+        <li>Add the "new user" (cold start): they sit at the average and get popularity-like recommendations. Click two items to give ratings and watch their vector move.</li></ol></div>
+      <div data-lab="mlRecSys"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Treating missing ratings as zeros (they are <i>unknown</i>, not "dislike").</li>
+          <li>Random train/test split of interactions leaks the future; use time-based splits per user.</li>
+          <li>Optimising RMSE while the product shows a ranked list; check ranking metrics too.</li>
+          <li>Feedback loops: you only observe what you recommended, so popular items get more popular.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>The Netflix-prize winners were ensembles of matrix factorisation. Modern <b>two-tower</b> models learn user and item embeddings with neural networks and train them with contrastive losses — the same dot-product idea as here.</li>
+          <li>Item embeddings (word2vec-style "item2vec") and learning-to-rank (NDCG) power e-commerce, music and news feeds.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why is the loss summed only over observed cells?</summary><div class="ans">Missing cells have no ground truth; counting them as 0 would teach the model that unseen items are disliked.</div></details>
+        <details class="check"><summary>2. If the error e is negative (we over-predicted), which way does p_u move?</summary><div class="ans">Away from q_i, since the update adds α·e·q_i with e&lt;0 (ignoring regularisation), reducing the dot product.</div></details>
+        <details class="check"><summary>3. A list has hits at positions 2 and 3 only (0,1,1,0,0). Compute NDCG@5.</summary><div class="ans">DCG = 1/log₂3 + 1/log₂4 = 0.631 + 0.5 = 1.131; ideal = 1.631; NDCG = 0.693.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Predicted rating = dot product of learned user and item vectors; fit by SGD on observed ratings only.</li><li>Judge by RMSE and, more importantly, ranking metrics on time-split held-out data.</li><li>Cold start needs popularity, content features or exploration; you store vectors and serve via nearest-neighbour search.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.4 ===================== -->
+    <section class="lesson" id="time-series" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.4</span><h2>Time-series forecasting</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop has three years of quarterly sales. How many units should it stock next year — and how sure can it be? Why would shuffling the rows and doing a normal 80/20 split give a dangerously flattering test score?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A time series is data where <b>order is the information</b>. Almost every series is a blend of three things: a slow <b>trend</b> (growth), a repeating <b>seasonality</b> (Christmas peaks, weekly cycles) and <b>noise</b> you cannot predict. Forecasting means separating the predictable parts, extending them, and honestly widening your uncertainty as you look further ahead — a weather forecast for tomorrow is sharper than for next month.</p>
+
+        <h3 class="sec">Build it up: decomposition by hand</h3>
+        <table class="tbl"><tr><th>year</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>year mean</th></tr>
+          <tr><td>1</td><td>10</td><td>14</td><td>8</td><td>12</td><td>11</td></tr>
+          <tr><td>2</td><td>12</td><td>16</td><td>10</td><td>14</td><td>13</td></tr>
+          <tr><td>3</td><td>14</td><td>18</td><td>12</td><td>16</td><td>15</td></tr></table>
+        <p><b>Trend:</b> the year means 11, 13, 15 grow by 2 per year. <b>Seasonal effect:</b> subtract each year's mean and average per quarter: Q1 = (−1−1−1)/3 = −1; Q2 = +3; Q3 = −3; Q4 = +1 (they sum to 0, as they should). <b>Residual</b> = value − trend − season = 0 here because the toy data is noise-free; real data leaves a noisy remainder (the lab adds noise). Additive model: <span class="tex">y_t=T_t+S_t+\varepsilon_t</span>; when seasonal swings grow with the level, use multiplicative (<span class="tex">T_t\times S_t</span>, or take logs).</p>
+        <p><b>Forecast year 4:</b> trend continues to mean 17, so Q1..Q4 = 17−1, 17+3, 17−3, 17+1 = <b>16, 20, 14, 18</b>. Compare two naive baselines you must always beat: <i>naive</i> (repeat the last value: 16,16,16,16) and <i>seasonal naive</i> (repeat last year: 14,18,12,16, which ignores growth and is off by 2 everywhere).</p>
+
+        <h3 class="sec">Turning a series into a supervised table: lag features</h3>
+        <p>To use any ML model (a gradient-boosted tree, say) we build features from the past — <b>lags</b> — and only from the past:</p>
+        <table class="tbl"><tr><th>t</th><th>target y<sub>t</sub></th><th>lag1 y<sub>t−1</sub></th><th>lag4 y<sub>t−4</sub></th><th>quarter</th></tr>
+          <tr><td>5</td><td>12</td><td>12</td><td>10</td><td>Q1</td></tr><tr><td>6</td><td>16</td><td>12</td><td>14</td><td>Q2</td></tr>
+          <tr><td>7</td><td>10</td><td>16</td><td>8</td><td>Q3</td></tr><tr><td>8</td><td>14</td><td>10</td><td>12</td><td>Q4</td></tr></table>
+        <p>The first four rows of the series have no lag-4, so they are dropped. Add rolling means (mean of last 4), calendar features (quarter, holiday) and known future inputs (planned promotions). <b>One-step</b> forecasting predicts <i>t+1</i> using real observed lags. <b>Multi-step</b> (horizon h) either (a) feeds forecasts back as lags (<i>recursive</i>: errors accumulate) or (b) trains one model per horizon (<i>direct</i>).</p>
+
+        <div class="worked"><b>Worked example · time-aware validation</b>
+          <p>Rows 1–12. A random 75/25 split might put quarter 9 in the test set and quarter 10 in the training set: the model sees the future. Correct: <b>train on t = 1…8, validate on 9…12</b>. Or a rolling origin: train 1–8 → test 9; train 1–9 → test 10; train 1–10 → test 11; … then average the errors. In the lab the split is a movable vertical line; training data must always be left of it, and a <i>gap</i> is added if features look further back than the horizon.</p></div>
+
+        <h3 class="sec">Stationarity and ARIMA intuition</h3>
+        <p>A series is (weakly) <b>stationary</b> if its mean, variance and autocorrelation do not drift. Trend and seasonality break this; the cure is <b>differencing</b>: <span class="tex">y_t-y_{t-1}</span> turns a straight-line trend into a constant (11,13,15 → 2,2), and a seasonal difference <span class="tex">y_t-y_{t-4}</span> removes the yearly cycle. <b>ARIMA(p,d,q)</b> = Auto-Regression on the last p values + d differencings + Moving-average of the last q forecast errors. The simplest, <b>AR(1)</b> = ARIMA(1,0,0), says: <i>tomorrow's gap from the mean is a fraction φ of today's gap, plus fresh noise</i>.</p>
+        <div class="worked"><b>Worked example · ARIMA(1,0,0) one step</b>
+          <p>Mean μ = 2, φ = 0.6, noise σ² = 0.25, last observation <i>y<sub>T</sub></i> = 3.0.</p>
+          <p>1 step: <span class="tex">\hat y_{T+1}=\mu+\varphi(y_T-\mu)=2+0.6\cdot1=2.6</span>, sd = σ = 0.5.<br>
+          2 steps: 2 + 0.6²·1 = 2.36, variance σ²(1+φ²) = 0.25·1.36 = 0.34, sd 0.58.<br>
+          3 steps: 2 + 0.216 = 2.216, variance σ²(1+φ²+φ⁴) = 0.372, sd 0.61.</p>
+          <p>The forecast decays toward the mean, and the uncertainty widens toward the series' long-run spread σ/√(1−φ²) = 0.625. For a trending (non-stationary) series the fan widens without limit.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y_t=T_t+S_t+\varepsilon_t,\qquad y_t-\mu=\varphi\,(y_{t-1}-\mu)+\varepsilon_t,\ \ \varepsilon_t\sim\mathcal N(0,\sigma^2)</div>
+        <div class="eq">\operatorname{Var}\big(y_{T+h}\mid y_T\big)=\sigma^2\sum_{j=0}^{h-1}\varphi^{2j}</div>
+        <table class="sym">
+          <tr><td><span class="tex">T_t,S_t,\varepsilon_t</span></td><td>trend, seasonal and noise components at time t</td></tr>
+          <tr><td>μ, φ</td><td>long-run mean and autoregressive coefficient (|φ| &lt; 1 for stationarity)</td></tr>
+          <tr><td>h</td><td>forecast horizon (steps ahead)</td></tr>
+          <tr><td>σ²</td><td>variance of the one-step noise; sets how wide the fan starts</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline view</b>Preprocessing: regular timestamps, missing-value handling, outlier/holiday flags, differencing or log transform; build lag/rolling features <i>only from data available at prediction time</i>. <b>Stored:</b> model parameters plus the <i>recent history window</i> (the last max-lag values) needed at serving — the serving system must keep it fresh. Training is cheap (ARIMA/ETS: seconds; GBM on lags: minutes); one model per series or a global model across thousands of series. Monitor forecast error by horizon and retrain on a schedule. Prefer simple statistical models for few, short series; global ML/deep models for many related series with covariates.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: trend + seasonality + noise → forecast</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Edit trend slope, season amplitude and noise. The bottom panels show the decomposition recovered from the data (trend line, seasonal pattern, residual).</li>
+        <li>Press play: a window slides along the series, forming one row of the lag-feature table at a time (the values it picks up are highlighted).</li>
+        <li>Drag the validation split. The forecast fan starts at the split and widens with the horizon; the green "actual" shows how the forecast scored. Switch "forecast" from one-step to multi-step and compare errors.</li></ol></div>
+      <div data-lab="mlTimeSeries"></div>
+      <div class="try" style="margin-top:12px"><b>Try this · AR(1)</b><ol><li>Set φ near 1: the forecast barely decays and the fan grows fast. Set φ = 0: the best forecast is simply the mean.</li></ol></div>
+      <div data-lab="calc" data-title="ARIMA(1,0,0) forecasts" data-params="mu=2:-5..5:0.1; phi=0.6:-0.95..0.95:0.05; y=3:-5..8:0.1; sigma=0.5:0.1..2:0.05" data-rows="1 step ahead = mu + phi*(y-mu); 2 steps ahead = mu + phi^2*(y-mu); 3 steps ahead = mu + phi^3*(y-mu); sd at 1 step = sigma; sd at 3 steps = sigma*sqrt(1+phi^2+phi^4)" data-note="Matches the hand example: mu=2, phi=0.6, y=3 gives 2.6, 2.36, 2.216."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Random-split leakage</b> and features that peek forward (a rolling mean centred on t uses the future).</li>
+          <li>Not beating the (seasonal) naive baseline; an unimpressive model can look good on MAPE alone.</li>
+          <li>Reporting only a point forecast: decisions (stock levels) need intervals.</li>
+          <li>Recursive multi-step forecasts silently compounding their own errors; structural breaks (a pandemic) invalidate history.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Demand and energy-load forecasting (gradient boosting on lag features, Prophet, ETS/ARIMA), sensor anomaly detection, finance.</li>
+          <li>Deep models: LSTM/GRU, temporal convolutions, DeepAR, N-BEATS, Temporal Fusion Transformers, and pretrained time-series foundation models.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the table, forecast quarter 1 of year 4 by seasonal-naive and by trend+season. Which is better if growth continues?</summary><div class="ans">Seasonal-naive 14; trend+season 17−1 = 16. Trend+season, since the series grows by 2 per year.</div></details>
+        <details class="check"><summary>2. For AR(1) with μ=2, φ=0.6, y_T=3, what is the 4-step forecast?</summary><div class="ans">2 + 0.6⁴·1 = 2.1296.</div></details>
+        <details class="check"><summary>3. Why are lag features for t built only from y<sub>t−1</sub>, y<sub>t−2</sub>…, and why must the validation set come after the training set?</summary><div class="ans">At prediction time only the past exists; using the future (or training on later data than you test on) leaks information that will not be there in production and inflates the score.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Series = trend + seasonality + noise; forecast the first two and quantify the third.</li><li>Lag features + time-ordered validation make any ML model a forecaster; always compare to naive baselines.</li><li>Uncertainty must widen with the horizon; serving needs the recent history window.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.5 ===================== -->
+    <section class="lesson" id="bayesian-ml" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.5</span><h2>Bayesian machine learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have only three measurements. A normal fit gives one slope, 1.04 — but is the real slope 1.0, or 0.5, or 1.5? A model that says "the answer is 1.04" with no sense of doubt is dangerous when the data is small or the stakes are high. How can a model <i>say how unsure it is</i>?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Ordinary training picks <b>one</b> best parameter. The Bayesian view keeps <b>all plausible parameters at once</b>, each weighted by how believable it is. You start with a <b>prior</b>: what you believed before seeing data ("slopes are probably near 0, within ±1"). Each data point is a <b>likelihood</b>: how well each candidate slope explains it. Multiply them and renormalise and you get the <b>posterior</b>: your updated belief, narrower than before. More data → narrower posterior. The model's prediction is then an average over all plausible parameters, and the spread of that average is the model's honest uncertainty — small near the data, large far away from it.</p>
+        <p>(Background: <a href="math-statistics.html#map-bayes">MAP and Bayes in the statistics module</a>.)</p>
+
+        <h3 class="sec">Build it up: Bayesian linear regression with one parameter</h3>
+        <p>Model: <span class="tex">y=wx+\varepsilon</span>, noise variance σ² = 1, prior <span class="tex">w\sim\mathcal N(0,\tau^2=1)</span>. Data: (x,y) = (1, 1.2), (2, 1.9), (3, 3.2). The useful trick: work with <b>precision</b> (1/variance) — precisions simply <i>add</i>.</p>
+        <p>Prior precision = 1/τ² = 1, prior mean 0. Each point adds precision <span class="tex">x^2/\sigma^2</span> and shifts the mean:</p>
+        <table class="tbl"><tr><th>after</th><th>precision</th><th>variance 1/precision</th><th>mean</th></tr>
+          <tr><td>prior</td><td>1</td><td>1</td><td>0</td></tr>
+          <tr><td>point 1: x=1,y=1.2</td><td>1 + 1 = 2</td><td>0.5</td><td>1.2/2 = 0.600</td></tr>
+          <tr><td>point 2: x=2,y=1.9</td><td>2 + 4 = 6</td><td>0.1667</td><td>(1.2+3.8)/6 = 0.833</td></tr>
+          <tr><td>point 3: x=3,y=3.2</td><td>6 + 9 = 15</td><td>0.0667</td><td>(1.2+3.8+9.6)/15 = <b>0.973</b></td></tr></table>
+        <p>The mean = (Σ x·y/σ²)/precision = 14.6/15. The posterior is <span class="tex">w\mid\text{data}\sim\mathcal N(0.973,\,0.0667)</span>: sd 0.258. Compare plain least squares: 14.6/14 = 1.043, and the posterior mean is 0.973: <b>shrunk toward the prior mean 0</b> — which is exactly ridge regression with λ = σ²/τ² = 1 (14.6/(14+1)). The Bayesian answer adds what ridge lacks: the variance.</p>
+        <div class="worked"><b>Worked example · predictive uncertainty</b>
+          <p>A new input <i>x*</i> has prediction mean <i>x*·</i>0.973 and variance <span class="tex">x_*^2\cdot0.0667+\sigma^2</span> (uncertainty in the slope, magnified by x*, plus irreducible noise).</p>
+          <table class="tbl"><tr><th>x*</th><th>mean</th><th>variance</th><th>sd</th></tr>
+            <tr><td>2 (inside data)</td><td>1.947</td><td>4·0.0667 + 1 = 1.267</td><td>1.13</td></tr>
+            <tr><td>5</td><td>4.867</td><td>25·0.0667 + 1 = 2.667</td><td>1.63</td></tr>
+            <tr><td>10 (far away)</td><td>9.733</td><td>100·0.0667 + 1 = 7.667</td><td>2.77</td></tr></table>
+          <p>The band widens as we extrapolate: the model "knows what it does not know". With a bias term as well the band is narrowest near the data's centre and flares on both sides.</p></div>
+        <p><b>Gaussian processes (intuition).</b> Instead of a handful of parameters, put a prior directly on <i>functions</i>: "nearby inputs have similar outputs" (a kernel decides how similar; see <a href="math-advanced.html#kernels">kernels</a>). Conditioning on data pins the function down near observations and leaves it free elsewhere: the band is thin at the data and wide in gaps. Cost: O(N³) to train, so GPs suit small data (hundreds to few thousand points) — exactly where uncertainty matters. Bayesian optimisation, which tunes hyper-parameters using the GP's uncertainty, is a major use. For graphical-model aspects see <a href="math-advanced.html#graphical-bayes">Bayes nets</a>.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">p(w\mid\mathcal D)=\frac{p(\mathcal D\mid w)\,p(w)}{p(\mathcal D)}\ \propto\ \text{likelihood}\times\text{prior}</div>
+        <div class="eq">s_N^{-1}=\tau^{-2}+\sigma^{-2}\sum_i x_i^2,\qquad m_N=s_N\,\sigma^{-2}\sum_i x_iy_i,\qquad p(y_*\mid x_*)=\mathcal N\!\big(m_Nx_*,\ x_*^2s_N+\sigma^2\big)</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathcal D</span></td><td>the observed data</td></tr>
+          <tr><td><span class="tex">p(w)</span>, <span class="tex">\tau^2</span></td><td>prior belief about the parameter and its variance (how strongly you believe it is near 0)</td></tr>
+          <tr><td><span class="tex">p(\mathcal D\mid w)</span>, <span class="tex">\sigma^2</span></td><td>likelihood: probability of the data given w; σ² is the noise variance</td></tr>
+          <tr><td><span class="tex">m_N, s_N</span></td><td>posterior mean and variance of w after N points</td></tr>
+          <tr><td><span class="tex">x_*^2s_N+\sigma^2</span></td><td>predictive variance = parameter uncertainty + noise</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline view</b>Preprocessing: scale features (priors are scale-sensitive). <b>Stored:</b> the <i>distribution</i> of parameters (mean vector + covariance matrix — O(d²) memory) instead of one vector; for GPs, the <i>whole training set</i> and a factorised kernel matrix (O(N²) memory, O(N³) training, O(N) per prediction mean). Online learning is natural: today's posterior is tomorrow's prior — one new point updates the stored precision and mean (as in the table). Serve mean <i>and</i> an interval; route high-uncertainty cases to a human or a safer default. For deep networks, approximations (ensembles, MC-dropout, Laplace) are used.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: prior × likelihood = posterior</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play: data points arrive one at a time. For each, the likelihood (green) multiplies the prior (blue) into the posterior (orange), which becomes the next prior — narrower every time.</li>
+        <li>Make the prior narrow (small τ) and the data few: the posterior stays near 0 — the prior dominates. Make it broad: the data dominates.</li>
+        <li>On the right, the predictive band hugs the data and flares when you move away. Switch to "Gaussian process" to see the band pinch at every observation.</li></ol></div>
+      <div data-lab="mlBayes"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>A prior is an assumption: a badly wrong, too-narrow prior is hard for data to overcome. State and test it.</li>
+          <li>Confusing a <i>credible interval</i> (probability about w, given the data) with a frequentist confidence interval.</li>
+          <li>Predictive uncertainty has two parts — uncertainty about parameters (shrinks with data) and noise (does not).</li>
+          <li>Exact Bayesian inference rarely exists outside simple models; approximations can be overconfident.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Gaussian-process regression and Bayesian optimisation (hyper-parameter tuning), Thompson sampling in bandits and recommenders, naive Bayes, Kalman filters.</li>
+          <li>Weight decay = a Gaussian prior; deep ensembles and MC-dropout give approximate uncertainty for medical and autonomous-driving models.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With prior τ² = 1 and σ² = 1, what is the posterior precision after observing one point at x = 2?</summary><div class="ans">1 + 2²/1 = 5 (variance 0.2).</div></details>
+        <details class="check"><summary>2. Why does the predictive sd grow with |x*|?</summary><div class="ans">The slope uncertainty s_N is multiplied by x*², so errors in w matter more far from the origin; the noise term σ² stays constant.</div></details>
+        <details class="check"><summary>3. How does the posterior mean 0.973 relate to ridge regression?</summary><div class="ans">It is the ridge (MAP) solution with λ = σ²/τ² = 1: Σxy/(Σx²+λ) = 14.6/15.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Posterior ∝ likelihood × prior; with Gaussians, precisions add and the posterior narrows with every point.</li><li>Predictive uncertainty = parameter uncertainty (grows away from data) + noise.</li><li>You store distributions, not points; GPs give uncertainty on small data at cubic cost.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.6 ===================== -->
+    <section class="lesson" id="causal-ab" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.6</span><h2>Causal thinking &amp; experiments</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Customers who got the new "recommended for you" widget buy 20% more. Did the widget cause the extra sales — or did it just go to the customers who were already buying more? A prediction model cannot answer this; it only sees patterns.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Machine learning predicts <i>what usually goes with what</i>. A decision needs <i>what happens if I change something</i>. The gap between them is <b>confounding</b>: a hidden factor that influences both the "treatment" and the outcome. Ice-cream sales and drownings rise together; the confounder is summer. The gold standard cure is <b>randomisation</b>: flip a coin to decide who gets the treatment. A coin cannot know about summer or customer loyalty, so on average the two groups are alike in <i>everything</i> except the treatment, and any difference is caused by it. That is an <b>A/B test</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example · confounding and Simpson's paradox (kidney-stone study, Charig et al. 1986)</b>
+          <p>Two treatments, A (open surgery) and B (a less invasive one), success counts:</p>
+          <table class="tbl"><tr><th></th><th>small stones</th><th>large stones</th><th>overall</th></tr>
+            <tr><td>A</td><td>81/87 = 93.1%</td><td>192/263 = 73.0%</td><td>273/350 = <b>78.0%</b></td></tr>
+            <tr><td>B</td><td>234/270 = 86.7%</td><td>55/80 = 68.8%</td><td>289/350 = <b>82.6%</b></td></tr></table>
+          <p>A is better for small stones <i>and</i> better for large stones, yet B looks better overall! Reason: stone size (severity) is a confounder. Doctors gave the hard large-stone cases mostly to A (263 of A's 350 patients) and the easy ones mostly to B (270 of 350), so A's overall rate is dragged down by the difficulty of its patients, not by the treatment. Neither group-size mix nor the overall average is "wrong" arithmetic; which view to trust depends on the causal story: here size comes <i>before</i> treatment, so compare within sizes. Randomisation would balance sizes and remove the problem.</p></div>
+
+        <p><b>Sample size for an A/B test.</b> Current conversion 10%; we care about detecting an absolute lift of 2 points (to 12%), with false-positive rate α = 5% (two-sided, z = 1.96) and power 80% (z = 0.84):</p>
+        <div class="eq">n\approx\frac{2\,(z_{1-\alpha/2}+z_{1-\beta})^2\,\bar p(1-\bar p)}{\delta^2}=\frac{2\,(1.96+0.84)^2\cdot0.11\cdot0.89}{0.02^2}\approx 3{,}840\text{ per group}</div>
+        <p>(with the unrounded z-values 3,842; <span class="tex">\bar p=0.11</span> is the average of 10% and 12%.) Halving δ quadruples n — small effects are expensive to detect.</p>
+        <div class="worked"><b>Worked example · the z-test</b>
+          <p>Run it with n = 4,000 per group: control converts 400 (10.0%), treatment 468 (11.7%). Observed lift 0.017. Pooled rate = 868/8000 = 0.1085. Standard error under "no effect": <span class="tex">\sqrt{0.1085\cdot0.8915\cdot(2/4000)}=0.00695</span>. Then <span class="tex">z=0.017/0.00695=2.44</span>, two-sided p ≈ 0.015 &lt; 0.05: statistically significant. A 95% confidence interval for the lift: 0.017 ± 1.96·0.00695 = <b>[0.34, 3.06] percentage points</b> — consistent with a lift anywhere from tiny to large. Report the interval, not only "significant".</p></div>
+        <p><b>The peeking problem.</b> The 5% false-positive guarantee holds only if you look <i>once</i>, at the planned n. If you check daily and stop as soon as p &lt; 0.05, a no-effect test will "win" far more than 5% of the time (the p-value random-walks across the line). Fix the sample size in advance, or use sequential methods built for continuous monitoring.</p>
+        <p><b>Uplift (heterogeneous effects).</b> The average effect hides who is affected. Imagine four customer types, with the treatment (discount email) vs control conversion rates (illustrative numbers):</p>
+        <table class="tbl"><tr><th>type</th><th>treated</th><th>control</th><th>uplift</th><th>decision</th></tr>
+          <tr><td>persuadables</td><td>12%</td><td>4%</td><td>+8 pts</td><td>target</td></tr>
+          <tr><td>sure things</td><td>30%</td><td>30%</td><td>0</td><td>skip (wasted discount)</td></tr>
+          <tr><td>lost causes</td><td>1%</td><td>1%</td><td>0</td><td>skip</td></tr>
+          <tr><td>sleeping dogs</td><td>6%</td><td>9%</td><td>−3 pts</td><td>avoid (annoyed)</td></tr></table>
+        <p>An ordinary model ranking by "probability to buy" would pick the sure things. An <b>uplift model</b> predicts the <i>difference</i> in outcome with vs without treatment, e.g. by training on randomised data with the two-model approach (<i>P(buy | treated)</i> minus <i>P(buy | control)</i>), or a single model with treatment interactions, and targets the persuadables. It needs randomised (or carefully de-confounded) data.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{ATE}=\mathbb E[Y(1)-Y(0)],\qquad \widehat{\mathrm{ATE}}=\bar y_T-\bar y_C,\qquad z=\frac{\hat p_T-\hat p_C}{\sqrt{\hat p(1-\hat p)\,(1/n_T+1/n_C)}},\qquad \tau(x)=\mathbb E[Y(1)-Y(0)\mid x]</div>
+        <table class="sym">
+          <tr><td>Y(1), Y(0)</td><td>outcomes the same person <i>would have</i> with and without treatment — only one is ever observed (the "fundamental problem of causal inference")</td></tr>
+          <tr><td>ATE</td><td>average treatment effect; randomisation makes <span class="tex">\bar y_T-\bar y_C</span> an unbiased estimate</td></tr>
+          <tr><td><span class="tex">\hat p</span></td><td>pooled conversion rate used to compute the standard error under "no effect"</td></tr>
+          <tr><td>z</td><td>how many standard errors the observed difference lies from zero; |z| &gt; 1.96 ↔ p &lt; 0.05</td></tr>
+          <tr><td>τ(x)</td><td>uplift: treatment effect for people with features x</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline view</b>An experiment needs a <b>randomisation unit</b> (user id hashed to bucket, stable across visits), assignment logging (who saw what, when), an <b>exposure event</b>, the outcome metrics, and guard-rail metrics (latency, errors). <b>Stored:</b> the assignment table and raw event logs for the analysis window; results go in an experiment registry. Serving: the application reads the bucket and returns variant A or B; the model service may run as challenger vs champion (see Module 9: canary, shadow, A/B rollout). Check the sample ratio (a 50/50 split that arrives 52/48 signals a bug) before reading results.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Labs: an A/B test streaming in, and Simpson's paradox</h3>
+      <div class="try"><b>Try this · A/B test</b><ol>
+        <li>Set both groups to the <i>same</i> true rate (no effect) and press play: users stream in, the confidence interval for the difference narrows, and the p-value wanders. Turn on "stop when p &lt; 0.05" and run several experiments: the share that falsely "win" is far above 5% — the peeking problem.</li>
+        <li>Now give the treatment a true +2 points and watch how many users it needs before the interval excludes 0 — compare with the 3,840 computed above.</li></ol></div>
+      <div data-lab="mlABTest"></div>
+      <div class="try" style="margin-top:12px"><b>Try this · Simpson's paradox</b><ol>
+        <li>The default numbers are the kidney-stone counts. Drag the group-size sliders for A: when A gets as many easy cases as B, the paradox disappears.</li>
+        <li>Find the mix at which the overall winner flips. Which comparison (overall or within stratum) answers the causal question?</li></ol></div>
+      <div data-lab="mlSimpson"></div>
+      <div data-lab="calc" data-title="Sample size for an A/B test" data-params="p=0.10:0.01..0.5:0.01; d=0.02:0.005..0.1:0.005" data-rows="n per group = 2*(1.96+0.8416)^2*(p+d/2)*(1-(p+d/2))/d^2; total users = 4*(1.96+0.8416)^2*(p+d/2)*(1-(p+d/2))/d^2" data-note="Halve the minimum detectable effect d and n quadruples."></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Reading a correlation in observational data as an effect; always ask "what else could drive both?"</li>
+          <li>Peeking, running many metrics/segments until one is significant (multiple comparisons), and stopping early on a lucky streak.</li>
+          <li>Interference: users influence each other (marketplaces, social feeds), breaking the "independent groups" assumption.</li>
+          <li>Statistical significance is not business significance; look at the interval's size and cost.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every model launch is judged by an online A/B test, not by offline accuracy. Recommenders and ranking changes are measured on real conversion.</li>
+          <li>Uplift modelling in marketing and medicine, off-policy evaluation, causal forests/double ML, and contextual bandits that trade exploration against exploitation.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With baseline 10% and target 12%, what happens to the required n if you want to detect a 1-point lift instead?</summary><div class="ans">About four times larger: the formula has δ² in the denominator (≈ 14,700 per group with p̄ = 0.105).</div></details>
+        <details class="check"><summary>2. In the kidney-stone table, why can B have the higher overall success rate while A wins in both strata?</summary><div class="ans">A treated mostly the harder large stones (263/350), B mostly the easy small ones (270/350). Overall rates are weighted averages with different weights.</div></details>
+        <details class="check"><summary>3. Why does randomising remove confounding?</summary><div class="ans">The coin is independent of every other variable, observed or hidden, so the groups are alike in expectation on everything except the treatment.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Prediction is not causation: confounders create misleading patterns (Simpson's paradox).</li><li>Randomise, fix the sample size in advance (n ≈ 2(z+z)²p̄(1−p̄)/δ²), test once and report the interval.</li><li>Uplift models target who is <i>changed</i> by the treatment; store assignments and exposure logs.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now handle scarce labels, borrowed knowledge, recommendations, time, uncertainty and causal questions. Next, <a href="machine-learning.html#curriculum">Module 9</a> zooms out to the system around the model: architecture, serving, monitoring, governance and a full end-to-end project.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

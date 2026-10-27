@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Data preparation &amp; feature engineering · Machine Learning</title>
+<meta name="description" content="Exploring, cleaning, encoding, scaling, engineering, rebalancing and splitting data — and the fit-on-train-only discipline that keeps scores honest.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-data.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">1</div>
+      <div style="flex:1">
+        <h1>Module 1 · Data preparation &amp; feature engineering</h1>
+        <p>Models do not see "customers" or "photos"; they see a table of numbers. This module is the <b>preprocessing stage</b> of the pipeline: look at the data, repair it, turn everything into sensible numbers, balance it, and split it so that the score you report is the score you will get in production. Above all you will learn one rule that prevents most silent failures: <b>learn every preprocessing parameter from the training data only, store it, and apply it unchanged later.</b></p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">9 animated labs</span><span class="chip">Hand-worked on tiny tables</span><span class="chip">Leakage, exposed</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="lesson" id="pipeline-view" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>The pipeline view of this module</h2></div>
+      <div class="prose">
+        <p>In the six-stage pipeline of the <a href="machine-learning.html#pipeline">course overview</a>, this module is stage 2: <b>preprocessing</b>. Every step below follows the same two-phase pattern, which we will call <b>fit → store → apply</b>:</p>
+        <table class="tbl">
+          <tr><th>Step</th><th>Fit on training data (learn…)</th><th>What is stored</th><th>Applied at inference (…using)</th></tr>
+          <tr><td>Imputer</td><td>mean / median / mode / model per column</td><td>one fill value (or model) per column</td><td>fills the new row's gaps with the stored values</td></tr>
+          <tr><td>Encoder</td><td>category list; target means; frequencies</td><td>category → number table; "unknown" fallback</td><td>looks each category up; unseen → fallback</td></tr>
+          <tr><td>Scaler</td><td>mean &amp; std, or min &amp; max, or median &amp; IQR</td><td>2 numbers per numeric column</td><td><span class="tex">(x-\mu_{\text{train}})/\sigma_{\text{train}}</span></td></tr>
+          <tr><td>Feature builder / selector</td><td>which columns survive; bin edges</td><td>column list, bin edges</td><td>builds the same columns, drops the same columns</td></tr>
+          <tr><td>Resampler</td><td>(training only)</td><td>nothing</td><td><b>not applied</b> — never resample the test set or live traffic</td></tr>
+        </table>
+        <p>Watch a single row travel down both paths. The <b>top path</b> (training) learns the parameters; the <b>bottom path</b> (inference) only reads them.</p>
+      </div>
+      <div data-lab="prepipe"></div>
+    </section>
+
+    <!-- ===================== 1.1 EDA ===================== -->
+    <section class="lesson" id="eda" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.1</span><h2>Exploring data</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your manager hands you a spreadsheet of 50 000 customers and says "predict who will leave". Before any model: how do you find out what is <i>in</i> there — typical values, strange values, gaps, relationships — quickly enough that you notice the problems that would otherwise ruin everything silently?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Exploratory data analysis (EDA) is what a doctor does before prescribing: take the pulse, look at the chart, ask questions. You are not trying to <i>prove</i> anything; you are trying to be <b>unsurprised later</b>. Every plot should answer one concrete question:</p>
+        <ul>
+          <li><b>"What does one column look like?"</b> A <i>histogram</i> — bars of how many rows fall in each range. Is it a bell, a long right tail, two humps?</li>
+          <li><b>"Do two columns move together?"</b> A <i>scatter plot</i> — one dot per row — and a single number, the <i>correlation</i>.</li>
+          <li><b>"What is missing, and where?"</b> Count the gaps per column and look at whether they cluster.</li>
+          <li><b>"Is anything impossible?"</b> Age −3, income of a billion, a date in the year 1900: <i>outliers</i> and data-entry errors.</li>
+        </ul>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Centre and spread.</b> The <b>mean</b> <span class="tex">\bar x</span> is the balance point; the <b>median</b> is the middle value once sorted. The <b>standard deviation</b> measures typical distance from the mean. The <b>quantiles</b> split the sorted data: Q1 = 25 % point, Q3 = 75 % point, and the <b>IQR</b> = Q3 − Q1 is the spread of the middle half. A classic outlier rule flags a value outside <span class="tex">[Q_1-1.5\,\mathrm{IQR},\;Q_3+1.5\,\mathrm{IQR}]</span>.</p>
+        <div class="worked"><b>Worked example — one income column (k$)</b>
+          <p>Six customers reported income 32, 41, 38, 45, 29, 120. Sorted: 29, 32, 38, 41, 45, 120.</p>
+          <p>Mean = 305/6 = <b>50.83</b>. Median = (38+41)/2 = <b>39.5</b>. Mean ≫ median: the distribution is pulled right by something.</p>
+          <p>Population std = <b>31.39</b>. Quantiles (linear interpolation at position <span class="tex">q(n-1)</span>, with 6 values positions 0–5): Q1 is at position 1.25 → 32 + 0.25·(38−32) = <b>33.5</b>; Q3 at position 3.75 → 41 + 0.75·(45−41) = <b>44</b>. IQR = 10.5.</p>
+          <p>Fences: upper = 44 + 15.75 = <b>59.75</b>, lower = 33.5 − 15.75 = 17.75. The value 120 is beyond 59.75 → flagged. Is it an error, or a real wealthy customer? EDA cannot decide — it only <i>asks the question</i> you must go answer.</p></div>
+        <p><b>Correlation.</b> For paired values we measure whether "above average in x" tends to come with "above average in y". Multiply the two deviations and average (then divide by both spreads so the result is unit-free, between −1 and +1):</p>
+        <div class="worked"><b>Worked example — correlation by hand</b>
+          <p>x = 1, 2, 3, 4, 5 and y = 2, 4, 5, 4, 5. Means: x̄ = 3, ȳ = 4. Deviations x: −2, −1, 0, 1, 2; y: −2, 0, 1, 0, 1.</p>
+          <p>Products: 4, 0, 0, 0, 2 → <span class="tex">S_{xy}=6</span>. <span class="tex">S_{xx}=4+1+0+1+4=10</span>, <span class="tex">S_{yy}=4+0+1+0+1=6</span>.</p>
+          <p><span class="tex">r=\dfrac{6}{\sqrt{10\cdot6}}=\dfrac{6}{7.746}=\mathbf{0.775}</span>: a fairly strong positive linear relationship.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">r_{xy}=\frac{\sum_{i=1}^{n}(x_i-\bar x)(y_i-\bar y)}{\sqrt{\sum_i (x_i-\bar x)^2}\;\sqrt{\sum_i (y_i-\bar y)^2}}\in[-1,1]</div>
+        <table class="sym">
+          <tr><td>r<sub>xy</sub></td><td>Pearson correlation of columns x and y: +1 perfect rising line, 0 no <i>linear</i> relation, −1 perfect falling line</td></tr>
+          <tr><td>x̄, ȳ</td><td>the means of the two columns</td></tr>
+          <tr><td>Σ</td><td>sum over all n rows (see <a href="math-foundations.html#sums-products">Σ notation</a>)</td></tr>
+          <tr><td>(xᵢ − x̄)</td><td>how far row i is above or below its column's average</td></tr>
+          <tr><td>denominator</td><td>the two spreads multiplied; it removes units so r is comparable across columns</td></tr>
+        </table>
+        <p>A <b>correlation matrix</b> is r for every pair of columns, drawn as a colour grid (a heat-map). See <a href="math-statistics.html">statistics</a> for the theory behind spread and correlation.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: explore a generated customer table</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Select <b>income</b> as x: the histogram has a long right tail and mean ≫ median. Now switch the <b>log</b> toggle: the tail becomes a bell.</li>
+        <li>Pick <b>age</b> vs <b>tenure</b>: the scatter is a tight band (high correlation). Click that cell in the heat-map to select the same pair.</li>
+        <li>Look at the missing-value bars: <b>income</b> has gaps. Click "highlight missing" and see <i>which</i> rows lack it — are they random?</li>
+        <li>Change the bin count: too few bins hides the shape, too many shows noise.</li></ol></div>
+      <div data-lab="edaexplorer"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Correlation is not causation, and it is blind to curves.</b> A perfect U-shape can have r = 0. Always look at the scatter.</li>
+          <li><b>Summary numbers can hide the shape:</b> very different datasets share the same mean, std and r. Plot first.</li>
+          <li><b>Peeking at the test set during EDA</b> makes it part of your decisions. Explore the training portion (lesson 1.7).</li>
+          <li><b>Deleting outliers automatically.</b> The 120 k$ customer may be your most valuable one.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every Kaggle winner and every production team starts here; most "model bugs" are found in a histogram (a column that is constant, an ID that leaked, a unit mix-up).</li>
+          <li>Correlated columns signal redundancy: linear models become unstable (<a href="ml-linear.html">Module 2</a>), and feature importance in trees gets split between twins.</li>
+          <li>Distribution checks in training become <b>drift monitors</b> in production: the same histograms, compared week to week.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A column has mean 80 and median 30. What does that tell you, and what would you plot next?</summary><div class="ans">A strong right skew (a few huge values drag the mean). Plot a histogram, probably also on a log scale, and look at the largest values to decide whether they are errors or real.</div></details>
+        <details class="check"><summary>2. Compute the IQR fences for the values 1, 2, 3, 4, 100.</summary><div class="ans">n=5: Q1 at position 1 → 2; Q3 at position 3 → 4; IQR=2. Fences: 2−3 = −1 and 4+3 = 7. The value 100 is far outside → flagged.</div></details>
+        <details class="check"><summary>3. y = x² for x = −2,−1,0,1,2. What is r<sub>xy</sub>?</summary><div class="ans">x̄=0, ȳ=2. Deviations x: −2,−1,0,1,2; y: 2,−1,−2,−1,2. Products: −4,1,0,−1,4 → sum 0. So r=0 although y is completely determined by x. Correlation only sees linear relationships.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>EDA = ask a concrete question per plot; be unsurprised later.</li><li>Mean vs median, std, quantiles and IQR fences summarise a column; r measures linear association.</li><li>Check shapes, gaps and impossible values before modelling — and do it on the training portion only.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 Cleaning ===================== -->
+    <section class="lesson" id="cleaning-missing" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.2</span><h2>Cleaning &amp; missing values</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two of your eight customers did not report income. Most models cannot take a blank. Delete those rows? Fill with the average? Fill with something smarter? And does the <i>reason</i> the value is missing change what is safe to do?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A missing value is a hole in a table, and <b>why the hole exists matters</b>. Statisticians distinguish three causes:</p>
+        <ul>
+          <li><b>MCAR</b> — missing completely at random: a sensor dropped packets, unrelated to anything. Deleting or filling is mostly harmless.</li>
+          <li><b>MAR</b> — missing at random <i>given other columns</i>: older customers skip the income field more often. The gaps depend on something you observed (age), so you can use age to fill them.</li>
+          <li><b>MNAR</b> — missing not at random: rich customers skip income <i>because</i> it is high. The gap itself carries information, and no filling based on observed values alone can fully recover it. Add a "was missing" indicator column.</li>
+        </ul>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The simplest fixes: <b>drop rows</b> (wasteful, biased unless MCAR), <b>drop the column</b> (if mostly empty), or <b>impute</b> — fill a plausible value. Common imputers: the column <b>mean</b>, the <b>median</b> (robust to outliers), the <b>mode</b> (most frequent, for categories), a <b>group statistic</b>, or a <b>model</b> predicting the column from the others (regression or k-NN).</p>
+        <div class="worked"><b>Worked example — imputing a column</b>
+          <table class="tbl"><tr><th>row</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+          <tr><td>segment</td><td>A</td><td>B</td><td>A</td><td>A</td><td>B</td><td>A</td><td>B</td><td>B</td></tr>
+          <tr><td>income (k$)</td><td>32</td><td>41</td><td>38</td><td><b>?</b></td><td>45</td><td>29</td><td><b>?</b></td><td>120</td></tr></table>
+          <p><b>Fit on the observed six values:</b> mean = 305/6 = 50.83; median = 39.5.</p>
+          <p><b>Mean imputation:</b> rows 4 and 7 both become 50.83. <b>Median:</b> both become 39.5. <b>Group median:</b> segment A observed = 32, 38, 29 (median 32 or mean 33); segment B observed = 41, 45, 120 (median 45). Group-mean A gives row 4 = 33; group-median B gives row 7 = 45 — much closer to its group than the global 50.83, which the 120 pulled up.</p>
+          <p><b>Side effect — variance shrinks.</b> Original std of the six = 31.39. After filling both gaps with the mean, the eight values have std 27.18: every filled value sits exactly at the centre, so the column looks less spread than reality. Methods that fill with a constant make the model over-confident; adding noise or using multiple imputation reduces this.</p>
+          <p><b>What gets stored:</b> the numbers 50.83 (or 39.5, or the per-group table). At inference a new customer with a blank income gets exactly the stored value — computed from training rows only.</p></div>
+        <p><b>Cleaning beyond gaps.</b> Remove exact <b>duplicates</b> (a duplicated row split across train and test is a leak); fix <b>types and units</b> ("1,200" as text, metres vs feet); standardise <b>categories</b> ("NY", "ny", "New York"); apply <b>sanity checks</b> (age between 0 and 120, end date after start date). Write these as <i>assertions</i> that fail loudly rather than one-off fixes.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat x_{ij}=\begin{cases}\bar x^{\text{train}}_j&amp;\text{mean imputation}\\ \operatorname{med}^{\text{train}}_j&amp;\text{median imputation}\\ f_j\!\left(x_{i,-j}\right)&amp;\text{model-based: predict column }j\text{ from the others}\end{cases}\qquad m_{ij}=\mathbb 1[x_{ij}\text{ missing}]</div>
+        <table class="sym">
+          <tr><td>x<sub>ij</sub></td><td>value of row i in column j</td></tr>
+          <tr><td>x̂<sub>ij</sub></td><td>the imputed value placed in the gap</td></tr>
+          <tr><td>x̄<sub>j</sub><sup>train</sup></td><td>mean of column j over <i>observed training</i> rows only</td></tr>
+          <tr><td>f<sub>j</sub></td><td>a model (regression, k-NN) trained to predict column j from the other columns <i>x<sub>i,−j</sub></i></td></tr>
+          <tr><td>m<sub>ij</sub></td><td>the missing-indicator: 1 if the value was missing, else 0 — kept as an extra feature so the model can learn from the gap itself</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: fill the gaps, then ask the truth</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose <b>MCAR</b> and press play. Watch each blank fill in. The orange "hidden truth" is known to the lab, so you see the fill error.</li>
+        <li>Switch the mechanism to <b>MNAR</b> (rich customers go missing): mean imputation now <i>underestimates</i> the column mean — a bias no amount of data fixes.</li>
+        <li>Under <b>MAR</b>, compare mean imputation with regression-on-age: the model-based fill has a smaller error.</li>
+        <li>Check the histogram: mean-filling creates a spike at the centre — the variance shrinkage from the worked example.</li></ol></div>
+      <div data-lab="missinglab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Fitting the imputer on all data</b> (train + test). Leaks test information into the fill value; compute it from training rows only.</li>
+          <li><b>Mean imputation of skewed data</b> — one billionaire shifts every filled value. Prefer the median.</li>
+          <li><b>Encoding missing as 0 or −999 silently.</b> For a linear model that is a real number; for a tree it can be fine, but be explicit.</li>
+          <li><b>Imputing the target column.</b> Rows with a missing label are usually dropped, not filled.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><code>SimpleImputer</code>, <code>KNNImputer</code> and iterative (MICE) imputers in scikit-learn are exactly the table above, with <code>add_indicator=True</code> for m<sub>ij</sub>.</li>
+          <li>Gradient-boosted trees (XGBoost, LightGBM) learn a default direction for missing values per split — imputation built in.</li>
+          <li>Masked-autoencoders and many transformers treat "unknown" as a learnable token — missingness as a feature.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Fill the gap in 4, 6, ?, 10, 100 with the mean and with the median.</summary><div class="ans">Observed 4,6,10,100: mean = 120/4 = 30; median = (6+10)/2 = 8. The median (8) is far more representative; the outlier 100 distorts the mean.</div></details>
+        <details class="check"><summary>2. High-income people refuse to answer an income survey. MCAR, MAR or MNAR? What can you do?</summary><div class="ans">MNAR: missingness depends on the unobserved value itself. Add a missing-indicator feature, collect auxiliary data, or model the missingness explicitly; plain mean imputation will bias the average downward.</div></details>
+        <details class="check"><summary>3. Why must the fill value be stored?</summary><div class="ans">At inference a single row has no dataset to average over. The same training-derived number must be applied, otherwise training and serving would treat gaps differently.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>The cause of missingness (MCAR/MAR/MNAR) decides what is safe.</li><li>Impute with training-only statistics; the median resists outliers; group or model-based fills use other columns.</li><li>Constant fills shrink variance — add a missing-indicator and remember the fill value is stored.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 Encoding ===================== -->
+    <section class="lesson" id="encoding" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.3</span><h2>Encoding categorical &amp; other features</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A column says city ∈ {A, B, C}. Models do arithmetic. Writing A=1, B=2, C=3 would claim C is three times A and B lies "between" them. How do we turn labels into numbers without inventing facts — and what happens when the column has 50 000 distinct values?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An encoding is a <b>translation table</b> from label to numbers. Different tables make different promises:</p>
+        <ul>
+          <li><b>One-hot:</b> one 0/1 column per category. "A" = (1,0,0). Every category is equally far from every other; no false order.</li>
+          <li><b>Ordinal:</b> integers, <i>only</i> when the order is real (small &lt; medium &lt; large).</li>
+          <li><b>Frequency:</b> replace the label by how common it is. Compact, but different categories with equal counts collide.</li>
+          <li><b>Target encoding:</b> replace the label by the average of the target for that category — packs predictive signal into one column, and is <b>dangerously leaky</b>.</li>
+          <li><b>Hashing:</b> run the label through a hash function into a fixed number of buckets; no table to store, some collisions.</li>
+        </ul>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — one table, five encodings</b>
+          <table class="tbl"><tr><th>row</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr>
+          <tr><td>city</td><td>A</td><td>B</td><td>A</td><td>C</td><td>B</td><td>A</td></tr>
+          <tr><td>bought (y)</td><td>1</td><td>0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr></table>
+          <p><b>One-hot</b> (columns A, B, C): row 1 = (1,0,0), row 2 = (0,1,0), row 4 = (0,0,1). 3 categories → 3 columns. <b>Stored:</b> the category list.</p>
+          <p><b>Frequency:</b> A appears 3/6 = 0.5, B 2/6 = 0.333, C 1/6 = 0.167.</p>
+          <p><b>Target encoding (naive).</b> Mean of y per category: A: (1+1+0)/3 = <b>0.667</b>; B: (0+1)/2 = <b>0.5</b>; C: 0/1 = <b>0</b>.</p>
+          <p><b>The leak.</b> Row 4 is the only C and its label is 0; its encoding is exactly 0 — <i>its own label</i> is inside its own feature. A tree can split "enc = 0" and be 100 % right on training, while learning nothing about the world. The rarer the category, the closer the encoding is to the label.</p>
+          <p><b>Fix 1 — smoothing.</b> Blend toward the global mean (0.5) with strength m = 2: <span class="tex">\frac{n\bar y_c+m\bar y}{n+m}</span>. A: (3·0.667+2·0.5)/5 = <b>0.6</b>; B: (2·0.5+1)/4 = <b>0.5</b>; C: (1·0+1)/3 = <b>0.333</b>. Rare categories are pulled toward the average.</p>
+          <p><b>Fix 2 — out-of-fold / leave-one-out.</b> Encode each row using <i>other</i> rows only. Row 1 (A, y=1): the other A rows have y = 1, 0 → 0.5. Row 4 (C): no other C rows → fall back to the global mean 0.5. A row never sees its own label.</p>
+          <p><b>Stored for inference:</b> the table {A: 0.6, B: 0.5, C: 0.333} (smoothed, fit on <i>all</i> training rows) and a fallback (0.5) for a city never seen in training.</p></div>
+        <p><b>The high-cardinality problem.</b> A column such as <code>zip_code</code> (≈ 40 000 values) one-hot encodes into 40 000 mostly-zero columns: memory blow-up, and each category has only a few rows. Options: frequency or smoothed target encoding, hashing into, say, 1024 buckets, grouping rare labels into "other", or a learned <b>embedding</b> (a short dense vector per category; deep learning).</p>
+        <p><b>Other feature types.</b> <i>Dates</i> are not numbers: extract month, weekday, hour, "days since", and for cyclic ones use sine/cosine so December sits next to January. <i>Text</i> can be reduced to counts (bag of words) — see the NLP topic. <i>Booleans</i> are already 0/1.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{one-hot}(c)=e_c\in\{0,1\}^{K},\qquad \operatorname{TE}(c)=\frac{n_c\,\bar y_c+m\,\bar y}{n_c+m}</div>
+        <table class="sym">
+          <tr><td>K</td><td>number of distinct categories (the one-hot width — grows with cardinality)</td></tr>
+          <tr><td>e<sub>c</sub></td><td>vector of zeros with a 1 in position c</td></tr>
+          <tr><td>n<sub>c</sub></td><td>number of training rows with category c</td></tr>
+          <tr><td>ȳ<sub>c</sub></td><td>mean target in category c (training rows only)</td></tr>
+          <tr><td>ȳ</td><td>global target mean — the fallback and the shrinkage anchor</td></tr>
+          <tr><td>m</td><td>smoothing strength: larger m trusts small categories less</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: watch the table transform</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Cycle through <b>one-hot → ordinal → frequency → target</b>. The table rewrites cell by cell.</li>
+        <li>Drag <b>categories K</b> up: the one-hot column counter explodes while target/frequency stay at one column.</li>
+        <li>In the <b>leakage test</b> the labels are pure coin flips. Naive target encoding "predicts" the training labels well (watch train accuracy) yet fails on new rows (~50 %). Switch to out-of-fold: train accuracy drops to honest levels.</li></ol></div>
+      <div data-lab="encodelab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Integer-coding nominal categories</b> for linear/distance models. Trees can sometimes cope; linear models and k-NN cannot.</li>
+          <li><b>Target encoding without out-of-fold or smoothing</b> — the most common leak in tabular competitions.</li>
+          <li><b>Unseen categories at inference.</b> The stored encoder needs an "unknown" fallback or it crashes in production.</li>
+          <li><b>One-hot then drop-first in linear models</b> to avoid exact redundancy (the K columns sum to 1).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>CatBoost's "ordered target statistics" are precisely the leave-one-out idea above; LightGBM handles categories natively with optimal splits.</li>
+          <li><b>Embeddings:</b> word tokens, user IDs and item IDs are high-cardinality categories turned into learned dense vectors (recommenders, LLMs).</li>
+          <li>The "hashing trick" powers large-scale click-through-rate models with billions of sparse features.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Smoothed target encoding with m=2, a category has n=1, mean 1, global mean 0.4. What value?</summary><div class="ans">(1·1 + 2·0.4)/(1+2) = 1.8/3 = 0.6. Without smoothing it would be 1.0 — a leak of its own label.</div></details>
+        <details class="check"><summary>2. How many columns does one-hot of a 365-level "day of year" give? Better alternative?</summary><div class="ans">365 columns (364 after drop-first). Cyclic sine/cosine of day/365 gives 2 columns and keeps Dec 31 next to Jan 1.</div></details>
+        <details class="check"><summary>3. What must be stored to encode a new row at inference?</summary><div class="ans">The training-time mapping (category list or category → value table) plus a fallback for unseen categories.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Choose an encoding by the promise it makes: one-hot = no order; ordinal = real order only.</li><li>Target encoding packs signal but leaks unless smoothed and computed out-of-fold.</li><li>High cardinality: frequency, target, hashing, "other" bucket, or embeddings. Store the mapping and an unknown fallback.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 Scaling ===================== -->
+    <section class="lesson" id="scaling-transform" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.4</span><h2>Scaling &amp; transformations</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Customer features are age (about 20–70) and income (about 20 000–200 000). A nearest-neighbour model asks "who is most similar?". A 30-year age gap contributes 30 to the distance; a 100 $ income gap contributes 100. Which feature will the model really be listening to?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Many models are sensitive to the <b>units</b> of a column. Distance-based methods (k-NN, k-means, SVM) add squared differences, so the column with the biggest numbers shouts loudest. Gradient-based methods (linear and logistic regression, neural nets) suffer differently: the loss surface becomes a long narrow valley, and gradient descent zig-zags across it instead of rolling down it. <b>Scaling puts columns on comparable footing.</b> Tree models only compare a column with thresholds, so they do not care.</p>
+        <p>Separately, <b>transformations</b> reshape a column's distribution: a long right tail (incomes, prices, counts) is squashed with a logarithm so that a few giants do not dominate.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — three scalers on one column</b>
+          <p>x = 10, 20, 30, 40, 100 (one outlier).</p>
+          <p><b>Standardisation (z-score):</b> mean μ = 40, deviations −30, −20, −10, 0, 60; squares sum to 5000; σ = √(5000/5) = <b>31.62</b>. z = −0.949, −0.632, −0.316, 0, <b>1.897</b>. Result: mean 0, std 1.</p>
+          <p><b>Min-max:</b> (x−10)/(100−10) → 0, 0.111, 0.222, 0.333, <b>1</b>. Squeezed into [0,1], but the outlier uses the whole range and crushes the other four into [0, 0.33].</p>
+          <p><b>Robust:</b> median 30, Q1 = 20, Q3 = 40, IQR = 20: (x−30)/20 → −1, −0.5, 0, 0.5, <b>3.5</b>. The four normal values keep a sensible spread; the outlier is clearly large but did not distort the scale.</p>
+          <p><b>Log:</b> ln x = 2.303, 2.996, 3.401, 3.689, 4.605. The gap 40→100 (60 apart) is now 0.916; multiplicative differences become additive.</p>
+          <p><b>Distance consequence:</b> a query (age 30, income 50 000) with candidate P1 = (age 60, 50 100) and P2 = (31, 52 000). Raw distances: P1 = √(30²+100²) = <b>104.4</b>, P2 = √(1²+2000²) = <b>2000.0</b> — the model calls the 60-year-old nearest! After dividing by σ<sub>age</sub> = 10 and σ<sub>income</sub> = 10 000: P1 = √(3²+0.01²) = <b>3.00</b>, P2 = √(0.1²+0.2²) = <b>0.224</b>. Now P2, the genuinely similar customer, wins.</p>
+          <p><b>Stored:</b> μ and σ (or min/max, or median and IQR) <i>per column, from the training set</i>. At inference a new age of 45 is mapped with the training μ and σ, never with its own.</p></div>
+        <p><b>Which models need it?</b> Needed: k-NN, k-means, SVM, PCA, neural networks, linear models with regularisation or gradient descent. Not needed: decision trees, random forests, gradient boosting. Other transforms: <b>power transforms</b> (Box–Cox, Yeo–Johnson) learn an exponent λ that makes data more bell-shaped (λ is another stored parameter); <b>clipping</b> (winsorising) at the 1st/99th percentile limits outlier influence.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">z=\frac{x-\mu_{\text{train}}}{\sigma_{\text{train}}},\qquad x'=\frac{x-x_{\min}}{x_{\max}-x_{\min}},\qquad x''=\frac{x-\operatorname{med}}{Q_3-Q_1}</div>
+        <table class="sym">
+          <tr><td>μ<sub>train</sub>, σ<sub>train</sub></td><td>mean and standard deviation of the column <b>in the training set</b></td></tr>
+          <tr><td>x<sub>min</sub>, x<sub>max</sub></td><td>smallest and largest training values (new data may fall outside [0,1] — that is fine)</td></tr>
+          <tr><td>med, Q₁, Q₃</td><td>training median and quartiles; Q₃−Q₁ is the IQR</td></tr>
+          <tr><td>z</td><td>"how many standard deviations from the mean": the standardised value</td></tr>
+        </table>
+        <p>Why gradient descent cares: for squared loss the curvature along feature j is proportional to <span class="tex">\mathbb E[x_j^2]</span>. Big-valued columns make steep walls, small-valued columns make gentle slopes; the learning rate must be small enough for the steepest, so progress along the gentlest is painfully slow (see <a href="math-optimization.html#gradient-descent">gradient descent</a>).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: the existing preprocessing lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Select <b>income</b> and press the <b>Log</b> preset: the tail collapses into a bell; skew moves close to 0.</li>
+        <li>Select <b>latency</b> (outliers) and compare <b>Min-max</b> with <b>Robust</b>: min-max squeezes the bulk into a corner.</li>
+        <li>Type your own formula, e.g. <code>(x - median) / (p95 - p05)</code>.</li></ol></div>
+      <div data-lab="preprocess"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: why scaling matters — gradient descent and distances</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Raise the <b>scale ratio</b> of feature 2: the left (raw) contours become a long ellipse and the path zig-zags; the right (standardised) stays round and goes straight to the minimum.</li>
+        <li>Compare "steps to converge" for the two panels.</li>
+        <li>In the bottom panel feature 2 is noise at a large scale: raw k-NN accuracy collapses; scaled recovers it.</li></ol></div>
+      <div data-lab="scalelab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Fitting the scaler on the whole dataset before splitting.</b> Test data influences μ and σ — a leak (lesson 1.7 shows it inflating a score).</li>
+          <li><b>Rescaling the test set with its own statistics.</b> Then the same raw value maps to different numbers in train and test.</li>
+          <li><b>Min-max with outliers</b> compresses everything else; and unseen data can fall outside [0,1].</li>
+          <li><b>Log of zero or negatives.</b> Use <code>log(1+x)</code> or Yeo–Johnson.</li>
+          <li><b>Scaling one-hot columns</b> is unnecessary; scaling the target is a separate decision (invert predictions).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Images are divided by 255 and normalised with per-channel ImageNet means/stds — stored constants baked into every vision model.</li>
+          <li>Batch/Layer normalisation inside networks re-standardise activations for exactly the conditioning reason above.</li>
+          <li>k-NN, SVM-RBF and k-means (<a href="ml-classical.html">Module 3</a>) are unusable without scaling; PCA (<a href="math-linear-algebra.html#svd-pca">SVD &amp; PCA</a>) otherwise just finds the largest-unit column.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Standardise x = 2, 4, 6 (population std).</summary><div class="ans">μ=4; deviations −2,0,2; σ=√(8/3)=1.633. z = −1.225, 0, 1.225.</div></details>
+        <details class="check"><summary>2. Train x = 10,20,30,40. A test value 100 arrives. Standardise it correctly, and with the leaky "fit on all five values".</summary><div class="ans">Correct: μ=25, σ=11.18 → z=(100−25)/11.18 = 6.71 (clearly an anomaly). Leaky: μ=40, σ=31.62 → 1.90 (looks ordinary) — the test point changed the scaler and hid itself.</div></details>
+        <details class="check"><summary>3. Does a random forest need standardised inputs? Why?</summary><div class="ans">No. Splits compare one column to a threshold; any monotonic rescaling keeps the same ordering of rows, so the same splits are found.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Standardise/min-max/robust remove unit effects; log/power transforms fix skew.</li><li>Distance- and gradient-based models need scaling; trees do not.</li><li>Fit on train, store μ and σ (or equivalents), apply unchanged to validation, test and live data.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 Feature engineering ===================== -->
+    <section class="lesson" id="feature-engineering" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.5</span><h2>Feature engineering &amp; selection</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Red points sit near the centre, blue points form a ring around them. No straight line separates them. Must we switch to a complicated model, or can we change <i>what we show a simple model</i> so that a straight line suffices?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A linear model draws straight boundaries <i>in the feature space it is given</i>. If we add a new column that is a <b>function of the old ones</b>, the data is now described in a taller space, and a flat cut in that taller space can be a curved cut in the original one. This is the heart of feature engineering: <b>move the difficulty from the model into the representation.</b> Domain knowledge helps enormously: "price per square metre" or "days since last purchase" are one idea away from the raw columns.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — one dimension, one extra column</b>
+          <p>Points x = −3, −2, −1, 0, 1, 2, 3 with class 1 for |x| ≤ 1 (the middle three) and class 0 otherwise. No single threshold on x separates them (the 1s are in the middle).</p>
+          <p>Add <b>x²</b>: 9, 4, 1, 0, 1, 4, 9. Class 1 now has x² ∈ {1, 0, 1}, class 0 has x² ∈ {9, 4, 4, 9}. The rule "x² &lt; 2.5" separates perfectly. In the original space that rule is <span class="tex">-1.58&lt;x&lt;1.58</span>: a linear model on (x, x²) produced an interval.</p>
+          <p><b>Interactions.</b> For two columns the XOR pattern (class = sign of x₁·x₂) is not linearly separable in (x₁, x₂), but adding <span class="tex">x_1x_2</span> makes it trivial: the class is just the sign of the new column.</p>
+          <p><b>Binning.</b> Cut age into [0,25), [25,50), [50,∞) and one-hot the bin: a linear model can now learn a different level per bin — a stair-step, non-linear curve. <b>Stored:</b> the bin edges.</p></div>
+        <p><b>Feature selection.</b> More columns is not always better: noise columns let a flexible model memorise. Three families:</p>
+        <ul>
+          <li><b>Filter:</b> score each column independently (correlation with target, mutual information, variance) and keep the top k. Fast, ignores interactions.</li>
+          <li><b>Wrapper:</b> try subsets with the real model (forward selection, recursive feature elimination). Accurate, expensive.</li>
+          <li><b>Embedded:</b> the model selects while training (L1/lasso zeroing weights, tree importances).</li>
+        </ul>
+        <p><b>Leakage through features.</b> A feature that would not be known at prediction time (e.g. "refund issued", "days overdue" when predicting default) gives fantastic validation scores and a useless production model. Ask for each column: <i>at the moment of prediction, would I have this value?</i> And selection itself must be done <i>inside</i> the training fold (lesson 1.7).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\varphi(x_1,x_2)=\bigl(x_1,\;x_2,\;x_1^2,\;x_2^2,\;x_1x_2\bigr),\qquad \hat y=\sigma\!\bigl(w^{\top}\varphi(x)+b\bigr)</div>
+        <table class="sym">
+          <tr><td>φ</td><td>the feature map: a fixed recipe turning raw columns into engineered ones</td></tr>
+          <tr><td>x₁², x₂²</td><td>squared terms — let boundaries curve</td></tr>
+          <tr><td>x₁x₂</td><td>interaction — the effect of one feature depends on the other</td></tr>
+          <tr><td>w, b</td><td>learned weights and bias; the model is linear in φ(x), non-linear in x</td></tr>
+          <tr><td>σ</td><td>logistic function turning the score into a probability (<a href="ml-linear.html">Module 2</a>)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: make a non-linear problem linearly separable</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick the <b>circles</b> dataset with only x and y ticked: the boundary is a straight line and accuracy is about 50 %.</li>
+        <li>Tick <b>x²</b> and <b>y²</b>: the boundary bends into a ring and accuracy jumps.</li>
+        <li>Switch to <b>xor</b>: squares do not help; tick <b>x·y</b> instead.</li>
+        <li>Add a <b>noise</b> feature: watch accuracy on the held-out points fall as training accuracy rises (overfitting).</li></ol></div>
+      <div data-lab="featlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Polynomial explosion.</b> Degree-3 terms of 100 columns is 176 851 columns. Add terms purposefully.</li>
+          <li><b>Selecting features with the whole dataset</b> then cross-validating: the classic inflated score.</li>
+          <li><b>Target leakage</b> via columns computed after the outcome.</li>
+          <li><b>Forgetting to apply the same recipe at inference</b> (bin edges, polynomial terms) — train/serve skew.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Kaggle tabular wins are often won on features (ratios, lags, rolling means, target encodings) rather than on the model.</li>
+          <li>Kernel SVMs (<a href="ml-classical.html">Module 3</a>) compute an implicit, infinitely large φ; neural networks <i>learn</i> φ in their hidden layers — "representation learning" automates feature engineering.</li>
+          <li>Lasso and tree-based importance (<a href="ml-ensembles.html">Module 4</a>) are embedded selection.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Which single added column makes "class 1 iff x₁ and x₂ have the same sign" linearly separable?</summary><div class="ans">The product x₁x₂: it is positive exactly when the signs agree. The rule is x₁x₂ &gt; 0.</div></details>
+        <details class="check"><summary>2. How many columns does a full degree-2 expansion (all squares and pairwise products, plus originals) of 10 columns have?</summary><div class="ans">10 + 10 squares + C(10,2)=45 products = 65.</div></details>
+        <details class="check"><summary>3. Predicting loan default, you have "number of reminders sent". Good feature?</summary><div class="ans">Probably leakage: reminders are sent after a payment is missed, i.e. after the outcome begins. It would not be available at application time.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>New columns that are functions of old ones let simple models draw curved boundaries.</li><li>Squares, interactions and bins are cheap; select with filter, wrapper or embedded methods — inside the training fold.</li><li>Every engineered feature must be reproducible at inference and available at prediction time.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 Imbalance ===================== -->
+    <section class="lesson" id="imbalance-sampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.6</span><h2>Imbalanced data</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>1 000 patients, 10 have the disease. A "model" that always answers "healthy" scores 99 % accuracy. It is useless. How do we train, and judge, models when the thing we care about is rare?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Training minimises the <i>average</i> error over examples. If 99 % of examples are negative, ignoring the positives costs almost nothing, so the model drifts toward "always negative" — its boundary retreats until the rare class is squeezed out. We can fix this in three places: <b>the loss</b> (make mistakes on rare examples expensive), <b>the data</b> (change the class ratio), or <b>the decision</b> (move the probability threshold). And we must report <b>metrics</b> that do not reward ignoring the minority.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — the accuracy paradox</b>
+          <p>1 000 patients, 10 positive. <b>Always-negative:</b> accuracy 990/1000 = 99 %; recall 0/10 = 0.</p>
+          <p>A real model finds TP = 6, FN = 4, FP = 20, TN = 970. Accuracy = 976/1000 = <b>97.6 %</b> (<i>lower</i> than the useless model!). Precision = 6/26 = <b>0.231</b>, recall = 6/10 = <b>0.60</b>, F1 = 2·0.231·0.6/(0.831) = <b>0.333</b>. Only precision/recall/F1 reveal the real picture.</p>
+          <p><b>Class weights.</b> Weight a class by <span class="tex">N/(K\,n_c)</span>: positive = 1000/(2·10) = <b>50</b>, negative = 1000/(2·990) = <b>0.505</b>. Now each positive error counts ≈ 99× a negative error and total weight per class is equal (10·50 = 990·0.505 = 500).</p>
+          <p><b>Random oversampling</b> duplicates minority rows; <b>undersampling</b> deletes majority rows (fast, loses information).</p>
+          <p><b>SMOTE</b> (synthetic minority oversampling) invents <i>new</i> minority points on the line between a minority point and one of its minority neighbours. Take a = (2, 3) and b = (4, 7); draw λ = 0.3 uniformly from [0,1]:</p>
+          <div class="eq">x_{\text{new}}=a+\lambda(b-a)=(2,3)+0.3\,(2,4)=(2.6,\;4.2)</div>
+          <p>The point lies 30 % of the way from a to b. <b>Threshold moving:</b> instead of predicting "positive" at P ≥ 0.5, choose the threshold from costs: if a missed positive costs 10× a false alarm, predict positive when P ≥ 1/(1+10) = <b>0.091</b>.</p>
+          <p><b>Rule:</b> resample the <i>training</i> set only; validation and test keep their natural ratio, otherwise your metrics describe a world that does not exist.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">w_c=\frac{N}{K\,n_c},\qquad \mathcal L=\frac1N\sum_i w_{y_i}\,\ell(\hat y_i,y_i),\qquad F_1=\frac{2PR}{P+R}</div>
+        <table class="sym">
+          <tr><td>N, K</td><td>number of examples and number of classes</td></tr>
+          <tr><td>n<sub>c</sub></td><td>number of examples in class c</td></tr>
+          <tr><td>w<sub>c</sub></td><td>weight multiplying the loss of every example of class c</td></tr>
+          <tr><td>ℓ</td><td>per-example loss (e.g. cross-entropy)</td></tr>
+          <tr><td>P, R</td><td>precision TP/(TP+FP) and recall TP/(TP+FN)</td></tr>
+        </table>
+        <p>Evaluation details (ROC, PR curves, thresholds) are in <a href="ml-evaluation.html">Module 5</a>; try the existing <code>threshold</code> lab there.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: slide the class ratio, watch the boundary</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag <b>minority share</b> down to 2 %: the accuracy of "always negative" climbs toward 98 %, but recall and F1 collapse.</li>
+        <li>Choose <b>class weights</b>: the boundary slides toward the majority, recall rises, precision drops — the trade-off.</li>
+        <li>Choose <b>SMOTE</b> and watch new points appear along lines between minority neighbours.</li>
+        <li>Drag the <b>threshold</b> instead of resampling: you get a similar effect without changing the data.</li></ol></div>
+      <div data-lab="imbalancelab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Resampling before the split.</b> Duplicates (or SMOTE neighbours) land in both train and test: massive leak.</li>
+          <li><b>Reporting accuracy.</b> Use precision, recall, F1, PR-AUC, or cost.</li>
+          <li><b>Believing resampling creates information.</b> SMOTE only interpolates; in high dimensions or with noisy minority points it can generate unrealistic samples.</li>
+          <li><b>Forgetting calibration.</b> After weighting or resampling, predicted probabilities no longer equal real frequencies.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Fraud (0.1 % positive), medical screening, manufacturing defects, click prediction.</li>
+          <li><code>class_weight="balanced"</code> in scikit-learn and <code>scale_pos_weight</code> in XGBoost implement w<sub>c</sub>; focal loss in object detection down-weights easy majority examples.</li>
+          <li><code>imbalanced-learn</code> provides SMOTE pipelines that resample inside each training fold.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. 2 000 examples, 100 positive. Balanced class weights?</summary><div class="ans">Positive: 2000/(2·100) = 10. Negative: 2000/(2·1900) = 0.526.</div></details>
+        <details class="check"><summary>2. SMOTE between a=(1,1) and b=(5,3) with λ=0.25.</summary><div class="ans">(1,1)+0.25·(4,2) = (2, 1.5).</div></details>
+        <details class="check"><summary>3. A fraud model has TP=30, FP=10, FN=20, TN=9940. Accuracy, precision, recall?</summary><div class="ans">Accuracy = 9970/10000 = 99.7 %; precision = 30/40 = 0.75; recall = 30/50 = 0.60.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Accuracy rewards ignoring the minority; use precision/recall/F1.</li><li>Fix with class weights, resampling (training only), or threshold moving.</li><li>SMOTE interpolates new minority points; never resample validation/test data.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.7 Splitting ===================== -->
+    <section class="lesson" id="data-splitting-pipelines" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.7</span><h2>Splitting strategies &amp; pipelines</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your cross-validated accuracy is 85 %; in production it is 52 %. Nothing "broke". Somewhere, information about the exam questions leaked into the revision. How do we split data and structure code so that a leak is impossible by construction?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A model is judged on data it has never seen, standing in for the future. <b>Anything that is learned from data — a weight, a scaler mean, an imputer fill, a selected feature list, an encoding table — must be learned from the training portion only.</b> If the test rows influenced any of it, the test is no longer a fair exam. Hence the discipline: <b>split first, fit on train, transform everything else with the stored parameters.</b> A <b>pipeline</b> object chains the steps so this is enforced automatically, including inside every cross-validation fold.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Random split</b>: shuffle, 80 % train / 20 % test. <b>Stratified split</b>: keep class proportions in each part. <b>Group split</b>: all rows from the same patient/user/device go to the same side. <b>Time split</b>: train on the past, test on the future.</p>
+        <div class="worked"><b>Worked example — why stratify</b>
+          <p>20 rows, 5 positive (25 %). A random 80/20 split gives a test set of 4 rows. How many positives land there? Hypergeometric counts out of C(20,4)=4845 ways: 0 positives: C(15,4)=1365 ways = <b>28.2 %</b>; 1 positive: 5·C(15,3)=2275 = 46.9 %; 2: C(5,2)·C(15,2)=1050 = 21.7 %; 3: 150 = 3.1 %; 4: 5 = 0.1 %.</p>
+          <p>So 28 % of random splits give a test set with <i>no positives at all</i> — recall is undefined. A <b>stratified</b> split always gives exactly 1 positive in 4 (25 %), and 4 positives in the training 16.</p></div>
+        <div class="worked"><b>Worked example — a leakage that inflates the score</b>
+          <p>Data: n = 40 rows, p = 500 feature columns of <b>pure noise</b>, labels random. True achievable accuracy: 50 %. <b>Leaky pipeline:</b> (1) compute each column's correlation with the label using <i>all</i> 40 rows, keep the top 10 columns; (2) split; (3) fit a classifier on train, score on test. By luck some noise columns correlate with the labels on the whole set — including the test rows — so the selected columns "predict" the test labels: scores around <b>70–90 %</b>. <b>Honest pipeline:</b> split first, select the columns using train rows only, score on test: about <b>50 %</b>. The lab below runs this live (and the numbers it shows come from the run, not from this text).</p>
+          <p><b>A smaller scaler leak</b> (lesson 1.4): fitting the scaler on all data used μ=40, σ=31.6 and turned a test outlier x=100 into z=1.90 instead of 6.71. Smaller effect than selection leakage, but of the same kind.</p>
+          <p><b>What is stored by a fitted pipeline:</b> imputer fills, encoder tables, scaler μ/σ, selected column names, bin edges, then the model. <b>At inference</b>: <code>pipeline.predict(raw_row)</code> applies all of them in order with no refitting.</p></div>
+        <p><b>Cross-validation</b> repeats the split k times; the pipeline is <i>refit inside each fold</i>. <b>Three sets:</b> train (fit), validation (choose hyper-parameters), test (touch once, at the end). <b>Time series:</b> a random split lets the model peek at the future and ignores drift; always split by time and use "rolling origin" folds. <b>Proving no leakage:</b> shuffle the labels and check the score falls to chance; check that train/test share no IDs; drop suspiciously good features and see what changes.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\theta_{\text{prep}}=\mathrm{fit}\bigl(D_{\text{train}}\bigr),\qquad \tilde x=T_{\theta_{\text{prep}}}(x)\ \text{for every }x\in D_{\text{train}}\cup D_{\text{val}}\cup D_{\text{test}}\cup\{\text{live data}\}</div>
+        <table class="sym">
+          <tr><td>D<sub>train</sub>, D<sub>val</sub>, D<sub>test</sub></td><td>disjoint parts of the data (disjoint by row, and by group/time where needed)</td></tr>
+          <tr><td>fit(·)</td><td>learn preprocessing parameters (means, tables, columns) from the given data</td></tr>
+          <tr><td>θ<sub>prep</sub></td><td>the stored parameters — the contents of the fitted pipeline</td></tr>
+          <tr><td>T<sub>θ</sub></td><td>the fixed transformation using those parameters; has no access to the data it transforms</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: honest versus leaky pipeline</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play with <b>honest</b>: the score hovers around 50 % (the truth: the features are noise).</li>
+        <li>Switch to <b>leaky: select features before the split</b>: the score climbs, although nothing real was learned.</li>
+        <li>Raise the number of noise features: the leak gets <i>worse</i>.</li></ol></div>
+      <div data-lab="leaklab"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: splits — stratified counts and time</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Repeat random splits: the histogram of "positives in the test set" is wide (including 0), while stratified is always the same.</li>
+        <li>In the time-split panel the data drifts: a random split looks great, the time split shows what production will feel.</li></ol></div>
+      <div data-lab="splitlab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>fit_transform on the whole dataset, then train_test_split.</b> The #1 beginner leak.</li>
+          <li><b>Random split of grouped data</b> (many images per patient): the model memorises the person.</li>
+          <li><b>Using the test set to tune</b>: after a few rounds it is just another validation set.</li>
+          <li><b>Duplicates across splits</b> and look-alike rows (augmentations, repeated customers).</li>
+          <li><b>Different preprocessing code in training and serving</b> (train/serve skew): use one pipeline object.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>scikit-learn <code>Pipeline</code>/<code>ColumnTransformer</code> with <code>cross_val_score</code>; <code>TimeSeriesSplit</code> and <code>GroupKFold</code> are the same ideas.</li>
+          <li>Feature stores and ML platforms version the fitted preprocessing together with the model (<a href="ml-production.html">Module 9</a>).</li>
+          <li>Benchmark contamination in large language models — test questions leaking into training data — is this same leak at web scale.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. 100 rows, 10 positive, 80/20 stratified. Positives in train and test?</summary><div class="ans">8 in the 80-row training set and 2 in the 20-row test set (10 % each).</div></details>
+        <details class="check"><summary>2. You standardise, then split, then fit. Where is the leak and how do you fix it?</summary><div class="ans">μ and σ were computed from rows that end up in the test set. Split first, fit the scaler on train, transform test with the stored μ and σ (or put both steps in a Pipeline).</div></details>
+        <details class="check"><summary>3. Demand forecasting with 3 years of weekly data. Which split?</summary><div class="ans">A time split: train on the first years, validate on the following period, test on the latest; rolling-origin folds for cross-validation. Random splits leak the future.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Split first; fit every preprocessing step on training data only; apply stored parameters elsewhere.</li><li>Stratify for imbalance, group when rows are related, split by time when the future matters.</li><li>Pipelines make the discipline automatic, inside every CV fold, and prove it with label-shuffle tests.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin:30px 0"><b>Module complete.</b> You can now turn a raw table into a trustworthy, leak-free training set, and you know exactly which parameters a deployed pipeline must carry. Next: <a href="ml-linear.html">Module 2 · Linear models</a> — fitting lines and sigmoids to this prepared data, step by step.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

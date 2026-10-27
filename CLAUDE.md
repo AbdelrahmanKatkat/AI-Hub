@@ -7,17 +7,17 @@ Live: https://abdelrahmankatkat.github.io/AI-Hub/ · repo: AbdelrahmanKatkat/AI-
 ## Topic order (sidebar, home grid) — do not reorder without being asked
 Mathematics → Machine Learning → Data Science → Computer Vision → NLP → Voice → Generative AI → Governing AI →
 Reinforcement Learning → Domains (GeoAI, Robotics, Healthcare & Bio, Climate & Earth, Finance, Other — each a sub-topic).
-Live now: Mathematics (9 modules / 58 lessons), Machine Learning (first draft, needs the same deepening). Others: `status: 'soon'`.
+Live now: Mathematics (9 modules / 58 lessons), Machine Learning (10 modules / 63 lessons), Computer Vision (10 modules / 70 lessons). Others: `status: 'soon'`.
 
 ## Layout
 ```
 index.html                      home (pipeline + topic grid)
 mathematics.html                curriculum hub for the Math topic (map + module cards)
 math-<module>.html              one page per math module (lessons are <section class="lesson" id="lesson-id">)
-machine-learning.html           ML topic page (to be deepened into modules the same way)
+machine-learning.html           ML hub; modules are ml-<name>.html (same pattern as cv-*.html / math-*.html)
 curriculum/<topic>.md           SOURCE OF TRUTH for what each lesson covers (tables: id | title | must understand | AI link)
 curriculum/AUTHORING.md         the lesson standard, lab API, animation rules, verification steps  (READ before writing content)
-tools/gen-curriculum.js         curriculum/mathematics.md -> assets/curriculum-math.js (run after editing the md)
+tools/gen-curriculum.js         curriculum/<topic>.md -> assets/curriculum-<slug>.js for math, cv, ml (run `node tools/gen-curriculum.js` after editing an md)
 assets/topics.js                topic registry (order, status, children) + PIPELINES (animated stage definitions)
 assets/curriculum-math.js       GENERATED — never edit by hand
 assets/lib.js                   expression parser + autodiff, canvas/plot helpers, AI.loop/AI.ticker
@@ -68,6 +68,8 @@ A page is not done until labs render, equations typeset (no raw `\frac`), and th
 - Known review items: agents verified pages in headless Chrome only (no real-time smoothness check, no hand-clicked interactions);
   arch.js reports ResNet-50 final receptive field 427 px vs the commonly quoted 483 (check definition); DeepLab/SAM archviz specs are
   approximations (stated in the lessons).
-- **Machine Learning** page is still the shallow first draft -> rebuild as modules (`plan-curriculum` + `write-deep-lesson`).
+- **Machine Learning**: live. Hub `machine-learning.html` + modules 0-9 (`ml-*.html`, 63 lessons). Shared toolkit `assets/mllib.js` (datasets, k-NN, CART,
+  k-means, logistic, PCA, boundary renderer) + existing labs in `assets/labs-ml.js`. Spec `curriculum/machine-learning.md`; addendum `curriculum/AUTHORING-ML.md`.
+  Many lab simulations are labelled *illustrative*; worked numbers were computed in code.
 - Next topics in order: Data Science, NLP, Voice, Generative AI, Governing AI, Reinforcement Learning, Domains (GeoAI, Robotics, ...).
 - Agent runs can hit the session rate limit: when that happens, resume the agents (SendMessage) — their files are saved on disk.

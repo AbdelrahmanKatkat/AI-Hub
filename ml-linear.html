@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Linear models · Machine Learning</title>
+<meta name="description" content="Linear and logistic regression, regularisation, softmax and how to train linear models in practice — derived step by step and animated.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/labs-ml-linear.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Linear models</h1>
+        <p>The simplest models are also the most reused: a weighted sum of the features, squeezed through the right function. You will derive linear regression, ridge and lasso, logistic regression and softmax by hand on tiny datasets, <b>watch</b> a line, a curve and a boundary learn, and understand why scaling your features can change training from seconds to hours.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: derivatives, a little probability</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="linear-regression" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">2.1</span><h2>Linear regression</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Five flats: size (in 10 m² units) and rent (in 100 €): (1, 2), (2, 3), (3, 5), (4, 4), (5, 6). A new flat of size 6 appears. What rent do we predict, and — more importantly — what does "the best straight line through these points" even mean, so that two people always draw the <i>same</i> line?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a stiff ruler laid over the dots. Wherever the ruler is not touching a dot there is a vertical gap — the <b>residual</b>. A good line has small gaps overall. But "overall" needs a rule, because gaps above and below the line would cancel if we simply added them. The standard rule: <b>square each gap and add them up</b>. Squaring makes every gap positive and punishes one big miss more than several small ones. The line with the smallest total squared gap is <i>the</i> least-squares line.</p>
+        <p>There are two ways to find it. You can <b>solve for it directly</b> with algebra (the normal equation), or you can <b>walk to it</b>: start with any line, measure which way a small change in slope and intercept lowers the total squared gap, and step that way (gradient descent). On this tiny problem both reach the same line — the lab below shows them side by side.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The model is <span class="tex">\hat y=w x+b</span>: slope <span class="tex">w</span>, intercept <span class="tex">b</span>. With several features it becomes <span class="tex">\hat y=w_1x_1+\dots+w_dx_d+b=\mathbf w^\top\mathbf x+b</span>. A trick removes <span class="tex">b</span>: append a constant feature 1 to every example, so <span class="tex">\hat y=\mathbf w^\top\mathbf x</span> with <span class="tex">\mathbf w=(b,w_1,\dots)</span>. Stack the examples as rows of a matrix <span class="tex">X</span> (n rows, one per example) and the predictions of all examples are <span class="tex">\hat{\mathbf y}=X\mathbf w</span>.</p>
+        <p><b>Loss.</b> The mean squared error is <span class="tex">L(\mathbf w)=\frac1n\sum_i(\hat y_i-y_i)^2=\frac1n\lVert X\mathbf w-\mathbf y\rVert^2</span>.</p>
+        <p><b>Gradient (derivation).</b> Differentiate one term with the chain rule (<a href="math-calculus.html#partials-gradient">partial derivatives and the gradient</a>): <span class="tex">\frac{\partial}{\partial w_j}(\hat y_i-y_i)^2=2(\hat y_i-y_i)\,x_{ij}</span>. Summing over examples and collecting all j into one vector:</p>
+        <div class="eq">\nabla L=\frac2n X^\top(X\mathbf w-\mathbf y)</div>
+        <p>Read it as: "for every feature, take the correlation between that feature and the current errors". For the line, <span class="tex">\partial L/\partial w=\frac2n\sum_i e_ix_i</span> and <span class="tex">\partial L/\partial b=\frac2n\sum_i e_i</span> with <span class="tex">e_i=\hat y_i-y_i</span>.</p>
+        <p><b>Normal equation.</b> At the minimum the gradient is zero: <span class="tex">X^\top(X\mathbf w-\mathbf y)=0\Rightarrow X^\top X\,\mathbf w=X^\top\mathbf y</span>, so, <b>if <span class="tex">X^\top X</span> is invertible</b> (no feature is a copy or combination of the others, and n ≥ d+1):</p>
+        <div class="eq">\mathbf w^\star=(X^\top X)^{-1}X^\top\mathbf y</div>
+        <p>Because L is a bowl (convex), this single stationary point is the global minimum.</p>
+
+        <div class="worked"><b>Worked example · normal equation on 5 points</b>
+          <p>Rows of X are (1, x): (1,1),(1,2),(1,3),(1,4),(1,5); y = (2,3,5,4,6).</p>
+          <p><span class="tex">X^\top X=\begin{pmatrix}5&amp;15\\15&amp;55\end{pmatrix}</span> (5 = n, 15 = Σx, 55 = Σx²), <span class="tex">X^\top\mathbf y=\begin{pmatrix}20\\69\end{pmatrix}</span> (20 = Σy, 69 = Σxy = 2+6+15+16+30).</p>
+          <p>Determinant = 5·55 − 15·15 = 50, so <span class="tex">(X^\top X)^{-1}=\frac1{50}\begin{pmatrix}55&amp;-15\\-15&amp;5\end{pmatrix}</span>.</p>
+          <p><span class="tex">b=\frac{55\cdot20-15\cdot69}{50}=\frac{65}{50}=1.3,\qquad w=\frac{-15\cdot20+5\cdot69}{50}=\frac{45}{50}=0.9</span>. The line is <b>ŷ = 1.3 + 0.9x</b>; for size 6 the prediction is 1.3 + 5.4 = <b>6.7</b>.</p>
+          <p>Residuals y − ŷ: (−0.2, −0.1, 1.0, −0.9, 0.2); they sum to 0 (always, when there is an intercept). SSE = 0.04+0.01+1+0.81+0.04 = <b>1.9</b>, MSE = 0.38. Total variation SST = Σ(y−ȳ)² = 10 (ȳ = 4). <b><span class="tex">R^2=1-\mathrm{SSE}/\mathrm{SST}=0.81</span></b>: the line explains 81 % of the variation in rent.</p></div>
+
+        <div class="worked"><b>Worked example · one gradient-descent step from (w, b) = (0, 0)</b>
+          <p>All predictions are 0, so MSE₀ = (4+9+25+16+36)/5 = 18. <span class="tex">\partial L/\partial w=\frac25\sum(-y_ix_i)=-0.4\cdot69=-27.6</span>, <span class="tex">\partial L/\partial b=-0.4\cdot20=-8</span>. With η = 0.02: w ← 0 + 0.552, b ← 0 + 0.16, and the MSE drops from 18 to <b>5.39</b>. Repeating this walks the pair toward (0.9, 1.3). The two knobs live in a 2-D "loss map"; the lab draws it.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat{\mathbf y}=X\mathbf w,\quad L=\tfrac1n\lVert X\mathbf w-\mathbf y\rVert^2,\quad \nabla L=\tfrac2nX^\top(X\mathbf w-\mathbf y),\quad \mathbf w^\star=(X^\top X)^{-1}X^\top\mathbf y</div>
+        <div class="eq">R^2=1-\frac{\sum_i(y_i-\hat y_i)^2}{\sum_i(y_i-\bar y)^2}</div>
+        <table class="sym">
+          <tr><td>X</td><td>n × (d+1) design matrix: one row per example, a leading column of 1s for the intercept</td></tr>
+          <tr><td>w</td><td>weights; each <span class="tex">w_j</span> is the change in prediction when feature j rises by 1 and the others stay fixed</td></tr>
+          <tr><td>L</td><td>mean squared error, the number gradient descent lowers</td></tr>
+          <tr><td>∇L</td><td>gradient: the direction of steepest increase; we move the opposite way</td></tr>
+          <tr><td>R²</td><td>fraction of the variance of y explained; 1 = perfect, 0 = no better than predicting ȳ, negative = worse than ȳ</td></tr>
+        </table>
+        <p><b>Why squares?</b> If the errors are Gaussian noise, minimising squared error is exactly maximum likelihood (<a href="math-statistics.html#estimation-mle">MLE</a>). <b>Assumptions behind the interpretation</b>: the relation is roughly linear in the features, residuals are independent with similar spread, no feature is a near-copy of another (multicollinearity makes individual w unstable), and no wild outliers (one far point drags the line, because its squared gap is huge).</p>
+        <table class="tbl">
+          <tr><th>What is stored</th><td>d+1 numbers (weights and intercept)</td></tr>
+          <tr><th>Training cost</th><td>normal equation O(nd² + d³); gradient descent O(nd) per step, many steps. Fine up to a few thousand features via the normal equation; beyond that use iterative solvers</td></tr>
+          <tr><th>Inference cost</th><td>O(d) per example: one dot product</td></tr>
+          <tr><th>Preprocessing</th><td>centre/scale features for gradient descent (lesson 2.5) and for any penalty (2.2); encode categories; handle missing values</td></tr>
+          <tr><th>Use when</th><td>a strong, explainable baseline; the relation is near-linear; you need coefficients that mean something; huge data with speed constraints</td></tr>
+          <tr><th>Avoid when</th><td>strong non-linearity or interactions (add features or use trees), many outliers (use robust loss), correlated features without regularisation</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play in slow motion and read the four captions: predict, measure (red squares), gradient, update. Watch the orange line approach the dashed green closed-form line, and the orange dot walk down the loss map to the green dot.</li>
+        <li>Drag one point far from the line (or press "add an outlier"). The green line tilts toward it: squared error lets a single point pull hard. Note R² fall.</li>
+        <li>Raise η toward its top end: the dot zigzags across the valley. Past the limit it diverges.</li>
+        <li>The loss valley is much narrower in one direction than the other, which is why plain descent needs many steps on b. Lesson 2.5 explains this.</li></ol></div>
+      <div data-lab="linGeom"></div>
+      <div class="try"><b>Try this · fit other shapes</b><ol><li>The older lab below lets you type any model. Choose "line + noise" with <code>w*x + b</code>, then the parabola data with <code>w*x^2 + b*x + c</code>: the model is still <i>linear in its weights</i>, which is all that "linear regression" requires (next lesson builds on this).</li></ol></div>
+      <div data-lab="regression"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>High R² does not mean a correct model.</b> Always plot the residuals; curvature in them means the line is wrong. Adding features always raises training R².</li>
+          <li><b>Extrapolation.</b> A line fitted on sizes 1–5 says nothing reliable about size 50.</li>
+          <li><b>Reading w as causal.</b> A weight describes association in this dataset, holding other features fixed.</li>
+          <li><b>Singular XᵀX.</b> Two identical or perfectly dependent columns make the inverse not exist; use regularisation (2.2) or <code>lstsq</code>/SVD, never an explicit inverse in production.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Baseline and calibration layers: price, demand and risk models start here; scikit-learn <code>LinearRegression</code>, <code>Ridge</code>, SGD solvers.</li>
+          <li>Every neural network's last layer for regression is exactly <span class="tex">\mathbf w^\top\mathbf h+b</span> with the squared loss; "linear probes" test what features a frozen network contains.</li>
+          <li>Gradient descent here is the same loop that trains deep networks, only the model is simpler (<a href="math-optimization.html#gradient-descent">gradient descent</a>).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the fitted line ŷ = 1.3 + 0.9x, predict the rent for size 6 and give the residual if the true rent is 7.</summary><div class="ans">ŷ = 1.3 + 0.9·6 = 6.7; residual y − ŷ = 7 − 6.7 = 0.3.</div></details>
+        <details class="check"><summary>2. Why is the sum of residuals exactly 0 for a least-squares line with an intercept?</summary><div class="ans">The b-component of the normal equations, ∂L/∂b = 0, says Σ(ŷᵢ − yᵢ) = 0. In our example −0.2−0.1+1−0.9+0.2 = 0.</div></details>
+        <details class="check"><summary>3. What goes wrong with the normal equation if all five flats had the same size?</summary><div class="ans">The columns (1, x) become proportional, XᵀX has determinant 0 and is not invertible: infinitely many lines fit equally well (the slope is undetermined). Regularisation or a pseudo-inverse picks one.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Linear regression minimises the mean squared residual; the gradient is (2/n)Xᵀ(Xw − y).</li><li>If XᵀX is invertible, w = (XᵀX)⁻¹Xᵀy; otherwise or at scale, use gradient descent or SVD-based solvers.</li><li>R² measures explained variance; check residuals, not only R².</li><li>A model linear in its weights can still fit curves by adding features.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="regularization" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">2.2</span><h2>Polynomials, overfitting &amp; regularisation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A straight line cannot follow a curved relation, so we give the model extra features (x², x³, …). With 14 data points and a degree-13 polynomial the curve passes through every point exactly — training error zero. Yet it predicts new points terribly. How do we get the flexibility of a rich model without letting it memorise noise?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Model flexibility is a dial. Too low and the model <b>underfits</b> (high bias: it cannot bend to the truth). Too high and it <b>overfits</b> (high variance: it also bends to every random wiggle in <i>this</i> sample, so a different sample would give a very different curve). A flexible curve forced through noise needs <b>huge, opposing weights</b> to make sharp turns — big coefficients are the symptom. <b>Regularisation</b> puts a price on large weights: the model may keep its flexibility but must pay to use it, so it uses only what the data really supports.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Polynomial features.</b> Replace x by (x, x², …, x^d). The model <span class="tex">\hat y=w_0+w_1x+\dots+w_dx^d</span> is still linear <i>in w</i>, so everything from lesson 2.1 applies with new columns in X. Degree is a flexibility dial.</p>
+        <p><b>Ridge (L2).</b> Add the squared length of the weights to the loss:</p>
+        <div class="eq">L_{\text{ridge}}=\tfrac12\lVert X\mathbf w-\mathbf y\rVert^2+\tfrac\lambda2\lVert\mathbf w\rVert_2^2</div>
+        <p>Setting the gradient to zero: <span class="tex">X^\top(X\mathbf w-\mathbf y)+\lambda\mathbf w=0\Rightarrow(X^\top X+\lambda I)\mathbf w=X^\top\mathbf y</span>:</p>
+        <div class="eq">\mathbf w_{\text{ridge}}=(X^\top X+\lambda I)^{-1}X^\top\mathbf y</div>
+        <p>Adding λ to the diagonal makes the matrix <b>always invertible</b> (for λ &gt; 0) and shrinks every weight. In the SVD view (<a href="math-linear-algebra.html#svd-pca">SVD</a>), a direction with singular value s is shrunk by the factor <span class="tex">s^2/(s^2+\lambda)</span>: weak, noisy directions (small s) are damped most. From the Bayesian side, ridge is MAP estimation with a Gaussian prior on w (<a href="math-statistics.html#map-bayes">MAP</a>).</p>
+        <div class="worked"><b>Worked example · shrinkage on the five flats</b>
+          <p>Centre the data: x − 3 = (−2,−1,0,1,2), y − 4 = (−2,−1,1,0,2). Then Sxx = Σ(x−x̄)² = 10 and Sxy = Σ(x−x̄)(y−ȳ) = 9, so the one-weight ridge solution is <span class="tex">w=\dfrac{S_{xy}}{S_{xx}+\lambda}</span> (the intercept is not penalised):</p>
+          <table class="tbl"><tr><th>λ</th><td>0</td><td>1</td><td>5</td><td>10</td><td>20</td></tr><tr><th>w</th><td>0.9</td><td>0.818</td><td>0.6</td><td>0.45</td><td>0.3</td></tr></table>
+          <p>The slope shrinks smoothly toward 0 but never reaches it. It is a trade: a little bias (the slope is too small) for lower variance.</p></div>
+        <p><b>Lasso (L1) and why it gives exact zeros.</b> Penalise the sum of absolute values instead: <span class="tex">L_{\text{lasso}}=\tfrac12\lVert X\mathbf w-\mathbf y\rVert^2+\lambda\lVert\mathbf w\rVert_1</span>. <i>Geometry.</i> Minimising the loss subject to a penalty budget is the same as finding where the loss's elliptical contours first touch the budget region. The L2 region is a round disc: the ellipse touches it at a generic point, rarely on an axis. The L1 region is a diamond with <b>corners on the axes</b>; the expanding ellipse most often meets a corner first, and at a corner a coordinate equals zero exactly. In many dimensions the L1 ball has many such corners and edges, so many weights are zero at once. <i>Algebra, one weight.</i> Minimise <span class="tex">\tfrac12(w-z)^2+\lambda|w|</span>, where z is the unpenalised solution. For w &gt; 0 the derivative is w − z + λ = 0, giving w = z − λ (valid only if that is positive). For w &lt; 0 it is w = z + λ. If |z| ≤ λ neither side has a stationary point, and the minimum sits at the kink w = 0:</p>
+        <div class="eq">w^\star=S_\lambda(z)=\operatorname{sign}(z)\max(|z|-\lambda,\,0)\qquad\text{(soft threshold)}</div>
+        <p>Compare ridge, <span class="tex">\tfrac12(w-z)^2+\tfrac\lambda2w^2\Rightarrow w=z/(1+\lambda)</span>: it divides, so it can shrink but never reach zero.</p>
+        <div class="worked"><b>Worked example · soft threshold</b>
+          <p>With λ = 1: z = 3 gives lasso w = 2, ridge w = 1.5. z = 0.8 gives lasso <b>w = 0</b> (|0.8| ≤ 1), ridge w = 0.4. On the five flats, <span class="tex">w=S_\lambda(S_{xy})/S_{xx}=\max(9-\lambda,0)/10</span>: λ = 5 → 0.4, λ = 9 → 0 (the feature is dropped).</p></div>
+        <p><b>Elastic net</b> mixes the two penalties, <span class="tex">\lambda(\alpha\lVert\mathbf w\rVert_1+\frac{1-\alpha}2\lVert\mathbf w\rVert_2^2)</span>: it keeps sparsity but handles groups of correlated features better (lasso tends to pick one of a correlated group arbitrarily; ridge spreads weight among them).</p>
+        <p><b>Choosing λ.</b> Never by training error (it always prefers λ = 0). Hold out validation data or cross-validate (Module 5) and pick the λ with the lowest validation error — the "U" in the lab's error curve. <b>Scale features first</b>: the penalty treats all weights alike, so a feature measured in millimetres would be penalised differently from the same feature in metres.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\min_{\mathbf w}\ \tfrac1{2n}\lVert X\mathbf w-\mathbf y\rVert^2+\lambda\Big(\alpha\lVert\mathbf w\rVert_1+\tfrac{1-\alpha}{2}\lVert\mathbf w\rVert_2^2\Big)</div>
+        <table class="sym">
+          <tr><td>λ ≥ 0</td><td>penalty strength: 0 = plain least squares, large = weights forced toward 0 (a flat line)</td></tr>
+          <tr><td>α</td><td>mix: α = 0 ridge, α = 1 lasso, between = elastic net</td></tr>
+          <tr><td>‖w‖₁, ‖w‖₂</td><td>sum of |wⱼ|, and square root of the sum of wⱼ²</td></tr>
+          <tr><td>Sλ(z)</td><td>soft-threshold operator used by coordinate descent for L1</td></tr>
+        </table>
+        <table class="tbl">
+          <tr><th></th><th>Ridge</th><th>Lasso</th></tr>
+          <tr><th>Stored</th><td>d+1 weights, all non-zero</td><td>d+1 weights, many exactly 0 (a sparse model)</td></tr>
+          <tr><th>Training</th><td>closed form O(nd² + d³) or iterative</td><td>coordinate descent or proximal gradient, no closed form</td></tr>
+          <tr><th>Inference</th><td>O(d)</td><td>O(number of non-zero weights)</td></tr>
+          <tr><th>Use when</th><td>many small effects; correlated features; stability</td><td>you believe few features matter; feature selection; interpretability</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Set degree 9, λ at the left end (no penalty). The orange curve wiggles through the blue points; the validation (orange) error line is high. Note the large bars.</li>
+        <li>Press "Sweep λ down" (it starts with a huge λ). Watch the curve go from flat (underfit), through a good fit near the green ● best λ, to wild (overfit), with bars growing the whole time.</li>
+        <li>Switch to Lasso: bars turn into red zeros one by one; the path plot shows lines hitting 0 and staying. Ridge lines only shrink.</li>
+        <li>Increase the number of training points: the best fit with no penalty improves — more data reduces variance too.</li></ol></div>
+      <div data-lab="regPoly"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Penalising the intercept</b> or forgetting to standardise: the penalty then depends on units.</li>
+          <li><b>Selecting λ on the test set.</b> Use validation or cross-validation; keep the test set for one final check.</li>
+          <li><b>Lasso is not a causal feature selector:</b> among correlated features it picks one arbitrarily and the choice changes with the sample.</li>
+          <li>Polynomials of high degree on raw x explode at the edges; prefer splines or scaled features.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Weight decay</b> in neural networks is L2 regularisation (AdamW applies it to the weights each step).</li>
+          <li>Sparse linear models (lasso, L1 logistic regression) for genomics and text, where features outnumber examples (p ≫ n).</li>
+          <li>Elastic net in <code>glmnet</code>/scikit-learn; the L2 penalty also stabilises ill-conditioned problems (2.5).</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With the five flats (centred Sxx = 10, Sxy = 9), what slope does ridge give for λ = 5? Lasso?</summary><div class="ans">Ridge: 9/(10+5) = 0.6. Lasso: (9 − 5)/10 = 0.4 (using the ½-loss convention above).</div></details>
+        <details class="check"><summary>2. Why can ridge never set a weight exactly to zero but lasso can?</summary><div class="ans">Ridge's solution z/(1+λ) is a nonzero scaling of z. The L1 penalty has a kink at 0; if |z| ≤ λ the loss slope cannot beat the penalty slope on either side, so 0 is the minimum. Geometrically, the L1 ball has corners on the axes.</div></details>
+        <details class="check"><summary>3. Training error keeps falling as you add polynomial degree. What should you watch instead, and what shape does it have?</summary><div class="ans">The validation (or cross-validated) error: it falls, reaches a minimum, then rises again as the model overfits (a U shape).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Polynomial features keep the model linear in w; degree controls flexibility.</li><li>Ridge: w = (XᵀX + λI)⁻¹Xᵀy, shrinks all weights, always solvable. Lasso: soft-threshold, exact zeros, sparse models.</li><li>Choose λ on validation data after scaling features.</li><li>Large weights are the signature of overfitting.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="logistic-regression" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">2.3</span><h2>Logistic regression</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We want the probability that an email is spam, a loan defaults, a tumour is malignant. A line ŷ = w·x + b can output −3 or 7, which are not probabilities. How can we keep the idea "a weighted sum of the evidence" yet end up with a number between 0 and 1 that we can trust?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of the weighted sum as <b>evidence</b>: every feature pushes toward "yes" (positive weight) or "no" (negative weight), and the total can be any real number. We need a smooth gate that turns "total evidence" into a probability: very negative → near 0, zero → exactly ½, very positive → near 1. The S-shaped <b>sigmoid</b> is that gate. Why this one? Because it is what you get if you let the evidence be the <b>log-odds</b>.</p>
+        <p><b>Odds and log-odds.</b> If p = 0.8, the odds are 0.8 : 0.2 = 4 to 1. Odds run from 0 to ∞; log-odds <span class="tex">z=\ln\frac p{1-p}</span> run over the entire real line, with z = 0 meaning p = ½ and symmetry (z and −z give p and 1−p). A quantity that can be any real number is exactly what a linear function produces. So: <i>assume the log-odds are linear in the features</i>.</p>
+        <div data-lab="logOdds"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Drag z: p follows the sigmoid. At z = 0, p = 0.5; at z = ±2, p ≈ 0.88 / 0.12; the curve flattens, so extra evidence matters less when you are already confident.</li>
+          <li>Set w = 0.7 and raise x by 1: the odds are multiplied by e^0.7 ≈ 2.01 <i>wherever you start</i>, while the change in p depends on the starting point.</li></ol></div>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The model.</b> <span class="tex">\ln\frac{p}{1-p}=\mathbf w^\top\mathbf x+b=z</span>. Solving for p: <span class="tex">\frac p{1-p}=e^z\Rightarrow p=\frac{e^z}{1+e^z}=\sigma(z)=\frac1{1+e^{-z}}</span>.</p>
+        <p><b>Decision boundary.</b> Predict class 1 when p &gt; ½, i.e. z &gt; 0. The boundary <span class="tex">\mathbf w^\top\mathbf x+b=0</span> is a straight line (plane in higher dimensions); w points toward the "yes" side, and its length controls how sharp the transition is.</p>
+        <p><b>Likelihood → cross-entropy (derivation).</b> Each label is a coin with probability p: <span class="tex">P(y\mid\mathbf x)=p^{y}(1-p)^{1-y}</span> (for y = 1 this is p, for y = 0 it is 1−p). Assuming independent examples, the likelihood of the whole dataset is the product, and the best weights maximise it (<a href="math-statistics.html#estimation-mle">maximum likelihood</a>). Products are awkward, so take the log and flip the sign to get something to minimise:</p>
+        <div class="eq">L(\mathbf w,b)=-\frac1n\sum_i\Big[y_i\ln p_i+(1-y_i)\ln(1-p_i)\Big]</div>
+        <p>This is the <b>binary cross-entropy</b> (<a href="math-information.html#cross-entropy-kl">cross-entropy</a>). It charges −ln p for a confident-wrong or unsure "yes" and is convex in w, so gradient descent finds the global optimum.</p>
+        <p><b>Gradient (derivation).</b> Use <span class="tex">\sigma'(z)=\sigma(z)(1-\sigma(z))=p(1-p)</span>. For one example, <span class="tex">\frac{\partial\ell}{\partial z}=-\frac y p\,p(1-p)+\frac{1-y}{1-p}\,p(1-p)=-y(1-p)+(1-y)p=p-y</span>. Since <span class="tex">\partial z/\partial w_j=x_j</span>:</p>
+        <div class="eq">\frac{\partial L}{\partial w_j}=\frac1n\sum_i(p_i-y_i)\,x_{ij},\qquad\frac{\partial L}{\partial b}=\frac1n\sum_i(p_i-y_i)</div>
+        <p>Remarkably the same shape as in linear regression — "error times input" — with the error being predicted probability minus label.</p>
+
+        <div class="worked"><b>Worked example · one gradient step on 3 points</b>
+          <p>One feature: x = 0.5 (y = 0), x = 1.5 (y = 1), x = 3 (y = 1). Start at w = 0, b = 0, so z = 0 and every p = 0.5. Loss = −ln 0.5 = <b>0.6931</b>.</p>
+          <p>Errors p − y: (0.5, −0.5, −0.5). <span class="tex">\partial L/\partial w=\frac13(0.5\cdot0.5-0.5\cdot1.5-0.5\cdot3)=\frac{-2}{3}=-0.667</span>. <span class="tex">\partial L/\partial b=\frac13(0.5-0.5-0.5)=-0.1667</span>.</p>
+          <p>With η = 1: w = 0.6667, b = 0.1667. New probabilities σ(0.6667·x + 0.1667) = <b>0.622, 0.763, 0.897</b> (for y = 0, 1, 1). The loss falls to <b>0.4512</b>. The model already leans in the right direction; its boundary −b/w is at x = −0.25 and will move as training continues.</p></div>
+
+        <p><b>Reading coefficients as odds ratios.</b> Raising feature j by 1 adds <span class="tex">w_j</span> to the log-odds, so it multiplies the odds by <span class="tex">e^{w_j}</span>: w = 0.7 → odds ×2.01; w = −0.5 → ×0.61; w = 0 → ×1. Probabilities do not change by a fixed amount, but odds ratios do. Compare coefficients across features only after scaling the features.</p>
+        <p><b>Regularisation.</b> If the classes are perfectly separable, the loss keeps decreasing as the weights grow without bound (the sigmoid is pushed toward 0/1), so training never stops. Adding an L2 (or L1) penalty, exactly as in lesson 2.2, keeps weights finite; scikit-learn's default <code>LogisticRegression</code> already does this (parameter C = 1/λ). Non-linear boundaries come from adding polynomial features, as the lab's "Features" menu shows.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">p=\sigma(\mathbf w^\top\mathbf x+b),\qquad L=-\tfrac1n\sum_i\big[y_i\ln p_i+(1-y_i)\ln(1-p_i)\big]+\tfrac\lambda2\lVert\mathbf w\rVert^2</div>
+        <div class="eq">\nabla_{\mathbf w}L=\tfrac1n X^\top(\mathbf p-\mathbf y)+\lambda\mathbf w</div>
+        <table class="sym">
+          <tr><td>σ(z)</td><td>sigmoid <span class="tex">1/(1+e^{-z})</span>; maps any real z to (0, 1); σ(0) = ½</td></tr>
+          <tr><td>z</td><td>the logit = log-odds, linear in the features</td></tr>
+          <tr><td>p − y</td><td>error of the predicted probability against the 0/1 label</td></tr>
+          <tr><td><span class="tex">e^{w}</span></td><td>odds ratio per unit increase of the feature</td></tr>
+        </table>
+        <table class="tbl">
+          <tr><th>What is stored</th><td>d+1 numbers</td></tr>
+          <tr><th>Training cost</th><td>no closed form; each gradient step O(nd); solvers such as L-BFGS or IRLS need tens of passes; SGD scales to billions of rows</td></tr>
+          <tr><th>Inference cost</th><td>O(d): dot product + sigmoid</td></tr>
+          <tr><th>Preprocessing</th><td>scale numeric features; one-hot categories; regularise</td></tr>
+          <tr><th>Use when</th><td>a calibrated-ish probability baseline; need explainable coefficients; high-dimensional sparse text or click data</td></tr>
+          <tr><th>Avoid when</th><td>boundary is strongly non-linear and you cannot craft features (trees, kernels or networks do better); probabilities must be exactly calibrated (check calibration, Module 5)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick "two overlapping blobs", features "x, y", press Play. Watch the boundary (black line with the arrow showing w) rotate and settle between the classes while the loss falls from 0.693.</li>
+        <li>Lower η to 0.05: slower, smoother. Raise η toward 6: it overshoots and the loss may bounce.</li>
+        <li>Choose "XOR": no straight line works, accuracy stays near 50 %. Switch Features to "+ x², xy, y²": the boundary bends and XOR becomes solvable.</li>
+        <li>Pick "two separated blobs" and set λ = 0: the weights keep growing (check ‖w‖ in the readout) while the loss creeps to 0; then add some L2 and see it stop.</li></ol></div>
+      <div data-lab="logisticLab"></div>
+      <p style="max-width:780px;color:var(--muted);font-size:13px">The animation is a real gradient-descent run, computed live on the displayed data (not a recorded sequence).</p>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Logistic regression is a <b>classifier</b> despite its name; the "regression" is on the log-odds.</li>
+          <li>Interpreting e^w as a probability change. It is a change in <i>odds</i>.</li>
+          <li>Using accuracy on imbalanced data: choose the threshold from costs, not always ½ (Module 5).</li>
+          <li>Forgetting the separable case: infinite weights without regularisation.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Credit scoring, medical risk scores, click-through-rate prediction (the production baseline in ad systems).</li>
+          <li>The final layer of every binary neural classifier is a sigmoid on a linear layer, trained with this same cross-entropy.</li>
+          <li>Linear probes and text classifiers over TF-IDF features.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What probability corresponds to log-odds z = 1.2? What are the odds?</summary><div class="ans">p = σ(1.2) = 0.7685; the odds are e^1.2 = 3.32 to 1.</div></details>
+        <details class="check"><summary>2. A coefficient is w = 0.7. By what factor do the odds change when the feature rises by 1? By 2?</summary><div class="ans">e^0.7 = 2.01; for 2 units e^1.4 = 4.06 (effects multiply).</div></details>
+        <details class="check"><summary>3. In the worked example, why is the gradient for w negative at the start, and what does a negative gradient imply?</summary><div class="ans">The positive examples (y = 1) have larger x and p − y = −0.5 for them, outweighing the one y = 0 example; ∂L/∂w = −0.667 &lt; 0 means raising w lowers the loss, so descent increases w.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Assume log-odds are linear; the sigmoid turns them into probabilities.</li><li>Maximum likelihood gives binary cross-entropy; the gradient is (p − y)x averaged.</li><li>e^w is the odds ratio per unit of a feature; the decision boundary is linear.</li><li>Regularise, especially with separable data or many features.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="softmax-multiclass" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">2.4</span><h2>Multi-class classification</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A handwritten digit is one of 10 classes; a news article is one of 20 topics. Logistic regression separates two classes. How do we get 10 probabilities that are all positive, sum to 1, and are trained by the same simple gradient?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Give every class its own weighted sum ("score" or logit): <span class="tex">z_k=\mathbf w_k^\top\mathbf x+b_k</span>. Higher score = more evidence for that class. Now turn the list of scores into probabilities: exponentiate each (making it positive and amplifying differences) and divide by the total (making it sum to 1). That is <b>softmax</b>. The two-class case collapses back to the sigmoid, so softmax regression <i>is</i> logistic regression generalised.</p>
+        <p><b>Two ways to go multi-class.</b> <i>One-vs-rest</i> trains K separate binary classifiers ("is it class k or anything else?") and picks the most confident — simple, works with any binary model, but the K probabilities do not sum to one and each classifier sees an imbalanced problem. <i>Multinomial (softmax)</i> trains all K sets of weights jointly with one loss, giving coherent probabilities. For linear models, multinomial is usually the better default and is what neural networks use.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="eq">p_k=\operatorname{softmax}(\mathbf z)_k=\frac{e^{z_k}}{\sum_j e^{z_j}}</div>
+        <p><b>Loss.</b> With one-hot label <span class="tex">\mathbf y</span> (1 at the true class c), the likelihood of an example is <span class="tex">p_c</span>, so the loss is <span class="tex">\ell=-\ln p_c=-\sum_k y_k\ln p_k</span> (categorical cross-entropy).</p>
+        <p><b>Gradient (derivation).</b> <span class="tex">\ell=-z_c+\ln\sum_je^{z_j}</span>. Then <span class="tex">\frac{\partial\ell}{\partial z_k}=-\mathbb 1[k=c]+\frac{e^{z_k}}{\sum_je^{z_j}}=p_k-y_k</span>. Since <span class="tex">z_k=\mathbf w_k^\top\mathbf x+b_k</span>:</p>
+        <div class="eq">\frac{\partial\ell}{\partial\mathbf w_k}=(p_k-y_k)\,\mathbf x,\qquad\frac{\partial\ell}{\partial b_k}=p_k-y_k</div>
+        <p>Same "error × input" shape again, one row of weights per class: weights of the true class move <i>toward</i> x, weights of the others move <i>away</i> in proportion to how much probability they stole.</p>
+        <div class="worked"><b>Worked example · one example, three classes</b>
+          <p>Scores z = (2, 1, 0.1); the true class is the second one, y = (0, 1, 0). Exponentials: (7.389, 2.718, 1.105), sum 11.2125. Probabilities p = <b>(0.659, 0.242, 0.099)</b> (sum 1). Loss = −ln 0.242 = <b>1.417</b>.</p>
+          <p>Gradient with respect to the scores: p − y = <b>(0.659, −0.758, 0.099)</b>. For the input x = (1, 2) the weight gradients are (p_k − y_k)·x: class 1: (0.659, 1.318), class 2: (−0.758, −1.516), class 3: (0.099, 0.197). A descent step lowers the weights of class 1 (it wrongly dominates), raises those of class 2, and slightly lowers class 3.</p></div>
+        <p><b>Numerical stability.</b> <span class="tex">e^{1000}</span> overflows. Because softmax is unchanged when the same constant is subtracted from every score, compute with <span class="tex">z_k-\max_j z_j</span> (see <a href="math-neural.html#softmax-stability">stable softmax</a>). The same shift makes the weights non-unique (adding a constant vector to all <span class="tex">\mathbf w_k</span> changes nothing), which regularisation or fixing one class to 0 resolves. <b>Decision regions</b> are where one score is largest; the boundary between two classes is the line <span class="tex">(\mathbf w_a-\mathbf w_b)^\top\mathbf x+(b_a-b_b)=0</span>, so regions are convex polygons.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">L=-\frac1n\sum_{i}\sum_{k}y_{ik}\ln p_{ik}+\frac\lambda2\sum_k\lVert\mathbf w_k\rVert^2,\qquad\nabla_W L=\frac1n(P-Y)^\top X+\lambda W</div>
+        <table class="sym">
+          <tr><td>W</td><td>K × d weight matrix (row k = class k); b is a K-vector</td></tr>
+          <tr><td>P, Y</td><td>n × K matrices of predicted probabilities and one-hot labels</td></tr>
+          <tr><td>K</td><td>number of classes</td></tr>
+        </table>
+        <table class="tbl">
+          <tr><th>What is stored</th><td>K(d+1) numbers (e.g. 10 classes × 785 pixels = 7 850 for MNIST)</td></tr>
+          <tr><th>Training cost</th><td>O(n d K) per gradient step; one pass trains all classes together</td></tr>
+          <tr><th>Inference cost</th><td>O(dK) per example + softmax</td></tr>
+          <tr><th>Use when</th><td>a fast multi-class baseline, text classification, or as the output layer of a network</td></tr>
+          <tr><th>Avoid when</th><td>classes are not linearly separable in your features and you cannot add features; thousands of classes (use sampled softmax or hierarchy)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play: three colour regions grow from a uniform grey; their boundaries are straight lines meeting in the middle.</li>
+        <li>Click a point. The readout shows its three scores, softmax probabilities, and the gradient p − y. Watch p → one-hot for that point as training proceeds; the true class entry of p − y approaches 0 from below.</li>
+        <li>Switch to "overlapping blobs": the loss stalls above 0 and accuracy stays below 100 % — the model cannot be right and confident everywhere.</li>
+        <li>Add L2 (λ = 0.1): weights shrink, regions soften.</li></ol></div>
+      <div data-lab="softmaxLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li>Softmax outputs are <b>not</b> reliable uncertainty by default; neural networks are often over-confident (calibration, Module 5).</li>
+          <li>Applying softmax then <code>log</code> separately: use a fused log-softmax / cross-entropy for stability.</li>
+          <li>Using softmax when classes are not mutually exclusive (a photo with both "dog" and "park"): use independent sigmoids (multi-label).</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>The output layer of nearly every classification network and of language models: next-token prediction is a softmax over the vocabulary (tens of thousands of classes).</li>
+          <li>Attention weights are a softmax over scores; the p − y gradient is why logits train so cleanly under cross-entropy.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Scores (1, 1, 1): what are the probabilities? What if you add 5 to every score?</summary><div class="ans">(1/3, 1/3, 1/3) in both cases: softmax is unchanged by adding a constant to all scores.</div></details>
+        <details class="check"><summary>2. In the worked example, what is the gradient on the scores for the true class, and why is it negative?</summary><div class="ans">p₂ − y₂ = 0.242 − 1 = −0.758. Negative means increasing that score lowers the loss, so descent raises it.</div></details>
+        <details class="check"><summary>3. How many parameters does softmax regression have for 20 classes and 300 features?</summary><div class="ans">20 × (300 + 1) = 6 020.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Softmax turns K scores into probabilities; with cross-entropy its gradient w.r.t. the scores is p − y.</li><li>Multinomial training is joint and coherent; one-vs-rest is simpler but its outputs do not sum to 1.</li><li>Regions are convex polygons bounded by straight lines.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="linear-optimization" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">2.5</span><h2>Training linear models in practice</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You train a linear model on flats with two features: area in m² (50 to 150) and number of rooms (1 to 4). With a learning rate that works perfectly on a toy problem, the loss crawls for hundreds of thousands of steps — or explodes. Why, and what is the one-line fix?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture the loss as a bowl over the weight space. If both features have the same scale the bowl is round, and the steepest-descent direction points straight at the bottom. If one feature is measured in much bigger numbers, a small change in its weight changes the predictions a lot, so the bowl becomes a <b>long narrow valley</b>. Steepest descent then points mostly <i>across</i> the valley wall, not along it: it bounces from side to side and creeps toward the minimum. And the learning rate is limited by the <i>steep</i> direction (go too far and you leap over the valley and diverge) while progress along the <i>flat</i> direction is slow. The ratio of steepness to flatness is the <b>condition number</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Batch, stochastic and mini-batch.</b> Batch gradient descent uses all n examples per step: exact gradient, cost O(nd) per step, smooth. <b>Stochastic</b> (SGD) uses one random example: a very noisy but unbiased gradient costing O(d); you take n times more steps per pass over the data and make rapid early progress, but the path jitters and a decaying learning rate is needed to settle. <b>Mini-batch</b> uses B examples (32–1024): noise falls as 1/√B, hardware vectorises well — the default everywhere. One pass over the data is an <b>epoch</b>.</p>
+        <p><b>Quadratic analysis.</b> Near its minimum, the MSE loss is exactly a quadratic <span class="tex">\tfrac12\mathbf e^\top H\mathbf e</span>, where e = w − w* and the Hessian is <span class="tex">H=\frac2nX^\top X</span> (<span class="tex">\frac1nX^\top X</span> if the loss carries a factor ½, as in the example below; κ is the same). Gradient descent updates <span class="tex">\mathbf e\leftarrow(I-\eta H)\mathbf e</span>. In the eigen-direction with eigenvalue <span class="tex">\lambda_i</span> the error is multiplied each step by <span class="tex">1-\eta\lambda_i</span>. That requires <span class="tex">|1-\eta\lambda_i|&lt;1</span> for all i:</p>
+        <div class="eq">0&lt;\eta&lt;\frac{2}{\lambda_{\max}},\qquad\text{best }\eta=\frac{2}{\lambda_{\max}+\lambda_{\min}},\ \ \text{error shrinks by }\frac{\kappa-1}{\kappa+1}\text{ per step},\ \ \kappa=\frac{\lambda_{\max}}{\lambda_{\min}}</div>
+        <p>So the number of steps to reduce the error by a factor 10⁴ is about <span class="tex">\frac{\kappa}{2}\ln 10^4\approx4.6\,\kappa</span>.</p>
+        <div class="worked"><b>Worked example · the effect of scaling</b>
+          <p>Five flats, area (50, 80, 100, 120, 150) m² and rooms (1, 2, 3, 3, 4). After centring, the matrix <span class="tex">\frac1nX^\top X</span> has variance 1160 for area, 1.04 for rooms and covariance 34. Its eigenvalues are <b>1161.0</b> and <b>0.0434</b>, so <b>κ ≈ 26 744</b>. The stable learning rate for the loss <span class="tex">\frac12\cdot\frac1n\lVert X\mathbf w-\mathbf y\rVert^2</span> is below 2/1161 ≈ 0.0017, and about 4.6·26 744 ≈ <b>123 000 steps</b> are needed for a 10⁴-fold error reduction.</p>
+          <p>Standardise each feature (subtract its mean, divide by its standard deviation: area std 34.06, rooms std 1.02). The matrix becomes the correlation matrix with off-diagonal r = 0.979, eigenvalues 1 ± r, so <span class="tex">\kappa=\frac{1+r}{1-r}\approx93.7</span> and about <b>430 steps</b> — a 280-fold speed-up from one line of preprocessing. The remaining κ comes from the strong correlation between area and rooms; ridge regularisation (adding λ to every eigenvalue) reduces it further: κ becomes (1160.99 + λ)/(0.0434 + λ) on the raw data.</p></div>
+        <p><b>Convergence checks.</b> Plot the training loss against the step: it should fall monotonically for batch descent (a rise means η is too big). Stop when (a) the relative change in loss over several steps is below a tolerance, (b) the gradient norm is near 0, or (c) the <b>validation</b> loss stops improving (early stopping — which is itself a regulariser). In SGD, decay η over time (e.g. η₀/(1 + t/τ)) or use momentum/Adam (<a href="math-optimization.html#gradient-descent">optimisers</a>).</p>
+        <p><b>Choosing a solver.</b></p>
+        <table class="tbl">
+          <tr><th>Situation</th><th>Solver</th></tr>
+          <tr><td>Linear regression, d up to a few thousand, n moderate</td><td>Normal equation / QR / SVD (<code>lstsq</code>): exact, no η to tune</td></tr>
+          <tr><td>Logistic or softmax, moderate n, d</td><td>L-BFGS (a quasi-Newton method: uses past gradients to approximate curvature): few iterations, no η</td></tr>
+          <tr><td>L1 penalty (lasso)</td><td>Coordinate descent (soft-threshold per weight) or SAGA</td></tr>
+          <tr><td>Huge n or streaming data</td><td>Mini-batch SGD / Adam, with scaling and decaying η</td></tr>
+          <tr><td>Huge sparse d (text)</td><td>SGD / SAGA / liblinear, keep sparsity</td></tr>
+        </table>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf w_{t+1}=\mathbf w_t-\eta\,\hat{\mathbf g}_t,\qquad\hat{\mathbf g}_t=\frac1{|B_t|}\sum_{i\in B_t}\nabla\ell_i(\mathbf w_t),\qquad z_{ij}=\frac{x_{ij}-\mu_j}{\sigma_j}</div>
+        <table class="sym">
+          <tr><td>η</td><td>learning rate (step size)</td></tr>
+          <tr><td>B<sub>t</sub></td><td>mini-batch of examples at step t (|B| = n: batch GD; |B| = 1: SGD)</td></tr>
+          <tr><td>μⱼ, σⱼ</td><td>mean and standard deviation of feature j, computed on the <b>training</b> set only and reused on validation/test/production</td></tr>
+          <tr><td>κ</td><td>condition number λmax/λmin of the loss curvature; large κ = slow, fragile training</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Leave the scale of feature 2 at 1 (round bowl, κ = 1). Press the chip "good (0.5× max)": the path heads straight to the green optimum.</li>
+        <li>Slide the scale of feature 2 up to about 15 (a narrow valley). Press "good": the path now bounces across the valley and crawls; look at κ in the readout and the loss curve.</li>
+        <li>Press "zig-zag (0.95× max)" then "diverges (1.05× max)": the orange dot leaps outward. The stable limit is 2/λmax.</li>
+        <li>Tick "Standardise the features": the valley rounds out, κ collapses, and the same run converges in a fraction of the steps. The dashed grey curve is the previous run for comparison.</li>
+        <li>Add mini-batch noise: the path jitters around the optimum instead of settling — the price of cheap gradients (illustrative model of noise, not a real dataset).</li></ol></div>
+      <div data-lab="optLab"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Fitting the scaler on all data</b> (including validation/test) leaks information; fit on the training set only.</li>
+          <li><b>Not scaling</b> before any penalty or gradient method; the normal equation alone is scale-free but regularised solutions are not.</li>
+          <li>Tuning η on the test set, or judging convergence on only a few steps of a noisy SGD loss.</li>
+          <li>Believing a smaller η is always safer: it is safe but may need far more steps than your budget.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Feature standardisation is the first step of nearly every scikit-learn pipeline; its deep-learning cousins are batch/layer normalisation, which keep layer curvature well-conditioned.</li>
+          <li>Mini-batch SGD with momentum or Adam, learning-rate schedules and early stopping train every neural network; the linear case is the clearest place to see why they are needed.</li>
+          <li>L-BFGS, liblinear and SAGA are the solvers behind scikit-learn's logistic regression.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The curvature eigenvalues are 100 and 1. What is the largest stable learning rate, and what is κ?</summary><div class="ans">η &lt; 2/100 = 0.02; κ = 100/1 = 100. The best fixed η = 2/101 ≈ 0.0198 shrinks the error by 99/101 ≈ 0.98 per step.</div></details>
+        <details class="check"><summary>2. Why is the loss of SGD noisy even near the optimum, and what fixes it?</summary><div class="ans">Each step uses the gradient of a random sample, which fluctuates around the true gradient. Decay the learning rate, enlarge the mini-batch, or average the iterates.</div></details>
+        <details class="check"><summary>3. You standardise with the mean and std of the whole dataset before splitting. What is wrong?</summary><div class="ans">The validation/test rows influenced the scaling parameters: a small information leak that makes validation scores optimistic. Fit μ and σ on the training split only and reuse them.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Gradient descent on a quadratic converges iff η &lt; 2/λmax, at a speed set by κ = λmax/λmin.</li><li>Standardise features: it often cuts κ by orders of magnitude, and a regulariser reduces it more.</li><li>Mini-batches trade gradient noise for speed; monitor the loss, use early stopping.</li><li>Pick the solver by problem size and penalty: closed form, L-BFGS, coordinate descent or SGD.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can derive and train linear and logistic regression, shrink weights with ridge and lasso, extend to many classes with softmax, and make training fast and stable. Next, <a href="machine-learning.html">Module 3 · Classical algorithms</a> leaves straight lines behind: neighbours, trees, margins and clusters.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

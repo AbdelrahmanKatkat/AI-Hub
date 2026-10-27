@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 6 · Neural networks · Machine Learning</title>
+<meta name="description" content="From the perceptron to trained deep MLPs: activations, backpropagation with every number, initialisation and normalisation, regularisation, optimisers, tabular architectures and a debugging checklist — animated.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/mllib.js"></script>
+<script defer src="assets/labs-ml.js"></script>
+<script defer src="assets/arch.js"></script>
+<script defer src="assets/labs-cv.js"></script>
+<script defer src="assets/labs-ml-neural.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ml" data-module="6">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="machine-learning.html">Machine Learning</a> › Module 6</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">6</div>
+      <div style="flex:1">
+        <h1>Module 6 · Neural networks</h1>
+        <p>A neural network is a stack of tiny voters trained by nudging every weight in the direction that lowers the error. In eight lessons you will watch a perceptron learn by hand, build an MLP and count its parameters, push one training step through a 2-2-1 net with every number, and learn the practical craft that makes training work: initialisation, normalisation, regularisation, optimisers, tabular architectures and debugging. The calculus is derived in <a href="math-neural.html">the mathematics of neural networks</a>; here we stay practical and numeric.</p>
+        <div class="chips"><span class="chip">8 lessons</span><span class="chip">≈ 5 hours</span><span class="chip">Needs Modules 0–5</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 6.1 ===================== -->
+    <section class="lesson" id="perceptron-mlp" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.1</span><h2>From perceptron to MLP</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Logistic regression and linear SVMs draw one straight boundary. What if the true boundary is a ring, or a checkerboard, or "exactly one of two switches is on"? How do we build a model that bends — and how do we know, before training, how big it is and what shapes flow through it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>neuron</b> is a voter: it takes inputs, multiplies each by an importance (<i>weight</i>), adds a personal threshold (<i>bias</i>) and shouts "yes" if the total is positive. The first such device, Rosenblatt's <b>perceptron</b> (1958), also came with a <i>learning rule</i>: look at an example; if the voter is right, do nothing; if wrong, nudge the weights toward the correct answer. That is all.</p>
+        <p>One neuron draws one line. A <b>multi-layer perceptron (MLP)</b> feeds the outputs of many neurons into a second layer of neurons. The first layer re-describes the data (each hidden neuron is a "feature detector" cutting the plane with its own line); the second layer draws a line <i>in that new description</i>. Lines of lines become curved regions. Depth is repeated re-description. The derivation of why a nonlinearity is needed (without it, layers collapse into one) is in <a href="math-neural.html#neuron">math-neural.html#neuron</a>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The perceptron rule.</b> Predict <span class="tex">\hat y=1</span> if <span class="tex">z=\mathbf w\cdot\mathbf x+b&gt;0</span>, else 0. After each example, with error <span class="tex">e=y-\hat y\in\{-1,0,+1\}</span>, update <span class="tex">\mathbf w\leftarrow\mathbf w+\eta\,e\,\mathbf x</span> and <span class="tex">b\leftarrow b+\eta\,e</span>. A missed positive (<i>e</i>=+1) pulls <b>w</b> toward <b>x</b>; a false alarm pushes it away.</p>
+        <div class="worked"><b>Worked example — learning AND, update by update</b>
+          <p>Start <span class="tex">\mathbf w=(0,0),b=0</span>, <span class="tex">\eta=1</span>. Examples in order (0,0→0), (0,1→0), (1,0→0), (1,1→1).</p>
+          <table class="sym">
+            <tr><td>Epoch 1</td><td>The first three give z=0 ⇒ ŷ=0 = y: no change. (1,1): z=0 ⇒ ŷ=0 but y=1, e=+1 ⇒ w=(1,1), b=1.</td></tr>
+            <tr><td>Epoch 2</td><td>(0,0): z=1 ⇒ ŷ=1, y=0, e=−1 ⇒ b=0. (0,1): z=1 ⇒ ŷ=1, e=−1 ⇒ w=(1,0), b=−1. (1,0): z=0 ⇒ ŷ=0 ok. (1,1): z=0 ⇒ ŷ=0, e=+1 ⇒ w=(2,1), b=0.</td></tr>
+            <tr><td>Epoch 3</td><td>(0,0) ok (z=0). (0,1): z=1, e=−1 ⇒ w=(2,0), b=−1. (1,0): z=1, e=−1 ⇒ w=(1,0), b=−2. (1,1): z=−1 ⇒ ŷ=0, e=+1 ⇒ w=(2,1), b=−1.</td></tr>
+            <tr><td>Epoch 4</td><td>(0,0) ok. (0,1) ok (z=0). (1,0): z=1, e=−1 ⇒ w=(1,1), b=−2. (1,1): z=0, e=+1 ⇒ w=(2,2), b=−1.</td></tr>
+            <tr><td>Epoch 5</td><td>(0,1): z=1, e=−1 ⇒ w=(2,1), b=−2. The rest are right.</td></tr>
+            <tr><td>Epoch 6</td><td>All four correct: z = −2, −1, 0, 1 ⇒ ŷ = 0,0,0,1. <b>Converged:</b> 2x₁ + x₂ − 2 &gt; 0 computes AND.</td></tr>
+          </table>
+          <p>For OR (same start) it converges faster: w=(1,1), b=0 after 4 epochs. For <b>XOR</b> the rule never converges: no line separates {(0,0),(1,1)} from {(0,1),(1,0)} (the perceptron convergence theorem only promises success for linearly separable data).</p></div>
+        <p><b>Stacking.</b> An MLP layer maps a vector of size <i>n</i> to size <i>m</i> with a weight matrix (<i>m × n</i>) and bias (<i>m</i>), then applies a nonlinearity. Every "fc" (fully connected) layer has <span class="tex">nm+m</span> parameters. The shape table is the blueprint you should be able to write before coding:</p>
+        <div data-lab="archviz" data-title="An MLP for 20 tabular features" data-height="300"><script type="text/plain">input 1 1 20
+fc 64
+relu
+fc 32
+relu
+fc 1</script></div>
+        <div class="worked"><b>Worked example — shape and parameter table</b>
+          <table class="tbl"><tr><th>Layer</th><th>Input → output</th><th>Weights</th><th>Biases</th><th>Parameters</th></tr>
+            <tr><td>fc 1</td><td>20 → 64</td><td>20·64 = 1 280</td><td>64</td><td>1 344</td></tr>
+            <tr><td>ReLU</td><td>64 → 64</td><td>–</td><td>–</td><td>0</td></tr>
+            <tr><td>fc 2</td><td>64 → 32</td><td>64·32 = 2 048</td><td>32</td><td>2 080</td></tr>
+            <tr><td>ReLU</td><td>32 → 32</td><td>–</td><td>–</td><td>0</td></tr>
+            <tr><td>fc 3</td><td>32 → 1</td><td>32</td><td>1</td><td>33</td></tr>
+            <tr><td><b>Total</b></td><td></td><td></td><td></td><td><b>3 457</b></td></tr></table>
+          <p>A batch of 128 rows is a tensor of shape (128, 20) → (128, 64) → (128, 32) → (128, 1). Multiply–adds per example ≈ the weight count (3 360); inference is a handful of matrix products. Compare MNIST 784 → 128 → 10: 100 480 + 1 290 = 101 770 parameters.</p></div>
+        <p><b>Width and depth.</b> The universal approximation theorem says one wide hidden layer can approximate any continuous function on a bounded region (existence, not learnability — see <a href="math-neural.html#neuron">the maths</a>). In practice depth makes <i>compositional</i> features cheap: a deeper, narrower net often reaches the same accuracy with fewer parameters but is harder to optimise (lessons 6.4 and 6.8). Parameter count grows with width² per layer but only linearly with depth, so doubling width quadruples a layer while doubling depth merely doubles the stack.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf h^{(\ell)}=\varphi\!\big(W^{(\ell)}\mathbf h^{(\ell-1)}+\mathbf b^{(\ell)}\big),\quad \mathbf h^{(0)}=\mathbf x,\qquad \#\text{params}=\sum_{\ell}\big(n_{\ell-1}n_\ell+n_\ell\big)</div>
+        <table class="sym">
+          <tr><td>h<sup>(ℓ)</sup></td><td>activations (output) of layer ℓ; a vector of length n<sub>ℓ</sub></td></tr>
+          <tr><td>W<sup>(ℓ)</sup></td><td>weight matrix, shape n<sub>ℓ</sub> × n<sub>ℓ−1</sub>; row i holds neuron i's weights</td></tr>
+          <tr><td>b<sup>(ℓ)</sup></td><td>bias vector, length n<sub>ℓ</sub></td></tr>
+          <tr><td>φ</td><td>activation function, applied entry by entry (lesson 6.2)</td></tr>
+          <tr><td>η, e</td><td>perceptron learning rate and error y − ŷ</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: the perceptron learning</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose <b>AND</b> and press Play. The decision line jumps only on a <i>mistake</i> (the offending point flashes); the caption shows the exact update. It stops when an epoch has no mistakes.</li>
+        <li>Switch to <b>OR</b>, then <b>XOR</b>: the line keeps swinging forever and the mistake counter never reaches 0.</li>
+        <li>Drag the speed slider down and use <b>Step</b> to follow each example.</li></ol></div>
+      <div data-lab="mlnPerceptron"></div>
+      <h3 class="sec" style="max-width:780px">Lab 2: a bendable boundary (neural playground)</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick <b>xor</b>, use only the raw features x and y with a single hidden neuron and train: it cannot fit. Then add neurons (4 or more) and train again.</li>
+        <li>On <b>spiral</b> compare 1 wide layer with 3 narrower ones at the same total size.</li></ol></div>
+      <div data-lab="nn"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Stacking layers without an activation</b> gives one linear model.</li>
+          <li><b>Forgetting biases</b> when counting parameters (the +m term) — or the extra bias of a layer followed by BatchNorm, which makes it redundant.</li>
+          <li><b>Believing "universal approximation" means any net will fit</b>: it says nothing about how many neurons or whether SGD finds them.</li>
+          <li><b>Using the perceptron rule on non-separable data</b>: it oscillates; logistic regression with a loss is the fix.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>The <b>feed-forward block</b> of every transformer is a 2-layer MLP; the classifier head of ResNet is a single fc layer.</li>
+          <li>Tabular deep learning, recommender towers and value/policy heads in reinforcement learning are plain MLPs.</li>
+          <li>The perceptron's "update only on error" idea lives on in hinge-loss SVMs and online learners.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters does an MLP 10 → 32 → 16 → 3 have?</summary><div class="ans">(10·32+32) + (32·16+16) + (16·3+3) = 352 + 528 + 51 = 931.</div></details>
+        <details class="check"><summary>2. A perceptron with w=(1,−1), b=0, η=1 sees x=(0,1), y=1. What is the update?</summary><div class="ans">z = −1 ⇒ ŷ=0, e=+1 ⇒ w=(1,−1)+(0,1)=(1,0), b=1.</div></details>
+        <details class="check"><summary>3. Why can't one perceptron learn XOR, and what is the minimal fix?</summary><div class="ans">The classes are not separable by a line. Adding one hidden layer with two neurons (and a nonlinearity) lets the output neuron separate them.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Neuron = weighted vote + threshold; perceptron rule updates only on mistakes.</li><li>An MLP is stacked affine maps with nonlinearities; parameters = Σ(n<sub>in</sub>n<sub>out</sub>+n<sub>out</sub>).</li><li>Write the shape table before you build; depth composes features, width adds capacity.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.2 ===================== -->
+    <section class="lesson" id="activations" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.2</span><h2>Activation functions</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The nonlinearity between layers is a free design choice. Why did the field move from sigmoid to ReLU, then to GELU and SiLU — and what does "dead neuron" or "saturated" actually mean for learning?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Training sends a <i>learning signal</i> backwards through every activation, multiplied by that activation's slope at the point where the forward pass went through. A function that is flat there (slope ≈ 0) <b>blocks</b> the signal. Two failure pictures: <b>saturation</b> — sigmoid and tanh are flat for large |z| — and <b>dead ReLU</b> — a neuron whose z is negative for every example outputs 0 with slope exactly 0, so it can never recover. Good activations keep a healthy slope over the range where z usually lives.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <table class="sym">
+          <tr><td>sigmoid</td><td><span class="tex">\sigma(z)=1/(1+e^{-z})</span>, range (0,1), slope ≤ 0.25. Use for probabilities and gates, rarely in hidden layers.</td></tr>
+          <tr><td>tanh</td><td>range (−1,1), zero-centred, slope ≤ 1, still saturates.</td></tr>
+          <tr><td>ReLU</td><td><span class="tex">\max(0,z)</span>; slope 1 for z&gt;0, 0 for z&lt;0. Cheap, no saturation on the positive side; can die.</td></tr>
+          <tr><td>Leaky ReLU</td><td><span class="tex">\max(\alpha z,z)</span>, α≈0.01: a small slope on the negative side keeps neurons alive.</td></tr>
+          <tr><td>GELU</td><td><span class="tex">z\,\Phi(z)</span> (Φ = normal CDF): smooth ReLU, used in BERT/GPT.</td></tr>
+          <tr><td>SiLU / Swish</td><td><span class="tex">z\,\sigma(z)</span>: smooth, slightly negative dip; used in EfficientNet, LLaMA (SwiGLU).</td></tr>
+        </table>
+        <div class="worked"><b>Worked example — values and slopes</b>
+          <table class="tbl"><tr><th>z</th><th>σ(z)</th><th>σ′(z)</th><th>tanh</th><th>tanh′</th><th>ReLU</th><th>Leaky</th><th>GELU</th><th>SiLU</th></tr>
+            <tr><td>−3</td><td>0.0474</td><td>0.0452</td><td>−0.9951</td><td>0.0099</td><td>0</td><td>−0.03</td><td>−0.0040</td><td>−0.1423</td></tr>
+            <tr><td>−1</td><td>0.2689</td><td>0.1966</td><td>−0.7616</td><td>0.4200</td><td>0</td><td>−0.01</td><td>−0.1587</td><td>−0.2689</td></tr>
+            <tr><td>0</td><td>0.5</td><td>0.25</td><td>0</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+            <tr><td>1</td><td>0.7311</td><td>0.1966</td><td>0.7616</td><td>0.4200</td><td>1</td><td>1</td><td>0.8413</td><td>0.7311</td></tr>
+            <tr><td>3</td><td>0.9526</td><td>0.0452</td><td>0.9951</td><td>0.0099</td><td>3</td><td>3</td><td>2.996</td><td>2.8577</td></tr></table>
+          <p><b>Vanishing signal:</b> sigmoid slope is at most 0.25, so a signal passing through 10 sigmoid layers is multiplied by at most 0.25¹⁰ ≈ 9.5×10⁻⁷ (even before weights). Through 10 active ReLU layers the activation factor is 1¹⁰ = 1. That single fact is why ReLU made deep nets trainable.</p></div>
+        <p><b>Choosing.</b> Hidden layers: ReLU first (or GELU/SiLU in transformers). Output layer: none (regression), sigmoid (binary), softmax (multiclass) — see <a href="math-neural.html#softmax-stability">softmax stability</a>. Gates: sigmoid. If many units die, lower the learning rate, fix initialisation (6.4) or try Leaky ReLU.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\frac{\partial L}{\partial z}=\frac{\partial L}{\partial a}\cdot\varphi'(z),\qquad \sigma'(z)=\sigma(z)\big(1-\sigma(z)\big),\quad \tanh'(z)=1-\tanh^2 z</div>
+        <table class="sym">
+          <tr><td>z, a</td><td>pre-activation and activation (a = φ(z))</td></tr>
+          <tr><td>φ′(z)</td><td>slope of the activation at the forward-pass value of z: the gate on the backward signal</td></tr>
+          <tr><td>∂L/∂a</td><td>how the loss changes with the neuron's output (arrives from the next layer)</td></tr>
+          <tr><td>Φ</td><td>standard normal CDF, used by GELU</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: activation gallery</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick an activation and drag the input <b>z</b>: the dot on the curve and the dot on the slope curve move together. Find where sigmoid's slope falls below 0.05.</li>
+        <li>Press <b>Saturation demo</b>: a signal of 1.0 travels back through 6 layers; watch it shrink for sigmoid, hold for ReLU.</li>
+        <li>Press <b>Dead ReLU demo</b>: a negative bias is pushed until the unit outputs 0 for all data — its gradient is then exactly 0. Compare with Leaky.</li>
+        <li>In the tiny-network panel train the same 1-8-8-1 net with each activation and compare loss curves.</li></ol></div>
+      <div data-lab="mlnActivations"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Sigmoid in deep hidden stacks</b> — saturates and is not zero-centred.</li>
+          <li><b>ReLU on the output layer</b> of a regression net with negative targets.</li>
+          <li><b>Softmax before a cross-entropy that already includes softmax</b> (double softmax).</li>
+          <li><b>Judging by the forward value only</b>: it is the <i>slope</i> that carries learning.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>ResNets/CNNs: ReLU; BERT/GPT-2: GELU; LLaMA-style LLMs: SwiGLU (SiLU gated); EfficientNet: SiLU.</li>
+          <li>LSTM/GRU gates are sigmoids (a soft switch); tanh squashes cell values.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is σ′(0) and why is it the maximum slope?</summary><div class="ans">σ(0)=0.5 so σ′=0.5·0.5=0.25; σ(1−σ) is largest when σ=0.5.</div></details>
+        <details class="check"><summary>2. A ReLU neuron has z=−4 for every training example. What happens to its weights during training?</summary><div class="ans">Slope is 0 so its gradient is exactly 0: weights never change — it is dead.</div></details>
+        <details class="check"><summary>3. Why does Leaky ReLU help?</summary><div class="ans">The negative side has slope α (e.g. 0.01), so a small gradient still flows and the unit can recover.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Slopes decide learning: saturated or dead units pass no signal.</li><li>ReLU/GELU/SiLU for hidden layers; sigmoid/softmax only where a probability is needed.</li><li>σ′ ≤ 0.25, so deep sigmoid stacks vanish.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.3 ===================== -->
+    <section class="lesson" id="backprop-training" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.3</span><h2>Training: loss, backprop &amp; batches</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A network with thousands of weights makes a wrong prediction. Which weights are to blame, by how much, and in which direction should each one move — and can we compute that for all weights at once, cheaply?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Training repeats four beats: <b>① forward</b> — push a batch of examples through the net to get predictions; <b>② loss</b> — measure how wrong; <b>③ backward</b> — send blame backwards: each weight gets a number, its <i>gradient</i>, telling how the loss changes if that weight changes; <b>④ update</b> — step every weight a little against its gradient. <b>Backpropagation</b> is just the chain rule organised so the blame for a layer is computed from the blame of the layer after it. The full derivation, with matrix calculus, is in <a href="math-neural.html#backprop">math-neural.html#backprop</a>; below we simply compute one complete step with real numbers.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — one forward + backward step of a 2-2-1 net</b>
+          <p>Input <span class="tex">\mathbf x=(1,\,0.5)</span>, target y=1. Hidden: 2 sigmoid units, <span class="tex">W_1=\begin{pmatrix}0.1&amp;0.2\\-0.3&amp;0.4\end{pmatrix}</span>, <span class="tex">\mathbf b_1=(0.1,-0.1)</span>. Output: 1 sigmoid unit, <span class="tex">W_2=(0.5,-0.6)</span>, <span class="tex">b_2=0.2</span>. Loss: binary cross-entropy. Parameters: 4+2+2+1 = 9. Learning rate 0.5.</p>
+          <p><b>① Forward.</b> z₁ = (0.1·1+0.2·0.5+0.1, −0.3·1+0.4·0.5−0.1) = (0.3, −0.2). h = σ(z₁) = (0.5744, 0.4502). z₂ = 0.5·0.5744 − 0.6·0.4502 + 0.2 = 0.2171. ŷ = σ(0.2171) = 0.5541.</p>
+          <p><b>② Loss.</b> L = −ln 0.5541 = 0.5905.</p>
+          <p><b>③ Backward.</b> For sigmoid + cross-entropy, δ₂ = ∂L/∂z₂ = ŷ − y = −0.4459.</p>
+          <ul>
+            <li>Output weights: ∂L/∂W₂ = δ₂·h = (−0.2562, −0.2007); ∂L/∂b₂ = −0.4459.</li>
+            <li>Blame to hidden outputs: ∂L/∂h = W₂·δ₂ = (−0.2230, +0.2676).</li>
+            <li>Through the sigmoids: δ₁ = ∂L/∂h · h(1−h) = (−0.2230·0.2445, 0.2676·0.2475) = (−0.0545, +0.0662).</li>
+            <li>Hidden weights: ∂L/∂W₁ = δ₁ xᵀ = [[−0.0545, −0.0273],[0.0662, 0.0331]]; ∂L/∂b₁ = (−0.0545, 0.0662).</li></ul>
+          <p><b>④ Update</b> (w ← w − 0.5·g): W₂ = (0.6281, −0.4996), b₂ = 0.4230, W₁ = [[0.1273, 0.2136],[−0.3331, 0.3834]], b₁ = (0.1273, −0.1331).</p>
+          <p><b>Check:</b> forward again: ŷ = 0.6405, L = 0.4456 — lower than 0.5905. (A numerical derivative of L with respect to W₁[0,0] gives −0.054506, matching the −0.054506 above: this is the gradient check of lesson 6.8.)</p></div>
+        <p><b>Mini-batches and epochs.</b> Computing the gradient over the entire dataset every step is slow; one example is noisy. A <b>mini-batch</b> of B examples (typically 32–512) gives an average gradient that is cheap and good enough. With N=1 000 examples and B=32 there are ⌈1000/32⌉ = 32 updates per <b>epoch</b> (one pass over the data); 10 epochs = 320 updates. Shuffle the data each epoch.</p>
+<pre><code>for epoch in range(E):
+    shuffle(data)
+    for X_b, y_b in batches(data, B):
+        y_hat = model.forward(X_b)        # 1 forward
+        loss  = loss_fn(y_hat, y_b)       # 2 loss (mean over the batch)
+        grads = model.backward(loss)      # 3 backward (zero old grads first!)
+        params = params - lr * grads      # 4 update (or an optimiser step)
+    evaluate(model, validation_data)      # track val loss each epoch</code></pre>
+        <p>Choosing the loss: squared error for regression, binary cross-entropy for two classes, softmax cross-entropy for many (<a href="math-neural.html#losses">losses</a>).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\delta^{(\ell)}=\big((W^{(\ell+1)})^\top\delta^{(\ell+1)}\big)\odot\varphi'(\mathbf z^{(\ell)}),\qquad \frac{\partial L}{\partial W^{(\ell)}}=\delta^{(\ell)}\,\mathbf h^{(\ell-1)\top},\quad \frac{\partial L}{\partial \mathbf b^{(\ell)}}=\delta^{(\ell)}</div>
+        <table class="sym">
+          <tr><td>δ<sup>(ℓ)</sup></td><td>∂L/∂z of layer ℓ: "blame" at its pre-activations</td></tr>
+          <tr><td>(W<sup>(ℓ+1)</sup>)ᵀδ<sup>(ℓ+1)</sup></td><td>blame sent back through the weights of the next layer</td></tr>
+          <tr><td>⊙ φ′(z)</td><td>element-wise product with the activation slope (gate)</td></tr>
+          <tr><td>h<sup>(ℓ−1)</sup></td><td>the layer's input; weight gradient is blame × input</td></tr>
+          <tr><td>B, epoch</td><td>batch size; one full pass of N/B updates</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: the training loop, phase by phase</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play and read the caption: <b>sample batch → forward → loss → backward → update</b>. Each phase lasts about a second at default speed. Gradients appear as coloured, thick edges on the network during the backward phase (red/blue = sign).</li>
+        <li>Watch the epoch counter and the loss curve: individual batches are noisy, the trend falls.</li>
+        <li>Raise the learning rate until the curve becomes jagged or diverges; lower the batch size and see more noise per step.</li></ol></div>
+      <div data-lab="mlnTrainLoop"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Not zeroing gradients</b> between steps (frameworks accumulate them).</li>
+          <li><b>Evaluating with dropout/BatchNorm in train mode</b> (6.4, 6.5).</li>
+          <li><b>Reporting the training loss as performance</b>; always track a held-out set.</li>
+          <li><b>Not shuffling</b>: ordered batches give biased gradients.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every framework (PyTorch <code>loss.backward()</code>, TensorFlow <code>GradientTape</code>, JAX <code>grad</code>) automates step ③ — reverse-mode automatic differentiation.</li>
+          <li>LLM pre-training is this loop with batches of millions of tokens across thousands of GPUs.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With N = 5 000 and B = 64, how many updates are in 3 epochs?</summary><div class="ans">⌈5000/64⌉ = 79 per epoch (78.125 rounded up) ⇒ 237 updates.</div></details>
+        <details class="check"><summary>2. In the worked example, why is δ₂ = ŷ − y?</summary><div class="ans">For a sigmoid output with cross-entropy loss the σ′ factor cancels: ∂L/∂z₂ = ŷ − y = 0.5541 − 1 = −0.4459.</div></details>
+        <details class="check"><summary>3. A weight's gradient is −0.2, lr = 0.5, w = 0.5. New w?</summary><div class="ans">w = 0.5 − 0.5·(−0.2) = 0.6.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Forward → loss → backward → update, repeated per mini-batch.</li><li>Backprop passes blame δ backwards: through Wᵀ and the activation slope.</li><li>An epoch is N/B updates; always validate on unseen data.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.4 ===================== -->
+    <section class="lesson" id="init-normalization" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.4</span><h2>Initialisation &amp; normalisation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Before training, weights are random. If they are slightly too small the signal shrinks layer by layer until it is zero; slightly too large and it explodes. How should we pick the random scale, and what can we do to keep signals healthy <i>during</i> training too?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Each layer adds up <i>n</i> weighted inputs. Adding up many random terms makes the sum's spread grow like the square root of <i>n</i>; if every layer multiplies the signal's spread by a number a bit below 1 the signal fades exponentially, a bit above 1 it blows up exponentially. The fix is to choose the weight scale so each layer's multiplier is exactly 1 on average. <b>Normalisation layers</b> go further: they rescale the signal to zero mean and unit spread <i>every time</i>, whatever the weights do. The math of this variance argument is in <a href="math-neural.html#gradient-flow">math-neural.html#gradient-flow</a>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>For <span class="tex">z=\sum_{j=1}^{n}w_jx_j</span> with independent zero-mean weights of variance σ² and inputs with second moment <span class="tex">E[x^2]</span>: <span class="tex">\mathrm{Var}(z)=n\,\sigma^2E[x^2]</span>. Keep the multiplier <span class="tex">n\sigma^2=1</span> ⇒ <span class="tex">\sigma^2=1/n</span>. ReLU zeroes half the values and halves the second moment, so for ReLU nets we need <span class="tex">n\sigma^2/2=1</span> ⇒ <b>He init</b> <span class="tex">\sigma^2=2/n_{in}</span>. <b>Xavier/Glorot</b> (for tanh/sigmoid) uses <span class="tex">\sigma^2=2/(n_{in}+n_{out})</span>.</p>
+        <div class="worked"><b>Worked example — ten ReLU layers of width 100</b>
+          <p>Input second moment 1. Per layer multiplier = nσ²/2 = 100σ²/2.</p>
+          <table class="tbl"><tr><th>Init</th><th>σ</th><th>multiplier</th><th>after layer 1</th><th>after layer 5</th><th>after layer 10</th></tr>
+            <tr><td>too small</td><td>0.01</td><td>0.005</td><td>5.0×10⁻³</td><td>3.1×10⁻¹²</td><td>9.8×10⁻²⁴</td></tr>
+            <tr><td>mildly small</td><td>0.1</td><td>0.5</td><td>0.5</td><td>0.031</td><td>9.8×10⁻⁴</td></tr>
+            <tr><td><b>He</b></td><td>√(2/100) = 0.1414</td><td>1</td><td>1</td><td>1</td><td>1</td></tr></table>
+          <p>Even "mildly small" weights lose a factor of 1000 in 10 layers; with 50 layers the signal is gone. Without a nonlinearity, σ=0.1 would keep multiplier 1; the ReLU halving is why He doubles the variance.</p></div>
+        <div class="worked"><b>Worked example — a BatchNorm mini-batch</b>
+          <p>One feature (a neuron's pre-activation) over a batch of 4 examples: x = (2, 4, 6, 8). Mean μ = 5, variance σ² = ((−3)²+(−1)²+1²+3²)/4 = 5. Normalise with ε = 10⁻⁵: x̂ = (x−5)/√5.00001 = (−1.3416, −0.4472, 0.4472, 1.3416). Then scale and shift with learnable γ = 1.5, β = 0.5: y = γx̂+β = (−1.5125, −0.1708, 1.1708, 2.5125). The network can learn γ, β to undo normalisation if that is best.</p></div>
+        <p><b>BatchNorm vs LayerNorm.</b> BatchNorm normalises each feature across the <i>batch</i> (uses running averages at inference; needs reasonable batch size). LayerNorm normalises across the features of <i>one example</i>, independent of batch size — the standard choice in transformers and RNNs. Both make the loss surface smoother, allowing bigger learning rates and making initialisation less critical. Params: 2 per feature (γ, β).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{Var}(w)=\frac{2}{n_{in}}\ \text{(He)},\quad \frac{2}{n_{in}+n_{out}}\ \text{(Xavier)};\qquad \hat x=\frac{x-\mu_B}{\sqrt{\sigma_B^2+\epsilon}},\quad y=\gamma\hat x+\beta</div>
+        <table class="sym">
+          <tr><td>n<sub>in</sub>, n<sub>out</sub></td><td>fan-in and fan-out of the layer (number of inputs / outputs)</td></tr>
+          <tr><td>μ<sub>B</sub>, σ²<sub>B</sub></td><td>mean and variance of the feature over the mini-batch (BatchNorm) or over the features of one example (LayerNorm)</td></tr>
+          <tr><td>ε</td><td>tiny constant avoiding division by zero</td></tr>
+          <tr><td>γ, β</td><td>learned scale and shift</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: activation histograms per layer</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose <b>too small</b>: histograms of layers 1…10 collapse into a spike at 0. Choose <b>too large</b>: they spread and saturate (tanh piles up at ±1).</li>
+        <li>Choose <b>He/Xavier</b>: every layer keeps the same width.</li>
+        <li>Tick <b>BatchNorm</b> with the bad init: the spread is restored at every layer.</li>
+        <li>Change depth and width; the std for each layer is printed under the plot.</li></ol></div>
+      <div data-lab="mlnInit"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>All-zero (or all-equal) weights</b>: every neuron computes the same thing and gets the same gradient — symmetry never breaks.</li>
+          <li><b>Using BatchNorm with batch size 2–4</b> (noisy statistics) or forgetting <code>model.eval()</code> at inference.</li>
+          <li><b>Using He init for tanh</b> or Xavier for ReLU: not catastrophic but not tuned.</li>
+          <li><b>Placing dropout right before BatchNorm</b>: the variance shift at test time hurts.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>ResNets use He init + BatchNorm; transformers use LayerNorm (Pre-LN) and scaled init (e.g. 0.02 std, residual-branch scaling by 1/√(2L)).</li>
+          <li>RMSNorm (LLaMA) drops the mean subtraction for speed.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. He std for a ReLU layer with 512 inputs?</summary><div class="ans">√(2/512) = √0.00390625 = 0.0625.</div></details>
+        <details class="check"><summary>2. BatchNorm parameters for a layer of 256 features?</summary><div class="ans">γ and β per feature: 512 learnable (plus 512 running statistics that are not trained).</div></details>
+        <details class="check"><summary>3. Normalise (1, 3) with ε≈0: x̂?</summary><div class="ans">μ=2, σ²=1 ⇒ x̂ = (−1, +1).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Choose weight variance so each layer's multiplier is 1: 2/n<sub>in</sub> for ReLU.</li><li>Normalisation re-centres and rescales every step: BatchNorm over the batch, LayerNorm over features.</li><li>Check activation statistics per layer — they reveal bad init immediately.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.5 ===================== -->
+    <section class="lesson" id="regularization-dl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.5</span><h2>Regularisation for deep nets</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A network with more parameters than examples can memorise the training set perfectly. Its training loss keeps falling but its validation loss turns upward. How do we make a big network behave on data it has not seen?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Overfitting means the model uses its freedom to fit noise. Regularisers all reduce that freedom or make memorisation harder: <b>weight decay</b> pulls weights toward 0 (smoother functions); <b>dropout</b> randomly silences neurons so no single neuron can be relied on (a crowd of voters, some absent each time); <b>early stopping</b> halts before memorisation; <b>augmentation</b> invents plausible new training examples; <b>label smoothing</b> forbids absolute certainty. The visible symptom is the <b>generalisation gap</b>: validation loss minus training loss.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — four regularisers with numbers</b>
+          <p><b>Weight decay (L2).</b> Loss gradient 0.5 at w = 2, lr 0.1, λ = 0.01: w ← 2 − 0.1(0.5 + 0.01·2) = 1.948. Without decay: 1.95. Each step also shrinks w by the factor (1 − lr·λ) = 0.999. With AdamW the decay is applied separately from the adaptive step (6.6).</p>
+          <p><b>Dropout, p<sub>drop</sub> = 0.5 (inverted).</b> Activations (1.2, 0.8, −0.5, 2.0), random mask (1, 0, 1, 0). Kept units are scaled by 1/(1−p) = 2: (2.4, 0, −1.0, 0). Scaling keeps the <i>expected</i> sum unchanged (3.5), so at test time we simply turn dropout off.</p>
+          <p><b>Early stopping, patience 2.</b> Illustrative val losses by epoch: 0.62, 0.48, 0.41, <b>0.39</b>, 0.40, 0.42, 0.45, 0.49. Best is epoch 4; epochs 5 and 6 are worse (patience used up) so stop at epoch 6 and restore the weights of epoch 4.</p>
+          <p><b>Label smoothing, ε = 0.1, 3 classes.</b> Target (1,0,0) becomes (1 − ε + ε/3, ε/3, ε/3) = (0.9333, 0.0333, 0.0333). For predicted probabilities (0.7, 0.2, 0.1) the hard loss is −ln 0.7 = 0.3567; the smoothed loss is 0.4633.</p></div>
+        <p><b>Augmentation</b> applies label-preserving transformations (flips, crops, noise, mixup, SpecAugment) so the model sees a different version each epoch — the most effective regulariser when data is scarce. <b>More data, a smaller model, or ensembling</b> are also regularisers.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">L_{\text{total}}=L_{\text{data}}+\tfrac{\lambda}{2}\lVert\mathbf w\rVert_2^2\ \Rightarrow\ w\leftarrow w-\eta\,(g+\lambda w);\qquad \tilde h=\frac{m\odot h}{1-p},\ m_i\sim\mathrm{Bernoulli}(1-p)</div>
+        <table class="sym">
+          <tr><td>λ</td><td>weight-decay strength (typical 10⁻⁵–10⁻²)</td></tr>
+          <tr><td>g</td><td>gradient of the data loss</td></tr>
+          <tr><td>p</td><td>dropout probability (0.1–0.5)</td></tr>
+          <tr><td>m</td><td>random 0/1 mask, resampled every step</td></tr>
+          <tr><td>ε</td><td>label-smoothing amount</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: watching the generalisation gap</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With all regularisers off, train: the training loss keeps dropping, validation turns up — the gap widens; the early-stopping marker shows the best epoch.</li>
+        <li>Turn on <b>dropout</b>: masks flash over the hidden layer; the gap shrinks.</li>
+        <li>Turn on <b>weight decay</b>: the weight bars shrink and the fitted curve smooths.</li>
+        <li>Enable <b>early stopping</b> and change the patience.</li></ol></div>
+      <div data-lab="mlnRegular"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Tuning against the validation set until it is no longer unseen</b> — keep a final test set.</li>
+          <li><b>Dropout at inference</b>; or dropout too high in small nets (underfits).</li>
+          <li><b>L2 inside Adam is not the same as weight decay</b> — use AdamW.</li>
+          <li><b>Augmenting the validation set</b>.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Vision: random crops/flips/mixup/CutMix; speech: SpecAugment; LLMs: weight decay 0.1 with AdamW, dropout often 0.</li>
+          <li>Label smoothing 0.1 is standard in Inception-style classifiers and machine translation.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Train loss 0.05, val loss 0.60. What is the gap and what does it suggest?</summary><div class="ans">0.55: overfitting. Add regularisation, data or reduce capacity.</div></details>
+        <details class="check"><summary>2. Dropout p=0.2: kept activations are scaled by?</summary><div class="ans">1/(1−0.2) = 1.25.</div></details>
+        <details class="check"><summary>3. Why is 'restore the best weights' part of early stopping?</summary><div class="ans">Training continued past the best epoch by <i>patience</i> epochs, so the final weights are worse than the best ones.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>The gap between train and validation loss is the overfitting meter.</li><li>Weight decay shrinks weights, dropout averages sub-networks, early stopping picks the best epoch, augmentation adds data.</li><li>Combine them; tune one at a time.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.6 ===================== -->
+    <section class="lesson" id="optimizers-schedules" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.6</span><h2>Optimisers &amp; schedules in practice</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Plain gradient descent zig-zags across narrow valleys and crawls along flat ones. What do SGD with momentum, Adam and AdamW change, and how do we choose the learning rate and its schedule for a real run?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Momentum</b> is a heavy ball: it accumulates velocity, so consistent gradient directions build speed and zig-zags cancel. <b>Adam</b> additionally keeps, for every weight, a running average of the squared gradient and divides by its root: weights with large, noisy gradients take smaller steps, rare small gradients take relatively larger steps — each weight gets its own learning rate. The theory (convergence, conditioning) is in <a href="math-optimization.html#momentum-adam">math-optimization.html#momentum-adam</a> and <a href="math-optimization.html#schedules">#schedules</a>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — four steps on f(w) = w², start w = 1, gradient g = 2w</b>
+          <p><b>SGD</b>, lr 0.05: w = 0.9, 0.81, 0.729, 0.6561 (each step multiplies by 0.9).</p>
+          <p><b>Momentum</b> (v ← 0.9v + g, w ← w − 0.05v): v = 2, w = 0.9; g = 1.8, v = 3.6, w = 0.72; g = 1.44, v = 4.68, w = 0.486; g = 0.972, v = 5.184, w = 0.2268. Faster — and it will overshoot zero afterwards.</p>
+          <p><b>Adam</b>, lr 0.1, β₁ = 0.9, β₂ = 0.999, ε = 10⁻⁸. Step 1: g = 2; m = 0.1·2 = 0.2; v = 0.001·4 = 0.004. Bias correction: m̂ = 0.2/(1−0.9) = 2, v̂ = 0.004/(1−0.999) = 4. Update = 0.1·2/(√4+ε) = 0.1 ⇒ w = 0.9. Step 2: g = 1.8; m = 0.9·0.2+0.1·1.8 = 0.36; v = 0.999·0.004+0.001·3.24 = 0.007236; m̂ = 0.36/0.19 = 1.8947; v̂ = 0.007236/0.001999 = 3.6198; update = 0.1·1.8947/1.9026 = 0.0996 ⇒ w = 0.8004. Step 3: w = 0.7016; step 4: w = 0.6039. Adam's step size is ≈ lr whatever the gradient scale — that is its defining property.</p></div>
+        <p><b>Learning-rate schedules.</b> <i>Warmup</i>: start tiny and ramp up over the first few hundred steps (Adam's statistics and BatchNorm are unreliable at first). <i>Cosine decay</i>: <span class="tex">\eta_t=\tfrac12\eta_{max}(1+\cos(\pi t/T))</span>; at t/T = 0.25 with η_max = 10⁻³: 0.5·(1+0.7071)·10⁻³ = 8.54×10⁻⁴. <i>Step decay</i> divides the rate at fixed epochs. <i>LR finder</i>: raise the rate exponentially over a short run and pick a value about 10× below where the loss starts to explode.</p>
+        <p><b>Batch size.</b> Larger batches give smoother gradients but fewer updates per epoch. The <b>linear scaling rule</b>: when the batch multiplies by k, multiply the learning rate by k (with warmup): 256 → 1 024 means lr 0.1 → 0.4. Very large batches may generalise slightly worse.</p>
+        <table class="tbl"><tr><th>Optimiser</th><th>Extra memory per weight</th><th>Good default</th></tr>
+          <tr><td>SGD + momentum</td><td>1 (velocity)</td><td>lr 0.1, momentum 0.9 for CNNs</td></tr>
+          <tr><td>Adam / AdamW</td><td>2 (m, v)</td><td>lr 1e-3 (3e-4 for transformers), β=(0.9,0.999)</td></tr></table>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">m_t=\beta_1m_{t-1}+(1-\beta_1)g_t,\ \ v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2,\ \ w_{t}=w_{t-1}-\eta\frac{m_t/(1-\beta_1^t)}{\sqrt{v_t/(1-\beta_2^t)}+\epsilon}-\eta\lambda w_{t-1}</div>
+        <table class="sym">
+          <tr><td>g<sub>t</sub></td><td>mini-batch gradient at step t</td></tr>
+          <tr><td>m, v</td><td>moving averages of g and g² (first and second moment)</td></tr>
+          <tr><td>β₁, β₂</td><td>decay rates (0.9, 0.999)</td></tr>
+          <tr><td>1−βᵗ</td><td>bias correction: m, v start at 0 so early averages are too small</td></tr>
+          <tr><td>ε</td><td>numerical safety (10⁻⁸)</td></tr>
+          <tr><td>λ</td><td>decoupled weight decay of AdamW (last term)</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: SGD vs momentum vs Adam</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play: three balls roll on the same loss landscape, leaving trails. SGD zig-zags in the narrow valley, momentum overshoots then settles, Adam rushes straight.</li>
+        <li>Raise the learning rate until SGD diverges; Adam tolerates more.</li>
+        <li>Switch the schedule to <b>warmup + cosine</b> and watch the rate plot under the landscape.</li>
+        <li>Change the landscape's conditioning (valley narrowness).</li></ol></div>
+      <div data-lab="mlnOptim"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>One learning rate for everything</b>: tune it first; it matters more than any other hyper-parameter.</li>
+          <li><b>Adam with L2 instead of AdamW</b>; weight decay on biases and norm parameters.</li>
+          <li><b>Scaling batch size without scaling the rate or warming up.</b></li>
+          <li><b>Comparing optimisers at their default rates only.</b></li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>LLMs: AdamW, linear warmup then cosine decay, gradient clipping at 1.0.</li>
+          <li>ResNet-style vision training: SGD + momentum 0.9 + step or cosine decay.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. SGD lr 0.1, g = 3, w = 1. New w?</summary><div class="ans">1 − 0.1·3 = 0.7.</div></details>
+        <details class="check"><summary>2. Why divide by 1 − β₁ᵗ in Adam?</summary><div class="ans">m starts at 0, so early m underestimates the average; at t=1 m = 0.1g and dividing by 0.1 restores g.</div></details>
+        <details class="check"><summary>3. Batch 128 → 512 with lr 0.05 under linear scaling?</summary><div class="ans">k=4 ⇒ lr 0.2.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Momentum smooths and accelerates; Adam adapts a step per weight.</li><li>Use AdamW with warmup + cosine as a strong default.</li><li>Learning rate first; scale it with batch size.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.7 ===================== -->
+    <section class="lesson" id="mlp-tabular" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.7</span><h2>MLP architectures for tabular data</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A customer table has numeric columns and categorical ones such as <i>city</i> (1 000 values), <i>device</i> (50) and <i>plan</i> (7). A neuron cannot take the word "Cairo". How do we feed categories to an MLP, how wide and deep should it be — and when should we simply use gradient-boosted trees?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>One-hot encoding a 1 000-value column creates 1 000 mostly-zero inputs and treats every pair of cities as equally different. An <b>embedding</b> instead gives each category its own short learned vector (say 16 numbers) stored in a lookup table; "looking up" row <i>i</i> is the same as multiplying a one-hot vector by the table, without the cost. Training moves similar categories close together (cities with similar behaviour end up with similar vectors). The numeric columns are standardised and concatenated with the embeddings, and the MLP runs on the result.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Embedding size rule of thumb</b>: min(50, round(1.6·cardinality<sup>0.56</sup>)) — 1 000 values → 50, 50 values → 14, 7 values → 5. To keep the example small we use 16, 8 and 4.</p>
+        <div class="worked"><b>Worked example — shape table and parameters</b>
+          <p>10 numeric features + city (1 000 → 16) + device (50 → 8) + plan (7 → 4). Concatenated input = 10 + 16 + 8 + 4 = 38. MLP: 38 → 128 → 64 → 1.</p>
+          <table class="tbl"><tr><th>Part</th><th>Shape</th><th>Parameters</th></tr>
+            <tr><td>city embedding</td><td>1 000 × 16</td><td>16 000</td></tr>
+            <tr><td>device embedding</td><td>50 × 8</td><td>400</td></tr>
+            <tr><td>plan embedding</td><td>7 × 4</td><td>28</td></tr>
+            <tr><td>fc 38 → 128</td><td>(128, 38)+128</td><td>4 992</td></tr>
+            <tr><td>fc 128 → 64</td><td>(64, 128)+64</td><td>8 256</td></tr>
+            <tr><td>fc 64 → 1</td><td>(1, 64)+1</td><td>65</td></tr>
+            <tr><td><b>Total</b></td><td></td><td><b>29 741</b> (16 428 in embeddings, 13 313 in the MLP)</td></tr></table>
+          <p>Note that most parameters sit in the embedding of the high-cardinality column; a batch row is the vector of ids → a (batch, 38) tensor.</p></div>
+        <div data-lab="archviz" data-title="Tabular MLP after the embeddings" data-height="260"><script type="text/plain">input 1 1 38
+fc 128
+relu
+dropout
+fc 64
+relu
+fc 1</script></div>
+        <p><b>Width/depth trade-off.</b> With the same 38 inputs: wide-shallow 38 → 512 → 1 has 19 968 + 513 = 20 481 parameters; the baseline above 13 313; narrow-deep 38 → 32 → 32 → 32 → 32 → 1 has 1 248 + 3·1 056 + 33 = 4 449. For tabular data 2–4 hidden layers of 64–512 units is usually enough; extra depth rarely helps unless you add <b>residual connections</b> (<span class="tex">\mathbf h+f(\mathbf h)</span>) and normalisation, as in "ResNet for tabular" designs. Regularise with dropout 0.1–0.3 and weight decay.</p>
+        <p><b>When trees still win.</b> On small-to-medium tabular data (thousands to a few million rows) gradient-boosted trees (<a href="ml-classical.html">Module 3</a>) usually match or beat MLPs with far less tuning: they handle unscaled features, missing values, irregular, step-like target functions and uninformative features well. MLPs win with huge data, many high-cardinality categoricals, multimodal inputs (text/images beside the table), multi-task learning or when an embedding must be reused elsewhere.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf e_j=E[\,c_j\,]\in\mathbb R^{d_j},\quad \mathbf x_{in}=[\,\mathbf x_{num};\,\mathbf e_1;\dots;\mathbf e_k\,],\quad \#E=\sum_j V_jd_j</div>
+        <table class="sym">
+          <tr><td>c<sub>j</sub></td><td>integer id of the category in column j</td></tr>
+          <tr><td>E<sub>j</sub></td><td>embedding table of column j, shape V<sub>j</sub> × d<sub>j</sub></td></tr>
+          <tr><td>V<sub>j</sub>, d<sub>j</sub></td><td>cardinality (number of categories) and embedding dimension</td></tr>
+          <tr><td>[ ; ]</td><td>concatenation</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: embedding lookup and parameter counter</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play: a category id slides into the table, its row lights up, is copied into the input vector next to the numeric features and flows into the MLP.</li>
+        <li>Change cardinalities, embedding dims, hidden widths and depth: the parameter counter updates live, split into embeddings and MLP.</li>
+        <li>Compare a wide-shallow and narrow-deep design at equal parameter budget.</li></ol></div>
+      <div data-lab="mlnTabular"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Not standardising numeric features</b>; skewed money columns need a log or quantile transform.</li>
+          <li><b>Unseen categories at inference</b>: reserve an "unknown" id (and train it with random dropping of categories).</li>
+          <li><b>Huge embeddings for rare categories</b> overfit: hash or group rare values.</li>
+          <li><b>Assuming deep learning beats trees</b> on every table.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Recommender towers (YouTube, Wide &amp; Deep, DLRM) — embeddings of user/item ids feeding MLPs; entity embeddings won Kaggle's Rossmann competition.</li>
+          <li>Embedding tables are the same idea as token embeddings in language models.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Parameters of an embedding for 5 000 categories with dimension 12?</summary><div class="ans">5 000·12 = 60 000.</div></details>
+        <details class="check"><summary>2. Why is an embedding lookup equal to one-hot × table?</summary><div class="ans">A one-hot vector picks out exactly one row of the matrix product; the lookup does that directly in O(d).</div></details>
+        <details class="check"><summary>3. Input dim 50 → 256 → 256 → 1: parameter count?</summary><div class="ans">(50·256+256) + (256·256+256) + (256+1) = 13 056 + 65 792 + 257 = 79 105.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Embeddings turn categories into learned vectors; concatenate with standardised numerics.</li><li>Count parameters per table and layer; high-cardinality embeddings dominate.</li><li>2–4 layers usually suffice; trees remain the strong baseline.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.8 ===================== -->
+    <section class="lesson" id="debugging-nn" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.8</span><h2>Debugging neural networks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The loss does not move, or becomes NaN, or training is great and validation terrible. A neural net fails silently — no exception, just bad numbers. What is the systematic order in which to look?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Debug like an engineer: shrink the problem until it has to work, then grow it. Start with a tiny model and a single batch; if it cannot memorise one batch of 8 examples, the bug is in the code, data or optimiser — not in "needing more data". Only then scale up. Always look at the loss curve and the per-layer statistics; the symptoms point to the cause.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — three quick sanity numbers</b>
+          <p><b>Expected initial loss.</b> A fresh 10-class classifier should output roughly uniform probabilities: loss ≈ −ln(1/10) = 2.3026. Binary: ln 2 = 0.6931. If your first loss is 7.9, the output layer or labels are wrong (or logits are huge).</p>
+          <p><b>Learning rate too large.</b> On f(w)=w² with lr 1.1 each step multiplies w by (1 − 2.2) = −1.2: w = 1, −1.2, 1.44, −1.728, 2.074, −2.488 … diverging; in a deep net this ends in <code>inf</code> then <code>NaN</code>. With lr 0.1 the factor is 0.8 and w shrinks.</p>
+          <p><b>Gradient check.</b> For f(w) = w² at w = 3 the analytic gradient is 6. Numerical (f(w+ε) − f(w−ε))/2ε with ε = 10⁻⁴ gives 6.0000. They should agree to ~6 digits; a mismatch means a bug in a custom backward pass.</p></div>
+        <table class="tbl"><tr><th>Symptom</th><th>Likely causes</th><th>Fix</th></tr>
+          <tr><td>Loss flat at ln K</td><td>lr too small; dead ReLUs; labels shuffled vs inputs; frozen params; bad scaling of inputs</td><td>raise lr (LR finder); standardise inputs; check data/label alignment; He init</td></tr>
+          <tr><td>Loss NaN / inf</td><td>lr too high; log(0); division by 0; overflow in exp</td><td>lower lr; clip gradients; use stable <code>log_softmax</code>; add ε</td></tr>
+          <tr><td>Cannot overfit one batch</td><td>bug: wrong loss, wrong activation on output, no gradient flow, eval/train mode, lr far off</td><td>simplify model; print grads per layer</td></tr>
+          <tr><td>Train ↓, val ↑</td><td>overfitting; leakage mismatch between sets</td><td>regularise (6.5), more data, early stop</td></tr>
+          <tr><td>Both poor</td><td>underfitting: too small model, too much regularisation, features lacking</td><td>bigger model, train longer, remove regularisation</td></tr></table>
+        <p><b>The recipe</b> (Karpathy): 1) look at the data; 2) build the simplest end-to-end pipeline with a fixed seed; 3) check the initial loss; 4) overfit one batch; 5) check train/val curves; 6) print gradient and activation norms per layer; 7) only then tune. Vanishing or exploding signals show as layer gradient norms that shrink or grow by orders of magnitude from last to first layer (<a href="math-neural.html#gradient-flow">gradient flow</a>).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\frac{\partial L}{\partial w}\approx\frac{L(w+\varepsilon)-L(w-\varepsilon)}{2\varepsilon},\qquad L_0\approx\ln K\ \text{(uniform start)}</div>
+        <table class="sym">
+          <tr><td>ε</td><td>small perturbation (≈10⁻⁴–10⁻⁵ in double precision)</td></tr>
+          <tr><td>K</td><td>number of classes</td></tr>
+          <tr><td>L₀</td><td>expected loss of an untrained classifier</td></tr>
+        </table>
+      </div>
+      <h3 class="sec" style="max-width:780px">Lab: a broken training run</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Choose a symptom: <b>loss flat</b>, <b>NaN</b>, <b>cannot overfit one batch</b>, or <b>overfits</b>. The run plays and the caption names what you see.</li>
+        <li>Open the checklist and tick the suspected fix (e.g. learning rate ↑, lr ↓, standardise inputs, fix labels, add dropout). When the right fix is ticked the run restarts and heals; a wrong one does nothing.</li>
+        <li>Use the layer-norm bars to see vanishing gradients.</li></ol></div>
+      <div data-lab="mlnDebug"></div>
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Changing many things at once</b>; change one and re-run with the same seed.</li>
+          <li><b>Forgetting to switch to eval mode</b> (dropout, BatchNorm) when validating.</li>
+          <li><b>Mismatched shapes silently broadcasting</b> (e.g. (N,1) − (N,) gives (N,N)).</li>
+          <li><b>Data leakage</b> producing suspiciously perfect validation scores.</li></ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Large training runs log loss, gradient norm and per-layer activation statistics and use automatic gradient clipping and loss-spike restarts.</li>
+          <li>Tools: TensorBoard/Weights &amp; Biases, <code>torch.autograd.gradcheck</code>, anomaly detection.</li></ul></div>
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 4-class net starts with loss 6.2. Suspect?</summary><div class="ans">Expected ln 4 = 1.386; 6.2 means overconfident wrong outputs: too-large init, missing normalisation of inputs, or wrong loss/labels.</div></details>
+        <details class="check"><summary>2. The net cannot fit 8 examples. More data?</summary><div class="ans">No — find the bug first (loss, labels, lr, gradient flow). More data cannot fix a bug.</div></details>
+        <details class="check"><summary>3. Name three ways to stop a NaN.</summary><div class="ans">Lower the learning rate, clip gradient norm, use numerically stable losses (log-softmax, BCE-with-logits), add ε to denominators/logs, check data for NaN.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul><li>Overfit one batch before anything else.</li><li>Know the expected initial loss and the symptom → cause table.</li><li>Change one variable at a time; monitor gradients per layer.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now build, train, regularise and debug a neural network and count its parameters. Next, <b>Module 7</b> (<a href="ml-architectures.html">deep-learning architectures at a glance</a>) applies these ideas to convolutional, recurrent and attention-based models.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>
