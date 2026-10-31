@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Finding data with STAC · GeoAI</title>
+<meta name="description" content="STAC catalogues, collections, items and assets; extensions; the STAC API search; harvesting a time stack from search results; and validating a published catalogue.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-geo-stac.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Finding data with STAC</h1>
+        <p>Before a model can learn from Earth imagery, you have to find the right scenes. STAC is the shared language that archives use to describe what they hold: where, when, how cloudy, and which file is which. By the end you will read a STAC Item line by line, check a search by hand, build a request body for a STAC API, turn search results into a time stack, and validate a catalogue you publish yourself.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Modules 0–1 (maps, CRS, rasters)</span></div>
+      </div>
+    </div>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="stac-what" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.1</span><h2>What STAC is and why it exists</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You need every Sentinel-2 image over a field in Egypt from March 2026 with less than 10% cloud. The imagery sits in several archives. Each has its own website, folder names, file names and metadata format. How do you ask all of them the same question and get back answers you can process, without downloading anything first?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a library card catalogue. A book on a shelf has a title, an author, a date and a shelf mark. The card describes the book without being the book. Before standard cards, every library had its own system and you had to walk the stacks. A shared card layout means one search works everywhere.</p>
+        <p><b>STAC</b> (SpatioTemporal Asset Catalog) is that card for Earth data. For each image, or group of images, it stores a small JSON record that says <i>where</i> the data covers (a footprint on the map), <i>when</i> it was captured, <i>what</i> it is (properties such as cloud cover, sensor or projection), and <i>where the bytes are</i> (links to the files). Because the record has the same shape everywhere, one program can search many archives.</p>
+        <p>Notice what a STAC record is <b>not</b>: it is not the image. A record is a few kilobytes; the image can be gigabytes. Searching metadata is cheap and downloading is expensive. STAC exists so that you can do the cheap part first.</p>
+
+        <h3 class="sec">Build it up: the problem, one piece at a time</h3>
+        <p><b>Step 1: a file is not findable.</b> A GeoTIFF holds pixels and a little georeferencing, but nothing that lets a search answer "is this over Egypt in March?" without opening the file. We need metadata sitting beside the file.</p>
+        <p><b>Step 2: one record per scene.</b> We write a record for each scene: its footprint, its time, its cloud cover and its file links. STAC calls this an <b>Item</b>. An Item is a GeoJSON feature, a standard JSON way to write a map object with a geometry and properties.</p>
+        <p><b>Step 3: group the items.</b> Scenes from the same satellite and processing level belong together. That group is a <b>Collection</b>. It adds shared facts such as the licence, the provider and the overall extent in space and time.</p>
+        <p><b>Step 4: organise the collections.</b> A provider lists its collections in a <b>Catalog</b>. A catalog can hold catalogs, collections and items, so a whole archive becomes a tree you can walk.</p>
+        <p><b>Step 5: one door to search.</b> A <b>STAC API</b> is a web service that searches every item in a catalogue by place, time and properties. You send a request body and get back the matching items, a page at a time (Lesson 2.5).</p>
+
+        <div class="worked"><b>Worked example: why metadata first saves data</b>
+          <p>Suppose a search returns 3 Sentinel-2 scenes, each stored with 12 bands at full 10 m resolution. One scene is 10 980 × 10 980 pixels, with 12 bands and 2 bytes per pixel:</p>
+          <div class="eq">10980\times10980\times12\times2 = 2\,893\,449\,600\text{ bytes}\approx 2.69\text{ GiB}</div>
+          <p>Downloading the three scenes in full would cost about <span class="tex">3\times2.69\approx 8.1</span> GiB. The search itself returns three JSON records of a few kilobytes each. The search answers "which three?" before you pay for any pixels.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>STAC describes four kinds of entity. Each Catalog, Collection and Item is a JSON object whose <code>type</code> field says which kind it is:</p>
+        <table class="tbl">
+          <tr><th>Entity</th><th><code>type</code></th><th>What it describes</th><th>Example</th></tr>
+          <tr><td>Catalog</td><td><code>"Catalog"</code></td><td>a set of children (catalogs, collections, items) and links to them</td><td>"Demo Earth archive"</td></tr>
+          <tr><td>Collection</td><td><code>"Collection"</code></td><td>a group of items with a shared licence, providers and extent</td><td>"Sentinel-2 L2A"</td></tr>
+          <tr><td>Item</td><td><code>"Feature"</code></td><td>one observation: footprint, time, properties and assets</td><td>one scene captured on 14 July 2026</td></tr>
+          <tr><td>Asset</td><td>(inside an item; no type field)</td><td>one downloadable file belonging to an item</td><td>the red band as a GeoTIFF</td></tr>
+        </table>
+        <p>The surprise is the Item's type: <code>"Feature"</code>, because an Item is a GeoJSON feature. Any tool that already reads GeoJSON can draw its footprint without knowing anything about STAC.</p>
+        <table class="sym">
+          <tr><td>type</td><td>which kind of object this is (see the table above)</td></tr>
+          <tr><td>stac_version</td><td>the version of the STAC core specification the record follows, for example <code>"1.0.0"</code></td></tr>
+          <tr><td>id</td><td>a name that is unique within its parent (for example, within one collection)</td></tr>
+          <tr><td>links</td><td>a list of pointers to related documents (Lesson 2.2)</td></tr>
+          <tr><td>assets</td><td>a map from short keys to files (Lesson 2.3)</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>Acquire</i>. STAC stores only metadata. The pixels stay in the cloud archive, and the step reads the catalogue, not the imagery.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and watch the browser open the catalog, then a collection, then an item, then its assets. Each step follows one link. Read the caption at each step.</li>
+        <li>Click the asset <code>B04</code>. Its role and href tell you what a tool would download. Nothing else is fetched.</li>
+        <li>Pause and step one action at a time. Count how many documents you open to reach the red band from the root.</li>
+        <li>Slow the speed to the minimum. Notice that the metadata at each level is read before the next level is opened.</li></ol></div>
+      <div data-lab="stac-tree"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"The record is the data."</b> It is not. The Item points to files through its assets. If those links break, the metadata still exists but you cannot use the pixels.</li>
+          <li><b>"STAC is a file format."</b> It is a set of JSON conventions built on GeoJSON. The same records can be served as static files on a web server or through an API.</li>
+          <li><b>"One catalogue equals one archive."</b> A catalogue can point to collections hosted elsewhere, and an Item's assets can live on a different server from the catalogue.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Major Earth observation archives publish STAC: for example Microsoft Planetary Computer, Element 84 Earth Search, and NASA and USGS catalogues. A dataset for a model begins as a search in one of them.</li>
+          <li>A training manifest (Module 3) should record the item ids it was built from, so that someone else can rebuild the same set.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Where is a scene's cloud cover stored: in the Item or in one of its asset files?</summary><div class="ans">In the Item's <code>properties</code> (here as <code>eo:cloud_cover</code>, a field from the eo extension, Lesson 2.4). You read it from the small JSON record without opening any image file.</div></details>
+        <details class="check"><summary>2. Why can a GeoJSON-only tool still show a STAC Item's footprint?</summary><div class="ans">An Item has <code>"type": "Feature"</code> and a GeoJSON <code>geometry</code>, so the footprint is standard GeoJSON. The STAC-specific parts (links, assets) are extra fields the tool can ignore.</div></details>
+        <details class="check"><summary>3. Three scenes of 2.69 GiB each are found by a search. Roughly how much data does the search itself transfer, compared with downloading them?</summary><div class="ans">Only the three JSON records, a few kilobytes each: well under a megabyte. Downloading the scenes would be about 8.1 GiB.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>STAC is a shared card catalogue for Earth data: footprint, time, properties and file links in one small JSON record.</li>
+          <li>The four entities are Catalog, Collection, Item and Asset; the STAC API adds one search endpoint over them.</li>
+          <li>Search the metadata first. Pixels are downloaded only after you know which scenes you want.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="stac-catalog-collection" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.2</span><h2>Catalogues and collections</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A provider's root catalogue lists 40 collections, and each collection holds thousands of items. You want the Sentinel-2 collection and nothing else. How does a program find it, and how does it know where to go next, without fetching every file on the server?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture a forest of folders, each with a signpost at the entrance. The signpost at the root says "Sentinel-2 this way, Landsat that way". Each folder has its own signposts for what is inside. You never need a map of the whole forest; you only read the signs at the place you stand. A STAC catalogue works the same way: every document lists its neighbours as <b>links</b>.</p>
+        <p>Two document types do the signposting. A <b>Catalog</b> lists children and has no extent of its own. A <b>Collection</b> is a catalog-like document that also describes the items it holds: their shared licence, the providers, and an <b>extent</b>, a box in space and a span in time that covers them all.</p>
+
+        <h3 class="sec">Build it up: following signposts</h3>
+        <p><b>Step 1: the root.</b> Every catalogue has one entry document, usually <code>catalog.json</code>. It has a <code>links</code> list. Some entries have <code>"rel": "child"</code>, meaning "a sub-document you may open".</p>
+        <p><b>Step 2: a child.</b> Opening a child collection gives you its own <code>links</code>: a <code>parent</code> link to climb back, and <code>item</code> links to each item it contains.</p>
+        <p><b>Step 3: read the link, not the path.</b> Programs never guess file names. They look for a link whose <code>rel</code> they want, then follow its <code>href</code>. The <code>type</code> says what the target file is, so a tool knows whether to parse it as JSON or GeoJSON.</p>
+        <p>Here is a small catalogue for this course. It is synthetic, but its structure is the one real providers use.</p>
+        <pre><code>{
+  "type": "Catalog",
+  "stac_version": "1.0.0",
+  "id": "demo-earth-archive",
+  "title": "Demo Earth archive",
+  "description": "Synthetic catalogue for teaching. Not a real archive.",
+  "links": [
+    {"rel": "root", "href": "./catalog.json", "type": "application/json"},
+    {"rel": "self", "href": "./catalog.json", "type": "application/json"},
+    {"rel": "child", "href": "./demo-sentinel-2-l2a/collection.json", "type": "application/json", "title": "Sentinel-2 L2A (demo)"},
+    {"rel": "child", "href": "./demo-landsat-l2/collection.json", "type": "application/json", "title": "Landsat L2 (demo)"}
+  ]
+}</code></pre>
+        <p>And here is one of its collections. Each field has a job:</p>
+        <pre><code>{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "id": "demo-sentinel-2-l2a",
+  "title": "Sentinel-2 L2A (demo)",
+  "description": "Surface reflectance, 10 m bands. Synthetic teaching example.",
+  "license": "CC-BY-4.0",
+  "keywords": ["sentinel-2", "optical", "surface reflectance"],
+  "providers": [
+    {"name": "Demo Space Agency", "roles": ["producer", "processor"], "url": "https://example.org/sentinel-2"},
+    {"name": "Demo Cloud Host", "roles": ["host"], "url": "https://example.org/host"}
+  ],
+  "extent": {
+    "spatial": {"bbox": [[-180, -56, 180, 84]]},
+    "temporal": {"interval": [["2026-01-01T00:00:00Z", null]]}
+  },
+  "summaries": {"gsd": [10], "platform": ["sentinel-2a", "sentinel-2b"]},
+  "links": [
+    {"rel": "root", "href": "../catalog.json", "type": "application/json"},
+    {"rel": "parent", "href": "../catalog.json", "type": "application/json"},
+    {"rel": "self", "href": "./collection.json", "type": "application/json"},
+    {"rel": "item", "href": "./items/S2B_DEMO_20260714_T31UFT_L2A.json", "type": "application/geo+json"}
+  ]
+}</code></pre>
+
+        <div class="worked"><b>Worked example: the extent check by hand</b>
+          <p>Is an observation of Egypt on 15 March 2026 covered by this collection? The point is longitude 31.2°E, latitude 30.0°N, and the time is 2026-03-15.</p>
+          <p>Spatial: the extent box is [minx, miny, maxx, maxy] = [−180, −56, 180, 84]. We need <span class="tex">-180\le 31.2\le 180</span> and <span class="tex">-56\le 30.0\le 84</span>. Both hold.</p>
+          <p>Temporal: the interval is [2026-01-01, open end]. The date is after the start and there is no end, so it holds.</p>
+          <p>Therefore the point lies inside the collection's extent. This says only that the collection <i>may</i> hold the observation. The items are the authority, and Lesson 2.5 checks them one by one.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>A STAC link is a small JSON object. Its meaning is set by <code>rel</code>, and its target by <code>href</code>. The common relation types are:</p>
+        <table class="tbl">
+          <tr><th><code>rel</code></th><th>Points from… to…</th><th>Typical use</th></tr>
+          <tr><td><code>root</code></td><td>any document → the top catalogue</td><td>start a crawl again from the top</td></tr>
+          <tr><td><code>self</code></td><td>a document → its own location</td><td>know where this copy lives</td></tr>
+          <tr><td><code>parent</code></td><td>a document → the document one level up</td><td>climb the tree from a deep item</td></tr>
+          <tr><td><code>child</code></td><td>a catalogue → a sub-catalogue or collection</td><td>walk down the tree</td></tr>
+          <tr><td><code>item</code></td><td>a collection → one of its items</td><td>list the items of a collection</td></tr>
+          <tr><td><code>collection</code></td><td>an item → the collection it belongs to</td><td>find the licence and providers of an item</td></tr>
+          <tr><td><code>next</code></td><td>a search response → the next page of results</td><td>pagination (Lesson 2.5)</td></tr>
+        </table>
+        <table class="sym">
+          <tr><td>href</td><td>the address of the target; relative (<code>./items/…</code>) or absolute (<code>https://…</code>)</td></tr>
+          <tr><td>type</td><td>media type of the target: <code>application/json</code> for a catalogue, <code>application/geo+json</code> for an item</td></tr>
+          <tr><td>extent.spatial.bbox</td><td>a list of boxes <code>[minx, miny, maxx, maxy]</code> in longitude/latitude (WGS 84)</td></tr>
+          <tr><td>extent.temporal.interval</td><td>a list of <code>[start, end]</code> pairs in UTC; <code>null</code> means open-ended</td></tr>
+          <tr><td>license</td><td>an SPDX identifier such as <code>CC-BY-4.0</code>, or a special value such as <code>proprietary</code></td></tr>
+        </table>
+        <p>The whole archive, as a tree, looks like this. The boxes are the documents; the lines are the links you follow:</p>
+        <pre><code>demo-earth-archive/               Catalog     catalog.json
+├── demo-sentinel-2-l2a/          Collection  collection.json
+│   └── items/
+│       ├── S2B_DEMO_20260714_T31UFT_L2A.json   Item  (footprint, time, properties)
+│       │     └── assets: B04.tif, visual.tif
+│       └── S2A_DEMO_20260701_T31UFT_L2A.json   Item
+└── demo-landsat-l2/              Collection  collection.json
+    └── items/ …</code></pre>
+        <div class="worked"><b>Worked example: the cost of walking the tree</b>
+          <p>To list the 3 items of the Sentinel-2 collection without a search, a client fetches: the root catalogue (1), the collection (2), and each item (3 more). That is <span class="tex">1+1+3=5</span> requests. The assets of each item are listed inside that item, so they need no extra requests. A single search request could return the same three items in one go (Lesson 2.5).</p></div>
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>Acquire</i>. The catalogue is walked by reading small documents; no pixels are touched.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start at the root. Read the links and their <code>rel</code> labels. Click a <code>child</code> link to go down into the Sentinel-2 collection.</li>
+        <li>Use the filter to show only <code>item</code> links. How many items does the collection list?</li>
+        <li>Open an item and press its <code>parent</code> link. Then press <code>root</code>. Notice that the root is always one link away from every document.</li>
+        <li>Find the extent check in the worked example. Move the point and watch whether it falls inside the box.</li></ol></div>
+      <div data-lab="stac-links"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Extent is a summary, not a proof.</b> A collection's bbox and interval should cover its items, but a loose or stale extent is common. Check the items when you need exact coverage.</li>
+          <li><b>Relative links move with the file.</b> <code>./items/…</code> keeps working when a folder is copied; an absolute <code>https://…</code> link keeps pointing at the old place.</li>
+          <li><b>The licence describes the terms you must check.</b> <code>CC-BY-4.0</code> in the collection is a claim about the data. Read the provider's terms before you redistribute anything.</li>
+          <li><b>Summaries are not everything.</b> A collection's <code>summaries</code> list the values seen across items, which are handy but may not be complete.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A crawler that builds a dataset walks catalogues like this one and keeps the item links it needs. Browser tools for STAC show the same tree to people.</li>
+          <li>Model catalogues (Module 6) reuse the same tree: a model is an item, and a family of fine-tuned models is a collection linked to its base model.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. From an item, which link leads to the licence and providers of its data?</summary><div class="ans">The <code>collection</code> link (the <code>parent</code> link usually points to the same collection, but <code>collection</code> is the one that names the relationship). Licence and providers live on the collection.</div></details>
+        <details class="check"><summary>2. The collection extent is [−10, 35, 5, 45] (minx, miny, maxx, maxy). An item footprint is [4, 36, 6, 37]. Is the item inside the extent?</summary><div class="ans">No. minx 4 ≥ −10 and miny 36 ≥ 35 hold, but maxx 6 is greater than 5, so the item sticks out on the east side by 1 degree of longitude.</div></details>
+        <details class="check"><summary>3. How many requests does a client need to list 2 items in a collection, starting from the root catalogue?</summary><div class="ans">1 (root) + 1 (collection) + 2 (items) = 4 requests.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Catalogues and collections are documents that link to their neighbours; you walk the tree by following links with the <code>rel</code> you want.</li>
+          <li>A collection's extent and licence are shared facts that describe the items, but the items are the real record.</li>
+          <li>Relative <code>href</code>s make a catalogue portable; the tree costs one request per document.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="stac-item-asset" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.3</span><h2>Items and assets</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A satellite pass captured 13 bands, a true-colour preview, a cloud mask and a metadata file, all over one area on one afternoon. What single record tells a program <i>where</i> the pass was, <i>when</i> it happened, <i>what</i> was measured and <i>which file</i> holds each part?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a postcard. The picture on the front shows the place (the footprint). The back gives the date and the details written in the margin (the properties). The stamps and the postmarks are the physical files, and each stamp is one asset. The postcard is light; the letters inside the envelope are the heavy part. An <b>Item</b> is the postcard, and its <b>assets</b> are the stamps.</p>
+
+        <h3 class="sec">Build it up: reading an Item line by line</h3>
+        <p><b>Step 1: the front, the footprint.</b> The <code>geometry</code> is a GeoJSON polygon: the true outline of the image on the ground, as a ring of <code>[longitude, latitude]</code> pairs. Longitude comes first, as in GeoJSON. The ring is closed: the last point repeats the first.</p>
+        <p><b>Step 2: the box around the footprint.</b> The <code>bbox</code> is the smallest axis-aligned rectangle that contains the geometry, written as <code>[minx, miny, maxx, maxy]</code>. It is cheap to test, so search engines use it first. Lesson 2.5 will check one by hand.</p>
+        <p><b>Step 3: the back, the properties.</b> <code>properties.datetime</code> is the capture time in UTC. Other properties describe the scene: the platform, the instruments, the ground sample distance <code>gsd</code>, the cloud cover, the projection. Some properties come from extensions, which Lesson 2.4 explains.</p>
+        <p><b>Step 4: the stamps, the assets.</b> Each entry in <code>assets</code> has a short key (here <code>B04</code> and <code>visual</code>) and points to one file through <code>href</code>. Its <code>type</code> is the media type, and its <code>roles</code> say what the file is for: <code>data</code> for measurements, <code>visual</code> for a picture for people.</p>
+
+        <pre><code>{
+  "type": "Feature",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
+  ],
+  "id": "S2B_DEMO_20260714_T31UFT_L2A",
+  "collection": "demo-sentinel-2-l2a",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[[10.6, 48.2], [11.9, 48.2], [11.9, 49.2], [10.6, 49.2], [10.6, 48.2]]]
+  },
+  "bbox": [10.6, 48.2, 11.9, 49.2],
+  "properties": {
+    "datetime": "2026-07-14T10:31:22Z",
+    "platform": "sentinel-2b",
+    "instruments": ["msi"],
+    "gsd": 10,
+    "eo:cloud_cover": 12.4,
+    "proj:epsg": 32632,
+    "proj:shape": [10980, 10980]
+  },
+  "links": [
+    {"rel": "root", "href": "../../catalog.json", "type": "application/json"},
+    {"rel": "parent", "href": "../collection.json", "type": "application/json"},
+    {"rel": "collection", "href": "../collection.json", "type": "application/json"},
+    {"rel": "self", "href": "./S2B_DEMO_20260714_T31UFT_L2A.json", "type": "application/geo+json"}
+  ],
+  "assets": {
+    "B04": {
+      "href": "./B04.tif",
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Red (band 4)",
+      "roles": ["data"]
+    },
+    "visual": {
+      "href": "./TCI.tif",
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "True colour preview",
+      "roles": ["visual"]
+    }
+  }
+}</code></pre>
+
+        <table class="tbl">
+          <tr><th>Field</th><th>What it says</th><th>Why a tool needs it</th></tr>
+          <tr><td><code>type</code></td><td><code>"Feature"</code></td><td>tells a GeoJSON reader to treat this as a map object</td></tr>
+          <tr><td><code>stac_version</code>, <code>stac_extensions</code></td><td>the core version, and the extension schemas in use</td><td>choose which rules and fields apply</td></tr>
+          <tr><td><code>id</code></td><td>a unique name inside the collection</td><td>stable reference, e.g. in a manifest</td></tr>
+          <tr><td><code>collection</code></td><td>the id of the collection this item belongs to</td><td>links the item to its licence and providers</td></tr>
+          <tr><td><code>geometry</code></td><td>the true footprint, as a GeoJSON polygon in longitude/latitude</td><td>exact overlap tests and drawing</td></tr>
+          <tr><td><code>bbox</code></td><td>the box around the footprint</td><td>fast first test during search</td></tr>
+          <tr><td><code>properties.datetime</code></td><td>capture time in UTC</td><td>time search and ordering</td></tr>
+          <tr><td><code>properties.*</code></td><td>scene metadata (platform, gsd, cloud cover, projection)</td><td>filtering and understanding the data</td></tr>
+          <tr><td><code>links</code></td><td>pointers to root, parent, collection and self</td><td>navigation (Lesson 2.2)</td></tr>
+          <tr><td><code>assets</code></td><td>files, each with <code>href</code>, <code>type</code> and <code>roles</code></td><td>what to download</td></tr>
+        </table>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{bbox}=[\min x_i,\ \min y_i,\ \max x_i,\ \max y_i]\quad\text{over all vertices }(x_i,y_i)\text{ of the geometry}</div>
+        <table class="sym">
+          <tr><td>(x<sub>i</sub>, y<sub>i</sub>)</td><td>a vertex of the footprint: x is longitude, y is latitude (degrees)</td></tr>
+          <tr><td>min, max</td><td>the smallest and largest value over all vertices</td></tr>
+          <tr><td>bbox</td><td>the axis-aligned box, written as [west, south, east, north] in STAC order</td></tr>
+        </table>
+        <p>The rule is that the bbox must contain the geometry. A footprint tilted 20° on the ground needs a bigger box than the footprint itself, so the bbox is always at least as large.</p>
+        <div class="worked"><b>Worked example: computing the bbox by hand</b>
+          <p>The ring has the vertices (10.6, 48.2), (11.9, 48.2), (11.9, 49.2), (10.6, 49.2), (10.6, 48.2).</p>
+          <p>Longitudes: 10.6, 11.9, 11.9, 10.6. So <span class="tex">\min x = 10.6</span> and <span class="tex">\max x = 11.9</span>.</p>
+          <p>Latitudes: 48.2, 48.2, 49.2, 49.2, 48.2. So <span class="tex">\min y = 48.2</span> and <span class="tex">\max y = 49.2</span>.</p>
+          <p>Therefore bbox = [10.6, 48.2, 11.9, 49.2], exactly the value written in the item. A footprint that is a rotated quadrilateral would give the same kind of calculation, with a larger box.</p></div>
+
+        <h3 class="sec">Assets: the files behind the record</h3>
+        <p>Each asset is a small object inside <code>assets</code>. Its key (<code>B04</code>) is only a name inside this item, so a different provider may call the same band <code>red</code>. The most useful fields are:</p>
+        <table class="sym">
+          <tr><td>href</td><td>where the file is. Relative to the item's own file unless it starts with <code>http</code></td></tr>
+          <tr><td>type</td><td>media type. A Cloud-Optimised GeoTIFF is <code>image/tiff; application=geotiff; profile=cloud-optimized</code></td></tr>
+          <tr><td>roles</td><td>what the file is for: <code>data</code> (measurements), <code>visual</code> (a picture), <code>thumbnail</code>, <code>overview</code>, <code>metadata</code>, and others</td></tr>
+          <tr><td>title</td><td>a human-readable label</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>Acquire</i>. The Item is the record that says which assets to read. Stage 2 (Lesson 2.6) reads only the windows it needs from those files.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Click the field <code>geometry</code> on the left. The polygon lights up on the map. Click <code>bbox</code>. The box is drawn around it.</li>
+        <li>Turn the tilt slider up. The footprint rotates on the ground, and the bbox grows around it. Watch the gap between footprint and box appear.</li>
+        <li>Change one bbox number by hand, for example the west value 10.6 to 10.2. The check turns red: the stored bbox no longer equals the one computed from the geometry.</li>
+        <li>Click <code>eo:cloud_cover</code>. Read which extension defines it. This is the topic of the next lesson.</li></ol></div>
+      <div data-lab="stac-item"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>bbox order.</b> STAC writes <code>[minx, miny, maxx, maxy]</code>, which is <code>[west, south, east, north]</code>. Many people write latitude first because they think "lat, lon". Swapping them still produces four valid numbers, so only a check against the geometry catches it.</li>
+          <li><b>Geometry is always longitude/latitude.</b> The footprint is stored in WGS 84 degrees even when the pixels are in a UTM projection. The projection of the pixels is a separate property (<code>proj:epsg</code>, Lesson 2.4).</li>
+          <li><b>Times are UTC.</b> <code>2026-07-14T10:31:22Z</code> ends in <code>Z</code> for UTC. A local time without the suffix is ambiguous and can shift a scene to the wrong day.</li>
+          <li><b>Asset hrefs are relative to the item.</b> Moving the item file without its assets breaks every relative link.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A dataset builder keeps item ids and asset keys in its manifest. Training then reads <code>B04</code> from every item in the same way.</li>
+          <li>Footprints are used to decide which scenes overlap a label polygon before any pixels are read. A wrong bbox silently drops good scenes from training.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. An item's geometry has longitudes 3.0, 4.5, 4.5, 3.0 and latitudes 52.0, 52.0, 53.1, 53.1. What is its bbox?</summary><div class="ans">[3.0, 52.0, 4.5, 53.1]: minx 3.0, miny 52.0, maxx 4.5, maxy 53.1.</div></details>
+        <details class="check"><summary>2. Which field tells you when the image was captured, and in which time zone is it written?</summary><div class="ans"><code>properties.datetime</code>, written in UTC (the trailing <code>Z</code>).</div></details>
+        <details class="check"><summary>3. Two providers name the red band <code>B04</code> and <code>red</code>. Which field lets a tool match them without knowing the key?</summary><div class="ans">The band metadata: in the eo extension, each band object has a <code>common_name</code> such as <code>red</code>. The asset key itself is only a name local to the item.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An Item is a GeoJSON feature: geometry, bbox, datetime and properties, plus a map of assets to files.</li>
+          <li>The bbox is the box around the geometry, stored as [minx, miny, maxx, maxy] in degrees; it must contain the footprint.</li>
+          <li>Assets say which file is which, through <code>href</code>, <code>type</code> and <code>roles</code>. The key is a local name.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="stac-extensions" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.4</span><h2>STAC extensions (eo, proj, raster, …)</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Every provider can say where and when a scene was taken. But the cloud cover, the band wavelengths, the projection and the raster shape are facts that only some data has. If the core standard had to list every such fact, it would never stop growing. How do you add domain-specific fields without breaking tools that have never heard of them?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a standard postcard template. Every postcard has a front, a back and a stamp area. Now a postal service wants a sticker that says "fragile" or "express", but only for some parcels. It prints a sticker sheet, and each parcel that uses it lists the sheet on its label. A clerk who knows the sheet reads the stickers. A clerk who does not still delivers the parcel, just without the extra instructions.</p>
+        <p>STAC <b>extensions</b> are those sticker sheets. The core defines the template: <code>id</code>, <code>geometry</code>, <code>bbox</code>, <code>datetime</code>, <code>assets</code>. An extension such as <b>eo</b> (electro-optical imagery) adds fields about cloud cover and bands. Its fields carry a prefix, <code>eo:</code>, so the origin of each field is visible at a glance.</p>
+
+        <h3 class="sec">Build it up: from core to a declared extension</h3>
+        <p><b>Step 1: start from core.</b> The core needs only a few things. Any record with those fields is a valid Item, whatever its sensor.</p>
+        <p><b>Step 2: add a prefixed field.</b> A Sentinel-2 provider adds <code>eo:cloud_cover</code>, a percentage of the scene covered by cloud. The prefix <code>eo:</code> says the field's definition comes from the eo extension.</p>
+        <p><b>Step 3: declare the extension.</b> The record lists the schema URL of every extension it uses in <code>stac_extensions</code>. The URL names the extension and its version. A reader looks up the URL, learns what the prefixed fields mean and what is required, and then reads them.</p>
+        <p><b>Step 4: ignore what you do not know.</b> A tool that understands only core can still read the geometry, the time and the assets. The extension fields are extra information it may skip. This is why extensions do not break old tools.</p>
+
+        <p>The fields you will meet most often, with the extension that defines them:</p>
+        <table class="tbl">
+          <tr><th>Field</th><th>Extension</th><th>Meaning and type</th></tr>
+          <tr><td><code>eo:cloud_cover</code></td><td>eo</td><td>percent of the scene that is cloud, a number from 0 to 100</td></tr>
+          <tr><td><code>eo:bands</code></td><td>eo</td><td>a list of band objects, each with <code>name</code>, <code>common_name</code> (e.g. <code>red</code>) and <code>center_wavelength</code> in micrometres</td></tr>
+          <tr><td><code>proj:epsg</code></td><td>projection</td><td>the EPSG code of the pixels' coordinate system, e.g. 32632 (WGS 84 / UTM zone 32N)</td></tr>
+          <tr><td><code>proj:shape</code></td><td>projection</td><td>the raster size in pixels as <code>[rows, cols]</code></td></tr>
+          <tr><td><code>raster:bands</code></td><td>raster</td><td>per-band facts such as the data type, the no-data value, and scale and offset</td></tr>
+        </table>
+
+        <div class="worked"><b>Worked example: a band object by hand</b>
+          <p>The red band of Sentinel-2 sits near 665 nm. In micrometres that is <span class="tex">665\text{ nm}=665\times10^{-3}\ \mu\text{m}=0.665\ \mu\text{m}</span>. The asset for that band can carry its band object, shown here with values rounded for teaching:</p>
+          <pre><code>"B04": {
+  "href": "./B04.tif",
+  "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+  "roles": ["data"],
+  "eo:bands": [
+    {"name": "B04", "common_name": "red", "center_wavelength": 0.665}
+  ]
+}</code></pre>
+          <p>A search for "the red band" can now match <code>common_name = "red"</code> across providers, even when one calls the asset <code>B04</code> and another calls it <code>red</code>.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>An extension is defined by three things: a schema at a URL that lists its fields, a prefix that every one of its fields starts with, and a rule about which fields are required. A record uses an extension by listing its URL:</p>
+        <div class="eq">\texttt{stac\_extensions}=[\,U_1,\dots,U_k\,]\quad\text{and every field }p\!:\!f\text{ must have }p\text{ declared by some }U_j</div>
+        <table class="sym">
+          <tr><td>U<sub>j</sub></td><td>the URL of an extension schema, including its version, e.g. <code>https://stac-extensions.github.io/eo/v1.1.0/schema.json</code></td></tr>
+          <tr><td>p:f</td><td>a field: the prefix <code>p</code> names the extension, the rest <code>f</code> names the field (e.g. <code>eo:cloud_cover</code>)</td></tr>
+          <tr><td>declared</td><td>the prefix's extension URL is in <code>stac_extensions</code></td></tr>
+        </table>
+        <p>The version in the URL matters. A later version can add, rename or constrain fields. A record and its validator should agree on the version they use.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>Acquire</i>. Extensions are what let Stage 2 (preprocessing) decide how to align bands (<code>proj:epsg</code>) and which band is red (<code>eo:bands</code>) before anything is read.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With all three extensions on, read the JSON and the list in <code>stac_extensions</code>. Each prefixed field has an extension behind it.</li>
+        <li>Turn <b>eo</b> off. Watch <code>eo:cloud_cover</code> and <code>eo:bands</code> fade out, and the warning panel name the undeclared fields.</li>
+        <li>Turn <b>eo</b> back on and turn <b>proj</b> off. Which fields remain, and what can a tool no longer know about the pixels?</li>
+        <li>Switch on <b>raster</b> and read <code>raster:bands</code>. Note that it is a list per band, not a single value.</li></ol></div>
+      <div data-lab="stac-ext"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Using a prefixed field without declaring it.</b> Writing <code>eo:cloud_cover</code> and forgetting the eo URL makes the field's meaning unverifiable. A strict validator rejects it.</li>
+          <li><b>Assuming extension fields are always required.</b> Each extension says which of its fields are required. Many, such as <code>eo:cloud_cover</code>, are optional and may be missing for some items.</li>
+          <li><b>Mixing versions.</b> <code>v1.0.0</code> and <code>v1.1.0</code> of the same extension can differ. Use the version your tools validate against.</li>
+          <li><b>Treating <code>name</code> as a band meaning.</b> <code>name</code> is the provider's own label; <code>common_name</code> is the shared vocabulary for matching bands.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>The <b>MLM</b> extension (Module 6) uses the same mechanism: a model's record declares the <code>mlm:</code> fields, so a runner can read its input bands and patch size.</li>
+          <li><code>proj:epsg</code> and <code>eo:bands</code> decide whether a training stack needs reprojection and which channel becomes which network input (Modules 3 and 5).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A record has <code>"eo:cloud_cover": 8</code> but its stac_extensions lists only the projection URL. What is wrong, and how do you fix it?</summary><div class="ans">The eo prefix is not declared, so a strict validator flags the field and a reader cannot be sure that 8 means cloud percent in the eo sense. Fix it by adding the eo schema URL to <code>stac_extensions</code>.</div></details>
+        <details class="check"><summary>2. The geometry is in longitude/latitude, but <code>proj:epsg</code> is 32632. Why do both matter?</summary><div class="ans">The geometry is always WGS 84 degrees for footprints. The pixels of the asset are in EPSG 32632 (WGS 84 / UTM zone 32N), a metre-based system. Stacking or measuring pixels needs that projection, not the lon/lat footprint.</div></details>
+        <details class="check"><summary>3. Red light is about 665 nm. What value does <code>center_wavelength</code> take if its unit is micrometres?</summary><div class="ans">0.665 (since 665 nm = 0.665 µm).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The core is a shared template; extensions add prefixed fields for a domain, such as <code>eo:</code> or <code>proj:</code>.</li>
+          <li>A record declares each extension by its versioned schema URL in <code>stac_extensions</code>; undeclared prefixes are a validation error.</li>
+          <li>Tools that know nothing about an extension can still read the core fields. Pin the version your tools use.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="stac-api-search" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.5</span><h2>The STAC API &amp; search</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You want every Sentinel-2 scene over a box 0.8° wide and 0.6° high, south of Munich, captured between 1 June and 31 August 2026, with less than 20% cloud. The archive holds hundreds of thousands of scenes. How do you ask for exactly those, in one request, and what do you do when the answer is longer than one response?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A STAC catalogue on disk means reading documents one by one (Lesson 2.2). A <b>STAC API</b> is a search engine on top of the same records. You describe what you want in a request body. The server runs three filters, one after another, and returns the matching items a page at a time.</p>
+        <p>The three filters are the same questions you would ask by hand: does the footprint <b>intersect</b> my box? Does the capture time fall inside my <b>interval</b>? Does a property (cloud cover) satisfy my <b>condition</b>? The server does not need to open any image to answer them.</p>
+
+        <h3 class="sec">Build it up: one request, three filters</h3>
+        <p><b>Step 1: the request body.</b> A search is a POST to the <code>/search</code> endpoint with a JSON body. Here is the request for our question:</p>
+        <pre><code>{
+  "collections": ["demo-sentinel-2-l2a"],
+  "bbox": [10.8, 48.4, 11.6, 49.0],
+  "datetime": "2026-06-01T00:00:00Z/2026-08-31T23:59:59Z",
+  "limit": 50,
+  "filter-lang": "cql2-json",
+  "filter": {
+    "op": "<",
+    "args": [{"property": "eo:cloud_cover"}, 20]
+  }
+}</code></pre>
+        <table class="sym">
+          <tr><td>collections</td><td>a list of collection ids to search; without it the server searches everything it holds</td></tr>
+          <tr><td>bbox</td><td>a search box <code>[minx, miny, maxx, maxy]</code> in longitude/latitude. The alternative is <code>intersects</code>, a GeoJSON geometry, but not both at once</td></tr>
+          <tr><td>datetime</td><td>an interval <code>start/end</code> in UTC. An open end is written <code>..</code>; a single instant is written alone</td></tr>
+          <tr><td>limit</td><td>how many items to return in this page. Servers may cap it, so read the count you actually got</td></tr>
+          <tr><td>filter-lang, filter</td><td>a condition on properties, here in CQL2-JSON. The older <code>query</code> field (the Query extension) does a similar job with a simpler syntax</td></tr>
+        </table>
+
+        <h3 class="sec">Step 2: the bbox filter, checked by hand</h3>
+        <p>Two boxes intersect when they overlap on both axes. Write box A as [minx, miny, maxx, maxy]. Boxes A and B intersect exactly when</p>
+        <div class="eq">A_{minx}\le B_{maxx}\quad\text{and}\quad B_{minx}\le A_{maxx}\quad\text{and}\quad A_{miny}\le B_{maxy}\quad\text{and}\quad B_{miny}\le A_{maxy}</div>
+        <div class="worked"><b>Worked example: does the demo scene meet the search box?</b>
+          <p>Scene A (the footprint from Lesson 2.3): [10.6, 48.2, 11.9, 49.2]. Search box Q: [10.8, 48.4, 11.6, 49.0].</p>
+          <p>Check the four inequalities: <span class="tex">10.6\le 11.6</span> ✓, <span class="tex">10.8\le 11.9</span> ✓, <span class="tex">48.2\le 49.0</span> ✓, <span class="tex">48.4\le 49.2</span> ✓. All hold, so the boxes intersect.</p>
+          <p>The overlap has width <span class="tex">\min(11.9,11.6)-\max(10.6,10.8)=11.6-10.8=0.8</span> and height <span class="tex">\min(49.2,49.0)-\max(48.2,48.4)=49.0-48.4=0.6</span>. Its area is <span class="tex">0.8\times0.6=0.48</span> deg².</p>
+          <p>A second scene, [12.1, 48.0, 13.0, 49.0], fails the first test: <span class="tex">12.1\le 11.6</span> is false, so it lies entirely east of the search box and is rejected.</p></div>
+        <p>Notice that 0.48 is in <b>square degrees</b>, not square kilometres. At 48° N a degree of longitude is about 74 km and a degree of latitude about 111 km. The bbox test is therefore only a cheap first pass. A server can run the exact footprint test on <code>geometry</code> afterwards.</p>
+
+        <h3 class="sec">Step 3: the datetime filter, checked by hand</h3>
+        <p>The interval is <code>2026-06-01T00:00:00Z/2026-08-31T23:59:59Z</code>. An item matches when its time span overlaps the interval. An item with a single instant <code>t</code> overlaps when <span class="tex">start\le t\le end</span>. An item with a range <code>[s, e]</code> overlaps when <span class="tex">s\le \text{end}\ \text{and}\ e\ge \text{start}</span>.</p>
+        <table class="tbl">
+          <tr><th>Item time</th><th>Test</th><th>Result</th></tr>
+          <tr><td>instant 2026-07-14T10:31:22Z</td><td>1 Jun ≤ 14 Jul ≤ 31 Aug</td><td>match</td></tr>
+          <tr><td>range 2026-05-20 → 2026-06-10</td><td>20 May ≤ 31 Aug and 10 Jun ≥ 1 Jun</td><td>match (overlaps 1–10 June)</td></tr>
+          <tr><td>range 2026-05-01 → 2026-05-31</td><td>31 May ≥ 1 Jun is false</td><td>no match</td></tr>
+        </table>
+        <p>The interval end is inclusive. Writing only the date <code>2026-08-31</code> as the end would mean midnight at the start of 31 August, and a scene at 10:31 that day would be silently dropped. Always write the end as a full timestamp.</p>
+
+        <h3 class="sec">Step 4: the property filter</h3>
+        <p>CQL2-JSON writes a condition as a tree. <code>{"op": "&lt;", "args": [{"property": "eo:cloud_cover"}, 20]}</code> reads "the property <i>eo:cloud_cover</i> is less than 20". Three scenes with cloud cover 12.4, 35.0 and 4.8 give <span class="tex">12.4<20</span> ✓ (kept), <span class="tex">35.0<20</span> ✗ (dropped), <span class="tex">4.8<20</span> ✓ (kept). Two survive.</p>
+
+        <h3 class="sec">Step 5: pages and the next link</h3>
+        <p>A search with 137 matches and <code>limit</code> 50 cannot return them all in one response. The response carries a <code>links</code> entry with <code>rel: "next"</code> when more pages exist:</p>
+        <pre><code>{
+  "type": "FeatureCollection",
+  "stac_version": "1.0.0",
+  "context": {"returned": 50, "limit": 50, "matched": 137},
+  "features": [
+    {"type": "Feature", "id": "S2B_DEMO_20260714_T31UFT_L2A", "collection": "demo-sentinel-2-l2a",
+     "bbox": [10.6, 48.2, 11.9, 49.2],
+     "properties": {"datetime": "2026-07-14T10:31:22Z", "eo:cloud_cover": 12.4}}
+  ],
+  "links": [
+    {"rel": "next", "method": "POST", "href": "https://example.org/stac/v1/search",
+     "merge": true, "body": {"token": "next:demo-search:50"}}
+  ]
+}</code></pre>
+        <p>The <code>features</code> list above shows one item of the 50 for brevity. Two details matter. The <code>token</code> is opaque: copy it, never build it. And <code>merge: true</code> means the link's body is added to your original request, so your bbox and filter stay in place.</p>
+
+        <div class="worked"><b>Worked example: how many requests?</b>
+          <p>137 matches with a limit of 50 need <span class="tex">\lceil 137/50\rceil=3</span> requests. The pages hold 50, 50 and 37, because <span class="tex">137-2\times50=37</span>. The last response has no <code>next</code> link, and the loop stops.</p></div>
+
+        <p>The loop, in Python with the <code>requests</code> library, follows the link until none is left:</p>
+        <pre><code>import requests
+
+def search_all(url, body):
+    items = []
+    while True:
+        page = requests.post(url, json=body, timeout=60).json()
+        items += page["features"]
+        nxt = next((l for l in page["links"] if l["rel"] == "next"), None)
+        if nxt is None or not page["features"]:
+            return items                      # no next link: all pages read
+        url = nxt["href"]
+        body = {**body, **nxt.get("body", {})}  # merge: keep the original bbox and filter</code></pre>
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>Acquire</i>. The search returns item records only. The pixels are read later, from the assets of the items you keep (Lesson 2.6).</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play time</b>. A 60-day window slides across 2025–2026. Watch the counts change at each stage: bbox, then date, then cloud.</li>
+        <li>Drag the box over Europe and over the Pacific. Which stage removes most scenes in each place, and why?</li>
+        <li>Set the cloud threshold to 100, then to 5. What happens to the funnel, and to the request JSON?</li>
+        <li>Make the date window one day wide and slide it. How many scenes survive the date test on a typical day, and why is that number small compared with the bbox count?</li>
+        <li>Turn the page size down to 6 and step through the pages. Each page is one request in the Python loop above.</li></ol></div>
+      <div data-lab="stac-search"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Degrees are not area.</b> A 0.48 deg² box near the equator is a larger area than the same number at 60° N. Measure on the ground after reprojecting (Module 0).</li>
+          <li><b>A bbox over-matches.</b> A scene whose box overlaps yours but whose footprint does not will pass the bbox test. Use <code>intersects</code> with the exact geometry when that matters.</li>
+          <li><b>Date-only ends drop scenes.</b> Use full UTC timestamps for the end of the interval.</li>
+          <li><b>Cloud cover is an estimate for the scene.</b> A scene at 4% cloud can still have cloud over your field, and a 40% scene can be clear over it. Check the cloud mask in the window (Module 1, masks).</li>
+          <li><b>Mixing <code>query</code> and <code>filter</code>.</b> They are different extensions with different syntax. Send one, and say which <code>filter-lang</code> you use.</li>
+          <li><b>Assuming one page is everything.</b> Always follow <code>next</code> until it is absent.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A training set is defined by its search. Save the request JSON with the dataset, and anyone can rerun the same search later.</li>
+          <li>Building a time series for a crop or change model means one search per region and a date interval that covers a full season.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A search has 412 matches and limit 100. How many requests, and how many items on the last page?</summary><div class="ans">ceil(412/100) = 5 requests. Four pages hold 100 items each (400), so the last page holds 12.</div></details>
+        <details class="check"><summary>2. Does a search box [0, 0, 2, 2] intersect an item footprint [1.5, −1, 3, 0.5]? What is the overlap area in deg²?</summary><div class="ans">Yes: 0 ≤ 3, 1.5 ≤ 2, 0 ≤ 0.5 and −1 ≤ 2 all hold. The overlap is 0.5 wide (min(2,3) − max(0,1.5)) and 0.5 high (min(2,0.5) − max(0,−1)), so 0.25 deg².</div></details>
+        <details class="check"><summary>3. A scene is captured at 2026-03-31T23:30:00Z and the search interval is 2026-03-01T00:00:00Z/2026-03-31T00:00:00Z. Does it match? How would you fix the request?</summary><div class="ans">No. The end is midnight at the start of 31 March, and 23:30 on 31 March is later. Write the end as the full timestamp 2026-03-31T23:59:59Z.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A STAC API search filters by bbox (or intersects), a datetime interval and a property condition, and returns item records.</li>
+          <li>Check the bbox and datetime tests by hand: the boxes must overlap on both axes; the interval overlaps when start and end cross.</li>
+          <li>Pagination: follow <code>next</code> links, copy the token exactly, and stop when there is no next link.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.6 ===================== -->
+    <section class="lesson" id="stac-cloud-harvest" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.6</span><h2>From search results to a dataset</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your search returned six scenes over the same field. Each provider names its bands differently, one scene has a different projection, and a whole scene is 2.69 GiB. How do you turn these search results into one clean time stack of red reflectance for a 2.56 km window, and how do you record where every value came from?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine collecting photographs of the same field on different days. You discard the days when clouds covered it, crop every picture to the same frame, put the frames in date order, and write a log saying which camera and which file each frame came from. Harvesting search results is the same work, done on satellite files. Search gave you the list. Harvest chooses the files, cuts the window, stacks it and keeps the log.</p>
+
+        <h3 class="sec">Build it up: five steps from list to stack</h3>
+        <p><b>Step 1: pick the asset by meaning, not by name.</b> Provider A calls the red band <code>B04</code>; provider B calls it <code>red</code>. Both carry a band object whose <code>common_name</code> is <code>red</code>. A harvest selects the asset whose common name matches, so the same code works on both archives.</p>
+        <table class="tbl">
+          <tr><th>Band (common_name)</th><th>Provider A key</th><th>Provider B key</th></tr>
+          <tr><td>red</td><td><code>B04</code></td><td><code>red</code></td></tr>
+          <tr><td>nir</td><td><code>B08</code></td><td><code>nir08</code></td></tr>
+          <tr><td>green</td><td><code>B03</code></td><td><code>green</code></td></tr>
+        </table>
+        <p><b>Step 2: filter on cloud cover.</b> Keep a scene only if its <code>eo:cloud_cover</code> is strictly below the threshold. Worked example: the six candidates have cloud covers 6.2, 35.0, 14.0, 3.1, 48.7 and 20.0. With the rule "below 20":</p>
+        <div class="worked"><b>Worked example: the cloud filter by hand</b>
+          <p><span class="tex">6.2<20</span> ✓ keep. <span class="tex">35.0<20</span> ✗ drop. <span class="tex">14.0<20</span> ✓ keep. <span class="tex">3.1<20</span> ✓ keep. <span class="tex">48.7<20</span> ✗ drop. <span class="tex">20.0<20</span> ✗ drop, because 20.0 is not less than 20.</p>
+          <p>Three of six survive: scenes with 6.2%, 14.0% and 3.1% cloud. Note the scene value is for the whole tile, so it says little about one small window.</p></div>
+        <p><b>Step 3: read only the window.</b> A 256 × 256 pixel window at 10 m resolution covers <span class="tex">256\times10\text{ m}=2560\text{ m}=2.56\text{ km}</span> on each side. Because the files are Cloud-Optimised GeoTIFFs (Module 1), the harvest asks only for the bytes of that window, not the 2.69 GiB scene.</p>
+        <p><b>Step 4: stack in time order.</b> The kept windows form an array with shape <span class="tex">[T,\,H,\,W]</span>, here <span class="tex">[3,256,256]</span> for one band. The stack needs one grid: every window must share the same CRS, resolution and origin. Storage follows the data type: 2 bytes per pixel for <code>uint16</code> reflectance.</p>
+        <div class="worked"><b>Worked example: the size of the stack</b>
+          <p>Three kept scenes, one band, 2 bytes per pixel:</p>
+          <div class="eq">T\times H\times W\times B\times 2 = 3\times256\times256\times1\times2 = 393\,216\text{ bytes}= 384\text{ KiB}</div>
+          <p>The same window with four bands per scene is <span class="tex">3\times256\times256\times4\times2=1\,572\,864</span> bytes, which is 1.5 MiB. Both are tiny next to one 2.69 GiB scene, which is why windowed reads matter.</p></div>
+        <p><b>Step 5: keep the provenance.</b> A stack is only useful if someone can rebuild it. The manifest below records, for each slice, the item, the asset, the cloud value and the CRS:</p>
+        <pre><code>{
+  "stack": "red-2026-05-window-A",
+  "band": "red",
+  "window_px": [256, 256],
+  "resolution_m": 10,
+  "search": {"collections": ["demo-sentinel-2-l2a"], "datetime": "2026-05-01T00:00:00Z/2026-05-31T23:59:59Z"},
+  "items": [
+    {"id": "S2A_DEMO_20260505_T31UFT", "datetime": "2026-05-05T10:31:22Z", "asset": "B04",
+     "eo:cloud_cover": 6.2, "proj:epsg": 32632, "href": "./S2A_DEMO_20260505_T31UFT/B04.tif"}
+  ]
+}</code></pre>
+        <p>A real manifest lists every kept item, not only the first. The search block lets anyone rerun the query, and the epsg field shows whether the grids can be stacked without reprojection.</p>
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>Acquire</i>, feeding Stage 2, <i>Preprocessing</i>. Harvest selects and cuts the data; reprojection, masking and normalisation come next (Module 1 and Module 3). Its output is a bands × H × W array plus a manifest.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and watch the six thumbnails arrive in date order. Then watch the cloud test: which scenes fade out, and why is the 20% scene removed?</li>
+        <li>Switch the band to <b>nir</b>. Note that the asset key changes between providers (B08 and nir08), but the common name is the same.</li>
+        <li>The projection warning is already on at 20%: one kept scene is in EPSG 32633, not 32632. What must happen before you stack it? Then raise the threshold to 50 and see how many more scenes enter.</li>
+        <li>Change <b>Bands stored per scene</b> to 4. How do the bytes and the stack size change? Check the arithmetic against the worked example.</li></ol></div>
+      <div data-lab="stac-harvest"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Assuming the same key everywhere.</b> <code>B04</code> at one provider can be a different band at another. Match by <code>common_name</code>, and check the <code>eo:bands</code> of each item.</li>
+          <li><b>Trusting scene cloud cover for a window.</b> A 4% scene can have cloud over your window, and a 40% scene can be clear over it. Mask the window itself (Module 1, masks).</li>
+          <li><b>Stacking different grids.</b> Items with EPSG 32632 and 32633 cannot be stacked directly. Reproject one grid to the other first.</li>
+          <li><b>Forgetting the manifest.</b> A stack without its items, cloud values and CRS cannot be audited or rebuilt.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Time-series models for crop type and change (Module 7) take a stack like this one as input. The time order and the dates are part of the signal.</li>
+          <li>Training chips in Module 3 are cut from harvested stacks. The manifest is how a reviewer traces a mislabelled chip back to its source scene.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Five scenes, 256 × 256 pixels, four bands, uint16. How many bytes?</summary><div class="ans">5 × 256 × 256 × 4 × 2 = 2 621 440 bytes, which is 2.5 MiB.</div></details>
+        <details class="check"><summary>2. Provider A names the NIR band B08 and provider B names it nir08. Which field lets one harvest code select it for both?</summary><div class="ans">The <code>common_name</code> inside the band object of <code>eo:bands</code> (here <code>nir</code>). The asset key is only a local name.</div></details>
+        <details class="check"><summary>3. A scene has 4% cloud cover but a cloud sits over your 2.56 km window. Why is the scene-level value misleading here?</summary><div class="ans">The cloud cover is for the whole tile (about 110 km across), so a small local cloud can be missed. Check the window itself with a cloud mask before you trust its pixels.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Harvest = select the asset by common name, filter scenes, read only the window, stack in time order, and record the provenance.</li>
+          <li>Stacking needs one grid: check the EPSG codes and reproject first.</li>
+          <li>Scene-level cloud cover is a filter, not a guarantee for your window; check the window with a mask.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.7 ===================== -->
+    <section class="lesson" id="stac-validation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.7</span><h2>Validating and publishing STAC</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 500 scenes of your own, from a drone survey or a research satellite, and you want to publish them so that other people's tools can find and read them. How do you know the records are correct before anyone downloads a single file?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>JSON Schema</b> is a checklist written in a form that a machine can run: "this field must be a string", "this list must have four numbers". A <b>validator</b> runs the checklist over your file and lists every violation. But a checklist of shapes cannot check meaning. Four numbers in the wrong order pass the shape test and still describe the wrong place. So validation has three layers, and each catches different mistakes.</p>
+
+        <h3 class="sec">Build it up: three layers of checking</h3>
+        <p><b>Layer 1: is it JSON?</b> A missing comma or an unquoted key stops every tool. Parse first, always.</p>
+        <p><b>Layer 2: does it match the schema?</b> The STAC core schemas say what an Item must contain. For an Item the core requires <code>type</code>, <code>stac_version</code>, <code>id</code>, <code>geometry</code>, <code>bbox</code>, <code>properties</code>, <code>links</code> and <code>assets</code>. The rule "bbox must be present when geometry is not null" and the rule "datetime, or start and end datetimes, must be present" are also schema rules. Each extension you declare brings its own schema for its prefixed fields.</p>
+        <p><b>Layer 3: is it true?</b> Some rules need a calculation or a network request: the bbox must equal the bounds of the geometry; the datetime must be UTC; every asset href must resolve to a real file; the coordinates must be longitude and latitude, not metres.</p>
+
+        <div class="worked"><b>Worked example: four broken items and the layer that catches each</b>
+          <table class="tbl">
+            <tr><th>Item</th><th>Problem</th><th>Caught by</th></tr>
+            <tr><td>A</td><td>no <code>datetime</code> and no start/end pair in <code>properties</code></td><td>layer 2 (schema): the datetime rule fails</td></tr>
+            <tr><td>B</td><td><code>geometry</code> is set, but <code>bbox</code> is missing</td><td>layer 2 (schema): bbox is required with a geometry</td></tr>
+            <tr><td>C</td><td><code>eo:cloud_cover</code> present, eo not declared in <code>stac_extensions</code></td><td>layer 2 (strict): the prefixed field has no schema</td></tr>
+            <tr><td>D</td><td><code>bbox</code> written as <code>[48.2, 10.6, 49.2, 11.9]</code> (latitude first)</td><td><b>layer 3 only</b>: four numbers pass the schema</td></tr>
+          </table>
+          <p>Item D shows why layer 3 exists. Its geometry has minimum longitude 10.6 and minimum latitude 48.2, so the correct box is <span class="tex">[10.6,\,48.2,\,11.9,\,49.2]</span>. The stored minx of 48.2 is larger than the geometry's minimum longitude, so the test <span class="tex">48.2\le 10.6</span> fails and the box does not contain the footprint.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>A record R is <b>valid</b> when it passes all three layers: parses, satisfies the schemas of its core and declared extensions, and satisfies the semantic rules. For an item with a non-null geometry these semantic rules include:</p>
+        <div class="eq">\text{bbox}=[\min x_i,\ \min y_i,\ \max x_i,\ \max y_i]\ \text{over the ring}\qquad -180\le x_i\le180,\quad -90\le y_i\le 90</div>
+        <table class="sym">
+          <tr><td>x<sub>i</sub>, y<sub>i</sub></td><td>the ring's vertices in longitude and latitude (degrees)</td></tr>
+          <tr><td>bbox</td><td>the stored box; it must equal this box or contain it</td></tr>
+          <tr><td>datetime</td><td>an RFC 3339 timestamp in UTC (ending in <code>Z</code>)</td></tr>
+        </table>
+
+        <h3 class="sec">Building a static catalogue for your own data</h3>
+        <p>You do not need a server to publish STAC. A <b>static catalogue</b> is a folder of JSON files with relative links, served by any web host:</p>
+        <pre><code>my-drone-survey/
+├── catalog.json                      Catalog, links: root, self, child
+└── survey-2026/
+    ├── collection.json               Collection: licence, providers, extent
+    └── items/
+        ├── FIELD_20260610_0930.json  Item: geometry, bbox, datetime, assets
+        ├── FIELD_20260610_0930/
+        │   ├── ortho.tif             the asset file, next to the item
+        │   └── dsm.tif
+        └── FIELD_20260611_1015.json</code></pre>
+        <p>Publish the folder to a static host, keep the links relative, validate every JSON file, and test a few asset hrefs by fetching them. Libraries such as <code>pystac</code> can write this layout for you and check it; the <code>stac-validator</code> tool checks it against the schemas.</p>
+        <div class="callout"><b>Pipeline position</b>Stage 6, <i>Publish &amp; monitor</i>. The catalogue is the product's index. Validation runs in the publishing job, so a broken record never reaches users.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play and watch the twelve checks run in order. Read each result and its message.</li>
+        <li>Change the bbox order to <code>[48.2, 10.6, 49.2, 11.9]</code>. The schema-style checks still pass; only the containment check fails. This is item D from the worked example.</li>
+        <li>Delete the <code>"datetime"</code> line. Which check fails, and which layer does it belong to?</li>
+        <li>Remove the eo URL from <code>stac_extensions</code>: which check fails? Put it back. Then change the geometry's coordinates to metres (for example 690000 and 5340000): which check flags them, and why is it a semantic rule rather than a shape rule?</li></ol></div>
+      <div data-lab="stac-validate"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Valid JSON is not valid STAC.</b> Parsing proves nothing about the fields.</li>
+          <li><b>A passing schema is not a correct record.</b> Item D passes the shape test and is wrong. Add the semantic checks.</li>
+          <li><b>Projected coordinates in geometry.</b> Footprints must be longitude and latitude in WGS 84, even when the pixels are in metres.</li>
+          <li><b>Hrefs that do not resolve.</b> A schema can only say "this is a string". A 404 is found only by fetching the file.</li>
+          <li><b>Stale versions.</b> A record that says <code>stac_version 1.0.0</code> must be checked against the 1.0.0 rules, not the latest ones.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A dataset card (Module 3) is the human version of a manifest. Validation makes the machine version trustworthy, so the card's claims can be checked.</li>
+          <li>Model records use the same pipeline: an MLM item is a STAC Item with <code>mlm:</code> fields, validated before a model is published (Module 6).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. An item has a geometry but no bbox. Which layer catches it, and which rule is it?</summary><div class="ans">Layer 2, the schema. The core rule says bbox is required when geometry is not null.</div></details>
+        <details class="check"><summary>2. The geometry's coordinates are (690000, 5340000) and similar metre values. Which rule fails, and in which layer?</summary><div class="ans">Layer 3, the semantic rule. Footprints must be longitude and latitude in WGS 84, and these values lie far outside [−180, 180] × [−90, 90].</div></details>
+        <details class="check"><summary>3. Why must you fetch each asset href during validation, when a schema already checks that href is a string?</summary><div class="ans">Because a schema checks the shape of the value, not whether the file exists. Only a request shows whether the link resolves; a 404 means the item cannot be used.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Validate in three layers: parse, schema (core and declared extensions), then semantic truth (bbox vs geometry, UTC, lon/lat, hrefs).</li>
+          <li>A static catalogue is a folder of linked JSON files that any static host can serve.</li>
+          <li>Run the validator in the publishing job, so broken records never reach users.</li></ul></div>
+      </div>
+    </section>
+
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now find, describe and harvest Earth observation data with STAC. Next, <b>Module 3</b> turns harvested scenes into training data: rasterising labels, tiling, normalising and splitting without leakage.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

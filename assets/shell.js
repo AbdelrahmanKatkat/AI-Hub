@@ -56,7 +56,7 @@
     side.innerHTML = `<div class="side-title">AI learning paths</div>` + H.topics.map((t) => {
       const on = t.id === page, p = t.status === 'live' ? pct(t) : 0;
       const a = t.status === 'live'
-        ? `<a class="topic ${on ? 'active' : ''}" href="${t.href}">` : `<div class="topic soon">`;
+        ? `<a class="topic ${on ? 'active' : ''} ${t.sub ? 'sub' : ''}" href="${t.href}">` : `<div class="topic soon">`;
       return `${a}<span class="ico" style="background:${t.color}26;color:${t.color}">${t.icon}</span><span class="nm">${t.title}</span>${t.status === 'live' ? `<span class="pct">${p}%</span>` : '<span class="tag">soon</span>'}${t.status === 'live' ? '</a>' : '</div>'}`
         + (on ? subnav(t) : '') + (t.children ? `<div class="subnav kids">${t.children.map((c) => `<span class="kid">${c.icon} ${c.title}</span>`).join('')}</div>` : '');
     }).join('') + `<div class="journey"><b>Your learning journey</b><div class="bar"><i style="width:${total()}%"></i></div><span style="color:var(--muted)">${total()}% of live topics complete</span></div>`;

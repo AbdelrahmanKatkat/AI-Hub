@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 · Evaluation, accuracy &amp; ground truth · GeoAI</title>
+<meta name="description" content="Sample-based accuracy assessment, area-adjusted estimates, object metrics (IoU, F1, panoptic quality), ground-truth collection and label noise, error maps and uncertainty maps — with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-geo-evaluation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="8">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 8</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">8</div>
+      <div style="flex:1">
+        <h1>Module 8 · Evaluation, accuracy &amp; ground truth</h1>
+        <p>A map is a claim about the ground. This module shows how to test that claim with a sample of points, how to turn the sample into an honest area estimate, how to score individual buildings or ships, how far the reference labels themselves can be trusted, where the errors cluster, and how to ask a map which of its pixels it is unsure about.</p>
+        <p>Basic classification metrics (precision, recall, F1, confusion matrices) are taught in <a href="ml-evaluation.html">Machine Learning · Evaluation</a>; IoU and average precision for boxes in <a href="cv-detection.html">Computer Vision · Detection</a>. This module adds the geography: sampling design, area weights, pixel footprints and maps of error.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Module 3 &amp; probability basics</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 8.1 ===================== -->
+    <section class="lesson" id="sampling-accuracy" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.1</span><h2>Sample-based accuracy assessment</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A national land-cover product labels every 10 m pixel as Forest, Crop or Urban. The country has about 40 million pixels. Visiting them all is impossible, so how many points should you check, where should they be, and how do you turn a handful of checks into a number you can defend in a report?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of the map as a very large exam. You cannot mark every answer, so you pick a few questions at random, look up the true answer (the <b>reference</b>, from a field visit or a high-resolution photograph), and count how often the map got it right. Each checked point is one question. The map's answer is the <b>map label</b>; the true answer is the <b>reference label</b>.</p>
+        <p>The tally of all these questions is called a <b>confusion matrix</b> (also an error matrix). Rows are what the map said, columns are what the reference says, and the diagonal holds the agreements.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: one point.</b> A point at 12.3 km east, 4.8 km north is inside a pixel the map calls <i>Crop</i>. The reference photograph shows a field of wheat. One agreement. Nothing more can be said from one point.</p>
+        <p><b>Step 2: many points.</b> Sample 30 points. Put every pair (map label, reference label) into a table. The table is the whole story of the map's errors.</p>
+        <div class="worked"><b>Worked example: 30 points, 3 classes</b>
+          <p>Rows are map classes, columns are reference classes. Each row was sampled separately (a <i>stratified</i> design: the strata are the map classes), so the row totals are the number of points taken in each stratum.</p>
+          <table class="tbl" style="max-width:780px">
+            <tr><th>Map ↓ / Reference →</th><th>Forest</th><th>Crop</th><th>Urban</th><th>Row total <span class="tex">n_{i\cdot}</span></th></tr>
+            <tr><td><b>Forest</b></td><td>10</td><td>2</td><td>1</td><td>13</td></tr>
+            <tr><td><b>Crop</b></td><td>1</td><td>8</td><td>1</td><td>10</td></tr>
+            <tr><td><b>Urban</b></td><td>0</td><td>1</td><td>6</td><td>7</td></tr>
+            <tr><td>Column total <span class="tex">n_{\cdot j}</span></td><td>11</td><td>11</td><td>8</td><td><b>30</b></td></tr>
+          </table>
+          <p><b>Overall accuracy</b> is the share of all points on the diagonal: <span class="tex">(10+8+6)/30 = 24/30 = 0.800</span>. The map is right on 80% of the sampled points.</p>
+          <p><b>User's accuracy</b> asks the question a <i>user</i> of the map cares about: "If the map says Urban here, how often is it really Urban?" For each map class, divide its diagonal cell by its row total. Forest: 10/13 = 0.769. Crop: 8/10 = 0.800. Urban: 6/7 = 0.857.</p>
+          <p><b>Producer's accuracy</b> asks the question the <i>producer</i> of the map cares about: "Of the places that really are Urban, how many did I catch?" For each reference class, divide its diagonal cell by its column total. Forest: 10/11 = 0.909. Crop: 8/11 = 0.727. Urban: 6/8 = 0.750.</p>
+          <p>Read together: a user who sees Urban on the map is right 86% of the time, but a real Urban pixel has only a 75% chance of being mapped as Urban. The overall 80% hides both facts.</p></div>
+        <p><b>Step 3: why stratify?</b> Simple random sampling of 30 points from a map where Urban covers 5% of the area would give about 1.5 Urban points, which is useless for judging Urban. Stratified sampling takes a fixed number of points inside each map class, so every class gets enough checks. The price is that the sample no longer mirrors the map's area; the next lesson repairs that.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{OA}=\frac{1}{N}\sum_{i=1}^{K} n_{ii}\qquad \text{UA}_i=\frac{n_{ii}}{n_{i\cdot}}\qquad \text{PA}_j=\frac{n_{jj}}{n_{\cdot j}}</div>
+        <table class="sym">
+          <tr><td>K</td><td>number of classes (here 3)</td></tr>
+          <tr><td><span class="tex">n_{ij}</span></td><td>number of sample points whose <i>map</i> label is <i>i</i> and whose <i>reference</i> label is <i>j</i></td></tr>
+          <tr><td><span class="tex">n_{i\cdot}=\sum_j n_{ij}</span></td><td>row total: all points the map labelled <i>i</i> (the points taken in stratum <i>i</i>)</td></tr>
+          <tr><td><span class="tex">n_{\cdot j}=\sum_i n_{ij}</span></td><td>column total: all points the reference says are <i>j</i></td></tr>
+          <tr><td>N</td><td>total number of sample points, <span class="tex">\sum_{i,j} n_{ij}</span></td></tr>
+          <tr><td>OA</td><td>overall accuracy: fraction of points where map and reference agree</td></tr>
+          <tr><td>UA<sub>i</sub></td><td>user's accuracy of class <i>i</i> (reliability of the map's label)</td></tr>
+          <tr><td>PA<sub>j</sub></td><td>producer's accuracy of class <i>j</i> (completeness: how much of the real <i>j</i> was caught)</td></tr>
+        </table>
+
+        <div class="callout" style="max-width:780px;margin-top:6px"><b>How this relates to ML metrics.</b> A confusion matrix of a classifier on a test set is the same object. UA is the precision of class <i>i</i> and PA is the recall of class <i>j</i>, computed per class. What is new in GeoAI is the <i>sampling design</i>: the points are chosen by a probability design, so the numbers can later be turned into area estimates.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: sample the map point by point</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b> and watch the points arrive one by one. Each point is compared with the reference, and the matching cell of the matrix fills in.</li>
+        <li>Switch from <b>stratified</b> to <b>random</b> and run to 30 points. Count how few points land on Urban in the random design. Stratified gives Urban a fair share.</li>
+        <li>Raise the <b>error rate</b> of the product. Watch OA fall, and watch the off-diagonal cells grow. Which cell grows fastest?</li>
+        <li>Press <b>New map</b>. The same error rate produces a different pattern of errors. Overall accuracy changes from map to map even though the rate is fixed: sampling noise is real.</li></ol></div>
+      <div data-lab="accsampler" data-title="Sampling a land-cover product" data-sub="one point at a time, compared with the reference"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Overall accuracy alone is not a report.</b> A map can reach 95% overall by being excellent on Forest and useless on a 3%-area class. Always report per-class UA and PA.</li>
+          <li><b>User's and producer's accuracy answer different questions.</b> Users care about trust in a label (UA); producers and planners care about omission (PA). Mixing them up reverses the advice.</li>
+          <li><b>Sample rows are not map areas.</b> In the worked table the rows total 13, 10 and 7, not 70%, 25% and 5%. Summing unweighted counts answers a question about the sample, not about the map. Area adjustment (8.2) is needed for area claims.</li>
+          <li><b>The reference is not free truth.</b> A reference photograph from a different season can disagree with the map for reasons that have nothing to do with the map (8.4).</li></ul></div>
+
+        <div class="callout" style="max-width:780px"><b>Pipeline position.</b> This step sits in <i>post-process</i> and <i>publish &amp; monitor</i>: the map is finished, and the sample of checked points is stored as a table next to it (points, map label, reference label, date of reference, interpreter), so that the accuracy can be recomputed later.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Validation reports of global and national land-cover products (for example ESA WorldCover and Dynamic World) use sample points checked against reference interpretations, reported as confusion matrices.</li>
+          <li>Every classifier evaluation in <a href="ml-evaluation.html">Machine Learning</a> is the same table on a test set; GeoAI adds the spatial sampling design on top.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the worked matrix, what are the user's and producer's accuracies for Crop?</summary><div class="ans">User's: <span class="tex">n_{22}/n_{2\cdot}=8/10=0.800</span> (of the points the map calls Crop, 80% really are Crop). Producer's: <span class="tex">n_{22}/n_{\cdot 2}=8/11=0.727</span> (of the real Crop points, 73% were mapped as Crop).</div></details>
+        <details class="check"><summary>2. A user asks: "If I see Urban on this map, how often is it really Urban?" Which accuracy answers that, and what is its value?</summary><div class="ans">The user's accuracy of Urban, UA<sub>Urban</sub> = 6/7 = 0.857. It is a row-wise quantity: it looks at what the map said.</div></details>
+        <details class="check"><summary>3. Why does a stratified design make Urban accuracy estimable, and what does it cost?</summary><div class="ans">Taking a fixed number of points inside each map class guarantees enough Urban points (7 here) to estimate its accuracy, whereas a random design of 30 points on a 5%-area class would give about 1.5 points on average. The cost is that the unweighted counts no longer reflect areas; the next lesson applies area weights to undo that.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A map is validated by checking sample points against a reference; the tally is a confusion matrix (rows = map, columns = reference).</li>
+          <li>Overall accuracy is the diagonal share; user's accuracy is a row ratio (reliability), producer's accuracy is a column ratio (completeness).</li>
+          <li>Stratify by map class so that small classes get enough checks, and remember the design when you later estimate areas.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.2 ===================== -->
+    <section class="lesson" id="area-adjusted" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.2</span><h2>Area-adjusted accuracy</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The map says Urban covers 5% of the study area. The raw sample says Urban producer's accuracy is 75%. A ministry wants the <i>area</i> of urban growth and the accuracy of that area. Do the raw counts give the right answer, or do the 7 Urban sample points each represent the same amount of land?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Not every sample point represents the same amount of land. In the stratified design of 8.1, the 13 Forest points were drawn from a stratum covering 70% of the map, and the 7 Urban points from a stratum covering 5%. A Forest point stands for many more pixels than an Urban point. If we count every point equally we give Urban far too much say in the overall accuracy, or too little, depending on the question.</p>
+        <p>The fix is a <b>weight</b> per stratum: how much of the map that stratum covers. A point from a stratum with a big weight counts for more.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: area weights.</b> Let <span class="tex">A_i</span> be the area of map class <i>i</i>. The weight is its share of the total: <span class="tex">W_i=A_i/\sum_k A_k</span>. Take areas of 700 km² Forest, 250 km² Crop and 50 km² Urban (total 1000 km²). Then <span class="tex">W=(0.70,\,0.25,\,0.05)</span>.</p>
+        <p><b>Step 2: the estimated map area in each cell.</b> A cell <span class="tex">(i,j)</span> is the set of pixels the map calls <i>i</i> and the reference calls <i>j</i>. Its estimated share of the whole area is the stratum weight times the fraction of that stratum's points that fell in the cell: <span class="tex">\hat p_{ij}=W_i\,n_{ij}/n_{i\cdot}</span>.</p>
+        <div class="worked"><b>Worked example: area-weighted matrix</b>
+          <p>Using the matrix of 8.1 with <span class="tex">n_{i\cdot}=13,10,7</span>:</p>
+          <table class="tbl" style="max-width:780px">
+            <tr><th>Map ↓ / Reference →</th><th>Forest</th><th>Crop</th><th>Urban</th><th>Row sum (= <span class="tex">W_i</span>)</th></tr>
+            <tr><td><b>Forest</b> (W = 0.70)</td><td>0.700·10/13 = 0.538</td><td>0.700·2/13 = 0.108</td><td>0.700·1/13 = 0.054</td><td>0.700</td></tr>
+            <tr><td><b>Crop</b> (W = 0.25)</td><td>0.250·1/10 = 0.025</td><td>0.250·8/10 = 0.200</td><td>0.250·1/10 = 0.025</td><td>0.250</td></tr>
+            <tr><td><b>Urban</b> (W = 0.05)</td><td>0.050·0/7 = 0.000</td><td>0.050·1/7 = 0.007</td><td>0.050·6/7 = 0.043</td><td>0.050</td></tr>
+            <tr><td>Column sum</td><td>0.563</td><td>0.315</td><td>0.122</td><td>1.000</td></tr>
+          </table>
+          <p><b>Step 3: area-adjusted overall accuracy</b> is the sum of the diagonal: <span class="tex">\widehat{\text{OA}}=0.538+0.200+0.043=0.781</span>, compared with the raw 0.800. The estimate falls because area weighting moves weight away from Urban (UA 0.857, the highest) and towards Forest (UA 0.769, the lowest) once the true area shares are used.</p>
+          <p><b>Step 4: area-adjusted producer's accuracy</b> is the diagonal divided by the column sum, <span class="tex">\widehat{\text{PA}}_j=\hat p_{jj}/\sum_i \hat p_{ij}</span>. Forest: 0.538/0.563 = <b>0.956</b>. Crop: 0.200/0.315 = <b>0.635</b>. Urban: 0.043/0.122 = <b>0.352</b>.</p>
+          <p>Urban fell from 0.750 to 0.352. Look at the Urban column. Six correct Urban points carry a total weight of 0.043. The one point the Forest stratum called Urban carries weight <span class="tex">0.70/13=0.054</span> on its own, <i>more than all six correct Urban points together</i>. A rare class with few samples is very sensitive to a single mistake in a large stratum. This is why the area-adjusted estimate is the number to publish.</p>
+          <p><b>User's accuracy does not change.</b> UA<sub>i</sub> = <span class="tex">\hat p_{ii}/W_i = n_{ii}/n_{i\cdot}</span>: the weights cancel within a row. UA answers "is this label reliable?" and that does not depend on how big the class is.</p></div>
+
+        <p><b>Step 5: how sure are we?</b> Thirty points are a small sample, so the estimate has an uncertainty. For a stratified design the standard error of the overall accuracy is</p>
+        <div class="eq">\operatorname{SE}(\widehat{\text{OA}})=\sqrt{\sum_{i}W_i^{2}\,\frac{\text{UA}_i\,(1-\text{UA}_i)}{n_{i\cdot}-1}}</div>
+        <div class="worked"><b>Worked example: standard error</b>
+          <p>Forest: <span class="tex">0.70^2\cdot\frac{0.769\cdot0.231}{12}=0.00725</span>. Crop: <span class="tex">0.25^2\cdot\frac{0.800\cdot0.200}{9}=0.00111</span>. Urban: <span class="tex">0.05^2\cdot\frac{0.857\cdot0.143}{6}=0.00005</span>. The sum is 0.00841 and its square root is <b>SE = 0.092</b>. The Forest stratum contributes 86% of the variance.</p>
+          <p>An approximate 95% interval is <span class="tex">0.781\pm1.96\times0.092</span>, that is <b>0.60 to 0.96</b>. Honest reporting with 30 points says "between 60% and 96%". The sample must be much larger before the claim becomes useful, which is exactly the planning question a sampling design answers.</p>
+          <p>For comparison, the naive standard error of an unweighted proportion, <span class="tex">\sqrt{0.8\cdot0.2/30}=0.073</span>, ignores the stratification and the area weights, and is therefore the wrong formula for this design.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">W_i=\frac{A_i}{\sum_k A_k}\qquad \hat p_{ij}=W_i\,\frac{n_{ij}}{n_{i\cdot}}\qquad \widehat{\text{OA}}=\sum_i \hat p_{ii}\qquad \widehat{\text{PA}}_j=\frac{\hat p_{jj}}{\sum_i \hat p_{ij}}</div>
+        <table class="sym">
+          <tr><td>A<sub>i</sub></td><td>mapped area of class <i>i</i> (any unit; only ratios matter)</td></tr>
+          <tr><td>W<sub>i</sub></td><td>area weight of stratum <i>i</i>, i.e. the proportion of the map it covers; the weights sum to 1</td></tr>
+          <tr><td><span class="tex">\hat p_{ij}</span></td><td>estimated proportion of the whole area in cell (map <i>i</i>, reference <i>j</i>)</td></tr>
+          <tr><td><span class="tex">n_{ij}, n_{i\cdot}</span></td><td>counts as in 8.1: points in a cell, and points in stratum <i>i</i></td></tr>
+          <tr><td><span class="tex">\operatorname{SE}</span></td><td>standard error: the typical size of the estimate's error from sampling alone</td></tr>
+        </table>
+        <p>The estimator is valid when every stratum is sampled with a known, non-zero probability and the points are placed independently within each stratum (conditions of the stratified design). If the strata are wrong (for example, the map is updated after sampling), the weights are wrong too.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: how areas move the estimate</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start with the defaults (700 / 250 / 50 km²). Read the raw overall accuracy (0.800) and the area-adjusted one (0.781). Then drag the Urban area slider up to 150 and watch the producer's accuracy of Urban change.</li>
+        <li>Drag Urban down to 5 km². The raw numbers do not move at all, but the area-adjusted Urban producer's accuracy depends on it. Explain why in one sentence.</li>
+        <li>Make Forest the rare class (drag Forest to 50 and Urban to 700). Which accuracy moves most now?</li></ol></div>
+      <div data-lab="areaweight" data-title="Area weights and the estimate" data-sub="the same sample, different areas"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Raw counts answer a sample question; area-weighted estimates answer a map question.</b> Area statistics (hectares of urban growth) must use weights.</li>
+          <li><b>Weights come from the map, not from the sample.</b> If you compute W from the sample rows (13/30, 10/30, 7/30) you have reproduced the sample design, not the map.</li>
+          <li><b>Small strata are fragile.</b> One mistake in a small stratum that is mapped to a rare class can dominate that class's estimate (see the Urban column above).</li>
+          <li><b>Units must match.</b> A table in hectares and a map in pixels must be converted to the same unit before the weights are formed.</li></ul></div>
+
+        <div class="callout" style="max-width:780px"><b>Pipeline position.</b> <i>Post-process</i> and <i>publish</i>: the stratum areas and the sample table are stored with the product so that an official area and its uncertainty can be recomputed when the map or the sample changes.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>National land-change reporting, where the area of each class and of each class change must be estimated with a stated uncertainty and a stratified sample (the good-practice approach of Olofsson and colleagues, 2014).</li>
+          <li>Importance weighting in machine learning: reweighting a sample so that its class mix matches the target population, the same idea as using <span class="tex">W_i</span> instead of counts.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why does the user's accuracy stay the same when you change the class areas?</summary><div class="ans">Because UA<sub>i</sub> = n<sub>ii</sub>/n<sub>i·</sub> only compares points inside one map stratum. The weight W<sub>i</sub> multiplies every cell of row <i>i</i> and cancels when the row is divided by its own total. UA is a property of the map's labels, not of the land area each label covers.</div></details>
+        <details class="check"><summary>2. With areas 700/250/50 the Urban producer's accuracy is 0.352, yet the raw value is 0.750. Which single point is the largest reason, and why?</summary><div class="ans">The Forest-map point that the reference calls Urban (n<sub>13</sub>=1). Its weight is W<sub>Forest</sub>/n<sub>Forest·</sub> = 0.70/13 = 0.054, while each correct Urban point has weight 0.05/7 = 0.007. The one error in a large stratum outweighs six correct points in a small one.</div></details>
+        <details class="check"><summary>3. Using SE = 0.092, the 95% interval is about 0.60 to 0.96. What would you tell a stakeholder, and what is the remedy?</summary><div class="ans">The sample of 30 cannot tell apart a map that is 62% right from one that is 95% right. Report the interval, not only the point value, and enlarge the sample, particularly in the strata whose <span class="tex">W_i^2\,UA(1-UA)/(n-1)</span> terms dominate (here Forest).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Area weights <span class="tex">W_i=A_i/\sum A</span> turn sample counts into estimates of area.</li>
+          <li>Overall and producer's accuracies must be area-weighted; user's accuracy is unchanged by weights.</li>
+          <li>Always report a standard error or interval; with small samples it is wide, and the rare class is the most fragile.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.3 ===================== -->
+    <section class="lesson" id="object-metrics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.3</span><h2>Object-level metrics</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model maps building footprints. Most of the area is background, so a model that says "no building" everywhere still gets 95% pixel accuracy when buildings cover 5% of the scene. What should we score: pixels, or buildings? And when is a predicted building "the same" as a reference building?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Pixel accuracy counts the background as heavily as the buildings. Object metrics count <i>things</i>: each reference building should be matched with at most one predicted building, and each match should be judged by how much the two shapes overlap. The overlap score most used in GeoAI is the <b>Intersection over Union</b>: the shared area divided by the total area covered by either shape. Two identical shapes score 1; shapes that do not touch score 0.</p>
+        <p>A threshold then decides what counts as a match (commonly 0.5). Once matches are decided, the familiar counts of true positives, false positives and false negatives give precision, recall and F1 for the whole scene.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: rasterise the shapes.</b> Work on a grid of 10 m pixels in a projected CRS (for example UTM, so that pixel areas are equal and in m²). Each pixel is 100 m². The scene below is 10 × 8 pixels. Reference objects are A, B, C; predicted objects are 1, 2, 3.</p>
+        <pre><code>reference            prediction
+..........           ..........
+.AAA......           .1111.....
+.AAA......           .1111.....
+..........           ..........
+.....BB...           .....22...
+.....BB.CC           .....22...
+.....BB.CC           ......3333
+........CC           ......3333</code></pre>
+        <p><b>Step 2: count pixels.</b> Intersection <span class="tex">|P\cap R|</span> is the number of pixels both shapes cover; union <span class="tex">|P\cup R|=|P|+|R|-|P\cap R|</span> is the number covered by either.</p>
+        <div class="worked"><b>Worked example: IoU, Dice and areas for three predicted buildings</b>
+          <table class="tbl" style="max-width:780px">
+            <tr><th>Pair</th><th>|R| px (m²)</th><th>|P| px (m²)</th><th>|P∩R| px</th><th>|P∪R| px</th><th>IoU</th><th>Dice = pixel F1</th></tr>
+            <tr><td>A vs 1</td><td>6 (600)</td><td>8 (800)</td><td>6</td><td>8</td><td><b>0.750</b></td><td>0.857</td></tr>
+            <tr><td>B vs 2</td><td>6 (600)</td><td>4 (400)</td><td>4</td><td>6</td><td><b>0.667</b></td><td>0.800</td></tr>
+            <tr><td>C vs 3</td><td>6 (600)</td><td>8 (800)</td><td>4</td><td>10</td><td><b>0.400</b></td><td>0.571</td></tr>
+          </table>
+          <p>Check A vs 1 by hand: the intersection is the 2×3 block of A (6 px); prediction 1 has 8 px; union <span class="tex">6+8-6=8</span>; IoU <span class="tex">=6/8=0.750</span>. Dice is <span class="tex">2\cdot6/(6+8)=0.857</span>, and indeed <span class="tex">\text{Dice}=\dfrac{2\,\text{IoU}}{1+\text{IoU}}=\dfrac{1.5}{1.75}=0.857</span>.</p>
+          <p>Note prediction 3 also touches B (one pixel, IoU with B only 1/13 = 0.077). Matching is done per reference object, by the best IoU, so this pixel does not make 3 a match for B.</p>
+          <p><b>Step 3: match at a threshold.</b> With threshold 0.5: A–1 (0.75) and B–2 (0.667) are matches; C–3 (0.400) is not. The result is <b>TP = 2, FP = 1, FN = 1</b>. Precision <span class="tex">=2/(2+1)=0.667</span>, recall <span class="tex">=2/(2+1)=0.667</span>, and <span class="tex">F_1=\dfrac{2PR}{P+R}=0.667</span>. Lower the threshold to 0.35 and C–3 becomes a match: TP = 3, F1 = 1.</p>
+          <p><b>Step 4: quality of matches.</b> The panoptic-quality idea splits the score into how well matched objects fit (segmentation quality, the mean IoU of the TP pairs) and how many objects were found (recognition quality). Here <span class="tex">\text{SQ}=(0.750+0.667)/2=0.708</span> and <span class="tex">\text{RQ}=2/(2+\tfrac12+\tfrac12)=0.667</span>, so <span class="tex">\text{PQ}=\text{SQ}\times\text{RQ}=0.472</span>.</p></div>
+        <p>Areas in square metres come directly from the pixel counts: A is 600 m², prediction 1 is 800 m². The same counts convert to any unit, but only inside one projected CRS; a geodesic area of a polygon can differ slightly from the sum of pixel areas because the pixels are not exactly equal on the ground in a geographic CRS.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{IoU}(P,R)=\frac{|P\cap R|}{|P\cup R|}\qquad \text{Dice}=\frac{2|P\cap R|}{|P|+|R|}=\frac{2\,\text{IoU}}{1+\text{IoU}}</div>
+        <div class="eq">\text{Precision}=\frac{TP}{TP+FP}\qquad \text{Recall}=\frac{TP}{TP+FN}\qquad F_1=\frac{2\,\text{Precision}\cdot\text{Recall}}{\text{Precision}+\text{Recall}}</div>
+        <div class="eq">\text{PQ}=\underbrace{\frac{\sum_{(P,R)\in TP}\text{IoU}(P,R)}{|TP|}}_{\text{SQ}}\times\underbrace{\frac{|TP|}{|TP|+\tfrac12|FP|+\tfrac12|FN|}}_{\text{RQ}}</div>
+        <table class="sym">
+          <tr><td>P, R</td><td>a predicted and a reference object, each as a set of pixels</td></tr>
+          <tr><td>|·|</td><td>number of pixels (or area) in a set</td></tr>
+          <tr><td>∩, ∪</td><td>intersection (in both) and union (in either)</td></tr>
+          <tr><td>TP, FP, FN</td><td>matched pairs with IoU ≥ threshold; unmatched predictions; unmatched reference objects</td></tr>
+          <tr><td>F<sub>1</sub></td><td>harmonic mean of precision and recall, between 0 and 1</td></tr>
+          <tr><td>SQ, RQ, PQ</td><td>segmentation quality, recognition quality and their product (panoptic quality)</td></tr>
+        </table>
+        <p>Matching is a one-to-one assignment: each reference object can be matched at most once. Greedy matching (take the highest-IoU pair first, remove both, repeat) is what most evaluation scripts do.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: match the buildings</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>With threshold 0.50, note which pairs match and which do not. Then move the threshold down to 0.35 and up to 0.80. Count TP, FP and FN each time.</li>
+        <li>Press <b>Sweep</b>. The predictions grow and shrink by one pixel at the edges. Watch the IoU of pair A–1 and pair C–3 respond. Which one is more sensitive to a one-pixel change, and why? (Think of its size.)</li>
+        <li>Set the predictions to "grow +1" and compare the Dice and IoU columns. Dice is always larger than IoU for the same pair. Why?</li></ol></div>
+      <div data-lab="objmatch" data-title="Predicted vs reference buildings" data-sub="IoU per pair, match threshold, one-pixel boundary change"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The threshold is a choice.</b> 0.5 is a convention, not a law. Report it with the score, and compare methods only at the same threshold.</li>
+          <li><b>Small objects are unforgiving.</b> One pixel of boundary error changes the IoU of a 6-pixel object far more than of a 600-pixel one. Object metrics for small ships or cars need smaller thresholds or a boundary tolerance.</li>
+          <li><b>Split and merge.</b> One reference building predicted as two halves gives one FN (or one TP with a poor IoU) and an extra FP. Check the counts, not only the score.</li>
+          <li><b>Pixel F1 is not object F1.</b> The Dice of a pixel mask and the F1 of matched objects answer different questions; say which one you report.</li></ul></div>
+
+        <div class="callout" style="max-width:780px"><b>Pipeline position.</b> <i>Post-process</i> (polygons are vectorised from the mask) and <i>evaluate</i>. The matched pairs and their IoU should be stored per object so that a failure can be traced to a single building.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Building-footprint challenges (for example SpaceNet) score predicted polygons by matching them to reference polygons at an IoU threshold and reporting F1.</li>
+          <li>Detection and instance segmentation in <a href="cv-detection.html">Computer Vision · Detection</a> use the same IoU; COCO-style average precision sweeps the threshold, and panoptic quality is used for combined stuff-and-thing maps.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the IoU of prediction 2 with reference B. Give the counts.</summary><div class="ans">|B| = 6 px, |2| = 4 px, both cover the 2×2 block, so |B∩2| = 4. |B∪2| = 6+4−4 = 6. IoU = 4/6 = 0.667 (area: 400 m² shared, 600 m² union).</div></details>
+        <details class="check"><summary>2. At threshold 0.5, the scene has TP = 2, FP = 1, FN = 1. What are precision, recall and F1, and what happens to F1 if the threshold drops to 0.35?</summary><div class="ans">Precision = recall = 2/3 = 0.667, so F1 = 0.667. At threshold 0.35 the pair C–3 (IoU 0.40) becomes a match: TP = 3, FP = 0, FN = 0, and F1 = 1.</div></details>
+        <details class="check"><summary>3. Why is the mean pixel accuracy a poor score for buildings covering 5% of a scene?</summary><div class="ans">A model that predicts background everywhere gets 95% pixel accuracy and finds no building. Object metrics (TP/FP/FN with IoU matching) and pixel F1 on the building class both give 0 for that model, so they expose the failure.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>IoU = shared area / total area covered; Dice = 2·IoU/(1+IoU).</li>
+          <li>Match objects one-to-one at a stated IoU threshold, then count TP, FP and FN, and report precision, recall and F1.</li>
+          <li>Pixel counts give exact areas in a projected CRS; small objects are very sensitive to one-pixel boundary errors.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.4 ===================== -->
+    <section class="lesson" id="ground-truth-collection" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.4</span><h2>Collecting ground truth</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two careful interpreters look at the same 20 points in a high-resolution photograph and disagree on 4 of them. Reference labels are supposed to be the truth against which the map is judged. If the reference itself is wrong one time in five, what does "the map is 80% accurate" mean, and how much of the map's apparent error is really the reference's?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every reference label is a measurement with an error. A field survey has GPS offsets of a few metres, which at 10 m pixels can put you in the neighbouring class. A photograph interpreted in 2026 can be compared with a map from 2024 in which the crop has since been harvested. A crowd of volunteers may be excellent on roads and poor on wetlands. The reference is a map too, and it has its own uncertainty.</p>
+        <table class="tbl" style="max-width:780px">
+          <tr><th>Source</th><th>Typical error</th><th>What to record</th></tr>
+          <tr><td>Field survey (GNSS)</td><td>position offsets of metres; access limits (sample near roads)</td><td>receiver accuracy, date, positions of the sample</td></tr>
+          <tr><td>Very-high-resolution photo interpretation</td><td>date mismatch; shadows; mixed pixels at edges</td><td>image date, scale, interpreter, confidence</td></tr>
+          <tr><td>Crowdsourced labels</td><td>uneven skill; systematic confusions</td><td>number of votes, agreement, quality checks</td></tr>
+          <tr><td>Existing maps used as reference</td><td>inherit the old map's errors</td><td>source map, its own accuracy</td></tr>
+        </table>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: measure agreement between labellers.</b> Raw agreement can be high by chance: if most of the scene is forest, two labellers who guess will often agree. The statistic <b>Cohen's kappa</b> subtracts the chance agreement.</p>
+        <div class="worked"><b>Worked example: two interpreters, 20 points</b>
+          <table class="tbl" style="max-width:600px">
+            <tr><th>A ↓ / B →</th><th>Forest</th><th>Non-forest</th><th>Total</th></tr>
+            <tr><td><b>Forest</b></td><td>10</td><td>2</td><td>12</td></tr>
+            <tr><td><b>Non-forest</b></td><td>2</td><td>6</td><td>8</td></tr>
+            <tr><td>Total</td><td>12</td><td>8</td><td>20</td></tr>
+          </table>
+          <p>Observed agreement: <span class="tex">p_o=(10+6)/20=0.800</span>.</p>
+          <p>Chance agreement, from each labeller's own class shares: <span class="tex">p_e=\tfrac{12}{20}\cdot\tfrac{12}{20}+\tfrac{8}{20}\cdot\tfrac{8}{20}=0.36+0.16=0.520</span>.</p>
+          <p>Kappa: <span class="tex">\kappa=\dfrac{p_o-p_e}{1-p_e}=\dfrac{0.800-0.520}{0.480}=0.583</span>. The interpreters agree 80% of the time, but once chance is removed the agreement is "moderate" (0.41–0.60 on the Landis and Koch scale). A reference with that agreement cannot be treated as perfect.</p></div>
+
+        <p><b>Step 2: what label noise does to a measured accuracy.</b> Let the model be correct on a fraction <span class="tex">a</span> of points against the <i>true</i> labels. Let the reference be wrong (flipped, in a binary problem) on a fraction <span class="tex">\eta</span> of points. A point is <i>counted as wrong</i> when the model and the reference disagree about it. Measured accuracy is therefore <span class="tex">1-\dfrac{|W\,\triangle\,F|}{N}</span>, where W is the set of points the model gets wrong, F the set the reference gets flipped, and <span class="tex">\triangle</span> is the symmetric difference (points in exactly one of the two sets).</p>
+        <div class="worked"><b>Worked example: ten points</b>
+          <p>The model is right on 9 of 10 points against the truth, so <span class="tex">a=0.9</span>. Its single error is point 4 (W = {4}). The reference is flipped at two points, both where the model is right: F = {2, 7}. Then <span class="tex">W\triangle F=\{4,2,7\}</span>, which has 3 points, and measured accuracy is <span class="tex">1-3/10=0.70</span>. The model is still right on 9 of 10 points against the truth, yet it looks like 70%.</p>
+          <p>If the flips fall independently with rate <span class="tex">\eta=0.2</span>, the expected measured accuracy is <span class="tex">(1-\eta)\,a+\eta\,(1-a)=0.8\cdot0.9+0.2\cdot0.1=0.74</span>. Two models with true accuracies 0.90 and 0.85 would measure <span class="tex">0.74</span> and <span class="tex">0.71</span>: the gap shrinks from 0.05 to 0.03, a factor <span class="tex">1-2\eta=0.6</span>. Noise makes good models look worse and compresses the differences between them.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\kappa=\frac{p_o-p_e}{1-p_e},\qquad p_e=\sum_k \pi_{k}^{(A)}\,\pi_{k}^{(B)}\qquad\qquad \mathbb E[\text{measured accuracy}]=(1-\eta)\,a+\eta\,(1-a)\quad\text{(binary, independent flips)}</div>
+        <table class="sym">
+          <tr><td>p<sub>o</sub></td><td>observed agreement: share of points labelled identically</td></tr>
+          <tr><td>p<sub>e</sub></td><td>agreement expected by chance from each labeller's class shares <span class="tex">\pi_k</span></td></tr>
+          <tr><td>κ</td><td>kappa: 1 = perfect agreement, 0 = chance level</td></tr>
+          <tr><td>a</td><td>true accuracy of the model against the unobservable truth</td></tr>
+          <tr><td>η</td><td>reference flip rate (label noise)</td></tr>
+          <tr><td>W, F, △</td><td>set of model errors, set of flipped labels, symmetric difference (in exactly one set)</td></tr>
+        </table>
+        <p>The expectation assumes that flips are independent of the model's mistakes. If the reference is systematically wrong where the model is also wrong (both fooled by the same shadow), the effect is different and no formula of this kind holds.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: what label noise does to the score</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Sweep</b>. The reference flip rate rises from 0 to 40%. Watch the measured accuracy (orange) fall away from the true accuracy (dashed line).</li>
+        <li>Set the model's true accuracy to 0.90 and the flip rate to 0.20. The measured value should sit near 0.74 on average. Press <b>New labels</b> to draw a different realisation; the value scatters around the expectation.</li>
+        <li>Compare two models: set true accuracy to 0.85 and then 0.90, and note the gap at each noise level. The gap shrinks as the noise grows.</li></ol></div>
+      <div data-lab="labelnoise" data-title="Label noise and measured accuracy" data-sub="a point counts as wrong when model and reference disagree"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Ground truth" is a claim.</b> Record who labelled what, when, and how sure they were. A map validated against a noisy reference is validated against that noise.</li>
+          <li><b>Kappa is not accuracy.</b> A kappa of 0.58 with 80% agreement is a statement about labeller consistency, not about the map.</li>
+          <li><b>Sampling only easy places.</b> Points near roads are easy to visit and biased towards the simpler classes. Random or stratified sampling must include the hard places.</li>
+          <li><b>Temporal mismatch.</b> A 2024 map checked against 2026 imagery counts land-cover change as error. Match the reference date to the map date.</li></ul></div>
+
+        <div class="callout" style="max-width:780px"><b>Pipeline position.</b> <i>Acquire</i> (the reference) and <i>evaluate</i>. Each reference point should carry its source, date, positional accuracy and labeller ID, so that the noise can be estimated and reported with the score.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Crowdsourced and volunteer labelling (OpenStreetMap edits, citizen-science surveys) produces label noise that must be measured before models are trained or evaluated on it.</li>
+          <li>Machine learning in general: noisy labels bias training and evaluation alike; see the label-quality discussion in <a href="machine-learning.html">Machine Learning</a>.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Two interpreters agree on 16 of 20 points and each labels 12 as forest. What is kappa, and why is it lower than 0.80?</summary><div class="ans">Chance agreement p<sub>e</sub> = (12/20)² + (8/20)² = 0.52, so κ = (0.80 − 0.52)/(1 − 0.52) = 0.583. It is lower because the labellers' class shares already make some agreement likely by chance; kappa removes that part.</div></details>
+        <details class="check"><summary>2. A model is 90% accurate against the truth. Its reference is flipped at 20% of points independently of the model. What does the reference-based measurement report on average?</summary><div class="ans">(1 − 0.2)·0.9 + 0.2·0.1 = 0.74. The model looks 16 points worse than it is.</div></details>
+        <details class="check"><summary>3. Your model beats a baseline by 0.05 on a clean reference. Roughly how big is the difference after 20% symmetric label noise?</summary><div class="ans">About 0.6 × 0.05 = 0.03, because the expected measured difference is (1 − 2η) times the true difference. The noise shrinks the gap, so a small real improvement may become invisible.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Reference labels are measurements; record their source, date and agreement, and use kappa to measure labeller agreement beyond chance.</li>
+          <li>Label noise lowers measured accuracy and compresses differences between models; the true accuracy is higher than it looks.</li>
+          <li>Match the reference date to the map date, and sample the hard places as well as the easy ones.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.5 ===================== -->
+    <section class="lesson" id="error-maps" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.5</span><h2>Error analysis &amp; visual checks</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Overall accuracy is 81%. Nineteen per cent of the pixels are wrong. Are those errors scattered like noise, which you can accept, or clustered in one corner of the scene, which points to a cause you can fix: cloud shadows, a sensor stripe, a wetland that is mapped as water in the wet season?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Scores summarise; maps explain. An <b>error map</b> paints each pixel by what happened to it: correct, or wrong in a particular way. A pattern in the picture is a hypothesis about the cause. Random speckle suggests noise. A block suggests a region with a problem. A thin line along boundaries suggests mixed pixels, where one 10 m pixel straddles two fields.</p>
+        <p>Two error types matter for a single class. <b>Commission</b> (false positive for the class): the map says Crop, the reference says Forest. <b>Omission</b> (false negative for the class): the reference says Crop, the map says something else. They are the two ways a class can go wrong, and they have different remedies.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a tiny map pair.</b> Here is a 4 × 4 reference (left) and a product (right). F = Forest, C = Crop, U = Urban.</p>
+        <div class="worked"><b>Worked example: a 4 × 4 error map</b>
+          <pre><code>reference    product      error?
+F F C C      F F C C      .  .  .  .
+F F C U      F C C U      .  X  .  .
+F C C U      F C F U      .  .  X  .
+U U C C      U U C U      .  .  .  X</code></pre>
+          <p>Overall accuracy: 13 of 16 correct, <span class="tex">13/16=0.8125</span>. Three errors: (row 1, col 1) reference F, map C; (row 2, col 2) reference C, map F; (row 3, col 3) reference C, map U.</p>
+          <table class="tbl" style="max-width:780px">
+            <tr><th>Class</th><th>Reference count</th><th>Map count</th><th>Omission (FN)</th><th>Commission (FP)</th><th>Producer's (recall)</th><th>User's (precision)</th></tr>
+            <tr><td>Forest</td><td>5</td><td>5</td><td>1</td><td>1</td><td>0.80</td><td>0.80</td></tr>
+            <tr><td>Crop</td><td>7</td><td>6</td><td>2</td><td>1</td><td>0.71</td><td>0.83</td></tr>
+            <tr><td>Urban</td><td>4</td><td>5</td><td>0</td><td>1</td><td>1.00</td><td>0.80</td></tr>
+          </table>
+          <p>Crop has the most omissions (the map misses 2 of 7 real crop pixels). Urban has none missed but one false alarm.</p>
+          <p><b>Step 2: where are the errors?</b> Split the scene into four quadrants of 2 × 2 pixels. Accuracy: north-west 3/4 = 0.75 (one error); north-east 4/4 = 1.00; south-west 4/4 = 1.00; south-east 2/4 = 0.50 (two errors). The errors are not spread evenly: half of the south-east quadrant is wrong.</p>
+          <p><b>Step 3: are the errors clustered?</b> The three error pixels touch each other only diagonally: (1,1) touches (2,2), which touches (3,3). With 4-neighbour connectivity (sharing an edge) they are three separate errors; with 8-neighbour connectivity (sharing a corner too) they form one cluster. Which connectivity you use changes the story, so state it. A 3-pixel diagonal chain along a field boundary is the signature of a mixed-pixel effect, not of a random failure.</p></div>
+
+        <p><b>Step 4: the usual checks.</b> Stratify the error by everything that might matter: region (tile, district), season or acquisition date, sensor or sensor geometry (view angle), terrain (slope and aspect), and distance to the nearest reference point. The question is always the same: does the accuracy change with the factor, and is the change large enough to matter?</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{Omission}_j=n_{\cdot j}-n_{jj}\qquad \text{Commission}_i=n_{i\cdot}-n_{ii}\qquad \text{acc}(g)=\frac{\sum_{x\in g}\mathbf 1[\hat y(x)=y(x)]}{|g|}</div>
+        <table class="sym">
+          <tr><td>x</td><td>a pixel (or a sample point)</td></tr>
+          <tr><td><span class="tex">\hat y(x), y(x)</span></td><td>the map label and the reference label at pixel <i>x</i></td></tr>
+          <tr><td><span class="tex">\mathbf 1[\cdot]</span></td><td>indicator: 1 if the statement is true, 0 otherwise</td></tr>
+          <tr><td>g</td><td>a group of pixels: a region, a season, a sensor, a class</td></tr>
+          <tr><td>|g|</td><td>number of pixels in the group</td></tr>
+        </table>
+        <p>Report the accuracy of each group with its count. A group with 4 pixels can show 50% by chance alone; large groups are needed before a difference is believed.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: scan the map for errors</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>: a scan line moves down the map and reveals each row. Note whether the errors look scattered or clustered in the first few rows.</li>
+        <li>Choose <b>colour by region</b> and select the south-east quadrant. Read its accuracy in the table. Then compare with the other three quadrants.</li>
+        <li>Choose <b>class: Crop</b> and look only at Crop pixels. Find the omissions (reference Crop, map not Crop) and the commissions (map Crop, reference not Crop). Which kind is more common at the current error rate?</li>
+        <li>Raise the error rate and press <b>New map</b>. Does the clustering get stronger or weaker? Clusters come from the smooth noise field behind the errors.</li></ol></div>
+      <div data-lab="errormap" data-title="Error map of a land-cover product" data-sub="error type, class and region filters"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Small groups fool the eye.</b> A region with 9 pixels and 4 errors looks dreadful; with 9,000 pixels it may be typical. Always show the count.</li>
+          <li><b>Looking only at errors.</b> Compare with the correct pixels too; a class that is always correct gives no errors to see.</li>
+          <li><b>Confusing the error type.</b> Omission and commission lead to different fixes (lower the threshold versus raise it). Never use a single "error" colour without the type.</li>
+          <li><b>Boundaries are where most errors live.</b> A thin band of errors along field edges is mixed pixels; it may be acceptable for the use case, but it must be stated.</li></ul></div>
+
+        <div class="callout" style="max-width:780px"><b>Pipeline position.</b> <i>Inference</i> and <i>post-process</i> feed the error maps; they are stored as rasters (a COG with an error code per pixel) so that a reviewer can open them next to the imagery.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Debugging segmentation models: a per-region mIoU table and an error overlay on the tile reveal failure modes such as cloud shadows read as water or snow read as cloud.</li>
+          <li>Fairness and robustness checks in any model: error rates by group are the same idea as error rates by region or sensor.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the 4 × 4 example, what are Crop's omission and commission counts, and what is its producer's accuracy?</summary><div class="ans">Omission: reference Crop but map not Crop: 2 (positions (2,2) and (3,3)). Commission: map Crop but reference not Crop: 1 (position (1,1)). Producer's accuracy = 5/7 = 0.71 (Crop was correct on 5 of its 7 reference pixels, the table rounds to 0.71).</div></details>
+        <details class="check"><summary>2. The south-east quadrant has accuracy 0.50, the rest 0.75–1.00. Is that evidence of a regional problem?</summary><div class="ans">Not yet. With 4 pixels per quadrant, two errors is within what chance can produce. The pattern is a reason to look and to collect more samples in that quadrant, not a conclusion.</div></details>
+        <details class="check"><summary>3. Why state the connectivity (4- or 8-neighbour) when you say errors are clustered?</summary><div class="ans">Diagonal neighbours can connect errors into one cluster under 8-connectivity but not under 4-connectivity. The count of clusters, and hence the apparent clustering, depends on this choice; the same map can look scattered or clustered.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An error map turns a single accuracy into a picture; clustered errors point to causes you can name.</li>
+          <li>Separate omission (missed the class) from commission (false alarm), per class, with counts.</li>
+          <li>Stratify accuracy by region, season, sensor and terrain, and always show the number of pixels behind each figure.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.6 ===================== -->
+    <section class="lesson" id="uncertainty-geo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.6</span><h2>Uncertainty &amp; confidence in maps</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A pixel is labelled Crop. Two pixels can both get that label with very different confidence: one with probabilities 0.98 / 0.01 / 0.01, another with 0.40 / 0.35 / 0.25. A field team can visit only 200 pixels this season. Which ones should they visit, and how big is the area you would be asking them to check?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A deep-learning segmentation model outputs, for every pixel, a probability for each class (usually with a softmax). The map keeps only the most probable class (the <b>argmax</b>), but the probabilities carry more information. A pixel whose probability mass sits on one class is <i>confident</i>. A pixel whose mass is spread across classes is <i>uncertain</i>, even when its argmax is the same.</p>
+        <p>The standard measure of spread is <b>entropy</b>: high when the distribution is flat, low when it is peaked. An uncertainty map is simply an entropy map, and a flagging rule is a threshold on it.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: entropy of a distribution.</b> For probabilities <span class="tex">p_1,\dots,p_K</span> that sum to 1, the entropy in bits is <span class="tex">H=-\sum_k p_k\log_2 p_k</span> (with <span class="tex">0\log 0=0</span>). The logarithm base sets the unit: base 2 gives bits.</p>
+        <div class="worked"><b>Worked example: three pixels, three classes</b>
+          <table class="tbl" style="max-width:780px">
+            <tr><th>Pixel</th><th>Probabilities (Forest, Crop, Urban)</th><th>Argmax</th><th>H (bits)</th><th>H / log₂3</th></tr>
+            <tr><td>a</td><td>0.98, 0.01, 0.01</td><td>Forest</td><td>0.161</td><td>0.10</td></tr>
+            <tr><td>b</td><td>0.70, 0.20, 0.10</td><td>Forest</td><td>1.157</td><td>0.73</td></tr>
+            <tr><td>c</td><td>0.333, 0.333, 0.333</td><td>tie</td><td>1.585</td><td>1.00</td></tr>
+          </table>
+          <p>Pixel b: <span class="tex">H=-(0.7\log_2 0.7+0.2\log_2 0.2+0.1\log_2 0.1)=0.360+0.464+0.332=1.157</span> bits. Pixel a is close to zero because one outcome is almost certain. Pixel c reaches the maximum possible for three classes, <span class="tex">\log_2 3=1.585</span> bits: a flat distribution is the most uncertain. For two equally likely classes the entropy is exactly 1 bit.</p>
+          <p><b>Step 2: flag the uncertain pixels.</b> Take a threshold <span class="tex">\tau=1.0</span> bit. Pixels b and c are flagged for review (1.157 and 1.585 > 1.0); a is not. Pixel b is the interesting case: its argmax is Forest with 70%, yet it goes to the review queue because a 30% chance of something else is not small enough for this use.</p>
+          <p><b>Step 3: count the flagged area.</b> Suppose a 10 × 10 pixel tile (10 m pixels, 100 m² each) has 6 flagged pixels. Flagged area = 6 × 100 m² = 600 m², which is 0.0006 km², or 6% of the 100-pixel tile. Team workload follows from the count of flagged areas, not from the number of uncertain-looking colours on screen.</p></div>
+
+        <p><b>Step 4: calibration.</b> Entropy is only useful if the probabilities mean what they say. A map is <b>calibrated</b> when, among pixels that are given probability about 0.7 for their class, about 70% are really that class. Deep networks are often over-confident, so their raw probabilities need checking against a reference sample (a reliability diagram groups pixels by stated confidence and compares with the observed fraction correct). Calibration is a property of the model and its validation sample, not of the entropy formula.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">H(\mathbf p)=-\sum_{k=1}^{K}p_k\log_2 p_k\in\left[0,\ \log_2 K\right]\qquad\qquad \text{flag}(x)=\mathbf 1\!\left[H(\mathbf p(x))>\tau\right]\qquad \text{Area}=\#\{x:\text{flag}(x)\}\cdot s^2</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathbf p(x)</span></td><td>the vector of class probabilities at pixel <i>x</i> (sums to 1)</td></tr>
+          <tr><td>K</td><td>number of classes</td></tr>
+          <tr><td>H</td><td>entropy in bits; 0 for a certain pixel, <span class="tex">\log_2 K</span> for a flat one</td></tr>
+          <tr><td>τ</td><td>threshold chosen for the use case (set on a validation sample, not on the test sample)</td></tr>
+          <tr><td>s</td><td>pixel size in metres (10 for Sentinel-2 bands in this example); <span class="tex">s^2</span> is the pixel area</td></tr>
+        </table>
+        <p>Using natural logarithms gives the entropy in nats; dividing by <span class="tex">\ln K</span> gives a value between 0 and 1 that is comparable across models with the same number of classes.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: from probability maps to a review queue</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>. A cursor moves over the map and reads the three probabilities and the entropy of the pixel under it. Check one reading against the formula by hand.</li>
+        <li>Lower <b>sharpness</b> (the model becomes less sure) and watch the entropy map brighten. The argmax map barely changes. Confidence and label are different things.</li>
+        <li>Move the flag threshold. Note how the flagged area (in km²) grows and shrinks. Pick the threshold that flags about 10% of the map.</li>
+        <li>Choose a class in the probability panel. Find a boundary between two classes and check that the entropy is high there.</li></ol></div>
+      <div data-lab="uncmap" data-title="Probability maps, entropy and review" data-sub="per-pixel class probabilities, entropy and flagged area"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Probabilities are not automatically calibrated.</b> A softmax of 0.99 can be wrong far more often than 1 time in 100. Check calibration on held-out labelled data.</li>
+          <li><b>Uncertainty is not error.</b> Flagged pixels are where the model is unsure; some wrong pixels are confident, and some flagged pixels are right.</li>
+          <li><b>Tune on validation, report on test.</b> A threshold chosen to maximise the score on the test sample is a leak.</li>
+          <li><b>Area needs the pixel size and CRS.</b> Quote the flagged area with its units and projection; a pixel of 10 m and one of 0.0001 degrees are not the same thing.</li></ul></div>
+
+        <div class="callout" style="max-width:780px"><b>Pipeline position.</b> <i>Inference</i> outputs the probability stack; <i>post-process</i> computes entropy and the flag; <i>publish &amp; monitor</i> stores both the argmax map and the uncertainty layer, with the threshold recorded in the product metadata.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Global land-cover products that publish per-class probabilities for each pixel, so that users can threshold them for their own needs.</li>
+          <li>Active learning and human review queues: the most uncertain pixels are labelled first, which makes the next training round more informative.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the entropy in bits of (0.5, 0.5, 0) and of (0.5, 0.25, 0.25).</summary><div class="ans">(0.5, 0.5, 0): −2·0.5·log₂0.5 = 1 bit. (0.5, 0.25, 0.25): 0.5·1 + 2·0.25·2 = 0.5 + 1 = 1.5 bits. The second is more uncertain, because the mass is spread over three outcomes instead of two.</div></details>
+        <details class="check"><summary>2. A pixel has probabilities (0.70, 0.20, 0.10) and the team's flag threshold is 1.0 bit. Is it flagged, and why might the team want that?</summary><div class="ans">Yes: H = 1.157 > 1.0. Although Forest is the most likely class (70%), a 30% chance of another class is more than the team accepts for this product, so the pixel is sent for review.</div></details>
+        <details class="check"><summary>3. Why is a per-pixel probability of 0.8 not automatically "80% reliable"?</summary><div class="ans">Only if the model is calibrated. Calibration means that among pixels given 0.8, about 80% are truly that class. Deep models are often over-confident, so the claim must be tested on a labelled sample (reliability diagram) before it is quoted.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Entropy H = −Σ p log₂ p measures how spread a pixel's class probabilities are; the maximum is log₂K.</li>
+          <li>A flagging threshold turns an uncertainty map into a review queue; quote its area with pixel size and CRS.</li>
+          <li>Uncertainty is useful only when probabilities are calibrated, and thresholds must be chosen on validation data.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now test a map with a sample, turn that sample into honest area estimates with weights and standard errors, score buildings by IoU and F1, question the reference itself, find where and why a map fails, and flag the pixels that need a human look. Next, <b>Module 9</b> takes these checked models to production: processing a whole country, publishing products as COG and STAC, monitoring drift, and using the results responsibly.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 · Deploying GeoAI responsibly at scale · GeoAI</title>
+<meta name="description" content="Processing a whole country with tiles and parallel workers, lazy chunked workflows, publishing products as COG and STAC, monitoring seasonal drift, location privacy, and GeoAI applications, with exact cost arithmetic and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-geo-production.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="9">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 9</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">9</div>
+      <div style="flex:1">
+        <h1>Module 9 · Deploying GeoAI responsibly at scale</h1>
+        <p>A model that maps one tile is a demonstration. A map of a whole country, updated every year, is a production system with a budget, a version number, a monitoring plan and a duty of care towards the people whose locations appear in it. This module does the arithmetic, builds the pipeline and shows where it can hurt someone.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">6 animated labs</span><span class="chip">Tile counts · cost per km² · STAC items</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+    <div class="callout"><b>Honesty note.</b> Every cost figure in this module is an <b>illustrative assumption</b>, not a quote from any provider. Prices, throughputs and labour rates are round numbers chosen to teach the method; each one is listed so you can replace it with your own. The tile counts and the arithmetic are exact. For the general system design view see <a href="ml-production.html">ML in production</a>; for vision-specific deployment (cameras, edge devices, quantisation) see <a href="cv-production.html">Computer Vision · Module 9</a>.</div>
+
+    <!-- ===================== 9.1 ===================== -->
+    <section class="lesson" id="scale-processing" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.1</span><h2>Processing at scale</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A ministry wants a 10 m land-cover map of a country of 300,000 km², refreshed every year. How many tiles is that, how many machine-hours and dollars does one pass cost, and what happens to a week of work when one machine crashes at tile 40,000?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A country is a giant jigsaw. Each piece, a <b>tile</b>, can be classified without waiting for its neighbours, so if you have many workers you hand each one a piece and the jigsaw finishes many times faster. That is the whole idea of scaling out. Three habits make it work in practice:</p>
+        <ul>
+          <li><b>Split</b> the input into tiles small enough that one worker can hold one tile in memory.</li>
+          <li><b>Parallelise</b> with one shared queue of tile jobs that many workers pull from. A slow worker simply takes fewer tiles.</li>
+          <li><b>Checkpoint</b> each finished tile. When a machine dies, only the unfinished work is repeated.</li>
+        </ul>
+        <p>One habit is specific to Earth observation: <b>read only what you need</b>. Thanks to the Cloud-Optimised GeoTIFF layout from Module 1, a worker asks the archive for the bytes of its own window and nothing else. The country is never copied onto one machine. The rest of this lesson turns those habits into numbers.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: how many tiles?</b> Start from the pixel. At 10 m, one pixel covers 10 m × 10 m = 100 m² = 0.0001 km². A tile of 256 × 256 pixels is therefore 2.56 km on a side, which is <span class="tex">2.56^2 = 6.5536\ \text{km}^2</span>. Each square kilometre holds <span class="tex">1/6.5536 = 0.15259</span> such tiles.</p>
+        <div class="worked"><b>Worked example: the country with no overlap</b>
+          <p>Area <span class="tex">A = 300{,}000\ \text{km}^2</span>. Tiles, if packed perfectly: <span class="tex">300{,}000 / 6.5536 = 45{,}776.37</span>, rounded up to <b>45,777 tiles</b>. This is a lower bound: real countries have ragged borders, and edge tiles are only partly full.</p></div>
+        <p><b>Overlap.</b> Models usually see some context around the tile border, so neighbouring tiles overlap. Take a 26-pixel overlap (10% of 256). Each tile then <i>owns</i> a stride of 256 − 26 = 230 pixels, which is 2.30 km, so it owns <span class="tex">2.30^2 = 5.29\ \text{km}^2</span>. The count becomes <span class="tex">300{,}000/5.29 = 56{,}710.8</span>, rounded up to <b>56,711 tiles</b>. This is the number the rest of the lesson costs.</p>
+        <table class="tbl"><tr><th>Tile size (no overlap)</th><th>Tile side</th><th>Tiles for 300,000 km²</th><th>What it trades</th></tr>
+          <tr><td>128 × 128 px</td><td>1.28 km</td><td>183,106</td><td>Small memory, huge number of jobs and file writes</td></tr>
+          <tr><td>256 × 256 px</td><td>2.56 km</td><td>45,777</td><td>The usual compromise for 10 m models</td></tr>
+          <tr><td>512 × 512 px</td><td>5.12 km</td><td>11,445</td><td>Fewer jobs, but context and memory per worker grow 4×</td></tr></table>
+        <p>A bounding box is what you actually cut from. For a rectangle of 700 km × 550 km (a country that fills only part of its box), the same 10% overlap gives <span class="tex">305 \times 240 = 73{,}200</span> tiles. Roughly a quarter of those lie in the sea or across the border and are skipped by a country mask. The gap between the lower bound (56,711) and the box count (73,200) is exactly why real estimates always add an allowance for edges.</p>
+
+        <p><b>Step 2: what does one pass cost?</b> Cost is always the same kind of sum: <i>how much machine time, how much storage, how many requests, plus the people</i>. Write the assumptions down first; they are the part you will argue about, and the part you can change.</p>
+        <ol>
+          <li><b>Throughput.</b> One worker processes <b>1 tile per second</b>, including reads, inference and writes (illustrative).</li>
+          <li><b>Price.</b> One worker costs <b>$0.90 per hour</b> (illustrative, for a small GPU or a fat CPU instance).</li>
+          <li><b>Passes.</b> Three full passes: a development run, one re-run after fixing a bug, and the production run.</li>
+          <li><b>Output.</b> Two bands of 8-bit values at 10 m (class and confidence), stored as Cloud-Optimised GeoTIFF with DEFLATE compression at an assumed 3:1 ratio, plus 33% extra for overviews (Lesson 9.3). Storage costs <b>$0.023 per GB-month</b> (illustrative).</li>
+          <li><b>Requests.</b> Six archive requests per tile (one per date), at <b>$0.40 per million</b> requests (illustrative). Data inside the same region has no egress charge (assumed).</li>
+          <li><b>Quality control.</b> An analyst reviews <b>1% of tiles</b>, 3 minutes each, at <b>$45 per hour</b> (illustrative).</li>
+          <li><b>Not included:</b> engineering time, cloud credits, retries from outages, and maintenance.</li>
+        </ol>
+        <div class="worked"><b>Worked example: total cost for one year</b>
+          <p><b>Compute.</b> Machine time per pass: <span class="tex">56{,}711\ \text{tiles} \div 1\ \text{tile/s} = 56{,}711\ \text{s} = 15.753\ \text{worker-hours}</span>. Cost per pass: <span class="tex">15.753 \times \$0.90 = \$14.18</span>. Three passes: <span class="tex">3 \times 14.18 = \$42.53</span>.</p>
+          <p><b>Wall-clock time.</b> With 20 workers in parallel: <span class="tex">56{,}711 / 20 = 2{,}836\ \text{s} \approx 47\ \text{min}</span>. The same work on one worker takes 15.75 hours. Parallelism shortens the clock; it does not change the machine-hours.</p>
+          <p><b>Storage.</b> Pixels: <span class="tex">300{,}000\ \text{km}^2 \times 10{,}000\ \text{px per km}^2 = 3.0\times10^9</span> px. Raw bytes at 2 bands of 1 byte: 6.0 GB. After 3:1 compression: 2.0 GB. With overviews (+33%): <b>2.66 GB</b>. Monthly cost <span class="tex">2.66 \times 0.023 = \$0.061</span>, so about <b>$0.73 per year</b>.</p>
+          <p><b>Requests.</b> <span class="tex">56{,}711 \times 6 = 340{,}266</span> requests at $0.40 per million: <b>$0.14</b>.</p>
+          <p><b>Quality control.</b> 1% of 56,711 is 568 tiles. At 3 minutes each that is <span class="tex">568 \times 3 = 1{,}704\ \text{min} = 28.4\ \text{h}</span>, costing <span class="tex">28.4 \times 45 = \$1{,}278.00</span>.</p>
+          <p><b>Total.</b> <span class="tex">42.53 + 0.73 + 0.14 + 1{,}278.00 = \$1{,}321.40</span> for the year. Per square kilometre: <span class="tex">1{,}321.40 / 300{,}000 = \$0.0044</span>, about <b>0.44 cents per km²</b>. Compute alone is <span class="tex">14.18 / 300{,}000 = \$0.0000473</span> per km², roughly 0.005 cents.</p>
+          <p><b>The lesson hidden in the numbers.</b> Quality control is 96.7% of the bill. Machine time is cheap. Reviewing tiles by a person is expensive. A pipeline that spends its engineering effort on GPU speed while leaving the review process manual is optimising the wrong thing.</p></div>
+
+        <p><b>Step 3: checkpoints.</b> A job of 56,711 tiles over 47 minutes will sometimes fail: a spot instance is reclaimed, a read times out, a bug surfaces at tile 40,000. A <b>checkpoint</b> is a record, written durably, that says which tiles are finished. The rule is simple: write each output file before you mark its tile as done, and on restart skip every tile already marked. Without checkpoints, a crash at tile 40,000 repeats 40,000 tiles: <span class="tex">40{,}000 / 20\ \text{workers} = 2{,}000\ \text{s} \approx 33\ \text{min}</span> of wall time and <span class="tex">40{,}000/3600 \times \$0.90 = \$10.00</span> of machine time. With a checkpoint every 1,000 tiles, the most you can lose is one interval: 1,000 tiles, or 50 seconds of wall time across 20 workers.</p>
+
+        <div class="eq">N=\left\lceil\frac{A}{\big((P-O)\,g\big)^{2}}\right\rceil \qquad C=\frac{N}{r}\cdot\frac{p}{3600}\cdot k \;+\; C_{\text{store}}+C_{\text{req}}+C_{\text{QA}}</div>
+        <table class="sym">
+          <tr><td>A</td><td>area of the country in km²</td></tr>
+          <tr><td>P, O</td><td>tile side and overlap, both in pixels (P = 256, O = 26)</td></tr>
+          <tr><td>g</td><td>pixel size in km (10 m = 0.01 km), so <span class="tex">(P-O)g</span> is the side a tile owns</td></tr>
+          <tr><td>N</td><td>number of tiles (rounded up)</td></tr>
+          <tr><td>r, p</td><td>tiles per second per worker, and price per worker-hour</td></tr>
+          <tr><td>k</td><td>number of full passes</td></tr>
+          <tr><td>C</td><td>total cost; cost per km² is <span class="tex">C/A</span></td></tr>
+        </table>
+        <p>Scheduling has one more subtlety. If you cut the work into <span class="tex">n_c</span> equal chunks and give them to <span class="tex">w</span> workers, the wall-clock time is <span class="tex">\lceil n_c / w\rceil</span> rounds of one chunk each. Workers that finish early wait idle, but they are still billed if you pay for the instance rather than the task. That gap is the reason the lab below shows two costs.</p>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Product families at continental and global scale</b> such as ESA WorldCover (10 m) and Dynamic World are produced by tiled, parallel processing on cloud infrastructure, not on a laptop.</li>
+          <li><b>Pipeline view.</b> This lesson sits across the stages <i>Acquire</i> (range reads from the archive), <i>Preprocess</i> (tiling), <i>Inference</i> (GPU batches per tile) and <i>Publish</i> (writing the mosaic). Each worker stores its tile output in the chip store, so a restart can see what exists.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A rectangle of 200 km × 150 km at 10 m is cut into 256-pixel tiles with no overlap. How many tiles, and why is that more than area ÷ 6.5536?</summary><div class="ans">200 km = 20,000 px, and 20,000 / 256 = 78.125, so 79 tiles across. 150 km = 15,000 px, and 15,000 / 256 = 58.6, so 59 down. That gives 79 × 59 = <b>4,661 tiles</b>. Area ÷ 6.5536 is 4,577.6, so the rectangle needs about 83 more: the edge tiles are only partly full, but they still cost a full tile.</div></details>
+        <details class="check"><summary>2. Fifty-six thousand seven hundred eleven tiles, 1 tile per second per worker, 20 workers at $0.90 per worker-hour. How long does one pass take in wall-clock time, and what does it cost in compute?</summary><div class="ans">56,711 / 20 = 2,835.6 s ≈ <b>47.3 minutes</b>. Machine time is 56,711 / 3,600 = 15.753 worker-hours, costing <b>$14.18</b>. The same compute on one worker would take 15.75 hours at the same total price. Parallelism changes the clock, not the bill.</div></details>
+        <details class="check"><summary>3. You checkpoint every 500 tiles and the job crashes at tile 40,000 with 20 workers. What is the most work you can lose, and how long does it take to redo?</summary><div class="ans">At most one interval of <b>500 tiles</b> is redone. Across 20 workers that is 500 / 20 = <b>25 seconds</b> of wall time. Without the checkpoint you would redo 40,000 tiles, about 33 minutes at 20 workers and $10.00 of machine time.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A country becomes a count of tiles: <span class="tex">N=\lceil A/((P-O)g)^2\rceil</span>. Overlap and edges add tiles, and tiles are what you pay for.</li>
+          <li>Machine-hours are conserved by parallelism; the wall-clock time shrinks. Idle billed workers at the end make the real bill higher than the ideal one.</li>
+          <li>Checkpoint each tile, read only the bytes you need, and count quality control in the budget: for a 10 m national product it dominates.</li>
+        </ul></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the national job splitter</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play at speed 1×. Watch the grey cells (outside the country) get skipped, and the orange lanes pull the next cell from one shared queue.</li>
+        <li>Set workers to 40, then 10. The wall time scales roughly with 1/workers, but the <i>worker-hours</i> barely change. Parallelism buys time, not a cheaper bill.</li>
+        <li>Set the tile size to 512 px. The tile count falls about fourfold and each cell takes proportionally longer. Check the new N against the table above.</li>
+        <li>Compare the actual cost with the ideal cost. The gap is idle lanes at the end: when the number of cells does not divide by the number of workers, some workers wait.</li></ol></div>
+      <div data-lab="splitter"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Cheap per tile is not cheap per country.</b> A compute cost of $0.00025 per tile, multiplied by 56,711 tiles, is an answer, but it omits three passes, the review of 568 tiles and the storage of the product for years.</li>
+          <li><b>Forgetting the overlap.</b> Ten per cent overlap adds about 24% more tiles than the bare area count (56,711 vs 45,777). Estimates that leave it out are low by that much.</li>
+          <li><b>Idle workers are billed.</b> Paying for an instance is paying for its idle minutes too. Shut workers down when the queue is empty, or size the pool so the last round is full.</li>
+          <li><b>More workers may hit a shared limit.</b> If every worker reads the same bucket, request limits or bandwidth can flatten the speed-up long before the cost curve bends.</li></ul></div>
+        <div class="callout"><b>Module link.</b> The cost per tile depends on the model's throughput, which is measured with the efficiency tools in <a href="cv-production.html">Computer Vision · Module 9</a> and the serving cost arithmetic in <a href="ml-production.html">ML in production</a>. Evaluate accuracy before you scale, using <a href="ml-evaluation.html">the evaluation module</a>'s metrics.</div>
+      </div>
+    </section>
+
+        <!-- ===================== 9.2 ===================== -->
+    <section class="lesson" id="openeo-dask" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.2</span><h2>Workflow tools: openEO, Dask &amp; serverless</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your three-line NDVI script runs in two seconds on one tile on your laptop. Run on a whole country, it would try to load about 300 GB into memory and crash. How can the same recipe run over the whole country, without anyone writing a loop over tiles and without loading everything at once?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of the difference between a <b>recipe</b> and a <b>meal</b>. A recipe lists the steps: take the red band, take the near-infrared band, subtract, divide, average. Nobody has cooked anything yet. A <b>lazy</b> workflow works the same way: when you write <code>ndvi = (nir - red) / (nir + red)</code>, nothing is computed. The library records a <i>graph</i> of tasks, and it cooks only when you ask for the final number. Asking is the one moment of cost.</p>
+        <p>The second idea is the jigsaw from Lesson 9.1, now inside a single array. A large dataset is stored and processed as a grid of <b>chunks</b>. An operation runs chunk by chunk. At any moment the machine holds only a few chunks, not the whole country. This is what makes a 300 GB problem fit in a few gigabytes of memory.</p>
+        <p>Two tools put these ideas into practice. <b>Dask</b> is a Python library that builds these chunked task graphs and runs them on one machine or a cluster. <b>openEO</b> is a standard for describing the same kind of workflow as a list of processes (load a collection, mask, compute an index, reduce over time, save) that is sent to a back-end running next to the data archive. You describe what; the back-end decides how and where. <b>Serverless</b> functions take a third route: one small function per tile, triggered by a queue and paid per invocation, which suits bursty work such as an emergency.</p>
+
+        <h3 class="sec">Build it up: a three-chunk example you can compute by hand</h3>
+        <p>Take a tiny raster: two rows and six columns, with a red and a near-infrared band. Cut it into three <b>chunks</b> of two columns each. A cloud (or a bad pixel) is any pixel with red above 0.27. Here are the values and the NDVI of each pixel, with <span class="tex">\text{NDVI}=\frac{\text{NIR}-\text{Red}}{\text{NIR}+\text{Red}}</span> computed for every pixel.</p>
+        <table class="tbl"><tr><th>Row</th><th>Col 1</th><th>Col 2</th><th>Col 3</th><th>Col 4</th><th>Col 5</th><th>Col 6</th></tr>
+          <tr><td>1</td><td>0.6667</td><td>0.5862</td><td>cloud (red 0.30)</td><td>0.7460</td><td>0.6842</td><td>0.2308</td></tr>
+          <tr><td>2</td><td>0.6508</td><td>0.6610</td><td>cloud (red 0.28)</td><td>0.7846</td><td>0.6491</td><td>0.3333</td></tr>
+          <tr><td colspan="7" style="color:var(--muted)">chunk A = columns 1–2 · chunk B = columns 3–4 · chunk C = columns 5–6</td></tr></table>
+        <div class="worked"><b>Worked example: the mean, done in chunks</b>
+          <p><b>Step 1, each chunk is reduced to two numbers, a sum and a count.</b> Chunk A has four valid pixels: <span class="tex">S_A = 0.6667+0.5862+0.6508+0.6610 = 2.5647</span>, <span class="tex">n_A = 4</span>. Chunk B has two cloudy pixels, so only column 4 counts: <span class="tex">S_B = 0.7460+0.7846 = 1.5306</span>, <span class="tex">n_B = 2</span>. Chunk C: <span class="tex">S_C = 0.6842+0.2308+0.6491+0.3333 = 1.8974</span>, <span class="tex">n_C = 4</span>.</p>
+          <p><b>Step 2, the wrong way.</b> Average the averages: <span class="tex">(0.6412 + 0.7653 + 0.4744)/3 = 0.6270</span>. Each chunk counts once, whatever its size, so chunk B's two pixels weigh as much as chunk A's four. This is wrong whenever chunks hold different numbers of valid pixels.</p>
+          <p><b>Step 3, the right way.</b> Add the sums and the counts first, then divide: <span class="tex">\bar{x}=\dfrac{S_A+S_B+S_C}{n_A+n_B+n_C}=\dfrac{5.9927}{10}=0.59928</span>.</p>
+          <p><b>Step 4, check it.</b> Ignoring the mask (using all twelve pixels) gives 0.5113: the two cloudy pixels have low NDVI, so leaving them in pulls the answer down. A lazy workflow gives the same answer as an eager one. What differs is how much memory is used on the way.</p></div>
+        <p>This is why reductions in chunked systems are written as <b>partial sums that combine</b>: each chunk emits <span class="tex">(S_k, n_k)</span>, and a final task adds them. Dask's <code>nanmean</code> and openEO's reducers do exactly this internally.</p>
+
+        <p><b>What the code looks like.</b> The sketch below uses Dask on NumPy arrays that are already in memory. The real archive version would use the same operations on arrays opened lazily from a COG or Zarr store; the lab shows the same graph with the three chunks.</p>
+        <pre><code>import numpy as np
+import dask.array as da
+
+red = da.from_array(red_np, chunks=(256, 256))   # lazy: nothing is read yet
+nir = da.from_array(nir_np, chunks=(256, 256))
+ndvi = (nir - red) / (nir + red)                 # still lazy: only a graph of tasks
+ndvi = da.where(red &gt; 0.27, np.nan, ndvi)        # cloud mask, also lazy
+mean = da.nanmean(ndvi).compute()                # the only line that does the work</code></pre>
+        <p>An openEO workflow has the same shape, but the processes are named by the standard rather than by a library. The sketch below follows the openEO Python client; check the exact process names and parameters with your back-end, because they vary by service.</p>
+        <pre><code>cube = connection.load_collection("SENTINEL2_L2A", bands=["B04", "B08", "SCL"],
+                                  spatial_extent=country_bbox, temporal_extent=["2026-06-01", "2026-08-31"])
+cube = cube.mask(scl_is_cloud)          # cloud mask from the scene classification band
+ndvi = cube.ndvi(nir="B08", red="B04")  # index computed per pixel, per date
+summer = ndvi.reduce_dimension(dimension="t", reducer="mean")
+job = summer.save_result(format="GTiff")  # the back-end runs it where the data lives</code></pre>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\bar x=\frac{\sum_{k=1}^{K}S_k}{\sum_{k=1}^{K}n_k},\qquad S_k=\sum_{p\in\text{chunk }k,\ \text{valid}}x_p,\qquad n_k=\#\{p\in\text{chunk }k:\text{valid}\}</div>
+        <table class="sym">
+          <tr><td>K</td><td>number of chunks (3 in the example)</td></tr>
+          <tr><td>x<sub>p</sub></td><td>the NDVI value of pixel <i>p</i></td></tr>
+          <tr><td>valid</td><td>pixels that pass the mask (not cloud, not no-data)</td></tr>
+          <tr><td>S<sub>k</sub>, n<sub>k</sub></td><td>the partial sum and count of chunk <i>k</i>: the only numbers that move between tasks</td></tr>
+        </table>
+        <p>A lazy graph is a directed acyclic graph <i>G</i> whose nodes are operations and whose edges carry chunks. Calling <code>compute()</code> asks the scheduler to evaluate the nodes needed for the requested output, in an order that respects the edges, and to free each intermediate chunk as soon as its consumers have used it. Those two rules, <i>demand-driven</i> and <i>free after use</i>, set the memory peak.</p>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Pangeo-style stacks</b> (xarray with Dask) run large climate and satellite reductions this way on cluster schedulers.</li>
+          <li><b>openEO back-ends</b> next to the Copernicus archives let a workflow written once run over a national extent on the provider's infrastructure, so only the result is downloaded.</li>
+          <li><b>Pipeline view.</b> Acquire (lazy range reads), Preprocess (mask, normalise), Inference (per-tile model calls inside the graph) and Post-process (reduce) are one graph, executed by the scheduler. The publish step writes the result as a COG.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the 2×6 raster above, what is the mean NDVI, and what is the mean of the chunk means? Which one is right, and why?</summary><div class="ans">Correct: (2.5647 + 1.5306 + 1.8974) / 10 = <b>0.59928</b>. The mean of chunk means is 0.6270, which is wrong because chunk B has two valid pixels and chunks A and C have four: the average of averages gives each chunk equal weight, not each pixel.</div></details>
+        <details class="check"><summary>2. The lazy run peaks at one chunk held in memory, while the eager run peaks at twelve. Why?</summary><div class="ans">Lazy evaluation runs each chunk through read, mask, NDVI and reduce before starting the next chunk, and frees each stage's output once the next stage has used it. Eager evaluation finishes every chunk's read before any mask, every mask before any NDVI, and so on, so the outputs of all three chunks at all four stages are held together: 3 × 4 = 12 chunk outputs at the peak.</div></details>
+        <details class="check"><summary>3. Why is a serverless function per tile a poor fit for a model with a 40 GB weight file?</summary><div class="ans">Each invocation must start, load the weights and fit them in memory. Loading 40 GB per tile dominates the time and cost, and many functions cannot hold that much memory at once. A long-running worker that loads the model once and then processes a stream of tiles amortises the load, and serverless is better suited to small models or to pre-processing.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Lazy means the recipe is recorded first and cooked only when the result is requested; the cost moves to one visible moment.</li>
+          <li>Chunked reductions combine partial sums and counts. Averaging averages is wrong when the counts differ.</li>
+          <li>Run the workflow where the data lives. Choose Dask for control on your own cluster, openEO when a back-end holds the archive, and serverless for bursty, light tasks.</li>
+        </ul></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: lazy graph and chunks</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Compute result</b> in <i>lazy</i> mode and watch one chunk travel through read, mask, NDVI and reduce before the next chunk starts. Note the peak: one chunk held.</li>
+        <li>Switch to <i>eager</i> and compute again. Each stage now runs for all chunks first, and the held count climbs to twelve.</li>
+        <li>Check the answer: it is 0.59928 in both modes. Only the memory differs.</li>
+        <li>Drag the cloud threshold down to 0.22 and watch the mask remove more pixels. Notice the answer change, and why the mean of chunk means moves differently from the correct mean.</li></ol></div>
+      <div data-lab="lazygraph"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Averaging averages.</b> The mean of chunk means is wrong whenever chunks have different numbers of valid pixels. Carry sums and counts.</li>
+          <li><b>Calling compute inside a loop.</b> Each call runs the whole graph again. Build the graph once, then compute once.</li>
+          <li><b>Chunks that do not match the file's tiles.</b> If a 300-pixel chunk straddles 512-pixel COG blocks, every read touches four blocks. Align chunk sizes with the internal tiling.</li>
+          <li><b>Lazy errors arrive late.</b> A bad band name fails at compute time, perhaps after an hour of work. Validate the graph on one tile before the national run.</li></ul></div>
+        <div class="callout"><b>Module link.</b> Windowed reads depend on the Cloud-Optimised GeoTIFF layout, covered in Module 1 of this GeoAI course, and the cloud masks come from the quality bands discussed there too. For how a workflow's machine time becomes a bill, see Lesson 9.1. For the general data-pipeline and feature-store view, see <a href="ml-production.html">ML in production</a>.</div>
+      </div>
+    </section>
+
+        <!-- ===================== 9.3 ===================== -->
+    <section class="lesson" id="product-publishing" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.3</span><h2>Publishing products as COG &amp; STAC</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 56,711 tiles of a national class map and its confidence map. A correction ships next year. How do users find the product, read a small part of it without downloading 2.66 GB, and cite exactly the version they used?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a published product as a library edition. It has four parts, each solving one problem. The <b>binding and index</b> (the Cloud-Optimised GeoTIFF, COG) let a reader open page 412 without carrying the whole book. The <b>catalogue card</b> (a STAC Item) says what the item is, where it lies, when it was made and where its files are. The <b>shelf</b> (a STAC Collection) groups the cards of one product. The <b>edition number</b> (a version) and the <b>citation</b> (a DOI and a description) let someone refer to exactly the thing they used, years later.</p>
+        <p>The point of the design is that a machine can answer "give me the 2026 class values inside this 2 km box" by reading a few kilobytes of catalogue and then a few blocks of the file, never the whole country.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the COG checklist.</b> A COG is an ordinary GeoTIFF arranged so that a reader needs only the header and the blocks it wants. Four properties make that work, and each has a value to set:</p>
+        <table class="tbl"><tr><th>Property</th><th>Value to use</th><th>Why it matters</th></tr>
+          <tr><td>Internal tiling</td><td>512 × 512 px blocks</td><td>A window read fetches whole blocks; 512 balances request count and waste</td></tr>
+          <tr><td>Overviews</td><td>×2, ×4, ×8, ×16, ×32</td><td>A map zoomed out reads a small overview, not the full-resolution file</td></tr>
+          <tr><td>Compression</td><td>DEFLATE or ZSTD (lossless)</td><td>Class maps must not be altered by lossy compression</td></tr>
+          <tr><td>Data type and no-data</td><td>uint8, no-data 255</td><td>0 may be a real class (water); 255 must never be a valid value</td></tr>
+          <tr><td>CRS and geotransform</td><td>written inside the file (EPSG:32637 here)</td><td>A file with no CRS is a file nobody can align</td></tr></table>
+        <p>Tools such as GDAL and rio-cogeo can write these properties and validate them, which belongs in the publish step rather than in someone's memory.</p>
+        <div class="worked"><b>Worked example: the overview pyramid for the 700 × 550 km mosaic</b>
+          <p>The national mosaic at 10 m is <span class="tex">70{,}000 \times 55{,}000</span> pixels. Each overview halves both sides, so the pixel count falls by four:</p>
+          <table class="tbl"><tr><th>Overview</th><th>Size (px)</th><th>Pixels, as a share of full resolution</th></tr>
+            <tr><td>full</td><td>70,000 × 55,000</td><td>100%</td></tr>
+            <tr><td>×2</td><td>35,000 × 27,500</td><td>25%</td></tr>
+            <tr><td>×4</td><td>17,500 × 13,750</td><td>6.25%</td></tr>
+            <tr><td>×8</td><td>8,750 × 6,875</td><td>1.56%</td></tr>
+            <tr><td>×16</td><td>4,375 × 3,438</td><td>0.39%</td></tr>
+            <tr><td>×32</td><td>2,188 × 1,719</td><td>0.10%</td></tr></table>
+          <p>The extra storage is the sum of the shares, a geometric series: <span class="tex">\frac14+\frac1{16}+\frac1{64}+\cdots=\frac{1/4}{1-1/4}=\frac13</span>, about 33%. This is the factor used in Lesson 9.1, which turned 2.0 GB into 2.66 GB.</p></div>
+
+        <p><b>Step 2: the STAC Item, one per tile.</b> A STAC Item is a GeoJSON Feature with extra rules. Its <code>bbox</code> and <code>geometry</code> are in longitude and latitude (WGS84), as GeoJSON requires, even though the pixels are in UTM. Its <code>properties</code> hold the time and the grid description, and its <code>assets</code> list the files with their media types and roles. The example below is for one 256-pixel tile in UTM zone 37N (EPSG:32637), with its upper-left corner at easting 470,000 m and northing 1,000,000 m. The coordinates were computed from that corner with a coordinate transformation, not estimated by eye.</p>
+        <pre><code>{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": ["https://stac-extensions.github.io/projection/v2.0.0/schema.json"],
+  "id": "lc2026-v1.2.1-E470000-N1000000",
+  "collection": "landcover-national-v1",
+  "bbox": [38.727025, 9.023306, 38.750335, 9.046477],
+  "geometry": {"type": "Polygon", "coordinates": [[
+      [38.727025, 9.046461], [38.750319, 9.046477], [38.750335, 9.023322],
+      [38.727043, 9.023306], [38.727025, 9.046461]]]},
+  "properties": {
+    "datetime": null,
+    "start_datetime": "2026-01-01T00:00:00Z",
+    "end_datetime": "2026-12-31T23:59:59Z",
+    "gsd": 10,
+    "proj:code": "EPSG:32637",
+    "proj:shape": [256, 256],
+    "proj:transform": [10, 0, 470000, 0, -10, 1000000]
+  },
+  "links": [
+    {"rel": "self", "href": "https://data.example.org/landcover/2026/v1.2.1/items/lc2026-v1.2.1-E470000-N1000000.json", "type": "application/geo+json"},
+    {"rel": "collection", "href": "https://data.example.org/landcover/v1/collection.json", "type": "application/json"},
+    {"rel": "root", "href": "https://data.example.org/landcover/catalog.json", "type": "application/json"}
+  ],
+  "assets": {
+    "class": {"href": "https://data.example.org/landcover/2026/v1.2.1/class/E470000-N1000000.tif",
+              "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+              "title": "Land-cover class (uint8, no-data 255)", "roles": ["data"]},
+    "confidence": {"href": "https://data.example.org/landcover/2026/v1.2.1/confidence/E470000-N1000000.tif",
+                   "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+                   "title": "Model confidence (uint8, 0 to 100)", "roles": ["data"]}
+  }
+}</code></pre>
+        <p>Read the example field by field. <code>datetime</code> is <code>null</code> because the product is a year-long composite, so the interval fields <code>start_datetime</code> and <code>end_datetime</code> carry the time instead; STAC allows this. <code>gsd</code> is the ground sample distance in metres. The <code>proj:</code> fields come from the projection extension and tell a reader how the pixel grid sits in its CRS: <code>proj:transform</code> is the affine transform <span class="tex">[10, 0, 470000, 0, -10, 1000000]</span>, meaning 10 m pixels, no rotation, and the origin at the upper-left corner. The version lives in the item id and the file paths, so a v1.2.0 item and a v1.2.1 item can coexist.</p>
+
+        <p><b>Step 3: collections, versions and citation.</b> A collection holds the items of one product and carries the product-level facts: extent, licence, providers and a description. Versions follow semantic versioning, MAJOR.MINOR.PATCH, with rules written down in advance:</p>
+        <table class="tbl"><tr><th>Bump</th><th>When</th><th>Example</th><th>What users must do</th></tr>
+          <tr><td>PATCH (1.2.0 to 1.2.1)</td><td>Fixes some tiles; the classes and method are unchanged</td><td>14 tiles re-processed after a bad input scene</td><td>Nothing, unless they used those tiles</td></tr>
+          <tr><td>MINOR (1.2.1 to 1.3.0)</td><td>A new year or a better model with the same classes</td><td>The 2027 map from the same legend</td><td>Compare with the previous year before mixing</td></tr>
+          <tr><td>MAJOR (1.3.0 to 2.0.0)</td><td>New classes, a new legend or a schema change</td><td>Water split into lake and reservoir</td><td>Re-map their code; a new collection id is used</td></tr></table>
+        <p>Keep every released version reachable at its own address. A DOI should point at a fixed version, never at "latest", and the citation should state the version and the access date. A citation in the form <i>Author or team (year). Title, version, [Data set]. DOI. Accessed date.</i> is then exact: "Example Mapping Team (2026). National land cover 2026, version 1.2.1 [Data set]. DOI 10.xxxx/placeholder. Accessed 2026-10-31." Replace the placeholder with the DOI you register.</p>
+
+        <div class="eq">W_k=\left\lceil\frac{W}{2^{k}}\right\rceil,\qquad H_k=\left\lceil\frac{H}{2^{k}}\right\rceil,\qquad \text{overhead}=\sum_{k\ge1}4^{-k}=\tfrac13</div>
+        <table class="sym">
+          <tr><td>W, H</td><td>full-resolution width and height in pixels (70,000 and 55,000)</td></tr>
+          <tr><td>k</td><td>overview level: 1 for ×2, 2 for ×4, and so on</td></tr>
+          <tr><td>W<sub>k</sub>, H<sub>k</sub></td><td>size of the overview at level <i>k</i>, rounded up</td></tr>
+          <tr><td>bbox, geometry</td><td>extent in WGS84 (longitude, latitude); required by GeoJSON</td></tr>
+          <tr><td>proj:transform</td><td>affine transform of the pixel grid in the CRS named by proj:code</td></tr>
+        </table>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Open land-cover and imagery products</b> are commonly distributed as COGs with a static STAC catalogue, so a model or a map viewer can read them over HTTP.</li>
+          <li><b>Training data releases</b> use the same pattern: the labels and the chips are versioned, cited and described by STAC so that a model card can name the exact version it was trained on.</li>
+          <li><b>Pipeline view.</b> This is the <i>Publish and monitor</i> stage: it writes the product COG and the STAC Item and Collection, then the accuracy checks of Module 8 are attached to the release.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A COG with full size 35,000 × 27,500 px has overviews ×2, ×4 and ×8. Give their sizes, and the total extra storage they add (as a share of the full file).</summary><div class="ans">×2: 17,500 × 13,750; ×4: 8,750 × 6,875; ×8: 4,375 × 3,438 (3,437.5 rounded up). Total: 1/4 + 1/16 + 1/64 = 21/64 ≈ <b>32.8%</b> extra.</div></details>
+        <details class="check"><summary>2. A reviewer finds that 14 tiles of v1.2.0 were built from a bad input scene. Which version bump is right, and what happens to the other 56,697 tiles?</summary><div class="ans">A <b>PATCH</b> bump: 1.2.0 becomes 1.2.1, because the classes and method are unchanged. Only the 14 affected tiles are re-processed and get new items and files. The other 56,697 items are untouched, and v1.2.0 stays available so earlier citations still resolve.</div></details>
+        <details class="check"><summary>3. A class map uses 0 for "water" and you declare 0 as the no-data value. What goes wrong?</summary><div class="ans">Every water pixel is treated as missing: masks remove them, area statistics skip them and a user's water fraction becomes wrong. The no-data value must be a value that never occurs in the data. Here that is 255, and 0 stays a valid class.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A COG (tiling, overviews, correct no-data) lets users read a window without the whole file; overviews cost about one third extra.</li>
+          <li>A STAC Item is a GeoJSON feature in WGS84 with the grid described by the projection extension; collections group items and carry the licence.</li>
+          <li>Version with rules written in advance, keep old versions reachable, and cite a fixed version and a DOI.</li>
+        </ul></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: publishing pipeline</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Publish</b> with every check on. Watch the dot pass through the five stages and the version appear at the end.</li>
+        <li>Untick <i>Overviews ×2 to ×32</i> and publish again. The pipeline stops at the COG stage and says exactly which check is missing.</li>
+        <li>Choose <i>patch</i>, publish, then <i>major</i>, and compare the new version numbers. Which one needs a new collection id?</li>
+        <li>Untick <i>Licence and DOI</i>, then publish. Consider what a user could still do with the data, and what they could not cite.</li></ol></div>
+      <div data-lab="publish"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Overwriting a published file.</b> Users who cited a URL now get different numbers. Publish new versions to new paths and keep the old ones.</li>
+          <li><b>A DOI that points at "latest".</b> Citations then change under the reader. A DOI should resolve to one version.</li>
+          <li><b>No overviews.</b> A national COG without overviews looks fine on your laptop and crawls in a web map.</li>
+          <li><b>Missing licence.</b> A product without a stated licence is legally unusable for many users, however open it looks. Name the licence, for example CC-BY-4.0, and check its attribution rules.</li></ul></div>
+        <div class="callout"><b>Module link.</b> The accuracy figures that go with a release come from the sampling designs in <a href="ml-evaluation.html">the evaluation module</a>, and the versions are only as trustworthy as the monitoring plan in Lesson 9.4.</div>
+      </div>
+    </section>
+
+        <!-- ===================== 9.4 ===================== -->
+    <section class="lesson" id="monitoring-drift-geo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.4</span><h2>Monitoring GeoAI systems</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your model mapped crop fields at 90% accuracy when it was validated in 2024. In 2026 there is a drought, and the satellite processing has been upgraded. How would you know the map has got worse, how many reference points would prove it, and what should trigger a new check?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A map is a snapshot of a changing planet. Three things change under it. The <b>world</b> changes: a drought makes fields greener in some weeks and browner in others, and crops are planted on different dates. The <b>sensors and processing</b> change: a new calibration or a new surface-reflectance baseline shifts every pixel slightly. And the <b>place</b> changes: a model trained in one region meets fields, soils and farming practices it never saw. Each is called <b>drift</b>, and each needs a different check.</p>
+        <p>Geography adds two traps. First, the same field looks different in June and in September, so a check must compare like with like: this season against the same season in earlier years, at the same stage of growth. Second, neighbouring pixels are not independent, so a sample of 200 pixels from one farm tells you much less than 200 pixels spread over the country. Monitoring is a sampling problem as much as a statistics one.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a distribution check, by hand.</b> Suppose the mid-season NDVI of crop pixels in 2019–2024 has mean <span class="tex">\mu_{\text{ref}}=0.62</span> and standard deviation <span class="tex">\sigma_{\text{ref}}=0.08</span> (illustrative). In 2026 the season mean is 0.55. Measure the shift in units of the reference spread, not in raw NDVI, because the same 0.07 means something different when the spread is 0.02 and when it is 0.20:</p>
+        <div class="worked"><b>Worked example: the 2026 season</b>
+          <p><span class="tex">z=\dfrac{\mu_{2026}-\mu_{\text{ref}}}{\sigma_{\text{ref}}}=\dfrac{0.55-0.62}{0.08}=-0.875</span>. With a rule "alarm when |z| is greater than τ = 0.5", that is an alarm. The 2025 season had mean 0.585, so <span class="tex">z=-0.4375</span>: below the threshold, no alarm, but a warning sign.</p>
+          <p>A check on one season only is noisy. Use the whole timeline: the reference years wobble by about ±0.004 around 0.62, so a single season that is 0.06 away is a real signal while 0.005 is noise.</p></div>
+        <p><b>Step 2: how many reference points?</b> Monitoring also needs ground truth, and ground truth costs money. Re-validation means an analyst labels randomly chosen reference points and compares them with the map. With a measured accuracy <span class="tex">a</span> and <span class="tex">n</span> points, the 95% interval for the true accuracy is <span class="tex">a \pm 1.96\sqrt{a(1-a)/n}</span>.</p>
+        <div class="worked"><b>Worked example: is 86% a real drop from 90%?</b>
+          <p>Measure <span class="tex">a=0.86</span> with <span class="tex">n=200</span> points. The half-width is <span class="tex">1.96\sqrt{0.86\cdot0.14/200}=0.048</span>, so the interval is <span class="tex">[0.812,\,0.908]</span>. It contains 0.90, so the drop is <b>not yet conclusive</b>: the map may be exactly as good as before.</p>
+          <p>How many points would settle it? We need the upper end below 0.90: <span class="tex">0.86+1.96\sqrt{0.1204/n}&lt;0.90</span>, which gives <span class="tex">n\ge290</span>. At 600 points the interval is [0.832, 0.888]: a clear drop. At 5 minutes per labelled point and $45 per hour, 200 points cost <span class="tex">200 \times 5/60 \times 45 = \$750</span>, and 600 points cost $2,250. The sample size is therefore a budget decision that you should make before the season, not after the alarm.</p></div>
+
+        <p><b>Step 3: sensor drift is small per pixel and big in aggregate.</b> A processing change that scales near-infrared reflectance by 3% changes a single pixel only a little. Take a pixel with red 0.10 and near-infrared 0.50: NDVI goes from <span class="tex">(0.50-0.10)/(0.50+0.10)=0.66667</span> to <span class="tex">(0.515-0.10)/(0.515+0.10)=0.67480</span>, a shift of <b>0.008</b>, about a tenth of σ. Nobody sees that in one pixel. But the standard error of a mean over 10,000 pixels is <span class="tex">0.08/\sqrt{10{,}000}=0.0008</span>, so the shift is about ten standard errors. Monitoring the <i>distribution</i> over many pixels finds what single-pixel checks cannot.</p>
+
+        <p><b>Step 4: a re-validation schedule.</b> Put the checks on a calendar, with a size and a trigger for each. Cadence should follow the cost of being wrong, not the convenience of the team.</p>
+        <table class="tbl"><tr><th>When</th><th>What is checked</th><th>Size and cost</th><th>Trigger to act</th></tr>
+          <tr><td>Every two weeks in season</td><td>Data health: scenes received, cloud and no-data share, processing baseline version</td><td>Automatic, no labels</td><td>Missing scenes above 5% of plan, or a new baseline</td></tr>
+          <tr><td>Monthly in season</td><td>Distribution of the index against the same-season reference (mean shift, z)</td><td>Automatic, no labels</td><td>|z| above τ = 0.5</td></tr>
+          <tr><td>On alarm, within 30 days</td><td>Stratified re-validation of accuracy with a confidence interval</td><td>200 points, about 16.7 analyst-hours, $750 (illustrative rate)</td><td>Accuracy interval below the release threshold</td></tr>
+          <tr><td>Yearly, after the season</td><td>Full re-validation across all regions</td><td>600 points, interval ±2.4 points at a = 0.90</td><td>Publish the year's accuracy with the release</td></tr>
+          <tr><td>After any sensor or baseline change</td><td>Repeat the distribution and accuracy checks</td><td>300 points within two weeks</td><td>Always; a change of baseline is a new model input</td></tr></table>
+        <p><b>New regions.</b> Before publishing a model in a region it was not trained in, draw reference points there first. A region with different soils or crops can show drift on day one. The rule is the same: no publication without a local accuracy estimate and its interval.</p>
+
+        <div class="eq">z_t=\frac{\mu_t-\mu_{\text{ref}}}{\sigma_{\text{ref}}},\qquad \text{alarm if }|z_t|&gt;\tau,\qquad a\pm z_{0.975}\sqrt{\frac{a(1-a)}{n}}</div>
+        <table class="sym">
+          <tr><td>μ<sub>t</sub>, μ<sub>ref</sub></td><td>mean index value this season and in the reference period, compared within the same phenological window</td></tr>
+          <tr><td>σ<sub>ref</sub></td><td>standard deviation of the index in the reference period</td></tr>
+          <tr><td>τ</td><td>alarm threshold, in reference standard deviations (0.5 here)</td></tr>
+          <tr><td>a, n</td><td>measured accuracy on reference points, and the number of points</td></tr>
+          <tr><td>z<sub>0.975</sub></td><td>1.96, the 97.5th percentile of the standard normal distribution</td></tr>
+        </table>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Operational crop monitoring and food-security systems</b> compare each season's index distributions with reference years, then re-label samples when a change appears.</li>
+          <li><b>Sensor changes</b> such as a new processing baseline are routinely handled by re-running the reference period, so the z-scores stay comparable.</li>
+          <li><b>Pipeline view.</b> This is the monitor half of the <i>Publish and monitor</i> stage: it reads the products from Lesson 9.3 and decides when to re-validate and re-publish.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The 2026 season mean is 0.575, the reference is 0.62 with σ = 0.08, and the threshold is τ = 0.5. Is it an alarm?</summary><div class="ans">z = (0.575 − 0.62)/0.08 = −0.5625. Its absolute value is above 0.5, so yes, <b>an alarm</b>. The 2025 mean of 0.585 gave z = −0.4375, which was below it.</div></details>
+        <details class="check"><summary>2. A map measured at 86% accuracy on 200 points, against a reference of 90%. Is the drop conclusive? How many points would be needed to show it?</summary><div class="ans">Not conclusive. The interval is 0.86 ± 0.048, i.e. [0.812, 0.908], which contains 0.90. Solving 0.86 + 1.96√(0.1204/n) &lt; 0.90 gives n ≥ <b>290</b> points.</div></details>
+        <details class="check"><summary>3. A processing change scales NIR by 3%. A single pixel with red 0.10 and NIR 0.50 moves from NDVI 0.66667 to 0.67480. Why is that still worth monitoring?</summary><div class="ans">The shift per pixel is 0.008, about a tenth of σ, so single pixels hide it. Across 10,000 pixels the standard error of the mean is 0.0008, so the shift is about ten standard errors: the distribution-level check detects it reliably.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Drift has three sources: the world, the sensors and processing, and the place. Each needs its own check.</li>
+          <li>Compare like with like: the same season, at the same growth stage, measured in the reference standard deviation.</li>
+          <li>Accuracy needs a sample size chosen in advance; a small sample cannot tell a 4-point drop from noise.</li>
+        </ul></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: seasonal drift monitor</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>. The orange curve is the current season; watch its mean move while the timeline advances one season every couple of seconds.</li>
+        <li>Set the 2026 mean to 0.55, then to 0.60. Find the value where the alarm first appears for τ = 0.5: just below 0.58, the lower edge of the green band (z must be strictly below −0.5).</li>
+        <li>Lower the threshold to τ = 0.25 and watch 2025 raise an alarm as well. Consider what a monthly team would do with that many false alarms.</li>
+        <li>Set the measured accuracy to 0.86 and the sample size to 200, then to 600. Read the interval and the verdict each time.</li></ol></div>
+      <div data-lab="drift"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Comparing different seasons.</b> A June mean against a September reference reports the calendar, not the drought.</li>
+          <li><b>Watching only accuracy.</b> Accuracy needs labels, which arrive late. Distribution checks give an early warning on the cheap.</li>
+          <li><b>Testing with pixels from one farm.</b> Spatial autocorrelation makes such a sample look far more certain than it is.</li>
+          <li><b>Retraining silently.</b> A new model or a new baseline changes the product. Log it as a release with its own accuracy, not as a quiet update.</li></ul></div>
+        <div class="callout"><b>Module link.</b> The accuracy estimates and sampling designs here are the tools of <a href="ml-evaluation.html">the evaluation module</a> applied over time. Drift in the broader ML sense, and the retraining triggers that follow from it, are covered in <a href="ml-production.html">ML in production</a>.</div>
+      </div>
+    </section>
+
+        <!-- ===================== 9.5 ===================== -->
+    <section class="lesson" id="privacy-ethics-geo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.5</span><h2>Privacy, ethics &amp; responsible use</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A health NGO wants to publish a map of where eight households reported a disease case, and a flood-risk study wants to publish home locations. The coordinates are precise to a few centimetres. How much should they be blurred, what do they still reveal after blurring, and who else should be asked before anything is published?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A location is almost an identifier. A home coordinate, together with a time or a pattern of visits, can single out one household as surely as a name. The map does not need to show a name to reveal a person: if only one house in a village has a particular value, the house is the person. Privacy in geospatial work is therefore a question of <b>how much the coordinate can be narrowed down</b>, and how many other people share the same narrowed location.</p>
+        <p>Precision is a dial. A coordinate in decimal degrees has a fixed number of decimal places, and each place removes a factor of ten from the precision. Near Addis Ababa, one degree of latitude is about 111 km, and each decimal place divides that size by ten, so four decimal places are about 11 m, a single building, while one decimal place is about 11 km, a whole neighbourhood or more. Rounding moves the point to the centre of a grid cell. The question becomes: does the cell hold enough other records to hide this one?</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the precision ladder.</b> At 9° N, one degree of latitude is 111.32 km and one degree of longitude is 109.94 km. Each decimal place divides these by ten. Using the cell sizes in metres:</p>
+        <table class="tbl"><tr><th>Decimal places kept</th><th>Cell size, approx.</th><th>Example of what it can resolve</th></tr>
+          <tr><td>4</td><td>11 m × 11 m</td><td>one building or one plot</td></tr>
+          <tr><td>3</td><td>111 m × 110 m</td><td>a small cluster of houses</td></tr>
+          <tr><td>2</td><td>1.1 km × 1.1 km</td><td>a village or a ward</td></tr>
+          <tr><td>1</td><td>11 km × 11 km</td><td>a town district</td></tr>
+          <tr><td>0</td><td>111 km × 110 km</td><td>a region</td></tr></table>
+        <p><b>Step 2: group and count.</b> Take eight invented coordinates in one city (they are not real sites, and the lesson uses them only as numbers). Round each to <i>d</i> decimal places, count the records that share a rounded location, and call a record <b>identifiable</b> if fewer than <i>k</i> records share its cell. Here <i>k</i> = 3, a common teaching choice for "a person is hidden among at least three others".</p>
+        <div class="worked"><b>Worked example: eight records, four precisions</b>
+          <p>Rounding the eight coordinates gives these group sizes (the cell counts, largest first):</p>
+          <table class="tbl"><tr><th>Decimal places</th><th>Occupied cells</th><th>Group sizes</th><th>Records in a cell with fewer than 3</th></tr>
+            <tr><td>4</td><td>6</td><td>2 / 2 / 1 / 1 / 1 / 1</td><td><b>8 of 8</b>: every record is identifiable</td></tr>
+            <tr><td>3</td><td>4</td><td>5 / 1 / 1 / 1</td><td><b>3 of 8</b></td></tr>
+            <tr><td>2</td><td>3</td><td>5 / 2 / 1</td><td><b>3 of 8</b></td></tr>
+            <tr><td>1</td><td>3</td><td>5 / 2 / 1</td><td><b>3 of 8</b></td></tr>
+            <tr><td>0</td><td>1</td><td>8</td><td><b>0 of 8</b>: one cell of 111 km, far too coarse to use</td></tr></table>
+          <p>Read the table carefully. At four decimal places the records are spread over six cells and all eight are identifiable. At three places, five records merge into one safe cell, but three isolated records remain alone. At two places the pair of records falls below k too, and the single record still stands by itself. Rounding to one place changes nothing for them: the one record in the north-west corner stays by itself until the grid is 111 km wide. <b>Rounding protects the crowd and leaves the loner exposed.</b></p></div>
+        <p>So a publication rule needs more than a precision. It needs a grouping rule (every published cell has at least <i>k</i> records), and a treatment for the cells that fail it: suppress the record, merge it into a neighbouring cell, or publish only the aggregate count. Using <i>k</i> in this way is an informal version of the <b>k-anonymity</b> idea from the data-privacy literature: each released record must be indistinguishable from at least <i>k</i> − 1 others on its quasi-identifiers. For a location, the quasi-identifier is the cell.</p>
+
+        <div class="eq">\hat c=\operatorname{round}(c,\,d),\qquad I_k=\sum_{\text{cells }j}n_j\,\mathbf 1[n_j&lt;k]\qquad\text{cell size}\approx 111\,320\cdot10^{-d}\ \text{m (north–south)}</div>
+        <table class="sym">
+          <tr><td>c, ĉ</td><td>true coordinate and its rounded value (the centre of the published cell)</td></tr>
+          <tr><td>d</td><td>decimal places kept</td></tr>
+          <tr><td>n<sub>j</sub></td><td>number of records in cell <i>j</i></td></tr>
+          <tr><td>k</td><td>minimum group size chosen by the data steward (3 in the example)</td></tr>
+          <tr><td>I<sub>k</sub></td><td>number of records that are identifiable at that grouping</td></tr>
+        </table>
+
+        <p><b>Step 3: the questions that come before the numbers.</b> Coordinates are only one part of responsible use. Five questions should be answered in writing before publication:</p>
+        <ol>
+          <li><b>Who could be harmed?</b> Clinics, shelters, households in conflict or disaster, sites of cultural value that attract looting, and nests or dens of threatened species that attract poaching are all sensitive.</li>
+          <li><b>Could the map be used against people?</b> Maps of infrastructure, of vulnerable settlements or of who lives where can serve targeting as well as planning. This is <i>dual use</i>, and it is a question for the team, not only for the lawyers.</li>
+          <li><b>Who has rights over the land or the data?</b> Customary and Indigenous land claims, and data about communities, may require the consent of the communities themselves. The CARE principles for Indigenous data governance (collective benefit, authority to control, responsibility, ethics) are a useful checklist.</li>
+          <li><b>What licence applies?</b> CC-BY-4.0 requires attribution; CC-BY-SA requires derivatives to share alike; the ODbL, used for OpenStreetMap-derived data, carries share-alike obligations on databases; CC0 puts no conditions on reuse. Imagery licences are often separate and may forbid redistribution of raw tiles.</li>
+          <li><b>What is the release plan?</b> Coarse grids by default, exact points only to vetted users under a data-use agreement, and a delay for sensitive species or sites are common answers.</li>
+        </ol>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Humanitarian and health mapping</b> often publishes aggregated grids while keeping exact locations inside the organisation.</li>
+          <li><b>Biodiversity platforms</b> commonly coarsen or delay the locations of sensitive species, so that people cannot use the record to find the animal.</li>
+          <li><b>Pipeline view.</b> The privacy rules sit in the <i>Publish and monitor</i> stage, applied to the products of Lesson 9.3 before they reach the open archive, and they are reviewed each time the product is versioned.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At 3 decimal places, how many of the eight records are identifiable with k = 3, and which ones?</summary><div class="ans">Three. The group of five shares one cell and is safe; the three singletons (each alone in its cell) are identifiable.</div></details>
+        <details class="check"><summary>2. The team says that rounding to 1 decimal place (about 11 km) solves the problem. Is that right?</summary><div class="ans">No. At one decimal place the groups are 5, 2 and 1, so three records remain in cells smaller than 3. The isolated record stays alone until the cell is about 111 km wide. Rounding alone cannot protect outliers; suppression or merging is needed.</div></details>
+        <details class="check"><summary>3. A conservation team holds exact nest locations of an endangered bird. Give a sensible release plan.</summary><div class="ans">Publish an aggregated grid at a coarse resolution (for example 1 km cells, with the k rule applied), delay the release until the breeding season has passed, share exact points only with vetted researchers under a data-use agreement, and state the licence and the reason for coarsening in the product's description.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A coordinate can identify a person; each decimal place of rounding divides the precision by ten.</li>
+          <li>Count the crowd: a published cell needs at least k records, and loners need suppression or merging, not just rounding.</li>
+          <li>Before the numbers, answer who could be harmed, how the map could be misused, whose consent is needed, under which licence, and at what resolution it is released.</li>
+        </ul></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: location privacy</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start at 4 decimal places and <i>k</i> = 3. Count the red records: they are the ones a neighbour could pick out. Then reduce the precision one step at a time and watch the red records move into shared cells.</li>
+        <li>Stop at 2 decimal places. Which records are still red? Explain why the loner in the north-west corner stays alone.</li>
+        <li>Raise <i>k</i> to 5. How many records become identifiable at 3 decimal places, and what does the larger group size cost in precision?</li>
+        <li>Pause the motion and compare the grey rings (true positions) with the filled dots (after rounding). Consider what a published map would show a reader who does not see the grey rings.</li></ol></div>
+      <div data-lab="privacy"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"We removed the names."</b> Names are not the only identifiers. A place, a time and a rare attribute can identify a person together.</li>
+          <li><b>Rounding as the whole defence.</b> It protects groups and leaves outliers exposed. Apply a group-size rule.</li>
+          <li><b>Forgetting the derived products.</b> A heat map, a density surface or a model's output can reveal the same locations as the points they came from.</li>
+          <li><b>Licences as an afterthought.</b> Share-alike and attribution terms bind every later user. Decide them before the first release.</li></ul></div>
+        <div class="callout warn"><b>Honest limit.</b> A group-size rule lowers the risk of identification but does not remove it. Determined attackers can combine a published map with other datasets. Treat k as one control among several, and review each release for the sensitive cases above.</div>
+      </div>
+    </section>
+
+        <!-- ===================== 9.6 ===================== -->
+    <section class="lesson" id="geoai-applications" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">9.6</span><h2>Applications &amp; case studies</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Five teams come to you with five projects: a farm cooperative wants crop maps through the season, a flood agency wants extents within hours of a storm, a city wants building footprints, a climate group wants forty years of change, and a conservation charity wants weekly deforestation alerts. The same six-stage pipeline serves all five. Which parts of it must each project get right, and which can be cheap?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every GeoAI project is the same pipeline with different pressure points. Imagine a surgeon's kit: the same instruments serve many operations, but a heart operation stresses different tools from a cataract operation. For each application there is one stage that decides success. For a disaster it is how fast data can be fetched and processed. For a climate record it is whether the sensors agree with each other over decades. For conservation it is whether the published result keeps sensitive places safe. Choosing a project means naming that stage before you design anything.</p>
+        <p>A useful habit is to write three sentences per project: <i>what decision the product supports</i>, <i>how fresh it must be</i>, and <i>what happens if it is wrong</i>. Those three answers set the latency budget, the monitoring plan and the privacy rules, and they are cheap to write before any model is trained.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the five case studies.</b> Each row below says what the pipeline must do, in the terms used by the earlier lessons.</p>
+        <table class="tbl"><tr><th>Application</th><th>Decision and cadence</th><th>What the pipeline needs</th><th>Typical failure</th></tr>
+          <tr><td><b>Agriculture</b></td><td>Crop type and condition through the season; monthly updates</td><td>A cloud-robust composite across dates (Lesson 9.2 windows); field-parcel labels; seasonal drift checks (9.4); per-field summaries (zonal statistics from Module 4)</td><td>A model that fits one season and fails in a drought year</td></tr>
+          <tr><td><b>Disaster response</b></td><td>Flood or damage extent within hours of an event</td><td>SAR imagery, because clouds block optical sensors in storms; a pre-event baseline; a worker pool sized to the time budget (below); uncertainty flags; a rapid COG release (9.3)</td><td>Slow data access and unreviewed maps published as fact</td></tr>
+          <tr><td><b>Urban planning</b></td><td>Building footprints, updated yearly; change between years</td><td>Very high resolution (about 0.5 m), instance masks and polygon QA (Module 5 and 8), labels from the city, topology checks before release</td><td>Footprints that look right on average but have many slivers and merged buildings</td></tr>
+          <tr><td><b>Climate</b></td><td>Change over decades; one pass per year, forty passes or more</td><td>An archive spanning several sensor generations, calibrated consistently; time-series products; drift checks at each sensor change; versioned, citable releases (9.3)</td><td>A trend that is really a sensor change</td></tr>
+          <tr><td><b>Conservation</b></td><td>Weekly alerts for clearing or illegal activity</td><td>Fast change detection (Module 4 and 5), an alert review step, privacy: sensitive places coarsened or delayed (9.5), licences and consent</td><td>Alerts that reveal where a guarded site is</td></tr></table>
+        <p><b>Step 2: a worked latency budget.</b> Disaster teams ask one question first: how many workers do we need to finish inside the time we have? The answer is a ceiling division. Suppose a storm floods 10,000 km², which is <span class="tex">\lceil 10{,}000/6.5536\rceil = 1{,}526</span> tiles of 256 pixels (no overlap, for simplicity). The budget is 10 minutes, or 600 s.</p>
+        <div class="worked"><b>Worked example: workers for a ten-minute flood map</b>
+          <p>If an optical tile takes <b>1 s</b> per worker: <span class="tex">\lceil 1{,}526 \times 1 / 600\rceil = \lceil 2.54\rceil = 3</span> workers.</p>
+          <p>If a SAR tile with its speckle filtering takes <b>4 s</b> (an illustrative figure): <span class="tex">\lceil 1{,}526 \times 4 / 600\rceil = \lceil 10.17\rceil = 11</span> workers.</p>
+          <p>The arithmetic is small. The hours are lost elsewhere: finding the scenes, waiting for the pre-event baseline, and having an analyst check the result. A budget that counts only compute misses the stages that usually fail.</p></div>
+        <p><b>Step 3: resolution changes everything.</b> Urban work often uses 0.5 m imagery, twenty times finer than 10 m in each direction. Count the pixels. One square kilometre at 10 m is <span class="tex">1{,}000/10 \times 1{,}000/10 = 10{,}000</span> pixels; at 0.5 m it is <span class="tex">2{,}000 \times 2{,}000 = 4{,}000{,}000</span> pixels, <b>400 times as many</b>. A 256-pixel tile at 0.5 m covers 128 m, so a square kilometre holds <span class="tex">1{,}000/128 \times 1{,}000/128 = 61.0</span> such tiles, against 0.15 at 10 m. Every cost in Lesson 9.1 scales with this ratio, so a city project and a national project are not the same budget even when they cover the same area.</p>
+
+        <div class="eq">N_{\text{workers}}=\left\lceil\frac{N_{\text{tiles}}\,t_{\text{tile}}}{T_{\text{budget}}}\right\rceil</div>
+        <table class="sym">
+          <tr><td>N<sub>tiles</sub></td><td>tiles in the area of interest (Lesson 9.1)</td></tr>
+          <tr><td>t<sub>tile</sub></td><td>seconds of work per tile for one worker, including reads and inference</td></tr>
+          <tr><td>T<sub>budget</sub></td><td>time available for the whole job, in the same units</td></tr>
+        </table>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Operational flood and fire mapping</b> programmes combine SAR and optical imagery, with a pre-event baseline, and publish extents as COGs with a stated confidence.</li>
+          <li><b>Building-footprint datasets</b> at national scale are produced by instance segmentation followed by heavy polygon clean-up, then released with their version and accuracy.</li>
+          <li><b>Pipeline view.</b> Each application stresses a different stage: disaster work the <i>Acquire</i> and <i>Inference</i> stages, urban work <i>Post-process</i>, climate <i>Preprocess</i> and <i>Publish</i>, conservation <i>Publish and monitor</i> with its privacy rules, and agriculture the monitoring stage. The selector below scores this.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 10,000 km² flood at 256-pixel tiles needs 1,526 tiles. If each tile takes 1 s per worker and the budget is 10 minutes, how many workers? What changes if the budget is 5 minutes?</summary><div class="ans">⌈1,526 × 1 / 600⌉ = ⌈2.54⌉ = <b>3 workers</b>. With a 5-minute (300 s) budget: ⌈1,526 / 300⌉ = ⌈5.09⌉ = <b>6 workers</b>. Halving the time roughly doubles the workers.</div></details>
+        <details class="check"><summary>2. How many pixels does one square kilometre hold at 0.5 m, compared with 10 m, and how many 256-pixel tiles does it need at 0.5 m?</summary><div class="ans">At 0.5 m: 4,000,000 pixels; at 10 m: 10,000 pixels, so <b>400 times</b> as many. A 256-pixel tile at 0.5 m covers 128 m, so one square kilometre needs 61.0 tiles, against 0.15 tiles at 10 m.</div></details>
+        <details class="check"><summary>3. For a conservation alert system, which stage decides success, and what is the first thing to write down?</summary><div class="ans">The <i>Publish and monitor</i> stage, including its privacy rules: an alert that reveals a guarded site is a failure however accurate the detection is. Write down the decision the alert supports, the cadence, and the release rule (coarse, delayed or restricted) before tuning the model.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Every GeoAI project uses the same six stages; each application puts its weight on one or two of them.</li>
+          <li>Write the decision, the freshness and the cost of error before design. They set the latency budget, monitoring and privacy rules.</li>
+          <li>Count the workers and the pixels before you promise a deadline: resolution multiplies every cost in the chain.</li>
+        </ul></div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: application selector</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Select <i>Disaster response</i>. Which stage has the tallest bar? Read the "what the pipeline needs" note and check that it matches the table above.</li>
+        <li>Select <i>Climate</i> and then <i>Urban planning</i>. Find the stage where the two differ most, and explain why a team could not reuse one pipeline unchanged.</li>
+        <li>For <i>Conservation</i>, find the stage with the highest score. Ask whether a team with excellent detection but no release rule would succeed.</li>
+        <li>Pick a project of your own. Before looking at the bars, decide which two stages matter most. Then check your guess against the scores and explain any difference.</li></ol></div>
+      <div data-lab="appsel"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Copying a pipeline between applications.</b> A flood pipeline with an optical-only input fails in the cloudy weeks it is built for.</li>
+          <li><b>Judging by accuracy alone.</b> A disaster map that arrives on day three is wrong for the decision, however accurate it is.</li>
+          <li><b>Forgetting the people in the map.</b> Conservation, health and urban products describe places where people live or where things are protected.</li>
+          <li><b>Ignoring the resolution ratio.</b> Moving from 10 m to 0.5 m multiplies the pixels and tiles by 400 for the same area.</li></ul></div>
+        <div class="callout"><b>Choosing a project.</b> Start from the decision, then the stage, then the data. The hub <a href="geoai.html">GeoAI</a> lists the modules that teach each stage, and the systems view for teams is in <a href="ml-production.html">ML in production</a> and <a href="cv-production.html">Computer Vision · Module 9</a>.</div>
+      </div>
+    </section>
+
+    <div class="callout"><b>Module complete.</b> You have taken a GeoAI model from one tile to a national product: counted its tiles, costed its passes, published it with an audit trail, watched it drift and protected the people it describes. Return to <a href="geoai.html">the GeoAI hub</a>, compare the vision details in <a href="cv-production.html">Computer Vision · Module 9</a>, or the system view in <a href="ml-production.html">ML in production</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

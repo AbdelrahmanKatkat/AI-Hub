@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Geospatial formats · GeoAI</title>
+<meta name="description" content="GeoTIFF and Cloud-Optimised GeoTIFF, vector formats, chunked arrays and Zarr, HTTP range requests, reprojection and resampling, and no-data and cloud masks: how geospatial data is stored and read.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-geo-formats.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">🗂️</div>
+      <div style="flex:1">
+        <h1>Module 1 · Geospatial data formats &amp; cloud-native access</h1>
+        <p>A satellite scene is a very large grid of numbers with a map attached. This module shows how that grid is stored (GeoTIFF, Zarr, GeoPackage), why the storage layout decides what you can read cheaply over the internet, and how to align and clean the data before a model sees it.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">Cloud-Optimised GeoTIFF</span><span class="chip">Zarr &amp; range requests</span><span class="chip">Animated, editable labs</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 1.1 ===================== -->
+    <section class="lesson" id="geotiff-cog" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.1</span><h2>GeoTIFF &amp; Cloud-Optimised GeoTIFF</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A satellite scene is 10 000 × 10 000 pixels with 4 bands of 16-bit numbers. Uncompressed, that is 800 MB. Your model needs one 1 000 × 1 000 window from the middle, and the file sits on a server across the internet. How can a file let you read <i>only</i> that window, and not the whole 800 MB?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture a very long photograph printed on one roll of paper. To see the middle you have to unroll everything before it. Now imagine the same photograph cut into a grid of numbered squares, with a table of contents at the front that says where each square starts on the roll. If you want square 37, you read the table, jump to its position and read only that square.</p>
+        <p>That is the whole idea of a <b>tiled</b> file. The second idea, <b>overviews</b>, is the atlas trick: alongside the full-resolution map, the file also stores smaller copies (half size, quarter size, and so on). When you look at the whole country you do not need every street, so you read a smaller copy.</p>
+        <p>A <b>GeoTIFF</b> is an ordinary TIFF image with a few extra tags that say where the pixels are on Earth: which coordinate reference system (CRS) they use and where the top-left corner sits. A <b>Cloud-Optimised GeoTIFF (COG)</b> is a GeoTIFF arranged so that a reader can find and fetch any tile with a few small requests. Almost every public satellite archive now offers its data in this form.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, the plain layout.</b> An uncompressed TIFF stores pixels row by row, one long strip after another. To read a 1 000 × 1 000 window in the middle, a reader must still skip past all the rows above it, and each row of the window is a separate piece of the file. Over the network that means many small, scattered reads.</p>
+        <p><b>Step 2, internal tiling.</b> A tiled GeoTIFF cuts the image into squares, usually 256 × 256 or 512 × 512 pixels. Each tile is stored (and often compressed) as one block, and the file keeps a list of where each tile starts (<i>TileOffsets</i>) and how many bytes it takes (<i>TileByteCounts</i>). A window now touches only the tiles it overlaps.</p>
+        <div class="worked"><b>Worked example: tile count and window cost</b>
+          <p>Tile size T = 512 and the image is W = H = 10 000 pixels.</p>
+          <p>Tiles across: <span class="tex">\lceil 10000/512\rceil = 20</span>, because 19 × 512 = 9 728 is less than 10 000, so one more tile is needed. The file has 20 × 20 = <b>400 tiles</b> per band layout. The last tile column covers pixels 9 728 to 10 239, and the part beyond 10 000 is padding.</p>
+          <p>One tile of 4 bands at 2 bytes each is <span class="tex">512 \times 512 \times 4 \times 2 = 2\,097\,152</span> bytes (about 2.1 MB), even if it is stored uncompressed.</p>
+          <p>The window covers rows 1 000 to 1 999 and columns 1 500 to 2 499. The tile rows it touches are <span class="tex">\lfloor 1000/512\rfloor = 1</span> to <span class="tex">\lfloor 1999/512\rfloor = 3</span>, that is rows 1, 2, 3. The tile columns are <span class="tex">\lfloor 1500/512\rfloor = 2</span> to <span class="tex">\lfloor 2499/512\rfloor = 4</span>, that is columns 2, 3, 4. So the window touches <b>3 × 3 = 9 tiles</b>.</p>
+          <p>Bytes read: <span class="tex">9 \times 2\,097\,152 = 18\,874\,368</span> B (about 18.9 MB). The exact window holds <span class="tex">1000 \times 1000 \times 4 \times 2 = 8\,000\,000</span> B. Reading whole tiles costs about 2.4 times the pixels you need, and the whole file would cost 400 × 2 097 152 = 838 860 800 B (about 839 MB).</p></div>
+        <p><b>Step 3, overviews.</b> An overview (also called a pyramid level) is a copy of the image at half the width and height. Each level divides the size by 2 and is tiled in the same way. Starting from 10 000 pixels:</p>
+        <div class="eq">10000 \to 5000 \to 2500 \to 1250 \to 625 \to 313</div>
+        <p>With 512-pixel tiles, these levels hold 100, 25, 9, 4 and 1 tiles. Together with the 400 full-resolution tiles, the file has 539 tiles in total. A map that shows the whole scene on a 1 000-pixel screen does not need 10 000 pixels per side, so the reader picks a level whose pixels roughly match the screen.</p>
+        <div class="worked"><b>Worked example: a coarse window</b>
+          <p>The same 1 000 × 1 000 window, read from overview level 2 (the 2 500-pixel copy, scale factor 4), becomes rows 250 to 499 and columns 375 to 624 of that copy. Tile rows: <span class="tex">\lfloor 250/512\rfloor = 0</span> to <span class="tex">\lfloor 499/512\rfloor = 0</span>, one tile row. Tile columns: <span class="tex">\lfloor 375/512\rfloor = 0</span> to <span class="tex">\lfloor 624/512\rfloor = 1</span>, two columns. So the reader fetches <b>2 tiles = 4 194 304 B</b> (about 4.2 MB) instead of 18.9 MB, and it receives 250 × 250 pixels, which is the same ground area at a quarter of the resolution.</p></div>
+        <p><b>Step 4, the georeferencing tags.</b> A GeoTIFF records where its pixels are. The key tags are the <i>GeoKeyDirectory</i> (which CRS, for example EPSG:32633 for UTM zone 33N), the <i>ModelTiepoint</i> (the coordinates of one pixel corner) and the <i>ModelPixelScale</i> (the size of a pixel, for example 10 m east-west and 10 m north-south). Together they define the <b>geotransform</b>: a rule that maps pixel (row, column) to map coordinates.</p>
+        <p><b>Step 5, the cloud-optimised layout.</b> The COG standard orders the file so that all the image headers (IFDs) and the tile index sit at the front. A reader fetches the first few tens of kilobytes, learns where every tile is, and then issues one request per tile it needs. Lesson 1.4 turns this into byte ranges.</p>
+        <p><b>Where it sits in the pipeline.</b> This is the <i>Acquire</i> stage: the storage layout decides how many bytes the stage must move before preprocessing can start.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">n_x=\left\lceil \frac{W}{T}\right\rceil,\qquad n_y=\left\lceil \frac{H}{T}\right\rceil,\qquad N_{\text{tiles}}=n_x\,n_y</div>
+        <div class="eq">W_L=\left\lceil \frac{W}{2^{L}}\right\rceil,\qquad B_{\text{tile}}=T\cdot T\cdot C\cdot b</div>
+        <div class="eq">\text{tiles touched}=\left(\left\lfloor\frac{r_1}{T}\right\rfloor-\left\lfloor\frac{r_0}{T}\right\rfloor+1\right)\left(\left\lfloor\frac{c_1}{T}\right\rfloor-\left\lfloor\frac{c_0}{T}\right\rfloor+1\right)</div>
+        <table class="sym">
+          <tr><td>W, H</td><td>width and height of the full-resolution image, in pixels</td></tr>
+          <tr><td>T</td><td>tile size (square tiles), in pixels</td></tr>
+          <tr><td>n_x, n_y</td><td>number of tile columns and tile rows; ⌈·⌉ rounds up</td></tr>
+          <tr><td>L</td><td>overview level: 0 is full resolution, each level halves the size</td></tr>
+          <tr><td>W_L</td><td>width of overview level L in pixels</td></tr>
+          <tr><td>C, b</td><td>number of bands and bytes per sample (1 for uint8, 2 for uint16, 4 for float32)</td></tr>
+          <tr><td>r₀…r₁, c₀…c₁</td><td>first and last pixel row and column of the window</td></tr>
+          <tr><td>⌊·⌋</td><td>round down; the tile index of pixel p is ⌊p/T⌋</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: tiles, overviews and one window</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press <i>Request window</i> with the defaults. Count the orange tiles: 9. Check the readout: 18 874 368 B for a 1 000 × 1 000 window that needs 8 000 000 B.</li>
+          <li>Set the window to row 500, column 500, 100 × 100. Only 4 tiles are touched (8 388 608 B), yet the window has only 80 000 B of pixels. A tiny window that straddles a tile boundary costs much more than it needs.</li>
+          <li>Change the overview level to 2 with the default window. The window shrinks to 250 × 250 and touches 2 tiles. Coarse levels are cheap.</li>
+          <li>Change the tile size to 1024. Fewer tiles, but each one is 4 times larger. Which is better depends on how big your windows are; a 256-pixel tile suits small training chips.</li></ol></div>
+        <div data-lab="tiledRaster"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A GeoTIFF is not automatically cloud-optimised.</b> A striped, untiled file forces a reader to download nearly everything for a small window. Check the file (for example with <code>gdalinfo</code> or the COG validator) instead of trusting the extension.</li>
+          <li><b>Overviews are averages, not data.</b> Use level 0 for training labels and for any measurement. Overviews are for display and quick looks.</li>
+          <li><b>Tile size is a trade-off, not a quality setting.</b> Very small tiles mean many requests and large headers; very large tiles mean reading far more than you need.</li>
+          <li><b>Band layout matters.</b> Pixel-interleaved tiles keep all bands together, so reading one band still reads all of them. Band-separate (planar) files let you read one band alone, at the price of more files per scene.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Most public Sentinel-2 and Landsat archives on the major cloud platforms are distributed as COGs, so a model can read a training chip without downloading the scene.</li>
+          <li>Windowed reads (the <code>read window</code> call in libraries such as rasterio) are how data loaders cut 256 × 256 chips from a scene on the fly.</li>
+          <li>Models that predict on a whole scene (lesson 5.7) write their output as a COG too, with the same tile and overview layout, so the next user can read it cheaply.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A single-band uint8 GeoTIFF is 6 000 × 4 000 pixels with 256 × 256 tiles. How many tiles are there?</summary><div class="ans">Across: ⌈6000/256⌉ = 24, because 23 × 256 = 5 888 is short of 6 000. Down: ⌈4000/256⌉ = 16, because 15 × 256 = 3 840. Total 24 × 16 = <b>384 tiles</b>.</div></details>
+        <details class="check"><summary>2. A 300 × 300 window starts at row 250, column 250 of a 256-tile, 3-band uint8 file. How many bytes are read?</summary><div class="ans">Rows ⌊250/256⌋ = 0 to ⌊549/256⌋ = 2, so 3 tile rows. Columns are the same, so 3 tile columns. That is 9 tiles of 256 × 256 × 3 = 196 608 B each, a total of <b>1 769 472 B</b>. The exact window is only 300 × 300 × 3 = 270 000 B.</div></details>
+        <details class="check"><summary>3. A web map is displayed on a 1 000-pixel-wide screen but the scene is 10 000 pixels wide. Why read an overview?</summary><div class="ans">The screen can show only about 1 000 pixels across. Level 3 (1 250 pixels) or level 4 (625 pixels) carries nearly the same information for display, at a fraction of the bytes. Reading level 0 would transfer about 8 to 10 times more pixels than the screen can show.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A GeoTIFF is an image plus georeferencing tags; a COG adds internal tiles, overviews and an index at the front of the file.</li>
+          <li>Bytes read = the tiles a window touches × the bytes per tile, not the window's own pixels.</li>
+          <li>Overviews trade resolution for bytes; use them for display, use level 0 for measurement.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 ===================== -->
+    <section class="lesson" id="vector-formats" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.2</span><h2>Vector formats: GeoJSON, GeoPackage, Shapefile</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 3 000 building footprints drawn as polygons, a boundary file for each district, and 1.2 million GPS points that serve as labels. Which format should each one use? And why does a footprint that looks correct on screen sometimes give a wrong area, or land in the wrong country?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Raster data is a grid of cells: every pixel has a value. <b>Vector</b> data is a list of <i>things</i>. Each thing has a shape (a point, a line or a polygon, described by its corner coordinates) and a row of attributes (a name, a class, a year). A vector layer behaves like a spreadsheet in which one column holds a shape.</p>
+        <p>Vector files differ mainly in how they store that spreadsheet. Some are plain text that you can open in an editor, some are a single database file, and some are a bundle of several files that must travel together.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, the geometry types.</b> A <i>Point</i> is one coordinate pair, such as a GPS fix. A <i>LineString</i> is an ordered list of points, such as a road. A <i>Polygon</i> is a closed ring: a list of points whose first and last entries are the same, which marks where the boundary returns to its start. A polygon may have holes (an inner ring) and a <i>MultiPolygon</i> is several polygons under one record, such as an island group.</p>
+        <p><b>Step 2, the attributes.</b> Each feature (one geometry plus its attributes) carries values such as <code>"class": "building"</code> or <code>"year": 1998</code>. In a labelling project the attribute is the label, and the geometry is the place where it applies.</p>
+        <p><b>Step 3, coordinate order and CRS.</b> In GeoJSON the order is <b>longitude first, then latitude</b>: <code>[x, y]</code> with x = lon. The Eiffel Tower is at longitude 2.2945 (east of Greenwich) and latitude 48.8584 (north of the equator), so its point is <code>[2.2945, 48.8584]</code>. Many APIs and maps write latitude first, so swapped pairs are a common error. We check this in the lab below.</p>
+        <div class="worked"><b>Worked example: a footprint in degrees and in metres</b>
+          <p>Take a small square footprint in Paris with corners at longitude 2.3500 and 2.3502, latitude 48.8560 and 48.8562. Its side is 0.0002° in each direction.</p>
+          <p>Computing the area in degrees gives <span class="tex">0.0002 \times 0.0002 = 4 \times 10^{-8}</span> square degrees. That number has no physical meaning, because a degree of longitude is not the same length as a degree of latitude.</p>
+          <p>At latitude 48.856°, one degree of longitude is about <span class="tex">111.32 \cos(48.856^\circ) \approx 73.24</span> km and one degree of latitude is about 110.57 km. The footprint is therefore about <span class="tex">14.65\ \text{m} \times 22.11\ \text{m} \approx 324\ \text{m}^2</span>. (This local flat approximation is good enough for a single building; a projected CRS gives the same answer to within a percent.)</p>
+          <p>The rule: <b>measure area and distance in a projected CRS, not in degrees.</b></p></div>
+        <p><b>Step 4, validity.</b> A polygon must not cross itself. The "bow-tie" <span class="tex">(0,0),(2,2),(2,0),(0,2),(0,0)</span> has two lobes, each of area 2. Its signed shoelace area is 0, because the two lobes wind in opposite directions and cancel. Overlay and area tools fail or give nonsense on such rings, so a validity check (and a repair such as <code>make_valid</code>) belongs in every pipeline.</p>
+        <p><b>Step 5, choosing a format.</b></p>
+        <table class="tbl">
+          <tr><th>Format</th><th>What it is</th><th>Use it for</th><th>Limits and gotchas</th></tr>
+          <tr><td>GeoJSON</td><td>Text, one JSON object per feature; standard RFC 7946 fixes WGS84 and [lon, lat]</td><td>Small layers, web exchange, annotations you want to read</td><td>Large files are slow and heavy; the text repeats field names</td></tr>
+          <tr><td>GeoPackage (.gpkg)</td><td>One SQLite database file; several layers, rasters and vectors together; OGC standard</td><td>The default for sharing projects and labels</td><td>Single file, so it is not cloud-friendly for partial reads by itself</td></tr>
+          <tr><td>Shapefile (.shp)</td><td>Old but everywhere; at least four files (.shp, .shx, .dbf, .prj)</td><td>Compatibility with legacy tools</td><td>2 GB limit per file, field names ≤ 10 characters, one geometry type per file, and a missing .prj means the CRS is unknown</td></tr>
+          <tr><td>GeoParquet</td><td>Parquet columns with a geometry column; compressed and columnar</td><td>Very large layers queried by column or by bounding box</td><td>Needs a Parquet-aware tool; check the metadata for the CRS</td></tr>
+        </table>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{Polygon } P=\{\,(x_0,y_0),(x_1,y_1),\dots,(x_n,y_n)\,\},\qquad (x_n,y_n)=(x_0,y_0)</div>
+        <div class="eq">A_{\text{signed}}=\tfrac12\sum_{i=0}^{n-1}\bigl(x_i\,y_{i+1}-x_{i+1}\,y_i\bigr)</div>
+        <table class="sym">
+          <tr><td>(xᵢ, yᵢ)</td><td>the i-th vertex; for GeoJSON xᵢ is longitude and yᵢ is latitude</td></tr>
+          <tr><td>n</td><td>number of edges; the ring closes when the last vertex equals the first</td></tr>
+          <tr><td>A_signed</td><td>shoelace area; positive for counter-clockwise rings, negative for clockwise, and it is only a valid area for a simple (non-self-intersecting) ring</td></tr>
+        </table>
+        <div class="eq">\text{GeoJSON point: }\ \{\text{"type":"Point","coordinates":}[\,2.2945,\ 48.8584\,]\}</div>
+
+        <h3 class="sec">Lab: is that coordinate in the right country?</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults (Paris, stored as [lon, lat]). The reader and the producer agree, and the point lands in France.</li>
+          <li>Set the producer to write [lat, lon] while the reader expects [lon, lat]. The point jumps to the Indian Ocean, and the readout says no listed box contains it.</li>
+          <li>Press <i>Nairobi</i> with the same swapped setting. The point is read as longitude −1.29, latitude 36.82, which falls inside the approximate Spain box. The software would happily put the feature in the wrong country.</li>
+          <li>Press <i>Tokyo</i>, swapped. The latitude becomes 139.69, which is impossible, so the validity check fails.</li></ol></div>
+        <div data-lab="coordCheck"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Swapped coordinates do not raise an error.</b> A valid-looking pair in the wrong order is still a valid point somewhere else. Validate that |latitude| ≤ 90 and check the result against an expected region.</li>
+          <li><b>Area in degrees is meaningless.</b> Reproject to a metric CRS (for example the local UTM zone) before measuring area, buffering or distance.</li>
+          <li><b>A file without a CRS is not a georeferenced file.</b> Shapefiles without a .prj and GeoJSON files with a legacy <code>crs</code> member are ambiguous. Ask for the CRS or check the source.</li>
+          <li><b>Invalid polygons spread errors.</b> A bow-tie gives a wrong area and can make overlay results change sign. Run a validity check before every join.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Building, road and land-cover labels for segmentation are usually delivered as GeoPackage or GeoJSON polygons, and they must be rasterised onto the image grid (Module 3).</li>
+          <li>Open map datasets are published as GeoJSON or GeoParquet with coordinates in lon/lat, so a model trained on a metric CRS must reproject them first (lesson 1.5).</li>
+          <li>Annotation tools export GeoJSON features with a class property; the attribute table is the training label set.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A GeoJSON point is written as [48.8584, 2.2945]. Read by the GeoJSON rule, where is it?</summary><div class="ans">Longitude 48.8584 and latitude 2.2945: a point in the Indian Ocean, a few hundred kilometres off the coast of Somalia. It is a valid coordinate, which is why the error is silent. The fix is to write [2.2945, 48.8584].</div></details>
+        <details class="check"><summary>2. Why is the shoelace signed area of the bow-tie (0,0),(2,2),(2,0),(0,2),(0,0) equal to zero?</summary><div class="ans">The two triangular lobes each have area 2 (unsigned total 4), but they are traversed in opposite directions. The signed sum adds +2 and −2 and gives 0. A zero area for a shape that clearly covers space is the signal that the ring is self-intersecting and invalid.</div></details>
+        <details class="check"><summary>3. You must share 3 000 polygons with layer names longer than 10 characters and a 2.4 GB attribute table. Which format?</summary><div class="ans">GeoPackage. Shapefiles would break the 2 GB file limit and truncate field names to 10 characters. A GeoPackage is one SQLite file that holds several layers with long names and no such limit.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Vector data is a table of geometries plus attributes; points, lines and polygons are rings and paths of coordinates.</li>
+          <li>GeoJSON is [longitude, latitude]; swapped pairs are valid and land somewhere else, so check ranges and expected regions.</li>
+          <li>Measure in a projected CRS, and validate polygons before using them.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 ===================== -->
+    <section class="lesson" id="array-formats-zarr" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.3</span><h2>Multidimensional arrays: NetCDF &amp; Zarr</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have daily images of a 2 000 × 2 000 area for 1 827 days (five years), with one float32 value per pixel per day. That is 29.2 GB before any compression. Your task is to compute the average time series for one pixel. Reading the full cube to do it would take hours. How should the cube be stored so that a question about one pixel over time is cheap, and a question about one day is also cheap?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A single GeoTIFF is naturally two-dimensional: rows and columns. A satellite time series adds a third dimension, <b>time</b>, so the data is a <i>datacube</i>: a box with axes (time, y, x). Asking a question means slicing the box, and the cheapest slice depends on how the box has been cut into pieces.</p>
+        <p>Think of a warehouse full of boxes. If each box holds one shelf of one week, finding everything about one product for one year means opening 52 boxes. If each box holds one product for one week, the same question is cheap, but a question about one whole shelf is now expensive. <b>Chunking</b> is the decision of how big each box is and which axes it spans.</p>
+        <p><b>NetCDF</b> is a long-standing format for such arrays (its NetCDF-4 version sits on the HDF5 library and supports chunking and compression). <b>Zarr</b> is a newer format built for cloud object storage: each chunk is a separate object, and a small metadata file says the array's shape, chunk shape, data type and compressor. A reader can fetch just the chunk objects it needs, in parallel.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, the cube.</b> Our cube has shape (T, Y, X) = (1 827, 2 000, 2 000), float32 (4 bytes per value). Its size is <span class="tex">1827 \times 2000 \times 2000 \times 4 = 29\,232\,000\,000</span> B, about 29.2 GB.</p>
+        <p><b>Step 2, chunk shape.</b> The array is cut into chunks of shape (ct, cy, cx). Chunk A below is 10 days by 256 by 256 pixels, which is 10 × 256 × 256 × 4 = 2 621 440 B (2.5 MiB) per chunk. The number of chunks along each axis is a ceiling division: <span class="tex">\lceil 1827/10\rceil = 183</span>, <span class="tex">\lceil 2000/256\rceil = 8</span>, <span class="tex">\lceil 2000/256\rceil = 8</span>, so the grid holds 183 × 8 × 8 = <b>11 712 chunks</b>.</p>
+        <p><b>Step 3, lazy reads.</b> A lazy library (for example xarray with dask) opens the metadata without touching any chunk. Operations such as "mean over time at one pixel" are recorded as a graph; the chunks are read only when the result is requested, and only the chunks that overlap the request.</p>
+        <div class="worked"><b>Worked example: one pixel's time series with chunk shape A</b>
+          <p>The series for pixel (y = 1 000, x = 1 000) over all 1 827 days. Along time it overlaps <span class="tex">\lceil 1827/10\rceil = 183</span> chunks. Spatially, 1 000 lies in chunk row <span class="tex">\lfloor 1000/256\rfloor = 3</span> and chunk column 3, so one spatial chunk. The query therefore touches <b>183 chunks</b>.</p>
+          <p>Bytes read: <span class="tex">183 \times 2\,621\,440 = 479\,723\,520</span> B, about 480 MB. The useful data is 1 827 × 4 = 7 308 B. The efficiency is <span class="tex">7\,308 / 479\,723\,520 \approx 0.0015\,\%</span>. About 65 000 bytes are read for each byte needed.</p></div>
+        <div class="worked"><b>Worked example: the same cube, three chunk shapes</b>
+          <p>Compare three shapes for two common questions: the pixel series at (1 000, 1 000), and one whole date (day 900, all pixels, 16 000 000 B of values).</p>
+          <table class="tbl">
+            <tr><th>Chunk shape (t × y × x)</th><th>Bytes per chunk</th><th>Pixel series: chunks, bytes</th><th>One date: chunks, bytes</th></tr>
+            <tr><td>A · 10 × 256 × 256</td><td>2 621 440</td><td>183, 479 723 520 (≈480 MB)</td><td>64, 167 772 160 (≈168 MB)</td></tr>
+            <tr><td>B · 1 827 × 32 × 32</td><td>7 483 392</td><td>1, 7 483 392 (≈7.5 MB)</td><td>3 969, 29 701 582 848 (≈29.7 GB)</td></tr>
+            <tr><td>C · 30 × 512 × 512</td><td>31 457 280</td><td>61, 1 918 894 080 (≈1.9 GB)</td><td>16, 503 316 480 (≈503 MB)</td></tr>
+          </table>
+          <p>Shape B is ideal for the pixel series and disastrous for a date. Shape C is good for a date and poor for a pixel. Shape A is a compromise: it is acceptable for both, and it is the kind of choice a data producer makes once and everyone lives with. If the common question is known, optimise for it; if not, keep chunks moderate (about 1 to 10 MB uncompressed) and check the access pattern.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{chunks along axis } a:\quad n_a=\left\lceil \frac{s_a}{c_a}\right\rceil,\qquad N_{\text{chunks}}=\prod_a n_a</div>
+        <div class="eq">\text{chunks touched by a query on } [i_0,i_1]\text{ along } a:\quad \left\lfloor\frac{i_1}{c_a}\right\rfloor-\left\lfloor\frac{i_0}{c_a}\right\rfloor+1</div>
+        <table class="sym">
+          <tr><td>s_a</td><td>length of the array along axis a (for example 1 827 for time)</td></tr>
+          <tr><td>c_a</td><td>chunk length along axis a</td></tr>
+          <tr><td>n_a</td><td>number of chunks along axis a</td></tr>
+          <tr><td>[i₀, i₁]</td><td>index range of the query along axis a (inclusive)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: chunks and lazy reads</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults and press <i>Pixel time series</i>, then <i>Compute</i>. Watch the time strip fill with the chunks along time, and read 183 chunks in the readout.</li>
+          <li>Select shape B and compute the same query. It touches 1 chunk. Now press <i>One date, all pixels</i> with shape B: the spatial grid fills and the counter goes past 3 000 chunks. Only the query shape changes the answer.</li>
+          <li>Try the 400 × 400 box over all times with shapes A and C. Count the chunks and note which one wastes less.</li>
+          <li>Press <i>Reset</i> and change the chunk size by hand (for example 1 × 256 × 256). Find out how many chunks a single day takes, and what the metadata grid looks like.</li></ol></div>
+        <div data-lab="chunkLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Chunks are the unit of I/O.</b> A query that needs one value still reads its whole chunk. Count chunks, not values.</li>
+          <li><b>Tiny chunks are also a problem.</b> Millions of 10 kB objects make the metadata calls and request overhead dominate. Aim for chunks of a few megabytes.</li>
+          <li><b>Lazy does not mean free.</b> Calling <code>.values</code> or a full reduction on a huge cube loads everything. Check the size before you compute.</li>
+          <li><b>NetCDF is not the same as Zarr.</b> A NetCDF file on disk may be unchunked, or one big object on a server. Chunk layout is a property of the file, so inspect it.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Climate and weather data (reanalysis, forecasts) are distributed as NetCDF or Zarr; time-series models read windows along time and a small set of grid cells.</li>
+          <li>Training pipelines for temporal models (Module 7) sample many small spatiotemporal windows; the chunk shape decides whether that sampling is fast.</li>
+          <li>Feature stores for geospatial models often write per-tile time series in Zarr so that each training example is one chunk read.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A cube is (365, 1 000, 1 000) float32 and chunks are (30, 250, 250). How many chunks?</summary><div class="ans">Along time ⌈365/30⌉ = 13 (12 × 30 = 360, so one more). Along y and x ⌈1000/250⌉ = 4 each. Total 13 × 4 × 4 = <b>208 chunks</b>.</div></details>
+        <details class="check"><summary>2. With chunk shape A (10 × 256 × 256), how many bytes does a 400 × 400 box over all 1 827 days read? (Box rows and columns 800 to 1 199.)</summary><div class="ans">Spatial chunks: rows ⌊800/256⌋ = 3 to ⌊1199/256⌋ = 4, so 2; columns the same, so 2; that is 4 spatial chunks. Times: 183. Total 732 chunks × 2 621 440 B = <b>1 918 894 080 B</b> (about 1.9 GB) to read 400 × 400 × 1 827 × 4 = 1 169 280 000 B of values, an efficiency of about 61 %.</div></details>
+        <details class="check"><summary>3. Why does a chunk shape good for one pixel's full time series suit a single date badly?</summary><div class="ans">A pixel series wants a long, thin chunk along time, so it reads one spatial chunk through all times. A single date wants all spatial positions at one time, which means many spatial chunks, each of which holds the whole time axis. With shape B, that is 3 969 chunks of 7.5 MB for 16 MB of values.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An array cube is stored as chunks; the chunk shape is a decision about which questions will be cheap.</li>
+          <li>Count chunks touched, because each chunk is read whole.</li>
+          <li>Zarr stores each chunk as its own object, which is why cloud reads can be partial and parallel.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 ===================== -->
+    <section class="lesson" id="range-requests" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.4</span><h2>Partial reads &amp; the cloud archive</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your 1 000 × 1 000 window lives in a 839 MB COG on a server far away. You could download the whole file, or you could ask only for the bytes you need. How many bytes must be requested, how many requests should you make, and how long will it take?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine ordering a book by phone. You could ask for the whole book (slow, expensive, and most of it is unused), or you could say "pages 46 to 52". The second request is only useful if the librarian can find the pages quickly, and if each call does not cost a minute of dialling. So the art is to ask for <i>few</i> calls, each carrying <i>useful</i> content.</p>
+        <p>HTTP has exactly this feature. A client sends a <b>Range</b> header with an inclusive byte interval, and a server that supports it replies with <b>206 Partial Content</b> and only those bytes. Object storage (the buckets used for cloud archives) supports this, so a COG can be read as if it were a local file, one window at a time.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, one request.</b> A request for the first 64 KiB of a file looks like this:</p>
+        <pre><code>GET /scene/B04.tif HTTP/1.1
+Range: bytes=0-65535
+
+HTTP/1.1 206 Partial Content
+Content-Range: bytes 0-65535/838926336
+Content-Length: 65536</code></pre>
+        <p>The range is inclusive, so <code>0-65535</code> is 65 536 bytes. The response tells you the total size of the file, which the reader needs for planning.</p>
+        <p><b>Step 2, the cost model.</b> Each request pays a fixed <i>latency</i> (the round trip to the server) and then transfers its bytes at some <i>bandwidth</i>. For a set of requests the total time is roughly</p>
+        <div class="eq">T \approx n_{\text{req}}\cdot L+\frac{B_{\text{total}}}{W}</div>
+        <p>With the illustrative numbers in the lab, L = 80 ms and W = 25 MB/s, the trade-off is visible. Each megabyte costs 40 ms at 25 MB/s, and each request costs 80 ms before its first byte arrives. Merging neighbouring ranges saves round trips; but a range that carries bytes you do not need wastes transfer time, so the best request covers exactly the useful tiles.</p>
+        <p><b>Step 3, what the window needs.</b> From lesson 1.1 we know the window touches 3 tile rows and 3 tile columns. In this layout the tiles are stored row by row, so the three tiles in one tile row are adjacent in the file, and one range can cover all of them. Tile (r, c) of a file with n_x = 20 tile columns starts at</p>
+        <div class="eq">\text{offset}(r,c)=H+(r\,n_x+c)\,B_{\text{tile}}</div>
+        <div class="worked"><b>Worked example: the window in byte ranges</b>
+          <p>Header and tile index: <span class="tex">H = 65\,536</span> B, one request. Tile size <span class="tex">B_{\text{tile}} = 2\,097\,152</span> B.</p>
+          <p>Tile row 1, tile columns 2 to 4. Tile (1, 2) has index <span class="tex">1 \times 20 + 2 = 22</span>, so it starts at <span class="tex">65\,536 + 22 \times 2\,097\,152 = 46\,202\,880</span>. Tile (1, 4) ends at <span class="tex">65\,536 + 25 \times 2\,097\,152 - 1 = 52\,494\,335</span>. The request is <code>Range: bytes=46202880-52494335</code>, which is <span class="tex">3 \times 2\,097\,152 = 6\,291\,456</span> B.</p>
+          <p>Doing this for all three tile rows gives <b>4 requests</b> (1 header plus 3 ranges) and <span class="tex">65\,536 + 3 \times 6\,291\,456 = 18\,939\,904</span> B. Time: <span class="tex">4 \times 0.08 + 18\,939\,904 / 25\,000\,000 = 0.32 + 0.76 = 1.08</span> s.</p>
+          <p>Requesting each of the nine tiles separately costs <span class="tex">1 + 9 = 10</span> requests and the same bytes: <span class="tex">10 \times 0.08 + 0.76 = 1.56</span> s. Merging neighbours saved half a second.</p>
+          <p>Downloading the whole 839 MB file: <span class="tex">0.08 + 838\,926\,336 / 25\,000\,000 \approx 33.6</span> s, and about 99 % of those bytes are never used.</p></div>
+        <p><b>Step 4, real files are not this neat.</b> Real COG tiles are compressed, so their sizes differ. The file therefore stores two lists in the header: <i>TileOffsets</i> and <i>TileByteCounts</i>. The reader fetches them with the first request, then computes the exact range of each tile. The arithmetic in the lab is the simplified version in which every tile is uncompressed and stored in order.</p>
+        <p><b>Step 5, where the time goes.</b> Libraries such as GDAL (through its <code>/vsicurl/</code> paths) and rasterio issue these requests for you. They cache the header, merge neighbouring ranges and can run several requests in parallel. Knowing the model tells you when to expect slowness: many tiny requests are latency-bound, while one huge request is bandwidth-bound.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\texttt{Range: bytes=}a\texttt{-}b\qquad\text{returns } b-a+1 \text{ bytes, status } 206\text{ (not } 200\text{)}</div>
+        <div class="eq">T\approx n_{\text{req}}\,L+\frac{B_{\text{total}}}{W}</div>
+        <table class="sym">
+          <tr><td>a, b</td><td>first and last byte offsets of the range, both inclusive, counted from 0</td></tr>
+          <tr><td>n_req</td><td>number of requests, each paying one round trip latency L</td></tr>
+          <tr><td>L</td><td>latency per request (seconds); here 0.08 s, illustrative</td></tr>
+          <tr><td>B_total</td><td>total bytes transferred, including the header</td></tr>
+          <tr><td>W</td><td>bandwidth (bytes per second); here 25 MB/s, illustrative</td></tr>
+          <tr><td>H, B_tile</td><td>header size and bytes per tile in the simplified layout</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a range request against a remote COG</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press <i>Read window</i>, then <i>Pause</i> and <i>Step</i> to advance one request at a time. Read the byte ranges in the log: the second one is the first range of tile row 1.</li>
+          <li>Change <i>Ranges</i> to one range per tile and read the same window. Count requests and time in the readout. Same bytes, more round trips.</li>
+          <li>Press <i>Download whole file</i>. Note the time and the share of the file that is useful: a small fraction.</li>
+          <li>Set latency to 400 ms. The merged version now takes about 2.4 s and the per-tile version about 4.8 s: round trips dominate, so merging matters more. Then set latency to 5 ms and bandwidth to 2 000 MB/s. Both versions finish in a few hundredths of a second. Which parameter dominates decides the best strategy.</li></ol></div>
+        <div data-lab="rangeRequests"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A server that ignores Range returns 200, not 206.</b> The client then receives the whole file, silently. Check the status code in your logs.</li>
+          <li><b>Many tiny requests are slow even if the bytes are few.</b> Merge neighbouring ranges, and reuse the cached header instead of re-reading it for every window.</li>
+          <li><b>Signed URLs expire.</b> A long training job can fail halfway if the links it holds have passed their lifetime; refresh them from the catalogue.</li>
+          <li><b>Egress costs money.</b> On commercial clouds, downloaded bytes are billed; a pipeline that reads whole scenes can cost far more than one that reads windows.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Data loaders for segmentation training read random 256 × 256 windows from remote COGs; the range-request cost of each window determines how many workers you need.</li>
+          <li>Inference services read the windows of a scene in parallel and write predictions back as a COG (lesson 5.7).</li>
+          <li>Catalogue-driven pipelines (Module 2) pass each asset's URL to such readers, so the same code works for a laptop file and a bucket.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A window touches 5 tile rows with 3 tiles each. How many requests with merged ranges, including the header, and how many with one range per tile?</summary><div class="ans">Merged: 1 header plus 5 row ranges = <b>6</b>. One per tile: 1 + 15 = <b>16</b>. The bytes are identical; only the round trips change.</div></details>
+        <details class="check"><summary>2. Ten requests with latency 50 ms transfer 100 MB in total at 50 MB/s. What is the time?</summary><div class="ans">Latency 10 × 0.05 = 0.5 s; transfer 100 MB ÷ 50 MB/s = 2 s. Total <b>2.5 s</b>. Here bandwidth dominates, so merging would save little.</div></details>
+        <details class="check"><summary>3. The request Range: bytes=46202880-52494335 returns a 200 status and 839 MB. What went wrong?</summary><div class="ans">The server ignored the Range header and sent the whole file. The status should have been 206 with 6 291 456 bytes. Check whether the server, a proxy or a CDN strips Range requests.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>HTTP byte ranges let a reader fetch exactly the tiles a window needs, if the file's layout allows it.</li>
+          <li>Time = requests × latency + bytes ÷ bandwidth; merge ranges when latency dominates.</li>
+          <li>Check that you received 206 and the byte count you expected.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 ===================== -->
+    <section class="lesson" id="reproject-resample" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.5</span><h2>Reprojection &amp; resampling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Sentinel-2 red and NIR bands are 10 m, its SWIR bands are 20 m, and the land-cover labels you bought come in WGS84 latitude and longitude on a 5 m grid. Your model needs one stack with identical grids. How do you move every source onto the same pixels, and which rule do you use for each kind of data?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Two different things must happen. <b>Reprojection</b> changes the map: a new grid is laid over the ground, in a new coordinate reference system, with new pixel positions. <b>Resampling</b> answers the question "what is the value at this new pixel?" The new pixel centre falls somewhere between old pixel centres, so a value must be looked up, copied or blended.</p>
+        <p>Think of tracing a map onto transparent paper. Where a new grid line falls inside an old square, you decide whether to copy the colour of the nearest square, average the four surrounding squares, or fit a smooth curve through the neighbourhood. Each choice is right for some data and wrong for others.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, the output grid.</b> The output has its own size, pixel size and origin in the target CRS. Every output pixel centre has a ground position, and that position is converted back to a source row and column. This backward mapping is why reprojection never leaves holes.</p>
+        <p><b>Step 2, the pixel-centre rule.</b> For an output of M pixels across a source of n pixels, output index j lies at source position</p>
+        <div class="eq">x_{\text{src}}=(j+0.5)\cdot\frac{n}{M}-0.5</div>
+        <p>with edges clamped to the nearest source pixel. Here n = 3 and M = 5, so the positions are −0.2, 0.4, 1.0, 1.6 and 2.2.</p>
+        <p><b>Step 3, the methods.</b> <i>Nearest</i> copies the value of the closest source pixel. <i>Bilinear</i> blends the 2 × 2 neighbours with weights from the fractional position. <i>Cubic</i> (here the Keys kernel with a = −0.5) blends 4 × 4 neighbours with smoother weights. When <i>downsampling</i>, the usual choices are the <b>average</b> for continuous data and the <b>mode</b> (most frequent value) for classes.</p>
+        <div class="worked"><b>Worked example: a 3 × 3 patch to 5 × 5</b>
+          <p>Source patch (rows top to bottom):</p>
+          <div class="eq">A=\begin{pmatrix}10&amp;20&amp;30\\40&amp;50&amp;60\\70&amp;80&amp;90\end{pmatrix}</div>
+          <p><b>Nearest.</b> The positions per axis are −0.2, 0.4, 1.0, 1.6, 2.2, which round (after clamping) to indices 0, 0, 1, 2, 2. Every output value is a copy, giving rows <code>10 10 20 30 30 / 10 10 20 30 30 / 40 40 50 60 60 / 70 70 80 90 90 / 70 70 80 90 90</code>.</p>
+          <p><b>Bilinear, pixel (1, 1).</b> The position is x = 0.4, y = 0.4. In the top row, the neighbours 10 and 20 give <span class="tex">10(0.6)+20(0.4)=14</span>. In the bottom row, 40 and 50 give <span class="tex">40(0.6)+50(0.4)=44</span>. Blending the two rows vertically: <span class="tex">14(0.6)+44(0.4)=26</span>. The bilinear grid's second row is 22, 26, 32, 38, 42.</p>
+          <p><b>Bilinear, pixel (1, 2).</b> The position is x = 1.0 (exactly on source column 1) and y = 0.4. The blend is <span class="tex">20(0.6)+50(0.4)=32</span>.</p>
+          <p><b>Cubic, pixel (1, 1).</b> The 4 × 4 weights for offset 0.4 are −0.072, 0.696, 0.424 and −0.048 (they sum to 1). Applied along both axes the value is <b>23.12</b>. Cubic can go slightly outside the source range; the lab shows this on a sharp edge.</p></div>
+        <p><b>Step 4, labels are not reflectance.</b> A class map holds codes such as 1 = water, 2 = forest, 3 = urban. Bilinear blending of codes invents codes. Take the class map <span class="tex">\begin{pmatrix}1&amp;1&amp;2\\1&amp;2&amp;2\\3&amp;3&amp;2\end{pmatrix}</span>. Bilinear at output (1, 1) gives <span class="tex">1.16</span>, and at output (1, 2) gives <span class="tex">1.40</span>. Neither is a class. Nearest gives 1 at output (1, 2), which is a real class. <b>Use nearest for labels and masks, and average or mode when downsampling.</b></p>
+        <div class="worked"><b>Worked example: downsampling 10 m to 20 m</b>
+          <p>Reflectance 2 × 2 block: <span class="tex">(1200+1250+1190+1210)/4 = 1212.5</span> (mean). Class block <code>[1, 1; 1, 2]</code>: the mean would be 1.25, which is no class, so the mode is used and the answer is 1.</p></div>
+        <p><b>Step 5, aligning a stack.</b> Two grids are aligned only when they share a CRS, a pixel size, an origin (the geotransform) and a shape. Check these numbers rather than trusting that two layers "look the same" in a viewer. Choose a target CRS for the study area: a local UTM zone keeps distances and areas accurate within the zone, and an equal-area CRS suits statistics across large regions. Web Mercator, popular in web maps, inflates areas more the further you are from the equator.</p>
+        <p><b>Where it sits in the pipeline.</b> This is the <i>Preprocessing</i> stage: reprojection and resampling put every source on the model's grid before tiling.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">v(x,y)=\sum_{i}\sum_{j} w_i(x)\,w_j(y)\,A_{ij}\quad\text{(separable kernel, bilinear or cubic)}</div>
+        <div class="eq">k(s)=\begin{cases}(a+2)|s|^3-(a+3)|s|^2+1,&|s|&lt;1\\ a|s|^3-5a|s|^2+8a|s|-4a,&1\le|s|&lt;2\\ 0,&\text{otherwise}\end{cases}\qquad a=-0.5</div>
+        <table class="sym">
+          <tr><td>A_ij</td><td>source value at row i, column j (indices are clamped at the edges)</td></tr>
+          <tr><td>w_i(x), w_j(y)</td><td>weights along each axis; they sum to 1 for each position</td></tr>
+          <tr><td>x_src</td><td>source position of an output pixel centre (pixel-centre rule)</td></tr>
+          <tr><td>s</td><td>distance in source pixels from the sample point to a neighbour</td></tr>
+          <tr><td>a</td><td>kernel parameter; −0.5 is the common Keys choice</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: nearest, bilinear, cubic on an editable patch</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>With bilinear and the default patch, press <i>Step</i> until the orange cursor reaches output (1, 1). The readout should give 26.</li>
+          <li>Switch to nearest and watch the same pixel. The patch values are copied; no new numbers appear.</li>
+          <li>Press <i>Load class map</i>, set Data to categorical and use bilinear. Red slashes mark output pixels whose blended value is not a class.</li>
+          <li>Reset, set the values to a sharp edge (0, 0, 100 in each row) and use cubic. Some outputs go below 0 or above 100 (ringing). A smooth method is not automatically a safe one.</li></ol></div>
+        <div data-lab="resampleLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Resampling the labels with bilinear or cubic.</b> You create classes that do not exist. Use nearest for every categorical layer.</li>
+          <li><b>Reprojecting twice.</b> Each reprojection resamples again, so values drift and blur. Reproject once, from the original file, to the final grid.</li>
+          <li><b>Forgetting the alignment check.</b> A half-pixel offset is invisible in a viewer and shifts every label against its pixel, which quietly lowers accuracy.</li>
+          <li><b>Averaging across a cloud or nodata edge.</b> Mask first (lesson 1.6), then resample, or the mean includes invalid values.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every multi-source EO model: Sentinel-2 at 10 m and 20 m, Sentinel-1 radar and a DEM must share one grid before the network sees them.</li>
+          <li>Segmentation labels are rasterised and resampled with nearest; the model's output is a class map, so any blending at the output stage would break the metric.</li>
+          <li>Super-resolution and downscaling models (STAC MLM tasks, Module 6) are evaluated against resampled references, so the resampling method is part of the benchmark.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Bilinear at a point with fractional offsets (x = 0.25, y = 0) between values 40 and 80 in the same row. What is the value?</summary><div class="ans">The row is at integer y, so only x matters: 40(0.75) + 80(0.25) = 30 + 20 = <b>50</b>.</div></details>
+        <details class="check"><summary>2. A class map is downsampled 2 × 2 → 1 with values [3, 3; 3, 5]. Average or mode, and why?</summary><div class="ans">Mode: the most frequent code is 3. The average would be 3.5, which is class 3.5 and does not exist.</div></details>
+        <details class="check"><summary>3. You reproject a reflectance layer, then a cloud mask, then apply the mask. Which step is wrong?</summary><div class="ans">The mask was resampled with a blending rule. Bilinear turns a 0/1 mask into fractional values along cloud edges, and cloud brightness leaks into the blended reflectance next to them. Apply the mask at source resolution first, then reproject the masked data once, or resample the mask with nearest.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Reprojection defines the new grid; resampling decides each new value.</li>
+          <li>Nearest for labels and masks, bilinear or cubic for continuous data, average or mode when downsampling.</li>
+          <li>Verify alignment by CRS, transform and shape; resample once.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 ===================== -->
+    <section class="lesson" id="masks-nodata" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">1.6</span><h2>No-data, quality masks &amp; cloud masking</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A quarter of your scene is covered by cloud, and some pixels were not measured at all (they hold the value 0). You train on the raw mosaic. The model learns that bright means building and dark means water, and it treats the unmeasured zeros as deep water. How do you keep only the trustworthy pixels, and how do you compute statistics that ignore the rest?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A satellite product carries <b>side information</b> next to the measurements. Some pixels say "no data here" (a <b>nodata</b> value); others come with a <b>quality band</b> that reports how likely each pixel is to be cloud, cloud shadow or snow. A <b>mask</b> is the rule that turns this side information into a yes or no for every pixel. Using the mask means that each computation, from a mean to a training loss, skips the pixels marked no.</p>
+        <p>Think of a survey in which some answers are blank and some respondents said "I was not there". You would not count a blank as zero, and you would not average in answers from people who did not see the event. The mask is that bookkeeping.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, nodata.</b> A nodata value is a number that cannot be a real measurement, for example 0 for many reflectance products or −9999 for elevation. It must be declared in the file (the GeoTIFF nodata tag). If it is not, the zeros are treated as dark pixels, and every mean and every model input is biased.</p>
+        <p><b>Step 2, quality bands.</b> Many products ship a classification band. Sentinel-2 Level-2A includes a Scene Classification Layer (SCL) in which codes 8 and 9 mark cloud with medium and high probability and code 3 marks cloud shadow. Other products give a continuous cloud probability from 0 to 100. A threshold turns the probability into a mask: a pixel is cloudy when its probability is at least t.</p>
+        <p><b>Step 3, a worked 4 × 4 scene.</b> Reflectance band (x 10⁴ units, shown as plain numbers) and cloud probability (%):</p>
+        <table class="tbl">
+          <tr><th>Reflectance</th><th>c0</th><th>c1</th><th>c2</th><th>c3</th><th style="width:4px"></th><th>Cloud %</th><th>c0</th><th>c1</th><th>c2</th><th>c3</th></tr>
+          <tr><td>r0</td><td>1200</td><td>1250</td><td>1300</td><td>1280</td><td></td><td>r0</td><td>5</td><td>10</td><td>5</td><td>0</td></tr>
+          <tr><td>r1</td><td>1190</td><td>3000</td><td>3100</td><td>1270</td><td></td><td>r1</td><td>8</td><td>90</td><td>85</td><td>3</td></tr>
+          <tr><td>r2</td><td>1210</td><td>3050</td><td>1290</td><td>1260</td><td></td><td>r2</td><td>6</td><td>80</td><td>12</td><td>4</td></tr>
+          <tr><td>r3</td><td>1180</td><td>1240</td><td>1230</td><td><b>0</b></td><td></td><td>r3</td><td>2</td><td>5</td><td>7</td><td>1</td></tr>
+        </table>
+        <div class="worked"><b>Worked example: masking the scene</b>
+          <p>Apply the rule <i>cloudy if probability ≥ 50</i>. The cloudy pixels are r1c1 (90), r1c2 (85) and r2c1 (80): <span class="tex">3</span> of 16, a cloud fraction of <span class="tex">3/16 = 18.75\,\%</span>. The pixel r3c3 holds 0, so it is nodata. That leaves <span class="tex">16 - 3 - 1 = 12</span> usable pixels.</p>
+          <p>Mean reflectance of the 12 usable pixels: <span class="tex">14\,900 / 12 \approx 1241.7</span>.</p>
+          <p>Naive mean of all 16 pixels, with no mask: <span class="tex">24\,050 / 16 = 1503.1</span>. This is biased upward by the bright clouds and downward by the zero, and it describes neither the land nor the clouds.</p>
+          <p>Mean of the valid, non-nodata pixels with the clouds kept: <span class="tex">1603.3</span>. The cloud brightness alone moves the mean by about 360 units, about 29 %.</p></div>
+        <p><b>Step 4, the formal rule.</b> Combine the nodata test and the quality test into one usable mask for each pixel. Statistics and losses then use only the pixels where the mask is 1.</p>
+        <p><b>Step 5, the order of operations.</b> Mask at the source resolution first, then reproject and resample the mask with nearest, then the data with its own method (lesson 1.5). Otherwise a bilinear resample spreads cloud brightness into the pixels next to every cloud. Clouds also have halos: thin cloud and shadow edges are often missed, so many pipelines <i>dilate</i> the cloud mask by a few pixels before use.</p>
+        <p><b>Step 6, honest training.</b> In a segmentation loss, masked pixels are excluded with an <i>ignore index</i> (a label value, often 255, that the loss skips). That way the model is not asked to predict a class where the input is unreliable.</p>
+        <p><b>Where it sits in the pipeline.</b> This is the <i>Preprocessing</i> stage, between reading the windows and tiling them.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">M(p)=\mathbf 1\bigl[x(p)\neq x_{\text{nodata}}\bigr]\cdot\mathbf 1\bigl[q(p)&lt;t\bigr]</div>
+        <div class="eq">\bar x_M=\frac{\sum_p M(p)\,x(p)}{\sum_p M(p)},\qquad f_{\text{cloud}}=\frac{\#\{p:\ q(p)\ge t\}}{N}</div>
+        <table class="sym">
+          <tr><td>x(p)</td><td>the measured value at pixel p (for example reflectance)</td></tr>
+          <tr><td>x_nodata</td><td>the declared nodata value</td></tr>
+          <tr><td>q(p)</td><td>quality value at p: cloud probability in percent, or 1 if the class is cloud</td></tr>
+          <tr><td>t</td><td>cloud threshold; the pixel is masked when q(p) ≥ t</td></tr>
+          <tr><td>𝟏[·]</td><td>indicator: 1 when the condition is true, otherwise 0</td></tr>
+          <tr><td>M(p)</td><td>usable mask: 1 keeps the pixel, 0 removes it</td></tr>
+          <tr><td>N</td><td>total number of pixels in the scene</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a cloud threshold you can sweep</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start at threshold 50 and note the cloud fraction and the usable count. Compare with the 4 × 4 example: the lab's scene is different, but the rule is the same.</li>
+          <li>Press <i>Sweep</i> and watch the masked area shrink as the threshold rises. At 0 almost everything bright is masked; at 100 only the most confident cloud remains.</li>
+          <li>Find the threshold at which the usable mean stops changing much. Then compare the usable mean with the mean of all valid pixels; the gap is what the clouds would have done to your statistics.</li>
+          <li>Switch scenes and see how nodata behaves: the black stripe is excluded from every count and never called water.</li></ol></div>
+        <div data-lab="cloudMask"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Nodata is treated as a measurement.</b> Zeros drag means down and teach the model a fake dark class. Declare nodata once and check that every statistic uses the mask.</li>
+          <li><b>One mask, several bands.</b> A mask from the cloud band must apply to every band and to the label. Apply it by pixel, not by band index.</li>
+          <li><b>Bright non-cloud surfaces.</b> Snow, bare soil, sand and urban roofs can look like cloud in a probability product. Check the mask on samples from each of these.</li>
+          <li><b>Thresholds chosen by eye.</b> Choose the threshold on labelled samples, and report it with the dataset manifest (Module 3).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Cloud-free composites: the median of usable pixels across many dates, computed with the mask on each date.</li>
+          <li>Segmentation training with an ignore index so that clouds and nodata do not teach the network false classes.</li>
+          <li>Foundation models pretrained on EO archives (Module 7) usually expect masked, normalised inputs; feeding them the raw mosaic is a common silent error.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 5 × 5 scene has 5 cloudy pixels and 0 nodata. What are the cloud fraction and the usable count?</summary><div class="ans">Cloud fraction 5/25 = <b>20 %</b>. Usable 25 − 5 = <b>20</b> pixels.</div></details>
+        <details class="check"><summary>2. Using the 4 × 4 scene, what changes if the threshold is 85 instead of 50?</summary><div class="ans">Only pixels with probability ≥ 85 are cloudy: 90 and 85 (r1c1 and r1c2). The pixel with 80 (r2c1) becomes usable. Cloudy count 2, nodata still 1, usable 13. The usable mean is (14 900 + 3 050) / 13 ≈ <b>1380.8</b>. The jump comes from one bright pixel that the lower threshold had removed, which shows how sensitive a mean is to the threshold.</div></details>
+        <details class="check"><summary>3. Why is it wrong to resample the cloud mask with bilinear and then apply it to the reflectance?</summary><div class="ans">Bilinear produces fractional values at mask edges (for example 0.4 instead of 0 or 1). Thresholding those values gives an arbitrary boundary, and the cloud brightness leaks into neighbouring clear pixels through the blend. Use nearest for the mask, or mask before resampling.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Nodata is a declared value; quality bands and thresholds turn side information into a per-pixel mask.</li>
+          <li>Every statistic and loss uses the mask; the usable mean is not the naive mean.</li>
+          <li>Mask first, resample the mask with nearest, and choose thresholds on labelled data.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now read a COG window by window, read vector data without swapping coordinates, choose a chunk shape for the questions you will ask, and align and mask data before a model sees it. Next, <b>Module 2 · Finding data with STAC</b> shows how to find these files in a catalogue without knowing their paths.</div>
+
+
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · Geospatial foundations · GeoAI</title>
+<meta name="description" content="Coordinates, projections and CRS, vector and raster data, bands and pixel footprints, and Earth-observation sensors: the geospatial foundations every GeoAI project rests on.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-geo-foundations.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">🛰️</div>
+      <div style="flex:1">
+        <h1>Module 0 · Geospatial foundations</h1>
+        <p>Before a model sees a satellite image you must know what its numbers mean: where a coordinate sits on the Earth, which map projection flattened it, how big a pixel really is on the ground, and which sensor recorded it. By the end you can turn a longitude into a UTM zone, measure an area honestly, and read a raster's geotransform by hand.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">No prerequisites</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="maps-coordinates" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.1</span><h2>Coordinates, datums &amp; the Earth as a shape</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A field is stored by one archive as <i>longitude 13.3777, latitude 52.5163</i>. A colleague's file places the same field at <i>x = 391 204 m, y = 5 819 330 m</i>. Are they the same place? And if you move 0.001° north, is that the same distance as moving 0.001° east?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The Earth is almost a ball, and a ball is awkward to write on paper. So we name a place by two <b>angles</b>, both measured from the centre of the Earth:</p>
+        <ul>
+          <li><b>Latitude φ</b> — how far north or south of the equator, from −90° (South Pole) to +90° (North Pole).</li>
+          <li><b>Longitude λ</b> — how far east or west of the Greenwich meridian, from −180° to +180°.</li>
+        </ul>
+        <p>Picture an orange with a grid drawn on its peel. Lines of latitude are circles parallel to the equator; lines of longitude are half-circles that all meet at the poles. Every point on the peel has exactly one pair (φ, λ).</p>
+
+        <figure style="margin:14px 0;max-width:560px">
+          <svg viewBox="0 0 360 180" role="img" aria-label="A globe with latitude and longitude lines, and the same point on a flat grid" style="width:100%;height:auto;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+            <circle cx="90" cy="90" r="78" fill="none" style="stroke:var(--blue)" stroke-width="2"/>
+            <line x1="12" y1="90" x2="168" y2="90" style="stroke:var(--muted)" stroke-width="1.5"/>
+            <ellipse cx="90" cy="90" rx="78" ry="26" fill="none" style="stroke:var(--border)"/>
+            <ellipse cx="90" cy="90" rx="38" ry="78" fill="none" style="stroke:var(--border)"/>
+            <ellipse cx="90" cy="90" rx="62" ry="78" fill="none" style="stroke:var(--border)"/>
+            <ellipse cx="90" cy="90" rx="78" ry="78" fill="none" style="stroke:var(--border)" stroke-dasharray="3 3"/>
+            <ellipse cx="90" cy="48" rx="66" ry="12" fill="none" style="stroke:var(--border)"/>
+            <ellipse cx="90" cy="132" rx="66" ry="12" fill="none" style="stroke:var(--border)"/>
+            <circle cx="122" cy="64" r="4.5" style="fill:var(--orange)"/>
+            <text x="90" y="174" text-anchor="middle" style="fill:var(--muted);font-size:11px">the globe: angles from the centre</text>
+            <path d="M176 90 L196 90" style="stroke:var(--muted)" stroke-width="1.5" marker-end="none"/>
+            <rect x="200" y="40" width="140" height="100" fill="none" style="stroke:var(--blue)" stroke-width="2"/>
+            <line x1="228" y1="40" x2="228" y2="140" style="stroke:var(--border)"/>
+            <line x1="256" y1="40" x2="256" y2="140" style="stroke:var(--border)"/>
+            <line x1="284" y1="40" x2="284" y2="140" style="stroke:var(--border)"/>
+            <line x1="312" y1="40" x2="312" y2="140" style="stroke:var(--border)"/>
+            <line x1="200" y1="60" x2="340" y2="60" style="stroke:var(--border)"/>
+            <line x1="200" y1="80" x2="340" y2="80" style="stroke:var(--border)"/>
+            <line x1="200" y1="100" x2="340" y2="100" style="stroke:var(--border)"/>
+            <line x1="200" y1="120" x2="340" y2="120" style="stroke:var(--border)"/>
+            <circle cx="262" cy="70" r="4.5" style="fill:var(--orange)"/>
+            <text x="270" y="174" text-anchor="middle" style="fill:var(--muted);font-size:11px">a flat grid: x and y in metres</text>
+          </svg>
+          <figcaption style="font-size:12px;color:var(--muted)">The same point, once as an angle pair on the globe and once as a position on a flat grid. Turning one into the other is a projection (lesson 0.2).</figcaption>
+        </figure>
+
+        <p>Two things trip up beginners at once. First, people say "latitude, longitude", but GIS software and GeoJSON store <b>(longitude, latitude)</b>, that is (x, y). Second, degrees are <i>angles</i>, not distances, and the distance a degree covers depends on where you stand.</p>
+
+        <h3 class="sec">Build it up: how long is a degree?</h3>
+        <p>Go once around the equator: 360° of longitude, a circle of radius <i>R</i>. Every meridian (a line of longitude) is a half great circle through the poles, so every degree of latitude is a slice of the same length everywhere. With a mean Earth radius of R = 6 371.0 km:</p>
+        <div class="eq">1^\circ\ \text{of latitude}\approx\frac{2\pi R}{360}=\frac{2\pi\times 6371.0\ \text{km}}{360}\approx 111.2\ \text{km}</div>
+        <p>A degree of longitude is different. The parallel at latitude φ is a circle of radius <span class="tex">R\cos\varphi</span>, so it is shorter by the factor <span class="tex">\cos\varphi</span>. At the equator a degree of longitude is also 111.2 km; at 60° it is only half of that.</p>
+
+        <div class="worked"><b>Worked example: two small steps in Berlin</b>
+          <p>Start at φ = 52.5163°, λ = 13.3777°. Take a step of 0.001° in each direction.</p>
+          <p>North step: Δφ = 0.001° → 0.001 × 111.195 km = <b>111.2 m</b>.</p>
+          <p>East step: Δλ = 0.001°, and cos 52.5163° = 0.6085, so 0.001 × 111.195 km × 0.6085 = <b>67.7 m</b>.</p>
+          <p>Diagonal, by Pythagoras: √(111.2² + 67.7²) = √16 946 ≈ <b>130 m</b>. "0.001 degrees" is therefore not one distance; it is 111 m in one direction and 68 m in the other.</p></div>
+
+        <p>Now back to the two files. Berlin lies in UTM zone 33 (you will see why in lesson 0.2), and there the same point is at <b>x = 389 918 m, y = 5 819 702 m</b>. The colleague's file says 391 204 m, 5 819 330 m. The two differ by about <b>1.3 km</b>: the same city block, but not the same spot. The usual causes are a different datum, a wrong zone, or a swapped axis order. Measuring that gap and naming its cause is the everyday work of GeoAI data checking.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For two nearby points on a sphere of radius R, with angles in radians, the distance is approximately</p>
+        <div class="eq">d\approx R\sqrt{(\Delta\varphi)^2+(\cos\varphi\,\Delta\lambda)^2}</div>
+        <table class="sym">
+          <tr><td>φ, λ</td><td>latitude and longitude of the point (radians in this formula; ×π/180 converts from degrees)</td></tr>
+          <tr><td>Δφ, Δλ</td><td>the differences in latitude and longitude between the two points</td></tr>
+          <tr><td>R</td><td>radius of the sphere: 6 371.0 km as a mean value</td></tr>
+          <tr><td>cos φ</td><td>the shrink factor of longitude circles at latitude φ</td></tr>
+          <tr><td>d</td><td>approximate distance along the ground, in the same units as R</td></tr>
+        </table>
+        <p><b>Datums.</b> The Earth is not a sphere. It bulges at the equator (equatorial radius 6 378.1 km, polar radius 6 356.8 km), so GIS uses an <i>ellipsoid</i>. A <b>datum</b> is the choice of ellipsoid together with where it sits relative to the Earth's centre. <b>WGS 84</b> is the datum behind GPS and the default for web and satellite metadata (EPSG:4326). Older national datums give different coordinates for the same physical place, typically by tens to hundreds of metres. The sphere formula above ignores flattening, so it is good to roughly half a percent: fine for intuition, not for surveying.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Start at latitude 0° with a 1° cell. The cell is a square: about 111 km north–south and 111 km east–west.</li>
+        <li>Slide the latitude to 60°. The cell keeps its height but its width halves. That is the factor cos 60° = 0.5.</li>
+        <li>Set the cell to 0.00009° at 52°. The dashed 10 m square fits the cell's height, and the cell is about 6 m wide. Lesson 0.4 uses this pixel.</li></ol></div>
+      <div data-lab="geocoords" data-title="Degrees on the ground" data-lat="52" data-cell="1"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Treating degrees as metres.</b> A "buffer of 0.001" in a longitude/latitude layer is 111 m north–south and 68 m east–west in Berlin, and it changes with latitude.</li>
+          <li><b>Swapped axes.</b> GeoJSON and most GIS libraries use (lon, lat). Put them the other way round and Berlin lands in the Arabian Sea.</li>
+          <li><b>Mixing datums.</b> Two layers that look aligned can be 100 m apart because one is WGS 84 and the other is an older national datum. Always read the CRS first.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>STAC items</b> describe each scene's footprint as a bounding box in lon/lat (WGS 84). Every search starts from such a box (Module 2).</li>
+          <li><b>Spatial features.</b> The distance from a farm to the nearest city, used as a model input, must be a true distance (haversine or projected), not raw degree differences.</li>
+          <li><b>Spatial validation</b> (Module 8) compares predictions with reference points; a geolocation error of 1 km can silently move every point into the wrong land-cover class.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How long is 0.01° of latitude, in kilometres?</summary><div class="ans">0.01 × 111.195 km = 1.112 km.</div></details>
+        <details class="check"><summary>2. How many metres is 0.01° of longitude at 60°N?</summary><div class="ans">0.01 × 111.195 km × cos 60° = 0.01 × 111.195 × 0.5 km = 0.556 km ≈ 556 m.</div></details>
+        <details class="check"><summary>3. A GeoJSON point is stored as [−3.70, 40.42]. Which value is the longitude, and where is the point?</summary><div class="ans">GeoJSON stores (lon, lat), so the longitude is −3.70 and the latitude is 40.42: a point in central Spain, near Madrid.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A place is an angle pair (λ, φ); GeoJSON and most GIS tools store (lon, lat).</li>
+          <li>A degree of latitude is about 111.2 km everywhere; a degree of longitude is 111.2 km × cos φ.</li>
+          <li>Two files can disagree by kilometres because of their datum or zone; check the CRS before you conclude anything.</li></ul></div>
+        <p style="font-size:13px;color:var(--muted)"><b>Where it sits in the pipeline:</b> Acquire. Every search, every read window and every footprint starts from coordinates like these.</p>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="crs-projections" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.2</span><h2>Coordinate reference systems &amp; projections</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have a study area in Norway, stored in degrees, and you want its area in km². Degrees are not metres, so which coordinate system do you compute in, and how wrong is the number if you pick the wrong one? A Cairo-based team also needs its data "in metres". Which metres?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Peel an orange and try to flatten the peel without tearing or stretching it. You cannot. A sphere cannot be flattened onto a plane without distorting something: distances, angles or areas. Every map is a compromise, and a projection is the rule for the compromise.</p>
+        <p>There are three properties worth wanting, and no projection has all of them:</p>
+        <ul>
+          <li><b>Conformal (angle-preserving):</b> small shapes keep their true form, so right angles stay right. Good for navigation and local mapping.</li>
+          <li><b>Equal-area:</b> a region keeps its true area wherever it is. Essential for statistics such as "how many hectares of forest".</li>
+          <li><b>Equidistant:</b> distances along certain lines (usually meridians or parallels) are true. Used by some specialised maps.</li>
+        </ul>
+        <p>A <b>coordinate reference system (CRS)</b> packages the choices: a datum (the ellipsoid, lesson 0.1), a projection (the flattening rule), and the units. The EPSG registry gives each common CRS a number. The ones you will meet most:</p>
+        <table class="tbl">
+          <tr><th>EPSG</th><th>Name</th><th>Units</th><th>What it is good for</th></tr>
+          <tr><td>4326</td><td>WGS 84 (geographic)</td><td>degrees</td><td>storing and exchanging footprints; STAC bounding boxes</td></tr>
+          <tr><td>3857</td><td>Web Mercator</td><td>metres</td><td>web map tiles; conformal, but areas are badly inflated far from the equator</td></tr>
+          <tr><td>326zz</td><td>WGS 84 / UTM zone zz (north)</td><td>metres</td><td>local analysis, measurements and tiles within one 6°-wide zone</td></tr>
+          <tr><td>6933</td><td>World Cylindrical Equal Area</td><td>metres</td><td>global statistics that must preserve area</td></tr>
+        </table>
+
+        <h3 class="sec">Build it up: Web Mercator, then UTM</h3>
+        <p><b>Web Mercator</b> (EPSG:3857) is the projection behind most web maps. It is conformal: at every point the scale is the same in all directions, equal to <span class="tex">\sec\varphi=1/\cos\varphi</span>. That is why Greenland looks as large as Africa on it. Its <i>area</i> scale is the square, <span class="tex">\sec^2\varphi</span>.</p>
+        <p><b>UTM</b> (Universal Transverse Mercator) cuts the world into 60 zones, each 6° of longitude wide. Inside a zone the scale is very close to 1 (exactly 0.9996 on the central meridian, and less than 0.1 % away from 1 across the whole zone), so UTM is excellent for measuring. The zone number is</p>
+        <div class="eq">\text{zone}=\left\lfloor\frac{\lambda+180}{6}\right\rfloor+1,\qquad \lambda_0=6\cdot\text{zone}-183</div>
+        <div class="worked"><b>Worked example 1: the UTM zone of Cairo</b>
+          <p>Cairo: λ = 31.2357°E, φ = 30.0444°N.</p>
+          <p>Zone: (31.2357 + 180) / 6 = 211.2357 / 6 = 35.206; floor = 35; zone = 35 + 1 = <b>36</b>.</p>
+          <p>Central meridian: λ₀ = 6 × 36 − 183 = <b>33°E</b>. Cairo is 1.76° west of it, so it sits in the western half of zone 36.</p>
+          <p>Coordinates (computed with the full series, PROJ/pyproj): <b>E = 329 899.6 m, N = 3 325 016.7 m</b>, so the EPSG code is 32636 (WGS 84 / UTM 36N).</p>
+          <p>Trap: using zone 35 (the usual "one below" mistake) gives E = 908 528 m instead of 329 900 m, about 579 km out in easting, and the point sits 4.2° from that zone's central meridian where the projection is no longer accurate.</p></div>
+
+        <h3 class="sec">Build it up: the same area, three ways</h3>
+        <p>Here is the Norway question in miniature. Take a box one degree wide and one degree tall, between 60° and 61° N and 10° and 11° E, a rough stand-in for a study area at Norway's latitude. Its true area is the same whatever map you draw it on.</p>
+        <div class="worked"><b>Worked example 2: the area of a 1° × 1° box at 60° N</b>
+          <p><b>True area</b> (equal-area formula on a sphere of R = 6 371 km):</p>
+          <div class="eq">A=R^2\,\Delta\lambda\,(\sin\varphi_2-\sin\varphi_1)=(6371)^2\times0.0174533\times(0.874620-0.866025)\approx 6\,088\ \text{km}^2</div>
+          <p>Check on the ellipsoid (the WGS 84 geodesic area, which is what EPSG:6933 measures): <b>6 123 km²</b>. The 0.6 % difference is the flattening of the Earth.</p>
+          <p><b>Web Mercator</b>: the box is 111.3 km wide (λ-range times the equatorial scale), but 226.1 km tall, because Mercator stretches the north. The area computed in EPSG:3857 is 111.3 × 226.1 = <b>25 168 km²</b>.</p>
+          <p><b>Distortion</b>: 25 168 / 6 088 = 4.13. Check with the scale factor at the box centre (60.5°): sec² 60.5° = 1 / 0.2425 = 4.12. So a Mercator area measurement overstates this box about <b>four-fold</b>.</p>
+          <p><b>Equal-area projection</b> (EPSG:6933): 6 123 km², within 0.6 % of the true area.</p></div>
+        <p>Lesson of the example: the same polygon can be a 25 000 km² region or a 6 000 km² region depending only on the CRS you used to measure it. Measure areas in an equal-area or a local metric CRS; never in EPSG:3857.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">x=R\lambda,\qquad y=R\ln\tan\!\Big(\frac{\pi}{4}+\frac{\varphi}{2}\Big)\qquad\text{(Mercator, sphere form)}</div>
+        <div class="eq">x=R\lambda\cos\varphi_0,\qquad y=\frac{R\sin\varphi}{\cos\varphi_0}\qquad\text{(equal-area cylindrical, standard parallel }\varphi_0\text{)}</div>
+        <div class="eq">E=500\,000+k_0\,A\,\eta,\qquad N=k_0\,A\,\xi\ (+10\,000\,000\text{ in the south}),\qquad k_0=0.9996</div>
+        <table class="sym">
+          <tr><td>R</td><td>radius of the sphere used for the formula (6 371 km here; EPSG:3857 uses 6 378.137 km)</td></tr>
+          <tr><td>λ, φ</td><td>longitude and latitude in radians (λ measured from the projection's central meridian)</td></tr>
+          <tr><td>φ₀</td><td>standard parallel of the equal-area cylinder, where the scale is exactly true (30° for Behrmann-type maps)</td></tr>
+          <tr><td>k₀, A, ξ, η</td><td>UTM scale on the central meridian, a radius term, and the series coefficients (Krüger/Karney series; computed in code)</td></tr>
+          <tr><td>E, N</td><td>easting and northing in metres, measured from the zone's false origin</td></tr>
+          <tr><td>sec φ</td><td>1 / cos φ: the Mercator scale factor at latitude φ</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: globe to map</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Keep Web Mercator and move the latitude up to 60°. Read the ratio: the box looks big, and the readout says it is about four times its true area.</li>
+        <li>Switch to Mollweide (equal-area). The ratio sits at 1.00 everywhere, but the box shears at its edges: equal area is paid for with shape.</li>
+        <li>Switch to the globe view: the true shape is nearly right at the centre and squeezed at the rim. Drag the centre longitude and watch the box move around the sphere.</li></ol></div>
+      <div data-lab="geoglobe" data-title="Globe to map: what does each projection keep?" data-proj="merc" data-lat="50" data-lon="10" data-size="10"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: one point, several coordinate systems</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Cairo's default numbers: find the zone, read the UTM easting, then drag the longitude slider across 24°E and 30°E. The zone number jumps, and so does the easting.</li>
+        <li>Compare the wrong zone (35) with the right one (36). The wrong-zone easting is hundreds of kilometres off, even though the point has not moved.</li>
+        <li>Note that the Web Mercator metres grow with latitude faster than the UTM metres. The scale factor row shows why.</li></ol></div>
+      <div data-lab="geocrs" data-title="One point, four coordinate systems" data-lat="30.0444" data-lon="31.2357" data-wrong="35"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Computing area or distance in degrees or in EPSG:3857.</b> Both give numbers that look plausible and are wrong, by a factor that depends on latitude.</li>
+          <li><b>Axis order.</b> EPSG:4326 is officially (lat, lon), while GeoJSON and many libraries use (lon, lat). Check which one your tool expects.</li>
+          <li><b>Reprojecting back and forth.</b> Every reprojection resamples or rounds. Keep one master CRS per project and reproject once.</li>
+          <li><b>Stretching a UTM zone over a country.</b> Coordinates far from the central meridian are accurate for distances but the zone number changes across the study area, so join data in one CRS chosen for the whole area.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Data alignment bugs.</b> A model trained on tiles in UTM 36N and tested on tiles in UTM 35N is evaluated on shifted pixels. The model is fine; the alignment is not.</li>
+          <li><b>Equal-area sampling.</b> Stratified sample points for accuracy assessment (Module 8) must be drawn in an equal-area CRS, or large high-latitude classes get too many samples.</li>
+          <li><b>Web tiles and labels.</b> Many annotation tools show tiles in EPSG:3857. Labels exported from them are in lon/lat or 3857 and must be reprojected before rasterising.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Which UTM zone and central meridian contain longitude 2.3522°E (Paris)?</summary><div class="ans">(2.3522 + 180) / 6 = 30.39, floor 30, zone 31. Central meridian 6 × 31 − 183 = 3°E. Paris is 0.65° west of it.</div></details>
+        <details class="check"><summary>2. A 2° × 2° box sits at 0° latitude. Roughly how many times larger does it look in Web Mercator than its true area?</summary><div class="ans">At the equator the scale factor is 1, so the area is essentially true (ratio ≈ 1). Mercator distortion grows only with sec²φ, so at 0° the inflation is negligible; it becomes large near the poles.</div></details>
+        <details class="check"><summary>3. You need the total forest area of a country that spans two UTM zones. What do you do?</summary><div class="ans">Reproject all layers into one equal-area CRS suited to the country (or a single UTM zone if the country is narrow enough), then measure. Do not sum areas measured in two different zones, and never use EPSG:3857 for area.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>No flat map keeps angles, areas and distances at once; each CRS is a chosen compromise.</li>
+          <li>Web Mercator (3857) is conformal but inflates area by sec²φ; use equal-area or local metric CRSs for measurement.</li>
+          <li>UTM zone = ⌊(λ+180)/6⌋+1; Cairo is zone 36 (32636), and the central meridian is 6z−183.</li></ul></div>
+        <p style="font-size:13px;color:var(--muted)"><b>Where it sits in the pipeline:</b> Preprocessing. Reproject everything to one project CRS before stacking, tiling or measuring.</p>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="vector-vs-raster" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.3</span><h2>Vector and raster data</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A field boundary is a polygon with 37 corners. A satellite image covers the same field as a grid of 300 × 300 pixels. How do you store each one, and how do you ask "which pixels lie inside this field?" when the two are stored in different ways?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>There are two ways to put geography into a computer, and they are two different philosophies:</p>
+        <ul>
+          <li><b>Vector:</b> store the <i>objects</i>. A point is one coordinate pair, a line is an ordered list of points, a polygon is a closed ring of points. The geometry is exact; nothing is rounded.</li>
+          <li><b>Raster:</b> store the <i>field</i>. The ground is cut into equal square cells (pixels), and each cell holds values: reflectance, height, a class label, a probability.</li>
+        </ul>
+        <p>Think of a road on a paper map (a vector line) versus the same road as a photo taken from space (a raster, where the road is a band of grey pixels).</p>
+
+        <figure style="margin:14px 0;max-width:520px">
+          <svg viewBox="0 0 320 210" role="img" aria-label="A polygon outline drawn over a grid of square cells" style="width:100%;height:auto;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+            <g style="stroke:var(--border)" stroke-width="1">
+              <line x1="30" y1="20" x2="30" y2="180"/><line x1="70" y1="20" x2="70" y2="180"/><line x1="110" y1="20" x2="110" y2="180"/><line x1="150" y1="20" x2="150" y2="180"/><line x1="190" y1="20" x2="190" y2="180"/><line x1="230" y1="20" x2="230" y2="180"/><line x1="270" y1="20" x2="270" y2="180"/>
+              <line x1="30" y1="20" x2="270" y2="20"/><line x1="30" y1="60" x2="270" y2="60"/><line x1="30" y1="100" x2="270" y2="100"/><line x1="30" y1="140" x2="270" y2="140"/><line x1="30" y1="180" x2="270" y2="180"/>
+            </g>
+            <polygon points="62,150 120,44 214,58 252,128 176,168" style="fill:color-mix(in srgb,var(--orange) 20%,transparent);stroke:var(--orange)" stroke-width="2.5"/>
+            <g style="fill:var(--blue)">
+              <circle cx="50" cy="40" r="2.5"/><circle cx="90" cy="40" r="2.5"/><circle cx="130" cy="40" r="2.5"/><circle cx="170" cy="40" r="2.5"/><circle cx="210" cy="40" r="2.5"/><circle cx="250" cy="40" r="2.5"/>
+              <circle cx="50" cy="80" r="2.5"/><circle cx="90" cy="80" r="2.5"/><circle cx="130" cy="80" r="2.5"/><circle cx="170" cy="80" r="2.5"/><circle cx="210" cy="80" r="2.5"/><circle cx="250" cy="80" r="2.5"/>
+              <circle cx="50" cy="120" r="2.5"/><circle cx="90" cy="120" r="2.5"/><circle cx="130" cy="120" r="2.5"/><circle cx="170" cy="120" r="2.5"/><circle cx="210" cy="120" r="2.5"/><circle cx="250" cy="120" r="2.5"/>
+              <circle cx="50" cy="160" r="2.5"/><circle cx="90" cy="160" r="2.5"/><circle cx="130" cy="160" r="2.5"/><circle cx="170" cy="160" r="2.5"/><circle cx="210" cy="160" r="2.5"/><circle cx="250" cy="160" r="2.5"/>
+            </g>
+            <text x="30" y="200" style="fill:var(--muted);font-size:11px">orange: vector outline (exact)   blue dots: raster cell centres</text>
+          </svg>
+          <figcaption style="font-size:12px;color:var(--muted)">The same field, as an exact outline and as the cells whose centres we sample. Rasterising means deciding, for each cell, whether it belongs to the object.</figcaption>
+        </figure>
+
+        <h3 class="sec">Build it up: where is cell (row, column)?</h3>
+        <p>A raster stores an array of values, indexed by row and column. The array alone has no location. The <b>geotransform</b> supplies it: six numbers that map pixel indices to map coordinates. For a north-up image (no rotation) it has four that matter: the origin (x₀, y₀) of the upper-left corner, the pixel width <i>a</i>, and the pixel height <i>e</i>. Because rows increase downwards while y increases northwards, <i>e</i> is negative.</p>
+        <div class="eq">x = x_0 + a\,(\text{col}+\tfrac12),\qquad y = y_0 + e\,(\text{row}+\tfrac12)\qquad\text{(centre of a cell)}</div>
+        <figure style="margin:14px 0;max-width:460px">
+          <svg viewBox="0 0 300 170" role="img" aria-label="A raster grid with its origin at the upper-left corner, pixel width a and pixel height e" style="width:100%;height:auto;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+            <g style="stroke:var(--border)" stroke-width="1">
+              <rect x="60" y="30" width="200" height="120" fill="none" style="stroke:var(--blue)" stroke-width="2"/>
+              <line x1="100" y1="30" x2="100" y2="150"/><line x1="140" y1="30" x2="140" y2="150"/><line x1="180" y1="30" x2="180" y2="150"/><line x1="220" y1="30" x2="220" y2="150"/>
+              <line x1="60" y1="60" x2="260" y2="60"/><line x1="60" y1="90" x2="260" y2="90"/><line x1="60" y1="120" x2="260" y2="120"/>
+            </g>
+            <circle cx="60" cy="30" r="4" style="fill:var(--orange)"/>
+            <text x="66" y="24" style="fill:var(--orange);font-size:11px">(x₀, y₀)</text>
+            <line x1="60" y1="16" x2="100" y2="16" style="stroke:var(--green)" stroke-width="2"/>
+            <text x="104" y="19" style="fill:var(--green);font-size:11px">a = +10 m (pixel width)</text>
+            <line x1="270" y1="30" x2="270" y2="60" style="stroke:var(--purple)" stroke-width="2"/>
+            <text x="200" y="165" style="fill:var(--purple);font-size:11px">e = −10 m: y falls as the row index rises</text>
+          </svg>
+          <figcaption style="font-size:12px;color:var(--muted)">A north-up raster: columns march east (a), rows march south (e negative). The origin is the upper-left corner, not the centre of the first pixel.</figcaption>
+        </figure>
+
+        <div class="worked"><b>Worked example 3: a geotransform by hand</b>
+          <p>Geotransform (GDAL convention): origin x₀ = 500 000, y₀ = 4 200 000, a = +10, e = −10, with no rotation. (This is a 10 m UTM grid.)</p>
+          <p><b>Centre of pixel (row 2, col 3)</b>: x = 500 000 + 10 × (3 + ½) = <b>500 035 m</b>; y = 4 200 000 + (−10) × (2 + ½) = <b>4 199 975 m</b>.</p>
+          <p><b>Which pixel holds the point (500 042, 4 199 977)?</b> col = ⌊(500 042 − 500 000) / 10⌋ = ⌊4.2⌋ = <b>4</b>; row = ⌊(4 200 000 − 4 199 977) / 10⌋ = ⌊2.3⌋ = <b>2</b>. Pixel (row 2, col 4).</p>
+          <p><b>Ground size of the image</b>: 5 columns × 10 m = 50 m wide, 4 rows × 10 m = 40 m tall. (The lab uses the same rule with a 6 × 5 grid.)</p></div>
+
+        <h3 class="sec">Build it up: the polygon as a sum of cells</h3>
+        <p>To rasterise a polygon you must choose a rule. The standard one is the <b>cell-centre rule</b>: a cell belongs to the polygon if its centre lies inside. Testing whether a point is inside a polygon is done by counting how many polygon edges a ray from the point crosses (an odd count means inside). Area is computed differently for each form: for a vector polygon with vertices (x₁,y₁)…(xₙ,yₙ), the <b>shoelace formula</b> gives it exactly.</p>
+        <div class="worked"><b>Worked example 4: shoelace on a rectangle</b>
+          <p>Corners (0,0), (4,0), (4,3), (0,3). Sum of xᵢyᵢ₊₁ − xᵢ₊₁yᵢ: (0·0 − 4·0) + (4·3 − 4·0) + (4·3 − 0·3) + (0·0 − 0·3) = 0 + 12 + 12 + 0 = 24. Area = 24 / 2 = <b>12</b> ✓ (4 × 3).</p>
+          <p>As a raster with 1 × 1 cells the same rectangle has 12 pixels whose centres are inside, so the raster area is 12 — exact here because the edges fall on cell boundaries. Shift the rectangle by half a cell and the raster area can change, which is the "staircase" error.</p></div>
+
+        <div class="eq">\text{Area}=\tfrac12\Big|\sum_{i=1}^{n}(x_i\,y_{i+1}-x_{i+1}\,y_i)\Big|\qquad (x_{n+1},y_{n+1})=(x_1,y_1)</div>
+        <table class="sym">
+          <tr><td>(xᵢ, yᵢ)</td><td>the i-th corner of the polygon, in map coordinates (metres in a projected CRS)</td></tr>
+          <tr><td>x₀, y₀</td><td>the origin of the raster: the map coordinates of its upper-left corner</td></tr>
+          <tr><td>a, e</td><td>pixel width and pixel height (e is negative for north-up images)</td></tr>
+          <tr><td>col, row</td><td>column and row indices, counted from 0 at the upper-left</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Show the vector only, then the raster only, using the buttons. Set the grid to 6 columns: the lake is a set of blocks, and the thin road almost disappears.</li>
+        <li>Raise the grid to 40 columns. Compare the lake area in the readout: the raster approximates the vector ever more closely.</li>
+        <li>Click a cell. Its centre is computed from the geotransform shown in the readout; the class is read from the array.</li></ol></div>
+      <div data-lab="georaster" data-title="Vector or raster: the same map, two stories" data-n="16"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Thin features vanish.</b> A road narrower than a pixel is either dropped or smeared across cells. The area of a thin object is unreliable in a raster.</li>
+          <li><b>Pixel corner versus centre.</b> Many tools put the origin at a corner, others at a centre (GDAL uses the corner). A half-pixel error shifts every label.</li>
+          <li><b>Raster lines look like vectors.</b> A 1-pixel "line" in a raster is a band of cells, not a geometry with a length you can trust.</li>
+          <li><b>Aggregating a raster to vector</b> (polygonising) joins neighbouring cells with the same class; tiny isolated pixels become slivers, handled in Module 5 and 9.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Labels versus imagery.</b> Training masks for segmentation are rasters aligned to the image grid; the reference polygons are vectors that must be rasterised by the rule above (Module 3, labels-rasterization).</li>
+          <li><b>Model outputs</b> are per-pixel rasters (probabilities), converted back to polygons in post-processing.</li>
+          <li><b>Attribute tables.</b> Vector features carry attributes (crop type, owner) that a classifier can use alongside raster bands, as in zonal statistics (Module 4).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A raster has origin (300 000, 5 000 000), a = 30 and e = −30. Where is the centre of pixel (row 0, col 0)?</summary><div class="ans">x = 300 000 + 30 × ½ = 300 015; y = 5 000 000 + (−30) × ½ = 4 999 985.</div></details>
+        <details class="check"><summary>2. Shoelace area of the triangle (0,0), (6,0), (0,4).</summary><div class="ans">Sum: (0·0 − 6·0) + (6·4 − 0·0) + (0·0 − 0·4) = 0 + 24 + 0 = 24. Area = 12. (Check: ½ × base 6 × height 4 = 12.)</div></details>
+        <details class="check"><summary>3. Why does the cell-centre rule use the centre rather than any point of the cell?</summary><div class="ans">The centre is a single well-defined point at a fixed offset from the origin, so every cell is decided the same way and two rasters of the same grid agree. A rule like "any overlap" would make a cell belong to two neighbouring objects and inflate areas.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Vector stores exact objects; raster stores a grid of values; each is the right tool for different questions.</li>
+          <li>The geotransform (x₀, a, y₀, e) gives every pixel a map position; read it, do not guess it.</li>
+          <li>Rasterising is an approximation with a rule (cell centre); thin objects and borders are where it fails.</li></ul></div>
+        <p style="font-size:13px;color:var(--muted)"><b>Where it sits in the pipeline:</b> Preprocessing. Labels are rasterised onto the image grid, and predictions come back out as rasters.</p>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="raster-bands-resolution" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.4</span><h2>Bands, resolution &amp; the pixel footprint</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A product is advertised as "10 m resolution, 13 bands". What does a single pixel actually cover on the ground? Does it cover 10 m in every direction and at every latitude? And what is a band, that a satellite needs thirteen of them?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A satellite sensor does not see colours the way your eye does. It measures how much light arrives from each small patch of ground, in several narrow slices of the spectrum. Each slice is a <b>band</b>. Put the bands on top of each other and you have a <b>data cube</b>: height × width × bands.</p>
+        <p>Each pixel is then a column of numbers (one per band) standing on a square of ground. That column is the pixel's <b>spectrum</b>: how bright the patch is in each wavelength. Module 4 (spectral indices) builds directly on this idea.</p>
+        <p>There are four different kinds of "resolution", and the words get confused constantly:</p>
+        <ul>
+          <li><b>Spatial:</b> the ground size of one pixel, the <i>ground sample distance</i> (GSD).</li>
+          <li><b>Spectral:</b> how many bands there are and how narrow they are.</li>
+          <li><b>Temporal:</b> how often the same place is revisited.</li>
+          <li><b>Radiometric:</b> how finely each measurement is divided into levels (bit depth).</li>
+        </ul>
+
+        <h3 class="sec">Build it up: the data cube</h3>
+        <p>Take a scene of H rows, W columns and C bands. Store it as an array of shape (H, W, C), or (C, H, W) in some formats. A pixel is one (row, col) and its spectrum is the C-vector of values there. Multispectral sensors have roughly 3 to 13 bands; hyperspectral sensors have hundreds of narrow bands that together trace a continuous spectrum. The four Sentinel-2 bands used most often are all 10 m pixels; their approximate central wavelengths are:</p>
+        <table class="tbl">
+          <tr><th>Band</th><th>Colour</th><th>Central wavelength (approx.)</th><th>Typical use</th></tr>
+          <tr><td>B2</td><td>blue</td><td>≈ 490 nm</td><td>water clarity, atmosphere</td></tr>
+          <tr><td>B3</td><td>green</td><td>≈ 560 nm</td><td>green vegetation peak</td></tr>
+          <tr><td>B4</td><td>red</td><td>≈ 665 nm</td><td>chlorophyll absorption, plant vigour</td></tr>
+          <tr><td>B8</td><td>near infrared</td><td>≈ 842 nm</td><td>leaf structure; very bright over healthy vegetation</td></tr>
+        </table>
+        <p>Some Sentinel-2 bands are natively 20 m or 60 m, so stacking them into one cube requires resampling. Check the metadata of every band before you stack.</p>
+
+        <h3 class="sec">Build it up: what is a pixel on the ground?</h3>
+        <p>The nominal GSD says how far apart pixel centres are on the ground, if the grid is metric. In a metric projection (UTM, lesson 0.2) a 10 m pixel is 10 m by 10 m, everywhere in the zone, up to the tiny UTM scale factor. But many products, and most global grids, are defined in <i>degrees</i>. Then the pixel's ground size depends on latitude.</p>
+        <div class="worked"><b>Worked example 5: ground size of a degree-defined 10 m pixel</b>
+          <p>A pixel of 0.00009° × 0.00009° is "about 10 m" at the equator. Ground size at latitude φ, using 111.195 km per degree:</p>
+          <p>Height (north–south) = 0.00009 × 111 195 m = <b>10.0 m</b>, at any latitude.</p>
+          <p>Width (east–west) = 10.0 m × cos φ. At φ = 0°: 10.0 m. At φ = 45°: 10.0 × 0.7071 = <b>7.1 m</b>. At φ = 60°: 10.0 × 0.5 = <b>5.0 m</b>.</p>
+          <p>So the same degree-defined "10 m" pixel is a 10 m × 5 m rectangle in Scandinavia. A metric UTM grid keeps the square. This is why reprojecting a degree grid to a metric one changes pixel shapes and counts.</p></div>
+
+        <h3 class="sec">Build it up: bit depth and quantisation</h3>
+        <p>A sensor measures light as an analogue signal and stores it as an integer. With <i>b</i> bits there are 2<sup>b</sup> levels, so 8-bit data holds 256 values, 12-bit holds 4 096 and 16-bit holds 65 536. If a band represents reflectance from 0 to 1, one step of a 12-bit band is 1 / 4 095 ≈ 0.00024 in reflectance.</p>
+        <div class="worked"><b>Worked example 6: why Sentinel-2 values look like 3 000</b>
+          <p>A vegetation pixel with reflectance 0.300 is stored as the integer 0.300 × 10 000 = <b>3 000</b>, in 16-bit unsigned integers (2 bytes per value). The product metadata gives the scale factor 1/10 000 to get back to reflectance.</p>
+          <p>Why not floats? A 32-bit float is 4 bytes; the integer version halves the archive and keeps four decimal digits of reflectance, which is more than the sensor's noise. Check the offset value in the metadata as well: some processing baselines add an offset of 1 000.</p></div>
+
+        <div class="eq">\text{levels}=2^{b},\qquad \text{step}=\frac{\text{range}}{2^{b}-1},\qquad \text{width}=\text{GSD}\times\cos\varphi\ \ (\text{degree grids})</div>
+        <table class="sym">
+          <tr><td>GSD</td><td>ground sample distance: the ground size of one pixel, in metres (nominal)</td></tr>
+          <tr><td>b</td><td>bit depth: number of bits per stored value</td></tr>
+          <tr><td>range</td><td>span of the values the band represents, for example 1.0 for reflectance</td></tr>
+          <tr><td>φ</td><td>latitude; cos φ is the shrink factor of east–west ground distance in a degree grid</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab 1: a degree pixel at 60° N</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>The default is the 10 m degree pixel at 60°. Read the width (5 m) and the height (10 m) from the readout.</li>
+        <li>Slide the latitude to 0°. The cell becomes a 10 m square. Slide back to 60° and watch it turn into a tall, narrow rectangle.</li>
+        <li>Change the cell to 0.0001° at 45°: 11.1 m tall and 7.9 m wide. The dashed square always shows true 10 m.</li></ol></div>
+      <div data-lab="geocoords" data-title="A 10 m pixel defined in degrees" data-lat="60" data-cell="0.00009"></div>
+
+      <h3 class="sec" style="max-width:780px">Lab 2: the band cube and an editable index</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the stack: each band is a layer, and the highlighted column of pixels is one pixel's spectrum. Notice the vegetation pixels spike in the near infrared.</li>
+        <li>Let the tour run. Compare the water spectrum (low everywhere) with the bare-soil spectrum (rising towards the infrared).</li>
+        <li>Edit the index formula. The default NDVI = (B8 − B4)/(B8 + B4) turns vegetation green. Try (B3 − B8)/(B3 + B8) and see what it highlights instead.</li></ol></div>
+      <div data-lab="geobands" data-title="Band stack and spectrum of one pixel"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Resolution is not the smallest visible detail.</b> The sensor blurs: a 10 m pixel can resolve features of 20 m or more reliably. Nominal GSD is the grid, not the optics.</li>
+          <li><b>"10 m" in degrees is not 10 m.</b> Check the CRS before you measure (Worked example 5).</li>
+          <li><b>Band order.</b> Stacks may be (B2, B3, B4, B8) or in a different order. Read the band list; a model fed in the wrong order learns nonsense without an error.</li>
+          <li><b>Integers as reflectance.</b> Forgetting the 1/10 000 scale makes NDVI correct but everything else off by a factor of 10 000.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Input channels.</b> A segmentation model's first layer takes C channels: 3 for RGB, 4 for B2–B8, 12 or 13 for a full Sentinel-2 stack. The band list is part of the model's input contract (Module 6, mlm-input-output).</li>
+          <li><b>Normalisation</b> uses per-band statistics, so band order and scale must match between training and inference (Module 3).</li>
+          <li><b>Indices as features.</b> NDVI and similar ratios are simple per-pixel arithmetic that often help small models a lot (Module 4).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A pixel is 0.0001° square. What is its ground width and height at 45° N? (Use 111.195 km per degree.)</summary><div class="ans">Height = 0.0001 × 111 195 = 11.12 m. Width = 11.12 × cos 45° = 11.12 × 0.7071 = 7.86 m.</div></details>
+        <details class="check"><summary>2. A 16-bit band holds integers from 0 to 65 535. How many distinct levels does it have, and how big is one step if it represents reflectance from 0 to 1?</summary><div class="ans">2<sup>16</sup> = 65 536 levels. One step = 1 / 65 535 ≈ 0.0000153 in reflectance.</div></details>
+        <details class="check"><summary>3. Why do many Sentinel-2 values appear as integers around 1 000–5 000 rather than as decimals?</summary><div class="ans">Reflectance is stored as an integer scaled by 10 000 (so 0.25 becomes 2 500) to save space: 2 bytes per value instead of 4 for float32. The metadata's scale factor restores the decimals.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A band is one narrow slice of the spectrum; stacked bands form a cube, and each pixel has a spectrum.</li>
+          <li>GSD is the ground size of a pixel, and in degree grids it shrinks east–west with cos φ.</li>
+          <li>Bit depth sets how finely values are divided; integers with a stated scale factor are the norm.</li></ul></div>
+        <p style="font-size:13px;color:var(--muted)"><b>Where it sits in the pipeline:</b> Acquire (choose and read bands) and Preprocessing (scale, stack and align them).</p>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="earth-observation-sensors" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.5</span><h2>Earth-observation sensors</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A river has flooded a town. You need to know which streets are under water, as soon as possible, and you need to see the streets, which means about 10 m or better. Optical satellites are blind under cloud, and the flood sits under cloud. Which sensor do you ask for, and how long will you wait for the next look?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Satellites carry different instruments, and each one measures a different physical quantity:</p>
+        <ul>
+          <li><b>Passive optical</b> (Sentinel-2, Landsat): reflected sunlight in several bands. Sharp and easy to read, but only on clear, sunlit scenes.</li>
+          <li><b>Thermal infrared</b> (Landsat's thermal bands): heat the surface emits, at night too. Coarser pixels.</li>
+          <li><b>Radar / SAR</b> (Sentinel-1): the satellite fires its own microwave pulses and records the echo. Clouds and darkness do not matter. Its C-band wavelength is about 5.5 cm, and it is sensitive to surface roughness and moisture.</li>
+          <li><b>Elevation</b> (DEMs such as Copernicus DEM, and airborne LiDAR): heights of the ground and objects, from stereo images, radar interferometry or laser pulses.</li>
+        </ul>
+        <p>Almost all Earth-observation satellites fly in a <b>sun-synchronous</b> orbit, about 700 to 800 km high, so that they pass over a place at about the same local time each visit. That makes images comparable from one date to the next.</p>
+
+        <h3 class="sec">Build it up: revisit time</h3>
+        <p>A single satellite returns to the same place after its <b>repeat cycle</b>, for example 10 days for one Sentinel-2 satellite. Two satellites in the same orbit, phased half an orbit apart, halve the wait. Sentinel-2A and 2B give a combined revisit of about 5 days at the equator. Over a 90-day window, with a revisit of 5 days, you get 18 looks.</p>
+        <p>A look is only useful if it is not covered by cloud. Clouds vary from day to day, so a simple model is to say each look is independently cloudy with probability <i>p</i>. Then a clear look has probability 1 − <i>p</i>, and the chance that <i>n</i> looks are all cloudy is <i>p</i><sup>n</sup>.</p>
+
+        <div class="worked"><b>Worked example 7: revisit and cloud-free probability</b>
+          <p><b>Revisit.</b> One satellite repeats every 10 days; two phased satellites give a revisit of 10 / 2 = 5 days. In 30 days there are 30 / 5 = <b>6 looks</b>.</p>
+          <p><b>Cloud-free chance, cloud probability p = 0.5 per look.</b> P(all 6 cloudy) = 0.5<sup>6</sup> = 1/64 = 0.015625. So P(at least one clear look) = 1 − 1/64 = <b>63/64 ≈ 98.4 %</b>.</p>
+          <p><b>A harder place</b>, p = 0.8 per look (persistent cloud): P(at least one clear) = 1 − 0.8<sup>6</sup> = 1 − 0.262 = <b>74 %</b>. Six looks help, but a cloudy season can still leave a gap of a month or more.</p>
+          <p><b>Radar in the same scenario:</b> P(clear) = 1, because the flood is seen through cloud. The revisit still matters, but the cloud term disappears.</p></div>
+
+        <div class="eq">T_{\text{combined}}=\frac{T}{k}\quad (k\text{ phased satellites}),\qquad P(\text{at least one clear look})=1-p^{\,n}</div>
+        <table class="sym">
+          <tr><td>T</td><td>repeat cycle of a single satellite, in days</td></tr>
+          <tr><td>k</td><td>number of satellites in the same orbit, phased evenly</td></tr>
+          <tr><td>n</td><td>number of looks in the window (window length ÷ revisit)</td></tr>
+          <tr><td>p</td><td>probability that one look is cloudy (assumed independent across looks)</td></tr>
+          <tr><td>λ = c / f</td><td>wavelength of a radar of frequency f, with c = 3 × 10⁸ m/s; for Sentinel-1's C-band (f ≈ 5.4 GHz) λ ≈ 5.5 cm</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: sensor comparison</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Pick the Sentinel-2-like preset. Read the house width in pixels, the raw size of a 10 km × 10 km scene, and the number of looks in 90 days.</li>
+        <li>Slide the cloud probability up to 0.8 and watch the chance of a clear look fall. Then switch to the radar-like preset to see how a sensor that ignores cloud changes the picture.</li>
+        <li>Raise the GSD to 30 m (Landsat-like). The 20 m house falls to under one pixel across, and the road gets mixed into its neighbours.</li></ol></div>
+      <div data-lab="geosensors" data-title="Sensor comparison: footprint, revisit and clouds"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Resolution is not the sensor's detail.</b> Pixel size is the sampling grid; the optics blur things further. Judge a sensor by its effective resolution as well.</li>
+          <li><b>Revisit is not coverage.</b> A satellite that revisits daily but has a narrow swath may cover your field only occasionally.</li>
+          <li><b>Independent cloud is a simplification.</b> Clouds persist over days, so six looks in a row may all be cloudy. Use the seasonal cloud statistics for real planning.</li>
+          <li><b>Radar is not a photo.</b> Side-looking geometry produces layover and shadow, and water often looks dark because calm surfaces reflect the pulse away from the sensor.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Data selection.</b> The first decision in a project is the sensor; it sets band list, GSD and cloud behaviour, and therefore what the model can learn.</li>
+          <li><b>Cloud-free composites</b> are built from many looks; models trained on single cloudy scenes learn to ignore clouds only with cloud masks (Module 1).</li>
+          <li><b>Fusion.</b> Radar and optical stacks are combined so that a model sees through cloud on the radar channels and sharp colour on the optical ones (Module 5, sar-deep).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Two satellites each repeat every 12 days and are phased half an orbit apart. What is the combined revisit? How many looks fall in 60 days?</summary><div class="ans">12 / 2 = 6 days. 60 / 6 = 10 looks.</div></details>
+        <details class="check"><summary>2. With 4 looks, each independently cloudy with probability 0.4, what is the chance of at least one clear look?</summary><div class="ans">1 − 0.4⁴ = 1 − 0.0256 = 0.9744, about 97 %, if the looks are independent.</div></details>
+        <details class="check"><summary>3. Why is a radar sensor useful for mapping a flood that happened under cloud?</summary><div class="ans">Radar emits its own microwave pulses, which pass through cloud and work at night. Calm open water often reflects the pulse away from the sensor and looks dark, which gives good contrast against land.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Optical sensors measure reflected sunlight and are blocked by cloud; radar measures its own echo and is not.</li>
+          <li>Revisit time is the repeat cycle divided by the number of phased satellites; cloud-free chance is 1 − pⁿ under independence.</li>
+          <li>Choose the sensor from the question: resolution, bands, revisit and what the weather allows.</li></ul></div>
+        <p style="font-size:13px;color:var(--muted)"><b>Where it sits in the pipeline:</b> Acquire. The sensor chosen here fixes the bands, GSD and cloud behaviour of everything downstream.</p>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say where a pixel is, how big it really is, which projection flattened it and which sensor recorded it. Next, Module 1 covers the file formats that hold these grids in the cloud: GeoTIFF and Cloud-Optimised GeoTIFF, vector formats, Zarr, range requests, reprojection and masks. Back to the <a href="geoai.html">GeoAI hub</a> for the full map.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

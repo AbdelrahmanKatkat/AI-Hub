@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · Spectral indices &amp; classical GeoAI · GeoAI</title>
+<meta name="description" content="Spectral signatures, NDVI, NDWI and EVI computed by hand, pixel classifiers, object-based segmentation, zonal statistics and change detection without deep learning.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-geo-classical.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · Spectral indices &amp; classical GeoAI</h1>
+        <p>Before deep networks, Earth observation ran on arithmetic and classical classifiers. A satellite records numbers for each pixel and each band; this module shows how to turn those numbers into vegetation health, land-cover maps, object summaries, field statistics and change maps, and how to tell a real change from noise. Every number that appears in a worked example is computed by hand from tiny rasters.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs Modules 0–3</span><span class="chip">Hand-worked rasters</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 4.1 ===================== -->
+    <section class="lesson" id="spectral-signatures" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.1</span><h2>Spectral signatures</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A satellite does not see a forest or a field. It sees, for every 10 m square on the ground, a handful of numbers, one per spectral band. Why would a forest give a different set of numbers from a field of wheat, a lake or a car park, and which bands should we look at to tell them apart?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Sunlight hits the ground, and each surface sends some of it back. How much comes back depends on the <i>wavelength</i>. A leaf is a good example: its pigment molecules (chlorophyll) soak up most of the blue and red light, which is why leaves look green to our eyes (green is what the pigment does not absorb). Near-infrared light, just beyond what we can see, is not absorbed much; the leaf's internal cell structure scatters it back strongly. Water does the opposite: it absorbs nearly all near-infrared light, so a lake looks almost black in that band.</p>
+        <p>The pattern of reflected fraction against wavelength is called a <b>spectral signature</b>. It is like a fingerprint of the material. Plot reflectance on the vertical axis and wavelength on the horizontal axis and each material draws its own curve. Vegetation has a sharp climb between red and near-infrared (the <i>red edge</i>); water falls towards zero; bare soil rises gently; concrete stays fairly flat and bright.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>A satellite does not measure a single wavelength. Each band is a window of wavelengths. Sentinel-2, the free European optical satellite with 10 m bands, has these four 10 m bands we will use throughout the module:</p>
+        <table class="tbl">
+          <tr><th>Band</th><th>Name</th><th>Centre wavelength</th><th>Pixel size</th></tr>
+          <tr><td>B2</td><td>Blue</td><td>490 nm</td><td>10 m</td></tr>
+          <tr><td>B3</td><td>Green</td><td>560 nm</td><td>10 m</td></tr>
+          <tr><td>B4</td><td>Red</td><td>665 nm</td><td>10 m</td></tr>
+          <tr><td>B8</td><td>Near-infrared (NIR)</td><td>842 nm</td><td>10 m</td></tr>
+        </table>
+        <p>Each band value is an average of the material's reflectance over the band's window. For the purposes of this module we will use the surface reflectance values in the table below. They are illustrative values chosen to be typical of each surface type; real pixels scatter around them with season, moisture and atmosphere.</p>
+        <table class="tbl">
+          <tr><th>Surface</th><th>B2 blue</th><th>B3 green</th><th>B4 red</th><th>B8 NIR</th><th>B4 → B8 contrast (B8 − B4)</th></tr>
+          <tr><td>Forest (healthy)</td><td>0.02</td><td>0.08</td><td>0.04</td><td>0.45</td><td>+0.41</td></tr>
+          <tr><td>Crop (sparse canopy)</td><td>0.04</td><td>0.12</td><td>0.10</td><td>0.25</td><td>+0.15</td></tr>
+          <tr><td>Bare soil</td><td>0.12</td><td>0.20</td><td>0.25</td><td>0.30</td><td>+0.05</td></tr>
+          <tr><td>Clear water</td><td>0.08</td><td>0.10</td><td>0.05</td><td>0.02</td><td>−0.03</td></tr>
+        </table>
+        <div class="worked"><b>Worked example — the contrast that separates vegetation from soil</b>
+          <p>Look at the last column. Forest gives B8 − B4 = 0.45 − 0.04 = 0.41. Bare soil gives 0.30 − 0.25 = 0.05. Water gives 0.02 − 0.05 = −0.03. A single difference already separates the three: forest is far above zero, soil is close to zero, water is below zero. Keep this in mind: the next lesson turns this exact idea into a formula.</p></div>
+
+        <p>Now suppose a pixel is observed as <span class="tex">p=(0.05,\,0.09,\,0.06,\,0.38)</span> in (B2, B3, B4, B8). Which surface is it? A simple answer is the <b>nearest signature</b>: measure how far the pixel is from each reference signature in the four-band space, and pick the closest. The distance is the familiar Euclidean one (Module 1), taken over the bands:</p>
+        <div class="worked"><b>Worked example — nearest signature</b>
+          <p>Distance to forest <span class="tex">s=(0.02,0.08,0.04,0.45)</span>: differences (0.03, 0.01, 0.02, −0.07); squares 0.0009 + 0.0001 + 0.0004 + 0.0049 = 0.0063; distance <span class="tex">\sqrt{0.0063}=0.0794</span>.</p>
+          <p>Distance to crop <span class="tex">(0.04,0.12,0.10,0.25)</span>: differences (0.01, −0.03, −0.04, 0.13); squares 0.0001 + 0.0009 + 0.0016 + 0.0169 = 0.0195; distance 0.1396.</p>
+          <p>Distance to bare soil <span class="tex">(0.12,0.20,0.25,0.30)</span>: distance 0.2439. Distance to water: 0.3615. Distance to concrete <span class="tex">(0.16,0.17,0.19,0.22)</span>: 0.2470.</p>
+          <p>The smallest distance is 0.0794, to forest. The pixel is labelled <b>forest</b>. The same procedure is the simplest pixel classifier there is (lesson 4.3 makes it better).</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\rho(\lambda)=\frac{L_{\text{reflected}}(\lambda)}{E_{\text{incident}}(\lambda)}\qquad\qquad \rho_b=\frac{\int \rho(\lambda)\,R_b(\lambda)\,d\lambda}{\int R_b(\lambda)\,d\lambda}</div>
+        <div class="eq">d(\mathbf p,\mathbf s_k)=\sqrt{\sum_{b=1}^{B}\left(p_b-s_{k,b}\right)^2}\qquad\hat k=\arg\min_k\, d(\mathbf p,\mathbf s_k)</div>
+        <table class="sym">
+          <tr><td>ρ(λ)</td><td>reflectance at wavelength λ: the fraction of incident light returned by the surface</td></tr>
+          <tr><td>E<sub>incident</sub>, L<sub>reflected</sub></td><td>light arriving at and leaving the surface, per wavelength</td></tr>
+          <tr><td>R<sub>b</sub>(λ)</td><td>the band's spectral response: how sensitive the sensor is to each wavelength in band <i>b</i></td></tr>
+          <tr><td>ρ<sub>b</sub></td><td>the band value: the response-weighted average reflectance in band <i>b</i></td></tr>
+          <tr><td>p = (p₁,…,p_B)</td><td>the observed pixel, one number per band</td></tr>
+          <tr><td>s<sub>k</sub></td><td>the reference signature of class <i>k</i></td></tr>
+          <tr><td>k̂</td><td>the predicted class: the signature closest to the pixel</td></tr>
+        </table>
+        <p>Two practical points follow from the definition. First, the satellite gives you a band average, not the full curve, so two materials with different curves can give the same band values. Second, the integral is only an idea; in practice the provider has already computed ρ<sub>b</sub> for you in the product. You read the numbers, but you should know what they are.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: spectral signatures and a nearest-signature pixel</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Move the <b>band window</b> slider along the wavelength axis. Read the four surfaces' average reflectance in that window. Find the position where forest and soil are most different.</li>
+        <li>Press <b>New pixel</b>. A noisy pixel is drawn from one surface. Watch the four bands arrive one by one, then the distances appear. Is the nearest signature the true surface? Increase the noise and see when it fails.</li>
+        <li>Notice the jump of the forest curve between 665 and 842 nm (the red edge). It is why NIR minus red is so informative.</li></ol></div>
+      <div data-lab="geoSignatures"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Digital numbers are not reflectance.</b> The sensor records a counter that depends on the sun angle, the atmosphere and the sensor gain. Use surface reflectance products (or correct them) before comparing dates or places. Some Sentinel-2 products carry an additive offset in their metadata that must be removed before dividing by the scale factor (10000).</li>
+          <li><b>Band centre is not band width.</b> Two bands with the same centre but different widths see different things. Always read the band table of your sensor.</li>
+          <li><b>Signatures move.</b> Wet soil is darker than dry soil; a crop is different in June and in March. A signature is a reference for a moment, not a constant.</li></ul></div>
+
+        <div class="callout"><b>Where this sits in the pipeline</b>Acquire (download surface reflectance for the bands) → preprocess (apply the offset, mask clouds, reproject) → <b>this lesson sits here, at the start of the model stage</b>: the band values are the first features a classifier sees. The stored product is usually a multi-band COG (Module 1).</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Input features.</b> Every pixel classifier in lesson 4.3, and every deep network in Module 5, starts from the same bands. Knowing the signatures tells you which bands carry the information.</li>
+          <li><b>Spectral libraries</b> (for example the USGS spectral library) store measured signatures of minerals, plants and materials. They are the reference set for matching.</li>
+          <li><b>Spectral unmixing</b> extends the idea: when a pixel covers two surfaces, its signature is a mixture of their signatures, and the mixing fractions are the unknowns.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A pixel has B4 = 0.05 and B8 = 0.02. Is it more likely vegetation or water?</summary><div class="ans">Water. Vegetation reflects far more NIR than red (B8 ≫ B4). Here B8 is smaller than B4, which is the pattern of water.</div></details>
+        <details class="check"><summary>2. Why do we prefer surface reflectance over raw digital numbers when comparing two dates?</summary><div class="ans">Digital numbers depend on the sun angle, the atmosphere and the sensor's gain. Two identical fields can have different digital numbers on two dates. Reflectance removes most of those effects, so differences reflect the ground.</div></details>
+        <details class="check"><summary>3. Using the four surfaces in the table, which is the nearest signature to the pixel (0.04, 0.10, 0.09, 0.22) in (B2, B3, B4, B8)?</summary><div class="ans">Crop. Differences from crop (0.04, 0.12, 0.10, 0.25) are (0, −0.02, −0.01, −0.03); squares sum to 0.0004 + 0.0001 + 0.0009 = 0.0014, so the distance is √0.0014 ≈ 0.0374. Forest is about 0.237 away and bare soil about 0.220 away.</div></details></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Each material reflects light differently across wavelengths; the curve is its spectral signature.</li>
+          <li>A sensor band is an average over a window of wavelengths; the band values are the features of a pixel.</li>
+          <li>The nearest signature (Euclidean distance over bands) is a first, working pixel classifier.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 ===================== -->
+    <section class="lesson" id="vegetation-indices" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.2</span><h2>Vegetation &amp; water indices</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A field has NIR reflectance 0.45 and red reflectance 0.04. Is it healthy? A cloud passes over and both numbers halve. The field looks the same to a farmer, yet the raw numbers have changed a lot. How do we express "how green this pixel is" as one number that does not depend on overall brightness?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Brightness is the part of the signal we do not care about. Shade, a cloud's shadow, a dim day or a dusty sensor all scale every band down by roughly the same factor. What survives such scaling is the <i>balance</i> between bands. Healthy vegetation has far more NIR than red; soil is nearly balanced; water has more red than NIR. So take the difference between the two bands (that measures the balance) and divide by their sum (that removes the brightness). The result always lies between −1 and +1. That is the <b>normalised difference</b> idea, and the best-known member of the family is NDVI, the normalised difference vegetation index (Rouse and colleagues, 1973).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here is a 2×2 patch of Sentinel-2 pixels: a forest, a sparse crop, bare soil and a pond. Each pixel has four bands. We compute NDVI for each pixel by hand. Read the formula as "balance divided by brightness".</p>
+        <div class="eq">\text{NDVI}=\frac{\text{NIR}-\text{Red}}{\text{NIR}+\text{Red}}=\frac{B8-B4}{B8+B4}</div>
+        <table class="tbl">
+          <tr><th>Pixel</th><th>Blue B2</th><th>Green B3</th><th>Red B4</th><th>NIR B8</th><th>NDVI</th></tr>
+          <tr><td>Forest (top-left)</td><td>0.02</td><td>0.08</td><td>0.04</td><td>0.45</td><td>0.8367</td></tr>
+          <tr><td>Sparse crop (top-right)</td><td>0.04</td><td>0.12</td><td>0.10</td><td>0.25</td><td>0.4286</td></tr>
+          <tr><td>Bare soil (bottom-left)</td><td>0.12</td><td>0.20</td><td>0.25</td><td>0.30</td><td>0.0909</td></tr>
+          <tr><td>Pond (bottom-right)</td><td>0.08</td><td>0.10</td><td>0.05</td><td>0.02</td><td>−0.4286</td></tr>
+        </table>
+        <div class="worked"><b>Worked example — NDVI on the 2×2 patch</b>
+          <p>Forest: (0.45 − 0.04) / (0.45 + 0.04) = 0.41 / 0.49 = <b>0.8367</b>. Dense canopy: close to the top of the scale.</p>
+          <p>Sparse crop: (0.25 − 0.10) / (0.25 + 0.10) = 0.15 / 0.35 = <b>0.4286</b>. Partly green.</p>
+          <p>Bare soil: (0.30 − 0.25) / (0.30 + 0.25) = 0.05 / 0.55 = <b>0.0909</b>. Almost balanced, near zero.</p>
+          <p>Pond: (0.02 − 0.05) / (0.02 + 0.05) = −0.03 / 0.07 = <b>−0.4286</b>. Water has more red than NIR, so it is negative.</p>
+          <p><b>Brightness test.</b> Halve every band (a shadow over the forest): (0.225 − 0.02) / (0.225 + 0.02) = 0.205 / 0.245 = 0.8367. The same. That is the point of the normalisation.</p></div>
+
+        <p><b>Water indices.</b> The same recipe with a different pair of bands gives water indices. McFeeters (1996) defined the normalised difference water index with green and NIR, <span class="tex">\text{NDWI}=\frac{G-N}{G+N}</span>, which is high for open water and low for land. Applied to the same four pixels:</p>
+        <div class="worked"><b>Worked example — NDWI</b>
+          <p>Forest: (0.08 − 0.45)/(0.08 + 0.45) = −0.37/0.53 = <b>−0.6981</b>.</p>
+          <p>Crop: (0.12 − 0.25)/(0.12 + 0.25) = −0.13/0.37 = <b>−0.3514</b>.</p>
+          <p>Soil: (0.20 − 0.30)/(0.20 + 0.30) = −0.10/0.50 = <b>−0.2000</b>.</p>
+          <p>Pond: (0.10 − 0.02)/(0.10 + 0.02) = 0.08/0.12 = <b>0.6667</b>. Water is high, as intended.</p></div>
+        <p>Be careful with names: Gao (1996) also called an index NDWI, but used NIR and shortwave infrared, <span class="tex">(N-S)/(N+S)</span>, to measure vegetation water content. Always write the bands out.</p>
+
+        <p><b>EVI, the enhanced vegetation index,</b> was designed (Huete and colleagues, 2002) for dense canopies, where NDVI <i>saturates</i> (it stops rising as biomass grows), and to reduce the effect of the atmosphere and soil background. It adds a blue band and three constants:</p>
+        <div class="eq">\text{EVI}=G\,\frac{N-R}{N+C_1R-C_2B+L}\qquad G=2.5,\quad C_1=6,\quad C_2=7.5,\quad L=1</div>
+        <div class="worked"><b>Worked example — EVI on the forest and the pond</b>
+          <p>Forest (B = 0.02, R = 0.04, N = 0.45): numerator 2.5 × (0.45 − 0.04) = 2.5 × 0.41 = 1.025. Denominator 0.45 + 6 × 0.04 − 7.5 × 0.02 + 1 = 0.45 + 0.24 − 0.15 + 1 = 1.54. EVI = 1.025 / 1.54 = <b>0.6656</b>.</p>
+          <p>Pond (B = 0.08, R = 0.05, N = 0.02): numerator 2.5 × (0.02 − 0.05) = −0.075. Denominator 0.02 + 0.30 − 0.60 + 1 = 0.72. EVI = −0.075 / 0.72 = <b>−0.1042</b>.</p></div>
+        <p>The forest's EVI (0.666) is lower than its NDVI (0.837) only because the constants change the scale; the two are not interchangeable. Neither is a percentage or a biomass. EVI is a scaled, less saturating index: compare it over time or across places using the same processing, and never mix EVI thresholds with NDVI thresholds.</p>
+
+        <p><b>NBR, the normalised burn ratio,</b> uses NIR and a shortwave infrared band, <span class="tex">\text{NBR}=\frac{N-S_2}{N+S_2}</span>; on Sentinel-2 that is B8 and B12, and on Landsat it is the NIR and SWIR-2 bands. Burnt ground has low NIR, so NBR drops after a fire. Comparing NBR before and after a fire (dNBR) is a standard burn-severity map.</p>
+
+        <h3 class="sec">Thresholds and seasons</h3>
+        <p>A map is often made by picking a threshold, for example "NDVI above 0.3 means vegetation". The trouble is that vegetation changes through the year. A winter wheat field is bare in February, green in May and harvested in July. Its NDVI rises in spring, peaks and falls at harvest. A single fixed threshold is therefore wrong at some dates. Two responses are standard: use a threshold that is documented for the season and the crop, or use a time series of indices (Module 7), where a pixel's profile over the year is more informative than any single value.</p>
+
+        <div class="callout"><b>Where this sits in the pipeline</b>Acquire (B2, B3, B4, B8 at 10 m) → preprocess (reflectance, cloud mask) → <b>here, the index is a feature computed in preprocessing</b>, stored as an extra band or an extra layer of the same grid, so that the model stage and the thresholds in post-processing read the same numbers.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{NDVI}=\frac{N-R}{N+R},\qquad \text{NDWI}=\frac{G-N}{G+N},\qquad \text{EVI}=G\,\frac{N-R}{N+C_1R-C_2B+L}</div>
+        <table class="sym">
+          <tr><td>R, G, B, N</td><td>reflectance in red, green, blue and near-infrared (0 to 1 after scaling)</td></tr>
+          <tr><td>N + R ≠ 0</td><td>condition: the NDVI denominator must be non-zero (both bands zero is undefined)</td></tr>
+          <tr><td>G, C₁, C₂, L</td><td>EVI constants: gain 2.5, aerosol coefficients 6 and 7.5, canopy background 1</td></tr>
+          <tr><td>NDVI ∈ [−1, 1]</td><td>the normalisation guarantees the range, because |N − R| ≤ N + R for non-negative reflectances</td></tr>
+        </table>
+        <p>Rules of thumb you will see in papers: NDVI near 0.1 to 0.2 is bare or sparse, 0.3 to 0.5 is moderate vegetation, above 0.6 is dense canopy, and below zero is usually water, snow or cloud. These are guides, not laws; calibrate on your own region.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the NDVI calculator</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>. The NDVI image is painted cell by cell in reading order. Read the caption for the formula of the cell being painted.</li>
+        <li><b>Click a cell</b> and drag its red or NIR. Watch its NDVI change and the cell's colour change. Make red and NIR equal: NDVI must be zero.</li>
+        <li>Move the <b>mask threshold</b>. Cells above it are kept; the area counter gives the vegetated area in hectares at 10 m pixels (0.01 ha per pixel).</li>
+        <li>Make a shadow: multiply the selected cell's red and NIR by 0.5. The NDVI should not move.</li></ol></div>
+      <div data-lab="geoNdvi"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Units.</b> NDVI is unitless. Do not multiply it by 100 and call it a percentage of cover; that is a different, uncalibrated scale.</li>
+          <li><b>Saturation.</b> Above roughly LAI 3, NDVI changes little while the crop keeps growing. Use EVI or a time series for dense canopy.</li>
+          <li><b>Clouds and shadows</b> give NDVI values that look like bare soil or water. Mask them before the index.</li>
+          <li><b>Mixing bands from different sensors</b> (Landsat red with Sentinel-2 NIR) gives a wrong index: check band centres first.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Feature engineering.</b> NDVI, NDWI and NBR are standard input features for crop type, flood and forest models; deep models often receive them as extra channels.</li>
+          <li><b>Operational products.</b> Agricultural monitoring, drought indices and burn severity maps are built from these formulas on time series.</li>
+          <li><b>Label checks.</b> A model that mis-labels water as vegetation often has a negative NDWI it ignored; index maps are a fast sanity check.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A pixel has R = 0.10 and N = 0.30. Compute NDVI.</summary><div class="ans">(0.30 − 0.10) / (0.30 + 0.10) = 0.20 / 0.40 = 0.5.</div></details>
+        <details class="check"><summary>2. A shadow halves every band. Why does NDVI stay the same, and what would a raw difference N − R do?</summary><div class="ans">Halving every band halves the numerator and the denominator, so the ratio is unchanged (0.8367 in the worked example). The raw difference N − R would halve as well, so it would look like a loss of vegetation.</div></details>
+        <details class="check"><summary>3. In February a threshold of NDVI &gt; 0.3 classifies almost no crop as vegetation, but in June almost all of it. Is the classifier broken?</summary><div class="ans">No. The threshold is applied to a crop whose canopy changes through the season. A bare winter field has low NDVI. Use a season-specific threshold or a time series.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>NDVI = (N − R)/(N + R): a balance divided by brightness, between −1 and 1.</li>
+          <li>The same recipe gives NDWI (green vs NIR) and NBR (NIR vs SWIR); EVI adds blue and constants for dense canopy.</li>
+          <li>Thresholds depend on season, crop and sensor; time series are more reliable than a single date.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 ===================== -->
+    <section class="lesson" id="pixel-classifiers" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.3</span><h2>Pixel-based classification</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A land-cover map gives every pixel a class: water, forest, crop, built-up, bare soil. We have a few thousand pixels whose class was checked in the field. How do we learn a rule that gives every other pixel its class, and how do we know whether the map is any good?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Treat each pixel as a row of numbers, its <b>feature vector</b>: its band values plus any indices and texture we compute. Then classification is what the supervised-learning lessons of Machine Learning call supervised learning: examples with known labels teach a function that maps feature vectors to classes. The map is then just the function applied to every pixel. Nothing about the pixel's neighbours is used yet; that is the "pixel-based" part, and the limitation that lesson 4.4 addresses.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Use three pixels from the patch in lesson 4.2. Each feature vector is <span class="tex">\mathbf x=(B2,\,B3,\,B4,\,B8,\,\text{NDVI},\,\text{NDWI})</span>, six numbers.</p>
+        <table class="tbl">
+          <tr><th>Pixel</th><th>B2</th><th>B3</th><th>B4</th><th>B8</th><th>NDVI</th><th>NDWI</th></tr>
+          <tr><td>Forest (label: vegetation)</td><td>0.02</td><td>0.08</td><td>0.04</td><td>0.45</td><td>0.8367</td><td>−0.6981</td></tr>
+          <tr><td>Pond (label: water)</td><td>0.08</td><td>0.10</td><td>0.05</td><td>0.02</td><td>−0.4286</td><td>0.6667</td></tr>
+          <tr><td>Bare soil (label: soil)</td><td>0.12</td><td>0.20</td><td>0.25</td><td>0.30</td><td>0.0909</td><td>−0.2000</td></tr>
+        </table>
+        <p>A decision tree is the easiest classifier to read. It asks questions about single features in turn. Here is a small tree that separates these three pixels, with a threshold of 0.3 on each index.</p>
+        <div class="worked"><b>Worked example — the tree on three pixels</b>
+          <p><b>Root question:</b> is NDVI &gt; 0.3? Forest: 0.8367 &gt; 0.3, yes, so the class is <b>vegetation</b>. Pond: −0.4286, no. Soil: 0.0909, no.</p>
+          <p><b>Second question (for the "no" branch):</b> is NDWI &gt; 0.3? Pond: 0.6667, yes, so <b>water</b>. Soil: −0.2000, no, so <b>soil</b>.</p>
+          <p>All three pixels are classified correctly. Real trees have many more questions and are learned from many pixels; the logic is the same.</p></div>
+
+        <p>A decision tree is one member of a family. A <b>random forest</b> (Breiman, 2001) trains many trees, each on a random bootstrap sample of the training pixels and with a random subset of features at each split, and then lets them vote. Averaging many imperfect trees reduces overfitting. <b>Gradient boosting</b> (as in XGBoost or LightGBM) builds trees one after another, each correcting the errors of the previous ones. For land-cover maps both are strong, fast and easy to explain.</p>
+
+        <h3 class="sec">Accuracy, honestly</h3>
+        <p>Once a map is produced, we must measure it on pixels that were <i>not</i> used for training. The simplest score is the <b>overall accuracy</b>: the fraction of test pixels whose predicted class matches the reference. A map of 100 test pixels with 90 correct has 90% overall accuracy. This number can mislead, as the trap below shows, and Module 8 of GeoAI and the evaluation lessons of Machine Learning go deeper.</p>
+
+        <div class="callout"><b>Where this sits in the pipeline</b>Acquire → preprocess (features: bands, indices and texture computed per pixel) → <b>model: the classifier is trained on labelled pixels here</b> → inference: applied to every pixel of the scene → post-process (majority filter, minimum area) → publish a class raster as a COG.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf x_i\in\mathbb R^F,\qquad y_i\in\{1,\dots,K\},\qquad \hat y_i=f(\mathbf x_i;\theta),\qquad \text{OA}=\frac1{n}\sum_{i=1}^{n}\mathbf 1[\hat y_i=y_i]</div>
+        <table class="sym">
+          <tr><td>x<sub>i</sub></td><td>feature vector of pixel <i>i</i>: F numbers (bands, indices, texture)</td></tr>
+          <tr><td>y<sub>i</sub></td><td>reference label of pixel <i>i</i>, one of K classes</td></tr>
+          <tr><td>f(x; θ)</td><td>the classifier, with parameters θ (for a tree, its questions and thresholds)</td></tr>
+          <tr><td>𝟙[·]</td><td>indicator: 1 when the statement is true, 0 otherwise</td></tr>
+          <tr><td>OA</td><td>overall accuracy on the n test pixels</td></tr>
+        </table>
+        <p>The notation makes the workflow explicit: learn θ on training pixels, freeze it, then score on test pixels that the learning never saw.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: a k-nearest-neighbour map on a two-band scene</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b> and watch the map being painted row by row. Each pixel is classified by the labels of its <i>k</i> nearest training points in the feature plane (red and NIR).</li>
+        <li>Set <b>k = 1</b>. The boundary between classes is jagged and follows single training points. Increase <b>k</b> to 15: the boundaries become smoother. Which setting gives the higher test accuracy?</li>
+        <li>Raise the <b>noise</b> slider. The classes overlap in the feature plane, and accuracy drops. Find the noise where the map is still usable.</li>
+        <li>Press <b>New scene</b>. The accuracy changes from scene to scene: one number on one random split is not a reliable measure.</li></ol></div>
+      <div data-lab="geoPixelClass"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Spatial leakage.</b> Neighbouring pixels are almost identical. If training and test pixels are random pixels of the same field, the test score is optimistic. Split by block or by field (Module 3, spatial splits).</li>
+          <li><b>Class imbalance.</b> If 95% of a scene is forest, a classifier that says "forest" everywhere scores 95% overall accuracy and is useless. Report per-class accuracy as well.</li>
+          <li><b>Mixed pixels.</b> A 10 m pixel on a field edge contains two surfaces. The classifier must pick one; the error is not a classifier bug.</li>
+          <li><b>Scaling.</b> Trees do not need features rescaled. k-nearest neighbours and logistic regression do: a feature in the thousands will dominate one in the tenths.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Operational land cover.</b> Global maps such as ESA WorldCover (10 m) are produced from classifiers and deep models trained on large reference sets.</li>
+          <li><b>Random forests</b> remain the baseline for crop-type mapping and are often the first thing to try before a deep model. Module 5 shows the deep alternative.</li>
+          <li><b>Feature importance</b> from the trees tells you which bands and indices carry the information, closing the loop back to lesson 4.1.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A pixel has NDVI = 0.2 and NDWI = 0.5. Using the tree above, which class does it get?</summary><div class="ans">NDVI 0.2 is not greater than 0.3, so take the "no" branch. NDWI 0.5 is greater than 0.3, so the class is water.</div></details>
+        <details class="check"><summary>2. Why does a random split of pixels into training and test sets inflate the accuracy of a land-cover map?</summary><div class="ans">Neighbouring pixels share almost the same reflectance and label. A test pixel usually has a training twin a few metres away, so the classifier is partly tested on what it has memorised. A split by block or field removes most of this leakage.</div></details>
+        <details class="check"><summary>3. A scene is 95% forest. A model predicts forest everywhere and scores 95% overall accuracy. What should you report instead?</summary><div class="ans">Per-class accuracy (recall) for each class, and a confusion matrix. The model has zero recall for every minority class, which overall accuracy hides.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A pixel's feature vector stacks its bands and indices; the classifier maps that vector to a class.</li>
+          <li>Decision trees, random forests and gradient boosting are the strong classical choices for land cover.</li>
+          <li>Accuracy must be measured on held-out pixels split in space, and reported per class.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 ===================== -->
+    <section class="lesson" id="object-based" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.4</span><h2>Object-based image analysis</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>On a 1 m image, a single roof is made of hundreds of pixels that differ from each other because of tiles, shadows and noise. A pixel classifier labels some of them "road" and some "tree", and the map looks like salt and pepper. How could the computer see the roof as one thing?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Human interpreters do not classify single dots. They see fields, roofs and roads: <i>objects</i>, which are groups of neighbouring pixels that look alike. <b>Object-based image analysis</b> (OBIA) does the same in two steps. First, <b>segment</b> the image into objects, regions that are internally similar and different from their neighbours. Second, compute features <i>for each object</i> (its average colour, its spread, its shape, its size) and classify the objects, not the pixels. Objects average out pixel noise and carry shape information that a single pixel never has.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here is a 4×4 image of brightness values, with two obvious regions: a dark area on the left and a bright area on the right. One pixel, at row 3 column 2 (counting from zero), is bright, as if it were noise.</p>
+        <table class="tbl">
+          <tr><td>2</td><td>3</td><td>2</td><td>8</td></tr>
+          <tr><td>3</td><td>2</td><td>3</td><td>9</td></tr>
+          <tr><td>2</td><td>3</td><td>2</td><td>8</td></tr>
+          <tr><td>3</td><td>2</td><td>9</td><td>8</td></tr>
+        </table>
+        <p>We segment by <b>region growing</b>, the simplest hand-computable method: start from a seed pixel and add 4-connected neighbours (up, down, left, right) whose value is within 2.5 of the seed's value, then repeat from each newly added pixel. Two seeds: top-left (value 2) and top-right (value 8).</p>
+        <div class="worked"><b>Worked example — segmentation into two objects</b>
+          <p><b>Dark object</b> (seed value 2, accepts values 2 to 4.5): it grows over the left three columns and the bottom-left cells. Count: 3 + 3 + 3 + 2 = <b>11 pixels</b>. Mean = (2+3+2 + 3+2+3 + 2+3+2 + 2+3) / 11 = 27 / 11 = <b>2.45</b>. Population standard deviation ≈ <b>0.50</b>.</p>
+          <p><b>Bright object</b> (seed value 8, accepts values 5.5 to 10.5): it grows over the right column and the bright pixel at row 3 column 2. The bright pixel (value 9) is in the object because it touches the bright pixel at row 3 column 3 (value 8), which is in the bright seed's region. Count: 1 + 1 + 1 + 2 = <b>5 pixels</b>. Mean = 42 / 5 = <b>8.40</b>. Population standard deviation ≈ <b>0.49</b>.</p>
+          <p>Every pixel belongs to exactly one object (11 + 5 = 16). Now the object is the unit: "a dark object of 11 pixels, mean 2.45, low spread" is a more reliable statement than eleven separate pixel readings. The isolated bright pixel, judged alone, would look like a different class; judged by its connection, it is part of the bright object.</p></div>
+
+        <p>Region growing is easy to compute but it needs a seed for every object. A popular alternative is <b>SLIC</b> (simple linear iterative clustering, Achanta and colleagues, 2012), which produces <i>superpixels</i>: small, compact, roughly equal-sized regions, one per grid cell. It is a k-means clustering in a combined space of position and colour. A pixel's distance to a superpixel centre combines colour and space:</p>
+        <div class="eq">D=\sqrt{d_c^{\,2}+\left(\frac{d_s}{S}\right)^{2} m^{2}},\qquad S=\sqrt{\frac{N}{K}}</div>
+        <div class="worked"><b>Worked example — which centre claims the pixel?</b>
+          <p>Pixel at (x, y) = (5, 2) with lightness 62 (on a 0 to 100 scale). Grid interval S = 4 (16 pixels in a 16 × 16 image split into K = 16 seeds, so S = √(256/16) = 4). Three candidate centres:</p>
+          <p>A at (4, 4), lightness 55: d_c = 7, d_s = √(1² + 2²) = √5 = 2.236.</p>
+          <p>B at (2, 2), lightness 40: d_c = 22, d_s = 3.</p>
+          <p>C at (3, 4), lightness 60: d_c = 2, d_s = √8 = 2.828.</p>
+          <p>With compactness <b>m = 10</b>: D_A = √(49 + (2.236/4)² × 100) = √(49 + 31.25) = <b>8.958</b>; D_B = √(484 + (3/4)² × 100) = √(484 + 56.25) = 23.243; D_C = √(4 + (2.828/4)² × 100) = √(4 + 50) = <b>7.348</b>. The pixel goes to <b>C</b>: it is the closest in colour and reasonably close in space.</p>
+          <p>With <b>m = 20</b> (more weight on position): D_A = √(49 + 125) = <b>13.191</b>; D_C = √(4 + 200) = 14.283. Now the pixel goes to <b>A</b>. A larger m gives rounder, more regular superpixels that ignore colour boundaries more.</p></div>
+
+        <p>After the assignment step, every centre moves to the average position and colour of its pixels, and the process repeats. A few iterations are usually enough. The output is a label per pixel; each label is one object.</p>
+
+        <div class="callout"><b>Where this sits in the pipeline</b>Acquire (very high-resolution imagery) → preprocess → <b>model: segmentation into objects is done here, before classification</b> → inference: classify each object using its features → post-process: merge small objects, vectorise the boundaries into polygons → publish as a GeoPackage of objects with their class.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\{O_1,\dots,O_M\}\text{ a partition of the pixels},\qquad \mathbf g(O_j)=\big(\bar x_j,\ s_j,\ A_j,\ \dots\big),\qquad \hat c_j=h(\mathbf g(O_j))</div>
+        <table class="sym">
+          <tr><td>O<sub>j</sub></td><td>object <i>j</i>: a set of pixels, disjoint from the other objects and together covering the image</td></tr>
+          <tr><td>g(O<sub>j</sub>)</td><td>object feature vector: mean colour x̄, spread s, area A and any shape or texture features</td></tr>
+          <tr><td>ĉ<sub>j</sub></td><td>predicted class of the object, from a classifier h applied to its features</td></tr>
+          <tr><td>S, N, K</td><td>superpixel grid interval, number of pixels, number of superpixels</td></tr>
+          <tr><td>m</td><td>compactness: how much position counts against colour in the distance D</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: growing superpixels with SLIC</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>. The grid of seeds moves step by step: each iteration reassigns pixels to the nearest centre and then moves the centres. Read the caption for the current step.</li>
+        <li>Set <b>compactness m</b> to 2. Boundaries follow the grey-level edges closely and shapes are irregular. Set m to 40: the cells become square-ish and ignore edges.</li>
+        <li>Click a superpixel. Its object features (area, mean, standard deviation) appear. Compare the mean with the pixel values inside: the object mean is steadier.</li>
+        <li>Press <b>Step</b> repeatedly and watch the centres settle; then move the <b>speed</b> slider to see the process at a comfortable pace.</li></ol></div>
+      <div data-lab="geoObjects"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Scale.</b> The segment size must match the objects you want. Too fine gives noise again; too coarse merges a house into its garden. There is no universal number.</li>
+          <li><b>Objects do not respect time.</b> Objects are made from one image. If the scene changes (a field is ploughed), the old objects are wrong. Re-segment for each date or use a stable reference.</li>
+          <li><b>Features on tiny objects are noisy.</b> A 3-pixel object has an unreliable standard deviation.</li>
+          <li><b>Units of compactness.</b> The value of m depends on the colour scale. A value tuned on one image rarely transfers unchanged.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Superpixels as input.</b> Many classical and early deep pipelines classify superpixels to reduce the number of samples and to smooth noise.</li>
+          <li><b>Segmentation tools.</b> SLIC is available in scikit-image. Commercial OBIA software uses multi-resolution region merging with shape and compactness terms; the logic matches the lab.</li>
+          <li><b>Foundation segmenters</b> such as Segment Anything (Module 5 and Computer Vision) produce object masks without hand-set seeds, and their masks are often used as objects in the same way.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the 4×4 example, why does the bright pixel at row 3 column 2 join the bright object, even though its left neighbour is dark?</summary><div class="ans">Region growing uses connectivity and similarity. The pixel's value 9 is within 2.5 of the bright seed's value 8, and it is 4-connected to the bright pixel at row 3 column 3, which belongs to the bright object. Its dark left neighbour does not block it, because only neighbours with similar values are added.</div></details>
+        <details class="check"><summary>2. What does increasing the compactness m do to SLIC superpixels, and why?</summary><div class="ans">It gives more weight to spatial distance d_s relative to colour d_c in D. Pixels are then assigned to nearby centres even when a centre's colour differs more, so superpixels become rounder and more regular and follow colour edges less closely.</div></details>
+        <details class="check"><summary>3. Why do we compute a standard deviation for an object as well as its mean?</summary><div class="ans">The mean says what the object looks like on average; the standard deviation says how uniform it is. A field and a forest can have the same mean brightness but very different texture, and texture is one of the best cues for telling them apart.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Segment first, classify objects second: objects average out pixel noise and carry shape and texture.</li>
+          <li>Region growing (hand-computable) and SLIC (superpixels, with compactness m) are the two classical segmenters.</li>
+          <li>The scale of the segmentation is a design choice; it must match the objects you need.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 ===================== -->
+    <section class="lesson" id="zonal-stats" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.5</span><h2>Zonal statistics &amp; aggregation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An insurer wants the average NDVI of a farm before a drought. The farm is a polygon drawn in a land registry. The satellite pixels do not line up with the farm's edges: some pixels are fully inside, some are half inside, and a few only touch the boundary. What is the farm's mean NDVI, and what should a pixel on the edge count for?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Zonal statistics answers a question about <i>regions</i> using <i>cells</i>. Lay the polygon (the zone) over the raster, find which cells it covers, and summarise the cell values inside. The subtle part is the edge. A cell that is 60% inside the polygon should count more than one that is 10% inside, because the first one is 60% of the farm's ground. So each cell gets a <b>weight equal to its covered fraction</b>, and the statistics are weighted by it. This is the area-weighted version, and it is what a careful analyst means by "the mean over the farm".</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Work on a 3×3 raster, one unit per pixel. Columns run across (x = 0 to 3), rows run down (y = 0 to 3). Its NDVI values are:</p>
+        <table class="tbl">
+          <tr><td>0.71</td><td>0.64</td><td>0.22</td></tr>
+          <tr><td>0.66</td><td>0.58</td><td>0.31</td></tr>
+          <tr><td>0.12</td><td>0.41</td><td>0.09</td></tr>
+        </table>
+        <p>The farm is the triangle with corners (0.5, 0.5), (2.5, 0.5) and (1, 2). Its area is 1.5 pixels. Five pixels are touched; the covered fraction of each, computed by clipping the triangle against each pixel square, is:</p>
+        <table class="tbl">
+          <tr><th>Pixel (row, col)</th><th>NDVI</th><th>Coverage w</th><th>Land cover</th></tr>
+          <tr><td>(0, 0)</td><td>0.71</td><td>5/24 = 0.2083</td><td>crop</td></tr>
+          <tr><td>(0, 1)</td><td>0.64</td><td>1/2 = 0.5000</td><td>forest</td></tr>
+          <tr><td>(0, 2)</td><td>0.22</td><td>1/8 = 0.1250</td><td>crop</td></tr>
+          <tr><td>(1, 0)</td><td>0.66</td><td>1/6 = 0.1667</td><td>crop</td></tr>
+          <tr><td>(1, 1)</td><td>0.58</td><td>1/2 = 0.5000</td><td>forest</td></tr>
+        </table>
+        <p>The weights add to 0.2083 + 0.5 + 0.125 + 0.1667 + 0.5 = 1.5, the triangle's area. The pixels at (0,2) and (1,0) have tiny coverage but are still counted, in proportion.</p>
+        <div class="worked"><b>Worked example — the farm's statistics</b>
+          <p><b>Area-weighted mean:</b> Σ w·NDVI = 0.2083×0.71 + 0.5×0.64 + 0.125×0.22 + 0.1667×0.66 + 0.5×0.58 = 0.1479 + 0.3200 + 0.0275 + 0.1100 + 0.2900 = 0.8954. Divide by Σw = 1.5: mean = <b>0.5969</b>.</p>
+          <p><b>Unweighted mean</b> of the five touched pixels (a common mistake): (0.71+0.64+0.22+0.66+0.58)/5 = 2.81/5 = <b>0.5620</b>. The difference (0.035) comes from the 0.22 pixel, which is barely inside and counts for much less than the others.</p>
+          <p><b>Min and max</b> over the touched pixels (all have positive coverage): 0.22 and 0.71.</p>
+          <p><b>Mode of land cover, two ways.</b> By area: forest has 0.5 + 0.5 = 1.0 of the 1.5 pixels (67%), crop has 0.5 (33%): the mode is <b>forest</b>. By count: crop has 3 pixels, forest 2, so a count-based mode is <b>crop</b>. The area-weighted answer is the one that describes the farm's ground.</p></div>
+
+        <p>When there are thousands of polygons, you do not loop over them by hand. You rasterise the polygons, or you use an intersection engine that returns the coverage of every cell for every polygon, and then group by polygon. The same computation scales to a country's parcels.</p>
+
+        <div class="callout"><b>Where this sits in the pipeline</b>Acquire (the raster) and acquire (the polygons, e.g. a registry or a GeoPackage) → preprocess: reproject the polygons to the raster's CRS, which is the step most often forgotten → <b>post-process: zonal statistics are computed here</b>, turning cell values into one row per zone → publish as a table joined to the polygons.</div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">w_i=\frac{\operatorname{area}(P\cap c_i)}{\operatorname{area}(c_i)},\qquad \bar v_P=\frac{\sum_i w_i\,v_i}{\sum_i w_i},\qquad \text{mode}_P=\arg\max_{k}\sum_{i:\,\ell_i=k} w_i</div>
+        <table class="sym">
+          <tr><td>P</td><td>the zone: a polygon, in the same CRS as the raster after reprojection</td></tr>
+          <tr><td>c<sub>i</sub></td><td>cell <i>i</i> of the raster, a square of known area</td></tr>
+          <tr><td>w<sub>i</sub></td><td>coverage weight: the fraction of cell <i>i</i> inside the zone (0 when outside)</td></tr>
+          <tr><td>v<sub>i</sub>, ℓ<sub>i</sub></td><td>the value (for example NDVI) and the class label of cell <i>i</i></td></tr>
+          <tr><td>Σ<sub>i</sub> w<sub>i</sub></td><td>the zone's area in pixels; here 1.5</td></tr>
+        </table>
+        <p>For a histogram, the same weights are summed into bins: each bin's height is the total covered area of cells whose value falls in it.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: a polygon over a raster</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>. The polygon is scanned over the cells: each touched cell shows its coverage, and the weighted sum builds up in the bars.</li>
+        <li><b>Drag a corner</b> of the polygon. Watch the coverage weights change and the weighted mean move; find a position where the weighted and unweighted means differ by more than 0.05.</li>
+        <li>Switch the <b>statistic</b> to land-cover mode. Find a polygon where the area mode and the count mode disagree.</li>
+        <li>Turn on <b>all-touched</b>. Every touched cell now counts fully: note how the mean changes for a small polygon. This is a different rule, not a more accurate one.</li></ol></div>
+      <div data-lab="geoZonal"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Averaging averages.</b> The mean of several zones' means is not the mean of their pixels unless the pixel counts are equal. Always keep the weights and divide the total.</li>
+          <li><b>All-touched versus coverage.</b> Many libraries offer a flag that counts any touched cell with full weight. It overstates small zones and changes the answer by an amount that depends on geometry.</li>
+          <li><b>Projections.</b> A polygon in longitude and latitude laid over a UTM raster gives wrong areas and wrong overlaps. Reproject the polygon first (Module 0).</li>
+          <li><b>NoData.</b> Cloud or fill values inside a zone must be excluded from both the sum and the weights, or the mean is pulled towards zero.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Feature extraction for field-level models.</b> Crop-yield and crop-type models often use zonal means of indices over each field as input, not pixels.</li>
+          <li><b>Policy and statistics.</b> Official land statistics and subsidy checks aggregate raster classes to administrative units with area weights.</li>
+          <li><b>Parametric insurance</b> pays out when a zone's average index (for example rainfall or vegetation) crosses a threshold; the zonal mean is the trigger.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A polygon covers 60% of a pixel with NDVI 0.2 and 40% of a neighbouring pixel with NDVI 0.8, and nothing else. What is the area-weighted mean?</summary><div class="ans">(0.6 × 0.2 + 0.4 × 0.8) / (0.6 + 0.4) = (0.12 + 0.32) / 1.0 = 0.44.</div></details>
+        <details class="check"><summary>2. The polygon is in longitude and latitude (EPSG:4326) and the raster is in UTM metres. What goes wrong, and what is the fix?</summary><div class="ans">The overlaps are computed in mismatched coordinates, so the zone lands in the wrong place and its area is in degrees, not metres. Reproject the polygon to the raster's CRS (or both to a common equal-area CRS) before computing coverage.</div></details>
+        <details class="check"><summary>3. Why can the all-touched rule overstate the mean of a small farm?</summary><div class="ans">It gives full weight to every cell that the polygon touches, even a cell covered by one corner of the polygon. Edge cells with low NDVI (such as roads or bare edges) are then counted as much as interior ones, and the mean moves towards the edge values.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Zonal statistics summarise cell values over a zone, weighted by the fraction of each cell inside it.</li>
+          <li>Area-weighted means and modes describe the ground; count-based ones describe the cells.</li>
+          <li>Reproject zones to the raster's CRS, exclude NoData, and do not average averages.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.6 ===================== -->
+    <section class="lesson" id="change-detection-classical" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.6</span><h2>Change detection without deep learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Did a forest disappear between March 2023 and March 2024, or does the NDVI simply look lower because of the season, a thin cloud or sensor noise? A map that says "change" wherever the numbers move is useless; one that says "no change" everywhere is also useless. Where should the line be drawn?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The simplest change detector takes two images of the same place and subtracts them. A forest that became bare soil drops in NDVI; a field that was harvested drops too; a new building may raise it. Subtraction gives a <b>difference image</b>. Large negative values are likely losses, large positive values likely gains, and values near zero are no change. The hard part is that <i>every</i> pixel's value has some random error, so even unchanged ground produces small differences. The question becomes: how large must a difference be before we trust it?</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here are NDVI values for six pixels of a small 2×3 area, on two dates. The top-left pixel is forest on the first date and bare on the second; the other pixels are stable or nearly so.</p>
+        <table class="tbl">
+          <tr><th>Date 1 (T1)</th><td>0.70</td><td>0.65</td><td>0.60</td></tr>
+          <tr><th></th><td>0.72</td><td>0.68</td><td>0.30</td></tr>
+          <tr><th>Date 2 (T2)</th><td>0.25</td><td>0.66</td><td>0.47</td></tr>
+          <tr><th></th><td>0.70</td><td>0.71</td><td>0.31</td></tr>
+        </table>
+        <p>The difference image is D = T2 − T1, pixel by pixel:</p>
+        <table class="tbl">
+          <tr><th>D (top row)</th><td>−0.45</td><td>+0.01</td><td>−0.13</td></tr>
+          <tr><th>D (bottom row)</th><td>−0.02</td><td>+0.03</td><td>+0.01</td></tr>
+        </table>
+        <p>Suppose the NDVI value of any single date has random error with standard deviation σ = 0.05 (an illustrative figure; measure yours on stable ground). For unchanged ground, the difference of two independent measurements has standard deviation σ<sub>D</sub> = √(σ² + σ²) = √2 × 0.05 = <b>0.0707</b>.</p>
+        <div class="worked"><b>Worked example — the threshold decides</b>
+          <p>Express each difference in units of σ<sub>D</sub> (its z-score): pixel (0,0): −0.45 / 0.0707 = <b>−6.36</b>. Pixel (0,2): −0.13 / 0.0707 = <b>−1.84</b>. The other four are below 0.5 in size: z between −0.28 and +0.42.</p>
+          <p>With a threshold of <b>0.20</b> (about 2.8 σ<sub>D</sub>): only pixel (0,0) is flagged as change, which is the forest loss. Pixel (0,2) is not flagged; it is probably noise.</p>
+          <p>With a threshold of <b>0.10</b> (about 1.4 σ<sub>D</sub>): pixel (0,2) is also flagged, a <b>false alarm</b>. A two-sided test at 1.41 σ flags about 16% of truly unchanged pixels (1 − erf(1) ≈ 0.157), so such a low threshold floods the map with noise.</p>
+          <p>The area: one pixel at 10 m is 100 m² = 0.01 ha. Flagging one pixel means 0.01 ha of loss.</p></div>
+
+        <p><b>Post-classification comparison</b> is the other classical route. Classify each date separately (lesson 4.3), then cross-tabulate the two maps: a forest in 2023 that is bare in 2024 becomes a "forest to bare" transition. It is more robust to the global calibration of the two dates, because each classification has its own calibration, but it doubles the classification errors. Image differencing is simpler and more sensitive; post-classification is clearer about <i>what</i> changed.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">D_i=T_{2,i}-T_{1,i},\qquad \text{change}_i \iff |D_i|>\tau,\qquad \tau=k\,\sigma_D,\qquad \sigma_D=\sqrt{\sigma_1^2+\sigma_2^2}</div>
+        <table class="sym">
+          <tr><td>T<sub>1,i</sub>, T<sub>2,i</sub></td><td>the index value of pixel <i>i</i> on the first and second date</td></tr>
+          <tr><td>D<sub>i</sub></td><td>the difference image; negative means a drop, positive a rise</td></tr>
+          <tr><td>τ</td><td>the threshold on the absolute difference</td></tr>
+          <tr><td>σ<sub>D</sub></td><td>standard deviation of the difference for unchanged ground (assuming independent errors)</td></tr>
+          <tr><td>k</td><td>how many standard deviations of noise we tolerate; k ≈ 3 is a common choice</td></tr>
+        </table>
+        <p>Note the assumptions. The formula for σ<sub>D</sub> assumes the two dates' errors are independent and of similar size. Seasonal change and misregistration are not random noise, and they break the assumption (see the traps).</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: two dates, a difference map and a noise slider</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press <b>Play</b>. The difference map is painted row by row, and the histogram of differences fills in: the unchanged ground forms a narrow hump near zero, the change forms a separate tail.</li>
+        <li>Set <b>threshold</b> to 0.05 and then 0.3. Watch the flagged-area counter and the count of false alarms. Find the threshold where false alarms disappear but the true change is still caught.</li>
+        <li>Raise the <b>noise</b> slider. The hump widens, so the threshold must rise to keep false alarms down. Read how σ<sub>D</sub> moves in the caption.</li>
+        <li>Compare the changed area with the true area (the dashed outline). Which errors are missed changes and which are false alarms?</li></ol></div>
+      <div data-lab="geoChange"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Seasons are not noise.</b> Comparing a March image with an August image flags the crops' growth as change. Use the same season (or a phenology-aware method).</li>
+          <li><b>Misregistration.</b> If the two images are shifted by half a pixel, every edge between a forest and a field becomes a change line. Co-register the images before differencing.</li>
+          <li><b>Clouds and shadows</b> look like sudden drops. Mask them on both dates, or the change map is mostly cloud.</li>
+          <li><b>Tuning on one scene.</b> A threshold that works for one forest in one season may not transfer; check it on a second area with known ground truth.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Deforestation and fire monitoring</b> services compare a time series of vegetation indices against a baseline, which is this lesson with a statistical model of the baseline.</li>
+          <li><b>Flood mapping</b> compares a pre-event and a post-event water index (for example NDWI or a radar backscatter ratio) to find newly flooded ground.</li>
+          <li><b>Deep change detection</b> (Module 5) learns the threshold and the noise model from labelled before-after pairs instead of setting them by hand.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A pixel changes from NDVI 0.60 to 0.47 and σ = 0.05 on each date. Is this change at a threshold of 0.20?</summary><div class="ans">D = −0.13. σ<sub>D</sub> = 0.0707, so the z-score is −1.84. |−0.13| is less than 0.20, so it is not flagged.</div></details>
+        <details class="check"><summary>2. Why does a threshold of 0.10 flag about 16% of unchanged pixels when σ<sub>D</sub> = 0.0707?</summary><div class="ans">0.10 is 1.41 σ<sub>D</sub>. For a normal error, the probability of exceeding ±1.41 standard deviations on either side is about 0.157. That is the share of truly unchanged pixels that will be flagged.</div></details>
+        <details class="check"><summary>3. A forest is compared between April of one year and September of the next. The map shows large losses everywhere. What is the most likely cause, and what would you do?</summary><div class="ans">Seasonal change: leaf-on and leaf-off or crop growth stages differ, so the index drops without any loss of forest. Compare the same season across years, or use a phenology-aware method.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Change detection subtracts two co-registered, same-season index images and thresholds the difference.</li>
+          <li>A threshold is a noise decision: set it in units of the noise standard deviation of the difference.</li>
+          <li>Seasons, misregistration and clouds create change that is not change; post-classification is clearer about what changed.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now read a multi-band image as numbers: compute NDVI, NDWI and EVI by hand, classify pixels and objects with classical methods, summarise fields with zonal statistics, and detect change while separating it from noise. Next, <b>Module 5</b> (Deep learning for Earth observation) replaces the hand-set thresholds and features of this module with networks that learn them from labelled imagery.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

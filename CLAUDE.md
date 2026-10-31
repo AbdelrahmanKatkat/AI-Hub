@@ -7,7 +7,7 @@ Live: https://abdelrahmankatkat.github.io/AI-Hub/ · repo: AbdelrahmanKatkat/AI-
 ## Topic order (sidebar, home grid) — do not reorder without being asked
 Mathematics → Machine Learning → Data Science → Computer Vision → NLP → Voice → Generative AI → Governing AI →
 Reinforcement Learning → Domains (GeoAI, Robotics, Healthcare & Bio, Climate & Earth, Finance, Other — each a sub-topic).
-Live now: Mathematics (9 modules / 58 lessons), Machine Learning (10 modules / 63 lessons), Computer Vision (10 modules / 70 lessons). Others: `status: 'soon'`.
+Live now: Mathematics (9 modules / 58 lessons), Machine Learning (10 modules / 63 lessons), Computer Vision (10 modules / 70 lessons), GeoAI (10 modules / 63 lessons, a sub-topic of Domains, includes STAC and STAC MLM). Others: `status: 'soon'`.
 
 ## Layout
 ```
@@ -71,5 +71,6 @@ A page is not done until labs render, equations typeset (no raw `\frac`), and th
 - **Machine Learning**: live. Hub `machine-learning.html` + modules 0-9 (`ml-*.html`, 63 lessons). Shared toolkit `assets/mllib.js` (datasets, k-NN, CART,
   k-means, logistic, PCA, boundary renderer) + existing labs in `assets/labs-ml.js`. Spec `curriculum/machine-learning.md`; addendum `curriculum/AUTHORING-ML.md`.
   Many lab simulations are labelled *illustrative*; worked numbers were computed in code.
+- **GeoAI**: live (sub-topic of Domains). Hub `geoai.html` + modules `geo-*.html`. Spec `curriculum/geoai.md`; addendum `curriculum/AUTHORING-GEO.md` (verified STAC MLM v1.6.0 fields). Labs in `assets/labs-geo-<module>.js`.
 - Next topics in order: Data Science, NLP, Voice, Generative AI, Governing AI, Reinforcement Learning, Domains (GeoAI, Robotics, ...).
 - Agent runs can hit the session rate limit: when that happens, resume the agents (SendMessage) — their files are saved on disk.

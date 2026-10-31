@@ -26,13 +26,28 @@ window.HUB = {
     { id: 'gov', title: 'Governing AI', icon: '⚖️', color: '#d29922', status: 'soon', desc: 'How AI is kept safe, fair and accountable: risk, ethics, regulation, auditing and responsible deployment.' },
     { id: 'rl', title: 'Reinforcement Learning', icon: '🎮', color: '#f85149', status: 'soon', desc: 'Agents, rewards, policies and learning by interaction.' },
     { id: 'domains', title: 'Domains', icon: '🌍', color: '#56d364', status: 'soon', children: [
-        { title: 'GeoAI', icon: '🛰️' }, { title: 'Robotics', icon: '🤖' }, { title: 'Healthcare & Bio', icon: '🧬' }, { title: 'Climate & Earth', icon: '🌦️' }, { title: 'Finance', icon: '💹' }, { title: 'Other domains', icon: '➕' },
+        { title: 'Robotics', icon: '🤖' }, { title: 'Healthcare & Bio', icon: '🧬' }, { title: 'Climate & Earth', icon: '🌦️' }, { title: 'Finance', icon: '💹' }, { title: 'Other domains', icon: '➕' },
       ], desc: 'Applied AI, one page per field: GeoAI, Robotics, Healthcare, Climate, Finance and more.' },
+    {
+      id: 'geoai', title: 'GeoAI', icon: '🛰️', color: '#56d364', status: 'live', href: 'geoai.html', curriculum: 'assets/curriculum-geoai.js', sub: 'Domains', next: 'domains',
+      desc: 'AI on Earth observation: find data with STAC, prepare rasters without leakage, train segmentation and detection models, and describe them with the STAC MLM extension.',
+      tags: ['STAC', 'STAC MLM', 'Satellite imagery', 'Segmentation', 'Cloud-native formats'],
+    },
   ],
 };
 
 /* Each page's pipeline: stages animate left→right. Edit text here, not in the lab code. */
 window.PIPELINES = {
+  geoai: {
+    stages: [
+      { name: 'Acquire', color: '#2f81f7', items: ['STAC search', 'Select assets', 'Read windows'], out: 'bands × H × W', compute: 'I/O: range reads from cloud archive', storage: 'STAC catalogue (metadata), COG archive', desc: 'Find imagery by place, time and cloud cover with STAC, then read only the windows and bands you need from cloud-optimised files.' },
+      { name: 'Preprocessing', color: '#39c5cf', items: ['Reproject', 'Mask clouds', 'Normalise', 'Tile'], out: 'tiles 256×256×C', compute: 'CPU/GPU array ops', storage: 'Chip store, dataset manifest', desc: 'Align everything to one CRS and resolution, mask clouds and no-data, normalise with training statistics and cut overlapping tiles.' },
+      { name: 'Model', color: '#a371f7', items: ['Backbone', 'Segmentation head', 'Loss'], out: 'per-pixel logits', compute: 'GPU training and inference', storage: 'Weights + STAC MLM record', desc: 'A CNN or transformer maps each tile to a class per pixel or to objects; the model is described by its STAC MLM record.' },
+      { name: 'Inference', color: '#db6d28', items: ['Sliding window', 'Blend overlaps'], out: 'scene-scale probability map', compute: 'GPU batches over the scene', storage: 'Probability COG', desc: 'Predict tile by tile with overlap, blend the borders so there are no seams, and write a probability raster.' },
+      { name: 'Post-processing', color: '#db61a2', items: ['Threshold', 'Vectorise', 'Filter small areas'], out: 'polygons & class map', compute: 'CPU, vector geometry', storage: 'GeoPackage / GeoJSON', desc: 'Turn probabilities into classes, convert them to polygons, remove slivers and check topology before the product leaves the pipeline.' },
+      { name: 'Publish & monitor', color: '#3fb950', items: ['Product COG', 'STAC collection', 'Accuracy checks'], out: 'published product', compute: 'Batch jobs', storage: 'Open data archive, STAC catalogue', desc: 'Publish the map as a versioned product with its own STAC record, and re-check accuracy as seasons and sensors change.' },
+    ],
+  },
   cv: {
     stages: [
       { name: 'Capture', color: '#2f81f7', items: ['Camera / file', 'Decode', 'Frames'], out: 'H×W×3 uint8', compute: 'Sensor + ISP; CPU decode', storage: 'Object store, video segments', desc: 'Light becomes a grid of numbers. Resolution, bit depth and compression decide how much information survives.' },

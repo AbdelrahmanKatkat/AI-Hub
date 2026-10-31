@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 · Foundation models &amp; embeddings · GeoAI</title>
+<meta name="description" content="GeoAI Module 7: self-supervised pretraining on Earth imagery, multi-temporal inputs, embeddings and similarity search, fine-tuning foundation models and finding pretrained models through STAC MLM.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-geo-foundation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="7">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 7</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">🧬</div>
+      <div style="flex:1">
+        <h1>Module 7 · Foundation models &amp; geospatial embeddings</h1>
+        <p>A foundation model is trained once on a huge archive of unlabelled imagery and then reused for many tasks. Here you learn how such a model is pretrained by hiding parts of the picture, how it reads a pixel's history through time, how its outputs become <b>embeddings</b> you can search with, how to fine-tune it with few labels, and how to find a pretrained model in a STAC catalogue without reading its code.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Builds on Module 5 &amp; ViT</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 7.1 ===================== -->
+    <section class="lesson" id="pretraining-eo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">7.1</span><h2>Self-supervised pretraining on Earth imagery</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A national archive holds ten million Sentinel-2 tiles, but only 2,000 of them have hand-drawn land-cover labels. Labelling is slow and expensive. Can a model learn what Earth looks like from the 9,998,000 unlabelled tiles, so that a few labels are enough later?</div>
+
+        <h3 class="sec">Intuition: a cloze test for pictures</h3>
+        <p>Think of the exercise schoolchildren do with a sentence where some words are blanked out: "The river flows into the ___." To fill the gap you use the rest of the sentence. Nobody had to label the sentence; the text itself supplies the answer. <b>Masked image modelling</b> does the same with pictures. Cover some patches of an image, ask the model to predict what is under them, and score it against the hidden truth. The label is free because the image was already there.</p>
+        <p>Why does this teach a model anything useful about Earth? To fill a hidden field of crops you must know that fields are often rectangular, that a river continues across a gap, that bare soil is brighter in red than water, and that near-infrared behaves differently from visible light. Predicting the missing part forces the model to learn these regularities. That is what we want the encoder to keep for later tasks.</p>
+        <p>Satellite images add a twist: they have several <b>bands</b> (wavelengths). A tile with red, green and near-infrared is a stack of three pictures that must agree. Predicting the hidden near-infrared from the visible red and green teaches spectral relations, such as how healthy vegetation separates the two.</p>
+
+        <h3 class="sec">Build it up: one tiny tile, step by step</h3>
+        <p><b>Step 1, the tile.</b> Take a 4 × 4 pixel tile with three bands (red, green, near-infrared) at 10 m resolution. It holds <span class="tex">4\cdot4\cdot3=48</span> numbers. Each band is one 4 × 4 grid, with values as reflectance between 0 and 1.</p>
+        <p><b>Step 2, the patches.</b> Cut the tile into non-overlapping <i>patches</i> of 2 × 2 pixels. That gives <span class="tex">\frac{4}{2}\cdot\frac{4}{2}=4</span> patches (top-left P1, top-right P2, bottom-left P3, bottom-right P4). Each patch holds <span class="tex">2\cdot2\cdot3=12</span> numbers. Transformers, including the Vision Transformer you met in Computer Vision, treat each patch as one token.</p>
+        <p><b>Step 3, the mask.</b> Hide a fraction of patches. Masked-autoencoder methods such as MAE (natural images) often hide about 75% of patches, because neighbouring patches are so alike that a lower ratio makes the task too easy. Here 75% of 4 patches is 3, so the encoder sees only P1 and must reconstruct P2, P3 and P4. In numbers: 12 of the 48 values are visible and 36 are hidden.</p>
+        <p><b>Step 4, the reconstruction.</b> The encoder reads the visible tokens and a decoder writes out pixel values for every masked patch. Only the masked pixels count in the loss; the visible ones were given as input and copying them would teach nothing.</p>
+
+        <div class="worked"><b>Worked example: a baseline reconstructor</b>
+          <p>To see the arithmetic, use the simplest possible "model": fill every hidden pixel of a band with the average of the visible patch in that same band. A trained network does far better, but the loss is computed the same way.</p>
+          <p>Visible patch P1, per band (the four pixels of P1):</p>
+          <table class="tbl"><tr><th>band</th><th>P1 pixels</th><th>mean (prediction)</th></tr>
+          <tr><td>red</td><td>0.20, 0.22, 0.21, 0.23</td><td>0.2150</td></tr>
+          <tr><td>green</td><td>0.10, 0.12, 0.11, 0.13</td><td>0.1150</td></tr>
+          <tr><td>NIR</td><td>0.50, 0.52, 0.51, 0.53</td><td>0.5150</td></tr></table>
+          <p>The hidden values (P2, P3, P4) for red are 0.40, 0.42, 0.41, 0.43 | 0.60, 0.62, 0.61, 0.63 | 0.30, 0.32, 0.31, 0.33. Each squared error is <span class="tex">(x-\hat x)^2</span> against the prediction 0.2150. Summing the 12 squared errors for red gives <b>0.8415</b>. Green's 12 hidden values give the same sum, <b>0.8415</b>, and near-infrared gives <b>0.5615</b>, because its values are closer to its visible mean.</p>
+          <p>Total over the 36 hidden values: <span class="tex">0.8415+0.8415+0.5615=2.2445</span>. Dividing by 36 gives the masked mean squared error <span class="tex">\mathcal L=0.06235</span>. A better model would lower this number; the visible patch contributes nothing to it.</p>
+          <p><b>Where this sits in the pipeline:</b> this is the <i>Model</i> stage, during pretraining on an unlabelled archive. The output of pretraining is the encoder weights, which will later be stored and described in a STAC MLM record (<a href="geo-mlm.html">Module 6</a>).</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L=\frac{1}{|\mathcal M|}\sum_{p\in\mathcal M}\bigl\lVert \hat{\mathbf x}_p-\mathbf x_p\bigr\rVert_2^2</div>
+        <table class="sym">
+          <tr><td>𝓜</td><td>the set of masked values (here 36 numbers, from the masked patches)</td></tr>
+          <tr><td>|𝓜|</td><td>how many values are in that set (its size)</td></tr>
+          <tr><td>p ∈ 𝓜</td><td>one masked value (a pixel in one band, or one patch when the loss is per patch)</td></tr>
+          <tr><td>x<sub>p</sub></td><td>the true reflectance hidden at p (the target)</td></tr>
+          <tr><td>x̂<sub>p</sub></td><td>the model's prediction for p</td></tr>
+          <tr><td>‖·‖²</td><td>the squared length of a difference, for a vector of values; for a single value it is just the square</td></tr>
+        </table>
+        <p>Many models normalise each patch (subtract its own mean, divide by its own standard deviation) before computing the loss, so the model learns texture and shape rather than only brightness. Choose and state this choice; it changes what is learned.</p>
+
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: mask, hide, reconstruct</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play and watch the sequence: the tile is hidden patch by patch, then the baseline model fills the holes one at a time. Read the caption at each step.</li>
+        <li>Drag the <b>mask ratio</b> slider from 25% to 90%. At low ratios the hidden patches sit next to visible ones and are easy to guess; at high ratios the guesses fall apart. Notice the loss in the readout.</li>
+        <li>Switch the <b>grid</b> to 8 × 8 patches (more, smaller patches). Try to predict which setting makes the task harder and check by moving the slider.</li>
+        <li>Change the <b>smoothness</b> of the scene. Smooth fields are easy to reconstruct from neighbours; a noisy field is not. This is why pretraining needs real, textured archives rather than flat synthetic images.</li></ol></div>
+      <div data-lab="mimreconstruct"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A low reconstruction loss is not automatically a good encoder.</b> Predicting smooth blur gives low loss. Check downstream performance on a few labels, not only the pretraining loss.</li>
+          <li><b>Clouds in the archive.</b> A cloud is a hidden region that the model can learn to paint. Mask or exclude cloudy tiles before pretraining, or the encoder learns cloud texture as "Earth".</li>
+          <li><b>Mixing masked and unmasked normalisation.</b> Normalising statistics must come from the pretraining data only and be applied identically later. Mismatched normalisation silently degrades fine-tuning.</li>
+          <li><b>Band order.</b> If the model was pretrained on (B02, B03, B04, B08) and you feed (B04, B03, B02, B08), it still runs, but its features are wrong. Read the band list in the model record.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Vision Transformers</b> (Computer Vision, Module 5): the patch-and-token idea used here is the one from <a href="cv-transformers.html#vit">the ViT lesson</a>; masked pretraining is covered in <a href="cv-transformers.html#self-supervised-vision">self-supervised vision</a>.</li>
+          <li><b>Geospatial foundation models</b> adapt masked pretraining to multispectral and multi-temporal stacks. Several research groups have published such models; look up the exact bands, patch size, pretraining archive and licence of any model you consider on its own model card, because details differ between them.</li>
+          <li>Other pretext tasks (contrastive learning on two views of the same place, predicting a location or date) follow the same logic: the label is manufactured from the data.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A tile has 48 numbers (4 × 4 pixels × 3 bands) and patches are 2 × 2. With a 75% mask, how many numbers does the encoder see?</summary><div class="ans">4 patches; 75% masked means 3 hidden and 1 visible. The visible patch holds 2·2·3 = 12 numbers, so the encoder sees 12 of 48 (25%) and must predict 36.</div></details>
+        <details class="check"><summary>2. Why is the loss computed on masked values only?</summary><div class="ans">Visible values were given to the model as input. Including them would reward copying the input, which teaches nothing. The task is to predict what was hidden.</div></details>
+        <details class="check"><summary>3. The baseline predicts red = 0.2150 everywhere in the hidden area. Why would a trained model usually beat this?</summary><div class="ans">A trained model uses spatial context (edges, field boundaries, the other bands) and learned textures, so its predictions can differ from the visible mean in the right direction. The baseline ignores where a patch is and what sits next to it.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Masked image modelling makes labels from the imagery itself: hide patches, predict them, score only the hidden values.</li>
+          <li>For a 4 × 4 × 3 tile with 2 × 2 patches and a 75% mask, 36 of 48 numbers are hidden; the loss averages their squared errors (here 0.06235 for the baseline).</li>
+          <li>A low pretraining loss is necessary but not sufficient; evaluate the encoder on real downstream tasks.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.2 ===================== -->
+    <section class="lesson" id="temporal-models" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">7.2</span><h2>Time series of imagery</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A single image of a field in June shows green. Is it maize, grassland or a young orchard? Two fields can look identical on one date and differ completely over the season: maize is bare in spring, green in summer and harvested in autumn. How do we let a model see the season, when clouds hide some of the dates?</div>
+
+        <h3 class="sec">Intuition: every pixel has a history</h3>
+        <p>Stop looking at a satellite image as a picture and look at one pixel instead. Over a year it is a sequence of numbers, one per visit of the satellite, that rises in spring as the crop grows, peaks in summer and falls at harvest. That rise and fall is its <b>phenology</b>: the timing of the life cycle, and it is a strong fingerprint of what covers the ground.</p>
+        <p>A <b>temporal stack</b> is the same idea for a whole tile. Instead of one image with C bands, you have T dates, each with C bands on an H × W grid. Its shape is <span class="tex">T\times C\times H\times W</span>. The model can then look along the time axis (does this pixel green up in April?) as well as across space (are its neighbours doing the same?).</p>
+        <p>The complication is <b>clouds</b>. An optical satellite cannot see through cloud, so some dates are unusable at some pixels. Radar (Sentinel-1) sees through cloud, which is one reason stacks often combine optical and radar dates.</p>
+
+        <h3 class="sec">Build it up: four dates, one gap</h3>
+        <p><b>Step 1, the observations.</b> Take one pixel and four acquisition dates. Its NDVI (the vegetation index from Module 4, defined as <span class="tex">(\text{NIR}-\text{Red})/(\text{NIR}+\text{Red})</span>) is observed on days 0, 10, 20 and 40 of a season. On day 20 a cloud covers the pixel, so that value is missing.</p>
+        <table class="tbl"><tr><th>date</th><th>day</th><th>NDVI</th></tr>
+        <tr><td>1</td><td>0</td><td>0.31</td></tr>
+        <tr><td>2</td><td>10</td><td>0.45</td></tr>
+        <tr><td>3</td><td>20</td><td>missing (cloud)</td></tr>
+        <tr><td>4</td><td>40</td><td>0.70</td></tr></table>
+        <p><b>Step 2, the naive fill.</b> The simplest rule is to average the neighbouring observations: <span class="tex">(0.45+0.70)/2=0.575</span>. This ignores the calendar, and it is wrong here, because the neighbours are not evenly spaced: 0.45 was observed 10 days before the gap, while 0.70 was observed 20 days after it.</p>
+        <p><b>Step 3, the time-aware fill.</b> <b>Linear interpolation</b> places the missing value on the straight line between the two known points, in proportion to time. The fraction of the way from day 10 to day 40 at which day 20 sits is <span class="tex">\frac{20-10}{40-10}=\frac13</span>. So the estimate is</p>
+        <div class="eq">\hat y(20)=0.45+(0.70-0.45)\cdot\frac{1}{3}=0.45+0.0833=0.5333</div>
+        <p>The 0.5333 value is the one to use. The naive index-based rule gave 0.575, which overstates the greenness by 0.042 because it treats a 10-day step and a 30-day step as if they were the same.</p>
+        <div class="worked"><b>Worked example, in full</b>
+          <p>Known points: <span class="tex">(t_a,y_a)=(10,0.45)</span> and <span class="tex">(t_b,y_b)=(40,0.70)</span>. Query time <span class="tex">t=20</span>. Slope <span class="tex">\frac{0.70-0.45}{40-10}=\frac{0.25}{30}=0.008333</span> per day. Then <span class="tex">0.45+0.008333\cdot(20-10)=0.45+0.08333=0.53333</span>. The estimate is 0.533 (rounded).</p>
+          <p><b>Where this sits in the pipeline:</b> this is <i>Preprocessing</i>: gap filling before the stack goes into the model. The filled value should be flagged in a quality layer, so that the model and the map user know which numbers were observed and which were interpolated.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat y(t)=y_a+\bigl(y_b-y_a\bigr)\frac{t-t_a}{t_b-t_a},\qquad t_a&lt;t&lt;t_b</div>
+        <table class="sym">
+          <tr><td>t</td><td>the day we want to estimate (here 20)</td></tr>
+          <tr><td>t<sub>a</sub>, t<sub>b</sub></td><td>the days of the observations on either side of the gap (10 and 40)</td></tr>
+          <tr><td>y<sub>a</sub>, y<sub>b</sub></td><td>the NDVI values observed on those days (0.45 and 0.70)</td></tr>
+          <tr><td><span class="tex">\hat y(t)</span></td><td>the estimated value at time t</td></tr>
+        </table>
+        <p>A temporal stack is then just <span class="tex">X\in\mathbb R^{T\times C\times H\times W}</span> with a companion mask <span class="tex">M\in\{0,1\}^{T\times H\times W}</span> saying which values were observed. The model can learn from the mask as well as from the values.</p>
+
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: a pixel's year, with gaps</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play. The true phenology curve is drawn first, then the satellite visits one by one; some are removed by clouds. Watch the orange gap-fill line appear as linear segments between the observations.</li>
+        <li>Raise the <b>cloud probability</b> to 60%. Notice long stretches with no observation and how the straight-line guess drifts away from the true curve.</li>
+        <li>Change the <b>number of dates</b> from 4 to 12 with the same season. More dates reduce the error of the interpolation.</li>
+        <li>Edit the <b>true curve</b> formula, for example to a double peak <code>0.2+0.3*exp(-((t-100)/25)^2)+0.3*exp(-((t-240)/25)^2)</code>. A crop with two cuts looks like this; linear interpolation can miss the peaks if they fall inside a gap.</li></ol></div>
+      <div data-lab="tsstack"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Interpolating across a winter gap.</b> A straight line from a summer peak to an autumn value invents green-up that never happened. Limit the maximum gap you fill, or fill with a model that knows the season.</li>
+          <li><b>Index spacing instead of time spacing.</b> As the worked example shows, ignoring the calendar biases the estimate. Always store the acquisition date with each observation.</li>
+          <li><b>Cloud shadows and haze.</b> Cloud masks miss thin cloud and shadows, which lower NDVI and look like a dip in the curve. Use the quality bands of the product, not only a single threshold.</li>
+          <li><b>Mixing sensors.</b> Two satellites are not identical. Cross-calibrate before stacking, or the step at the switch-over date becomes a fake change.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Crop-type mapping</b> with time-series classifiers (1D convolutional networks, LSTMs and transformers over the per-pixel NDVI or band curves) is a standard use: the timing of the curve separates crops that look alike on one date.</li>
+          <li><b>Change detection</b> over years of stacks (a forest that stops greening is a warning sign) uses the same time axis.</li>
+          <li><b>Temporal attention</b> lets a transformer weigh the dates that matter for a class (for example the flowering month) and ignore the clouded ones; the mask above is passed to it so that missing dates are ignored, not treated as zero.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the worked example, what is the time-aware estimate for day 30 if the observations are 0.45 at day 10 and 0.70 at day 40?</summary><div class="ans">0.45 + 0.25 · (30−10)/30 = 0.45 + 0.25 · 0.6667 = 0.6167.</div></details>
+        <details class="check"><summary>2. Why is the naive average (0.45 + 0.70)/2 = 0.575 the wrong estimate for day 20?</summary><div class="ans">Because the observations are not evenly spaced in time. Day 20 is one third of the way from day 10 to day 40, not halfway. Linear interpolation in time gives 0.533.</div></details>
+        <details class="check"><summary>3. A pixel is cloudy on every date between day 60 and day 200. What should a careful pipeline do with it?</summary><div class="ans">Not fill a 140-day gap with a straight line. Flag the period as unobserved, lean on the other dates or on radar data, or leave the value as missing for the model to handle through its mask.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A pixel over time is a curve (phenology); a temporal stack is <span class="tex">T\times C\times H\times W</span>.</li>
+          <li>Fill gaps by linear interpolation in time: <span class="tex">\hat y(t)=y_a+(y_b-y_a)\frac{t-t_a}{t_b-t_a}</span>. Here 0.5333, not the index-based 0.575.</li>
+          <li>Keep a mask of what was observed, and do not interpolate across long gaps.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.3 ===================== -->
+    <section class="lesson" id="embeddings-similarity" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">7.3</span><h2>Embeddings &amp; similarity search</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A disaster-response team has one photo of a flooded farm in a district they know well, and they want every other place in a 30-million-tile archive that looks like it, without first writing a rule for "flooded farmland". How can a machine compare two tiles by how they look, and then find the closest ones quickly?</div>
+
+        <h3 class="sec">Intuition: a fingerprint and a compass</h3>
+        <p>A pretrained encoder turns each tile into a list of numbers, an <b>embedding</b>. Tiles that look alike get lists that point in similar directions; tiles that look different point elsewhere. The embedding is a fingerprint of the tile, and it is much shorter than the tile itself: a 768-number vector instead of 150,000 pixel values.</p>
+        <p>To compare two fingerprints we need a measure. The most useful one for embeddings is the <b>angle</b> between them, not their distance. Imagine two arrows from the origin. If they point the same way, the places they describe are alike, whatever the length of the arrows. The <b>cosine similarity</b> measures exactly that angle: 1 means the same direction, 0 means perpendicular, −1 means opposite.</p>
+        <p>Length can carry nuisance information. A tile that is brighter, or a model that outputs bigger numbers for some images, would look "more similar" to everything under a plain dot product. Normalising each embedding to unit length removes that effect, and then the dot product <i>is</i> the cosine.</p>
+
+        <h3 class="sec">Build it up: three tiles, by hand</h3>
+        <p>Take three toy 3-number embeddings (real ones have hundreds of numbers, but the arithmetic is the same):</p>
+        <div class="eq">A=(3,\,4,\,0),\qquad B=(1,\,2,\,2),\qquad C=(-2,\,1,\,2)</div>
+        <p><b>Step 1, the lengths.</b> <span class="tex">\lVert A\rVert=\sqrt{9+16+0}=5</span>, <span class="tex">\lVert B\rVert=\sqrt{1+4+4}=3</span>, <span class="tex">\lVert C\rVert=\sqrt{4+1+4}=3</span>.</p>
+        <p><b>Step 2, unit-normalise</b> (divide each vector by its length, so it has length 1):</p>
+        <div class="eq">\hat a=\left(\tfrac35,\tfrac45,0\right)=(0.6,\,0.8,\,0),\quad \hat b=\left(\tfrac13,\tfrac23,\tfrac23\right),\quad \hat c=\left(-\tfrac23,\tfrac13,\tfrac23\right)</div>
+        <p>Check: <span class="tex">0.6^2+0.8^2=1</span>; <span class="tex">(1/3)^2+(2/3)^2+(2/3)^2=1/9+4/9+4/9=1</span>; <span class="tex">(4/9)+(1/9)+(4/9)=1</span>.</p>
+        <p><b>Step 3, the cosines</b> are dot products of unit vectors:</p>
+        <div class="worked"><b>Worked example</b>
+          <p><span class="tex">\cos(A,B)=\hat a\cdot\hat b=0.6\cdot\tfrac13+0.8\cdot\tfrac23+0\cdot\tfrac23=0.2+0.5333=0.7333</span> (equal to <span class="tex">\frac{11}{15}</span>).</p>
+          <p><span class="tex">\cos(A,C)=\hat a\cdot\hat c=0.6\cdot(-\tfrac23)+0.8\cdot\tfrac13+0=-0.4+0.2667=-0.1333</span> (equal to <span class="tex">-\frac{2}{15}</span>).</p>
+          <p><span class="tex">\cos(B,C)=\hat b\cdot\hat c=(\tfrac13)(-\tfrac23)+(\tfrac23)(\tfrac13)+(\tfrac23)(\tfrac23)=\tfrac49=0.4444</span>.</p>
+          <p>Reading: A and B point most nearly the same way (0.73), B and C are moderately related (0.44), and A and C are almost perpendicular (−0.13). In terms of distance on the unit sphere, <span class="tex">\lVert\hat a-\hat b\rVert=\sqrt{2-2\cos}=\sqrt{0.5333}=0.7303</span>.</p></div>
+
+        <h3 class="sec">Build it up: finding the nearest tiles</h3>
+        <p>Now the search. A query tile <span class="tex">q=(2,1,2)</span> is compared with five catalogue embeddings, E1 = (1,0,0), E2 = (2,1,1), E3 = (0,3,4), E4 = (2,2,1) and E5 = (−1,2,0). The <b>nearest-neighbour search</b> computes a similarity for every catalogue item and keeps the top k (here k = 2).</p>
+        <table class="tbl"><tr><th>item</th><th>length</th><th>raw dot q·E</th><th>cosine</th></tr>
+        <tr><td>E1</td><td>1</td><td>2</td><td>0.6667</td></tr>
+        <tr><td>E2</td><td>√6 = 2.4495</td><td>7</td><td><b>0.9526</b></td></tr>
+        <tr><td>E3</td><td>5</td><td>11</td><td>0.7333</td></tr>
+        <tr><td>E4</td><td>3</td><td>8</td><td><b>0.8889</b></td></tr>
+        <tr><td>E5</td><td>√5 = 2.2361</td><td>0</td><td>0.0000</td></tr></table>
+        <p>The query has length 3. Cosine = raw dot ÷ (3 × length of E). The <b>top-2 by cosine are E2 (0.9526) and E4 (0.8889)</b>. Ranking by the raw dot product gives E3 (11) and E4 (8) instead, because E3 is simply longer. That is the nuisance that normalisation removes.</p>
+        <p><b>Where this sits in the pipeline:</b> this is the <i>Inference</i> stage of a search service: encode the query once, then scan (or index) the catalogue of embeddings. For millions of tiles, the scan is replaced by an approximate index (for example a graph or a product-quantised index in a vector library), which trades a little accuracy for a large speed-up.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\cos(\mathbf u,\mathbf v)=\frac{\mathbf u\cdot\mathbf v}{\lVert\mathbf u\rVert\,\lVert\mathbf v\rVert}\qquad\text{and, for unit vectors,}\qquad \cos(\mathbf u,\mathbf v)=\mathbf u\cdot\mathbf v</div>
+        <div class="eq">\operatorname{top}\text{-}k(q)=\operatorname*{arg\,max}_{k\text{ items}}\ \cos(\mathbf q,\mathbf e_i)</div>
+        <table class="sym">
+          <tr><td>u·v</td><td>dot product: the sum of products of matching entries, <span class="tex">\sum_i u_i v_i</span></td></tr>
+          <tr><td>‖u‖</td><td>length (Euclidean norm) of u: <span class="tex">\sqrt{\sum_i u_i^2}</span></td></tr>
+          <tr><td>q</td><td>the query embedding (the tile you clicked on)</td></tr>
+          <tr><td>e<sub>i</sub></td><td>the embedding of catalogue tile i</td></tr>
+          <tr><td>top-k</td><td>the k items with the highest similarity</td></tr>
+        </table>
+
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: tiles on a sphere</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch the tiles turn slowly. Each dot is a tile embedding normalised to unit length, so every dot sits on the sphere. Colours mark the land-cover group the encoder put them in.</li>
+        <li>Click a dot. It becomes the <b>query</b> (white ring). The top-k most similar tiles light up one after another, joined by arcs whose brightness shows the cosine.</li>
+        <li>Raise <b>k</b> from 2 to 10. Notice how the matches stop being all from the query's own colour group once you go beyond the close neighbourhood.</li>
+        <li>Tick <b>show raw length</b> to scale each dot by its original (unnormalised) length. Click again: the ranking can change, because a long dot now looks more similar than its angle warrants.</li></ol></div>
+      <div data-lab="embedsphere"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Skipping normalisation.</b> The raw dot product mixes angle with length, as the table shows (E3 jumps ahead of E2). Normalise, or state clearly that you use a length-aware score.</li>
+          <li><b>Believing one similarity number.</b> A cosine of 0.9 between two tiles means they are close in the encoder's space, not that they are the same land cover. Check matches visually and, when possible, against labels.</li>
+          <li><b>Nuisance features.</b> If the encoder was trained on images with strong seasonal or sensor differences, similarity follows the season and the sensor. Pick query and catalogue tiles from the same date range, or use an encoder trained to ignore them.</li>
+          <li><b>Exact search that does not scale.</b> A brute-force scan is fine for 10,000 tiles and too slow for 30 million on a laptop. Plan an index early, and measure recall against the exact answer.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Search by example</b>: "find more tiles like this one" is an embedding query. Many EO catalogues and vector-database products work this way.</li>
+          <li><b>Retrieval-augmented and multimodal models</b> match a text or image query to a database of embeddings by cosine, the same way as here.</li>
+          <li><b>Kernels</b>: the dot product of feature vectors is the basis of kernel methods; see <a href="math-advanced.html#kernels">the kernels lesson</a> in Advanced Mathematics for the same geometry.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Two embeddings are (2, 4) and (1, 2). What is their cosine similarity, and why?</summary><div class="ans">1. The second is exactly half the first, so they point in the same direction. Cosine ignores length: (2·1 + 4·2)/(√20 · √5) = 10/10 = 1.</div></details>
+        <details class="check"><summary>2. Using the worked example, what is the distance between the unit vectors for A and C?</summary><div class="ans">cos(A,C) = −2/15 = −0.1333, so the distance is √(2 − 2·(−0.1333)) = √2.2667 = 1.5055.</div></details>
+        <details class="check"><summary>3. Why does the raw dot product rank E3 above E2 for query q = (2, 1, 2), when cosine ranks E2 above E3?</summary><div class="ans">E3 is longer (length 5 against √6 ≈ 2.45), so its raw dot product (11) is bigger than E2's (7), even though E2 points more nearly the same way as q (cosine 0.9526 against 0.7333).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An embedding is a fingerprint; cosine similarity compares directions and ignores length.</li>
+          <li>For unit vectors the dot product equals the cosine, and distance is <span class="tex">\sqrt{2-2\cos}</span>.</li>
+          <li>Search is "score all, keep the top k"; at scale, use an approximate index and measure what it misses.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.4 ===================== -->
+    <section class="lesson" id="finetuning-geo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">7.4</span><h2>Fine-tuning foundation models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A flood-mapping agency has a pretrained encoder with about 86 million parameters and only 200 labelled tiles. If it trains all 86 million numbers on 200 tiles, the model can memorise the tiles. If it trains only a final classifier, it may not adapt to water in turbid rivers. Which parts should we train, and how many numbers does each choice touch?</div>
+
+        <h3 class="sec">Intuition: keep the general knowledge, adjust the specific part</h3>
+        <p>Early layers of a pretrained encoder learn general things: edges, textures, the difference between smooth and rough ground, the spectral signature of water. Later layers combine them into concepts closer to the target task. When the new task is similar, you can keep most of the encoder and adjust only the top. When it is very different (new bands, new sensor), you adjust more.</p>
+        <p>There are three common choices, from cheapest to most flexible:</p>
+        <ul>
+          <li><b>Linear probing</b>: freeze the whole encoder and train only the final classifier. Fast, very little to overfit, but it cannot change the features.</li>
+          <li><b>Partial fine-tuning</b>: freeze the first blocks and train the last few blocks plus the classifier. The most common middle ground.</li>
+          <li><b>Adapters</b>: freeze every original weight and insert small trainable bottleneck modules into each block. They add a few percent of parameters and keep the original model intact, so one encoder can serve many tasks.</li>
+        </ul>
+        <p>Then there is the question of the <b>learning rate</b>: even when a layer is trainable, a large step can destroy what it learned. A common rule is to use a smaller learning rate for earlier layers and a larger one for the head.</p>
+
+        <h3 class="sec">Build it up: counting a ViT-B-like encoder</h3>
+        <p>A ViT-B/16 (12 blocks, token width <span class="tex">D=768</span>, MLP width <span class="tex">M=3072</span>, 16 × 16 patches) is a useful reference. Count its parameters from its design. Each number below is an exact integer count, not a rounded figure.</p>
+        <p><b>Step 1, one transformer block.</b></p>
+        <ul>
+          <li>Attention (query, key, value and output projections, each D×D with bias): <span class="tex">4D^2+4D=4\cdot589{,}824+3{,}072=2{,}362{,}368</span>.</li>
+          <li>MLP (D→M and M→D, with biases): <span class="tex">2DM+M+D=4{,}718{,}592+3{,}072+768=4{,}722{,}432</span>.</li>
+          <li>Two LayerNorms (each has a scale and a shift of width D): <span class="tex">4D=3{,}072</span>.</li>
+          <li>Block total: <span class="tex">2{,}362{,}368+4{,}722{,}432+3{,}072=7{,}087{,}872</span>.</li>
+        </ul>
+        <p><b>Step 2, the whole encoder.</b> Twelve blocks: <span class="tex">12\times7{,}087{,}872=85{,}054{,}464</span>. Add the patch embedding (16·16·3 inputs times 768 outputs, plus 768 biases): <span class="tex">590{,}592</span>. Add the class token (768), the position embeddings (197 positions × 768 = 151,296) and the final LayerNorm (1,536). Total: <b>85,798,656</b>, about 85.8 M.</p>
+        <p><b>Step 3, the head.</b> A classifier with 10 classes on the 768-dimensional output adds <span class="tex">768\cdot10+10=7{,}690</span>, so the model with its head has <b>85,806,346</b> parameters. A 1000-class ImageNet head would add 769,000, giving 86,567,656, which is the familiar "about 86 M" figure for ViT-B/16.</p>
+
+        <div class="worked"><b>Worked example: four ways to train it</b>
+          <table class="tbl"><tr><th>option</th><th>trainable parameters</th><th>share of 85,806,346</th></tr>
+          <tr><td>Linear probe (head only)</td><td>7,690</td><td>0.009%</td></tr>
+          <tr><td>Last 4 blocks + head (first 8 blocks frozen)</td><td>4 × 7,087,872 + 7,690 = 28,359,178</td><td>33.05%</td></tr>
+          <tr><td>Adapters r = 64 in all 12 blocks + head</td><td>12 × 99,136 + 7,690 = 1,197,322</td><td>1.40%</td></tr>
+          <tr><td>Full fine-tuning</td><td>85,806,346</td><td>100%</td></tr></table>
+          <p>An adapter with bottleneck width <span class="tex">r</span> has a down-projection <span class="tex">D\to r</span> and an up-projection <span class="tex">r\to D</span>, each with bias: <span class="tex">2Dr+r+D=2\cdot768\cdot64+64+768=99{,}136</span> per block.</p>
+          <p><b>Changing the bands.</b> Pretrained on three bands, the patch embedding has 590,592 parameters. If your data has 12 bands, the patch embedding becomes <span class="tex">16\cdot16\cdot12\cdot768+768=2{,}360{,}064</span>. This is the one layer you must re-create (and train) when the input changes; its new weights can be initialised by repeating or averaging the pretrained ones.</p>
+          <p><b>Where this sits in the pipeline:</b> <i>Model</i> stage, during fine-tuning on the labelled set. The final checkpoint must be recorded with which layers were frozen, which is needed to reproduce it and to describe its trainable parts honestly.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\theta=(\theta_{\text{frozen}},\theta_{\text{train}}),\qquad \min_{\theta_{\text{train}}}\ \frac{1}{N}\sum_{i=1}^{N}\mathcal L\bigl(f(x_i;\theta_{\text{frozen}},\theta_{\text{train}}),y_i\bigr)</div>
+        <table class="sym">
+          <tr><td>θ</td><td>all parameters of the model (here 85.8 M)</td></tr>
+          <tr><td>θ<sub>frozen</sub>, θ<sub>train</sub></td><td>the split: frozen values are never updated, trainable ones are</td></tr>
+          <tr><td>N</td><td>the number of labelled examples (200 tiles)</td></tr>
+          <tr><td>ℒ</td><td>the loss on one example, for example cross-entropy for classes</td></tr>
+          <tr><td>f(x<sub>i</sub>; θ)</td><td>the model's output for tile i</td></tr>
+        </table>
+        <p>The gradient is computed only for <span class="tex">\theta_{\text{train}}</span>. Freezing saves memory for optimiser states and gradients, but the forward pass through frozen blocks still costs the same, and back-propagation still has to pass through any trainable block above them. Parameter counts are not the same as compute.</p>
+
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the fine-tuning dial</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Set <b>frozen blocks</b> to 0, then to 8, then to 12. Read the trainable count and the share of the model at each step. Check the 8-block value against the worked example (28,359,178 trainable).</li>
+        <li>Switch to <b>adapters</b> and vary the bottleneck width r from 4 to 256. The count grows linearly in r; find where it passes 5% of the model.</li>
+        <li>Press Play to see the illustrative learning curves for each option. Notice that more trainable parameters start faster but can overfit with 200 tiles. The curves are schematic: they show shapes, not measured accuracy.</li>
+        <li>Set the <b>number of labelled tiles</b> to 50 and then 2,000. The best choice moves towards more trainable parameters as the labels grow.</li></ol></div>
+      <div data-lab="finetunedial"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Fine-tuning everything on a tiny set.</b> A large encoder can memorise a few hundred tiles. Use a frozen or adapter setting first and only unfreeze when validation rises.</li>
+          <li><b>One learning rate for all layers.</b> A rate that suits the new head can wreck the pretrained blocks. Use smaller rates lower down.</li>
+          <li><b>Mismatched normalisation.</b> Use the pretraining statistics, not the statistics of your small dataset, unless you have a reason to change them.</li>
+          <li><b>Reporting only the parameter count.</b> Trainable parameters say nothing about the forward compute or memory, and a frozen encoder still has to be run on every image.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Linear probing versus fine-tuning</b> is the standard way to measure how good a pretrained representation is in vision research.</li>
+          <li><b>Parameter-efficient methods</b> (adapters, low-rank adaptation) let one large encoder serve many tasks, each with a small stored module; this is how most large language models are customised.</li>
+          <li><b>Geospatial foundation models</b> are usually adapted this way: freeze or adapt the encoder, train a segmentation or classification head on the local labels, and report which option was used.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many parameters does a linear classifier from 768 features to 10 classes have, including biases?</summary><div class="ans">768 × 10 + 10 = 7,690.</div></details>
+        <details class="check"><summary>2. Why does freezing the first 8 blocks not make the forward pass cheaper?</summary><div class="ans">Every image still passes through all 12 blocks in the forward direction; freezing only skips computing and storing gradients and optimiser state for the frozen weights.</div></details>
+        <details class="check"><summary>3. You change from 3 to 12 input bands with 16 × 16 patches. How many parameters does the new patch embedding have, and why must it be re-created?</summary><div class="ans">16·16·12·768 + 768 = 2,360,064. Its input size depends on the number of bands, so the pretrained 590,592-parameter layer cannot be reused as it is; its weights can be initialised from the pretrained ones and then trained.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Choose how much to train by how different your task is and how many labels you have: head only, last blocks, or adapters.</li>
+          <li>A ViT-B/16-like encoder is 85.8 M parameters (86.6 M with a 1000-class head); freezing the first 8 blocks leaves 33.05% trainable.</li>
+          <li>Count parameters and compute separately, and use a lower learning rate for the pretrained layers.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.5 ===================== -->
+    <section class="lesson" id="model-zoo-stac" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">7.5</span><h2>Finding pretrained models via STAC MLM</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You need a model that labels land cover on 10 m Sentinel-2 imagery from four bands (blue, green, red and near-infrared). A catalogue lists 300 models. Downloading each one to read its README would take a week. How do you search by what the model does, and check that your data can be fed to it, before downloading a single weight file?</div>
+
+        <h3 class="sec">Intuition: a model's label on the shelf</h3>
+        <p>A shop does not ask you to open every box to find a kettle. Each box has a label: the product, its voltage, its size, its warranty. A <b>model record</b> is the same idea for a trained model. It is a small STAC Item, a standard JSON description (Module 2), that says what the model is for (its <b>task</b>), what it expects as input (which bands, what size of patch, what units), what it produces, how big it is, and where its weights and code live. With the <b>MLM extension</b> those fields have agreed names, so a search tool can filter every model in the catalogue in the same way.</p>
+        <p>Two things must match before a model can run on your data: the <b>band list</b> (same bands, same order, same names) and the <b>resolution</b> the model was trained at. A third, often forgotten, is the <b>input scale</b>: a model trained on reflectance from 0 to 1 will give nonsense on raw digital numbers from 0 to 10,000.</p>
+
+        <h3 class="sec">Build it up: five records, three filters</h3>
+        <p>Here is a small synthetic catalogue (the records are invented for this lesson; they are not real published models). Each row is a simplified view of a record's MLM fields.</p>
+        <table class="tbl"><tr><th>record</th><th>task</th><th>input bands</th><th>GSD (m)</th><th>parameters</th></tr>
+        <tr><td>R1 synth-lc-seg-a</td><td>semantic-segmentation</td><td>B02 B03 B04 B08 B11 B12</td><td>10</td><td>24.1 M</td></tr>
+        <tr><td>R2 synth-scene-cls-b</td><td>scene-classification</td><td>B02 B03 B04 B08</td><td>10</td><td>11.2 M</td></tr>
+        <tr><td>R3 synth-lc-seg-c</td><td>semantic-segmentation</td><td>B04 B08</td><td>10</td><td>6.8 M</td></tr>
+        <tr><td>R4 synth-lc-seg-d</td><td>semantic-segmentation</td><td>B02 B03 B04 B08</td><td>30</td><td>24.1 M</td></tr>
+        <tr><td>R5 synth-lc-seg-e</td><td>semantic-segmentation</td><td>B02 B03 B04 B08</td><td>10</td><td>41.5 M</td></tr></table>
+        <p>You want: task = semantic-segmentation, bands include B02, B03, B04 and B08, and GSD at most 10 m.</p>
+        <div class="worked"><b>Worked example: the filter, stage by stage</b>
+          <p><b>Filter 1, task.</b> Keep records whose task is semantic-segmentation: R1, R3, R4, R5. R2 is a scene classifier and is removed. <b>4 remain.</b></p>
+          <p><b>Filter 2, bands.</b> Keep records whose input bands include {B02, B03, B04, B08}. R3 has only B04 and B08, so it is removed. R1, R4 and R5 pass. <b>3 remain.</b></p>
+          <p><b>Filter 3, resolution.</b> Keep GSD ≤ 10 m. R4 is at 30 m and is removed. R1 and R5 pass. <b>2 remain: R1 and R5.</b></p>
+          <p>Only now do you open the two records. Compare their parameter counts (24.1 M and 41.5 M) and the MLM fields that matter for running them.</p></div>
+
+        <p><b>Step 4, the compatibility check.</b> Searching is not enough: the data you hold must fit the model. Write down the dataset's bands, resolution and scale, and compare them with the model's <code>mlm:input</code>. Three outcomes are possible: <b>compatible</b> (same bands, same GSD, same scale); <b>needs resampling</b> (same bands but a different GSD, which is allowed only if the record says the model accepts it and you resample first); and <b>incompatible</b> (a band is missing or the scale differs by a factor that you cannot correct).</p>
+        <p>For R1, a 10 m four-band dataset with reflectance scaled to 0–1 is compatible on the four required bands. The model also needs B11 and B12, which are 20 m bands in Sentinel-2: they must be resampled to 10 m, so the check reads "needs resampling" unless you supply them at 10 m.</p>
+
+        <h3 class="sec">The record, as JSON</h3>
+        <p>The fragment below is a valid JSON object with the MLM fields of a model like R1. The names follow the MLM extension (schema v1.6.0 at the time of writing; check the current version at the extension's repository before publishing). Note that <code>mlm:name</code> and <code>mlm:input</code> are Item-level fields; the other model-level fields can also appear on the model's Asset.</p>
+        <pre><code>{
+  "mlm:name": "synth-lc-seg-a",
+  "mlm:architecture": "U-Net",
+  "mlm:tasks": ["semantic-segmentation"],
+  "mlm:framework": "pytorch",
+  "mlm:framework_version": "2.1.0",
+  "mlm:total_parameters": 24100000,
+  "mlm:pretrained": true,
+  "mlm:input": [
+    {
+      "name": "Sentinel-2 chip, 10 m",
+      "bands": ["B02", "B03", "B04", "B08", "B11", "B12"],
+      "input": {
+        "shape": [-1, 6, 256, 256],
+        "dim_order": "bchw",
+        "data_type": "float32"
+      }
+    }
+  ],
+  "gsd": 10
+}</code></pre>
+        <p><b>Where this sits in the pipeline:</b> the <i>Acquire</i> stage (choosing what to download) and the <i>Model</i> stage (knowing how to run it). The record is what lets a machine decide both without a human reading the README.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{match}(M,Q)=\bigl[\,t_M=t_Q\,\bigr]\wedge\bigl[\,\mathcal B_Q\subseteq\mathcal B_M\,\bigr]\wedge\bigl[\,g_M\le g_{\max}\,\bigr]</div>
+        <div class="eq">\text{compatible}(D,M)=\bigl[\,\mathcal B_M\subseteq\mathcal B_D\,\bigr]\wedge\bigl[\,s_D=s_M\,\bigr]\wedge\bigl[\,g_D=g_M\ \text{or resampling declared}\,\bigr]</div>
+        <table class="sym">
+          <tr><td>t<sub>M</sub>, t<sub>Q</sub></td><td>the task of the model, and the task requested by the search</td></tr>
+          <tr><td>𝓑<sub>M</sub>, 𝓑<sub>Q</sub>, 𝓑<sub>D</sub></td><td>sets of band names: the model's inputs, the bands the search requires, and the bands your data has</td></tr>
+          <tr><td>g<sub>M</sub>, g<sub>D</sub>, g<sub>max</sub></td><td>ground sample distance (metres per pixel) of the model, the data, and the largest GSD accepted</td></tr>
+          <tr><td>s<sub>D</sub>, s<sub>M</sub></td><td>the input scale (for example reflectance 0–1, or 0–10,000 digital numbers)</td></tr>
+          <tr><td>⊆, ∧, [·]</td><td>subset; "and"; the bracket is 1 when the statement is true and 0 otherwise</td></tr>
+        </table>
+
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the model shelf</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play. The five records pass through the three filters in turn; the caption names each filter and how many records remain.</li>
+        <li>Set the <b>task</b> to scene-classification. Which records survive, and why does R2 fail the band test when you require B11?</li>
+        <li>Clear the GSD limit (set to 30 m). R4 comes back. Explain, from its row, why it is still not a perfect match for 10 m data.</li>
+        <li>In the <b>my data</b> panel, remove B08 and see the compatibility verdict change. Then set the data's scale to 0–10,000 and watch the verdict become "incompatible" for every record.</li>
+        <li>Click a record to show its MLM fields above, and check that the parameter count matches the table.</li></ol></div>
+      <div data-lab="zoofilter"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Searching by name.</b> Names are free text and often say nothing about bands or resolution. Search by task, bands and GSD fields.</li>
+          <li><b>Band order and naming.</b> B8 (10 m, NIR) and B8A (20 m, narrow NIR) are different bands. The same wavelength can carry different names in different catalogues. Match names to the model's list, and then the order.</li>
+          <li><b>Scale mismatch.</b> Digital numbers (0–10,000) and reflectance (0–1) differ by a factor 10,000. The model still runs and returns confident nonsense. Read the scaling in the record and in your pipeline.</li>
+          <li><b>Trusting the claims.</b> A record states parameter counts and input shapes. Check them against the artifact once downloaded (<a href="geo-mlm.html">Module 6</a> covers validation), and check the licence before reuse.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model catalogues</b> for Earth observation publish records like these so that a pipeline can pick a model by task and inputs, the same way a data catalogue picks a scene.</li>
+          <li><b>Reproducible inference</b>: a stored record lets someone run the model a year later with the same band list, normalisation and tiling, without asking the original author.</li>
+          <li><b>Model families</b>: a fine-tuned model can link to its base model with a derived-from link (<a href="geo-mlm.html">Module 6</a>), so the lineage of a foundation model is visible.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the worked example's filters, how many of the five records would remain if the task filter were dropped but the band and GSD filters kept?</summary><div class="ans">Bands ⊇ {B02, B03, B04, B08} keeps R1, R2, R4, R5 (R3 is removed). GSD ≤ 10 m then removes R4, leaving R1, R2 and R5: three records.</div></details>
+        <details class="check"><summary>2. Your data is 10 m, has B02–B08, but its values are digital numbers from 0 to 10,000. R1 expects reflectance 0–1. Is the match compatible?</summary><div class="ans">No. The bands and GSD match, but the scale does not. Divide by 10,000 first (after radiometric correction), and then the record can be checked as compatible.</div></details>
+        <details class="check"><summary>3. Why is "B8" not safely interchangeable with "B8A" when matching a record?</summary><div class="ans">B8 is a broad near-infrared band at 10 m, while B8A is a narrower band at 20 m. They sample different parts of the spectrum at different resolutions, so a model trained on one is not guaranteed to work on the other.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A model record is a STAC Item with MLM fields: task, input bands and shape, resolution, parameters and weights.</li>
+          <li>Search in stages (task, bands, resolution), then check compatibility of your data with the record, including scale.</li>
+          <li>Treat every claim in a record as something to verify once you have the artifact.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- @@NEXT@@ -->
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You now know how an Earth-observation foundation model is pretrained, how multi-temporal stacks are handled, how embeddings are compared and searched, how to fine-tune with few labels, and how to find a pretrained model through its STAC MLM record. Next, <b>Module 8</b> asks the hardest question of any map: how do we know it is right?</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

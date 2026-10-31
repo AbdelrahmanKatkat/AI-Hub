@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · Preparing data · GeoAI</title>
+<meta name="description" content="Turning vector labels into pixel masks, tiling scenes with overlap, normalising bands with training statistics, splitting by space instead of by pixel, augmenting geographic data safely, and writing dataset manifests.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/labs-geo-preparation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="geoai.html">GeoAI</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · Preparing geospatial data for machine learning</h1>
+        <p>A satellite model never sees a "building" or a "field". It sees a stack of numbers on a grid of pixels, with labels on a second grid that somebody has to line up with it. This module is the <b>preprocessing stage</b>: rasterise the labels, cut the scene into tiles, normalise the bands with statistics from training data only, split the map by <i>place</i> rather than by pixel, augment without breaking geography, and write a manifest that records every choice. The one rule to remember: <b>a random split of neighbouring pixels is not a test of generalisation.</b></p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">6 animated labs</span><span class="chip">Hand-worked on 6×6 grids</span><span class="chip">Leakage, counted</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro" id="pipeline-view" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>The pipeline view of this module</h2></div>
+      <div class="prose">
+        <p>In the six-stage GeoAI pipeline this module is stage 2, <b>preprocessing</b>. Every step turns a raw scene and its labels into something a model can train on, and every step has a moment where it could quietly go wrong. The table shows what each step learns from data, what it stores, and what happens at inference.</p>
+        <table class="tbl">
+          <tr><th>Step (lesson)</th><th>Fit or decide on…</th><th>What is stored</th><th>Applied to new data as…</th></tr>
+          <tr><td>Rasterise labels (3.1)</td><td>the pixel grid and the centre rule</td><td>one class map per tile</td><td>same rule, same grid, same CRS</td></tr>
+          <tr><td>Tile &amp; chip (3.2)</td><td>tile size, stride, edge rule</td><td>window offsets for each tile</td><td>same windows, then stitch back</td></tr>
+          <tr><td>Normalise (3.3)</td><td>percentiles on <b>training</b> pixels only</td><td>low and high value per band</td><td><span class="tex">(x-Q_{\text{lo}})/(Q_{\text{hi}}-Q_{\text{lo}})</span>, clipped</td></tr>
+          <tr><td>Split (3.4)</td><td>block or region assignment, buffer width</td><td>block IDs per split</td><td>not applied; it defines the test</td></tr>
+          <tr><td>Augment (3.5)</td><td>which operations keep the meaning</td><td>the augmentation policy</td><td>random, applied to training tiles only</td></tr>
+          <tr><td>Manifest (3.6)</td><td>every fact above</td><td>one JSON file beside the data</td><td>checked by the loader before training</td></tr>
+        </table>
+        <p>Watch the stages run as a single flow of packets. The labs in this module each open one stage in detail.</p>
+      </div>
+      <div data-lab="pipeline" data-id="geoai"></div>
+    </section>
+
+    <!-- ===================== 3.1 LABELS ===================== -->
+    <section class="lesson" id="labels-rasterization" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.1</span><h2>Labels: rasterising polygons</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A town council has drawn every building footprint as a polygon in a GeoPackage file. Our model needs a label for every pixel of a satellite image: <i>building</i> or <i>not building</i>. A polygon is a shape with a boundary; a pixel is a small square. Which pixels does a polygon "own", and what should we do with a pixel that the boundary only just clips?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture the image as a sheet of square tiles lying on the ground, one tile per pixel. A building footprint is a cut-out shape on the same ground. <b>Rasterising</b> means laying the cut-out over the sheet and deciding, for each tile, whether it belongs to the shape.</p>
+        <p>There are several possible rules. You could label a pixel if <i>any</i> part of it is covered, or if <i>most</i> of it is covered, or if its <i>centre</i> is covered. The most common rule, and the default in GDAL's <code>gdal_rasterize</code>, is the <b>pixel-centre rule</b>: look only at the centre point of each square and ask whether it lies inside the polygon. It is a single point test, not an area calculation, so it is fast, simple, and the same on every machine.</p>
+
+        <h3 class="sec">Build it up: a 6×6 grid by hand</h3>
+        <p>To see the rule work we use a toy raster: six columns and six rows of pixels, each pixel 1 metre wide (a convenient toy, not a real sensor). Coordinates are in metres measured from the top-left corner, with <i>y pointing down</i> as in image rows. The pixel in row <i>r</i>, column <i>c</i> covers the square from <i>x = c</i> to <i>c + 1</i> and from <i>y = r</i> to <i>r + 1</i>. Its centre is at <span class="tex">(c+\tfrac12,\ r+\tfrac12)</span>.</p>
+        <p>Our polygon has four corners (vertices), listed in order around its boundary:</p>
+        <div class="eq">A=(1.3,\,1.2),\quad B=(4.8,\,1.6),\quad C=(4.2,\,4.7),\quad D=(1.6,\,4.1)</div>
+
+        <div class="worked"><b>Worked example · step 1, one point test by ray casting</b>
+          <p>How do we decide whether a point is inside a polygon? Shoot a ray from the point to the right, and count how many polygon edges it crosses. An odd count means inside; an even count means outside. Take the centre of row 2, column 2: <span class="tex">p=(2.5,\,2.5)</span>.</p>
+          <p>Check each edge (A–B, B–C, C–D, D–A) to see whether it spans the height <span class="tex">y=2.5</span> and lies to the right of <span class="tex">x=2.5</span>:</p>
+          <ul>
+            <li><b>A–B</b>: from y = 1.2 to 1.6. Does not span y = 2.5. No crossing.</li>
+            <li><b>B–C</b>: from y = 1.6 to 4.7, so it spans 2.5. Where does it cross y = 2.5? <span class="tex">x = 4.8 + \frac{2.5-1.6}{4.7-1.6}(4.2-4.8) = 4.626</span>. That is to the right of 2.5: <b>one crossing</b>.</li>
+            <li><b>C–D</b>: from y = 4.7 to 4.1. Does not span 2.5. No crossing.</li>
+            <li><b>D–A</b>: from y = 4.1 to 1.2, so it spans 2.5. The crossing is at <span class="tex">x = 1.6 + \frac{2.5-4.1}{1.2-4.1}(1.3-1.6) = 1.435</span>. That is <i>left</i> of 2.5, so the ray never meets it: <b>no crossing</b>.</li>
+          </ul>
+          <p>Total: one crossing, which is odd, so <span class="tex">p</span> is inside. Label 1.</p></div>
+
+        <div class="worked"><b>Worked example · step 2, the whole grid</b>
+          <p>Repeat the test for all 36 centres. Rows run top to bottom, columns left to right; <b>1</b> means building, <b>0</b> means not building.</p>
+          <table class="tbl" style="max-width:320px;text-align:center">
+            <tr><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+            <tr><td>0</td><td><b>1</b></td><td><b>1</b></td><td><b>1</b></td><td>0</td><td>0</td></tr>
+            <tr><td>0</td><td><b>1</b></td><td><b>1</b></td><td><b>1</b></td><td><b>1</b></td><td>0</td></tr>
+            <tr><td>0</td><td>0</td><td><b>1</b></td><td><b>1</b></td><td>0</td><td>0</td></tr>
+            <tr><td>0</td><td>0</td><td>0</td><td><b>1</b></td><td>0</td><td>0</td></tr>
+            <tr><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+          </table>
+          <p>Ten pixels are labelled 1.</p></div>
+
+        <div class="worked"><b>Worked example · step 3, compare with the true area</b>
+          <p>The polygon's true area comes from the <b>shoelace formula</b>: <span class="tex">A=\tfrac12\left|\sum_i (x_i y_{i+1}-x_{i+1}y_i)\right|</span>. For our four vertices the sum is <span class="tex">-3.68+15.84+9.70-3.41=18.45</span>, so <span class="tex">A=9.225\ \text{m}^2</span>. The labelled count is 10 pixels, or 10 m². The two numbers differ by 0.78 m², which is the price of a point test.</p>
+          <p>Here is the fraction of each pixel that the polygon actually covers (computed by sampling 2,500 points per pixel):</p>
+          <table class="tbl" style="max-width:420px;text-align:center">
+            <tr><td>0.00</td><td>0.00</td><td>0.00</td><td>0.00</td><td>0.00</td><td>0.00</td></tr>
+            <tr><td>0.00</td><td>0.50</td><td>0.66</td><td>0.55</td><td>0.34</td><td>0.00</td></tr>
+            <tr><td>0.00</td><td>0.57</td><td>1.00</td><td>1.00</td><td>0.63</td><td>0.00</td></tr>
+            <tr><td>0.00</td><td>0.46</td><td>1.00</td><td>1.00</td><td>0.43</td><td>0.00</td></tr>
+            <tr><td>0.00</td><td>0.06</td><td>0.31</td><td>0.54</td><td>0.18</td><td>0.00</td></tr>
+            <tr><td>0.00</td><td>0.00</td><td>0.00</td><td>0.00</td><td>0.00</td><td>0.00</td></tr>
+          </table>
+          <p>Read it against the label grid. The pixel at row 2, column 1 is 57% covered and is labelled 1. The pixel at row 3, column 1 is 46% covered and is labelled 0. The pixel at row 4, column 3 is 54% covered and is labelled 1, while the one at row 4, column 2 (31%) is labelled 0. The rule is <i>not</i> a majority vote. It asks only where the centre is, so a 57% pixel can be in and a 46% pixel out. Over many pixels the errors average out, but for a single small building they can matter.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">p_{rc}=\left(c+\tfrac12,\ r+\tfrac12\right),\qquad L_{rc}=\begin{cases}1 & \text{if } p_{rc}\in P\\ 0 & \text{otherwise}\end{cases}</div>
+        <div class="eq">N(p)=\#\big\{\,e=(i\to j)\in E:\ (y_i>p_y)\neq(y_j>p_y)\ \text{and}\ p_x<x_e(p_y)\big\}</div>
+        <div class="eq">p\in P \iff N(p)\ \text{is odd}</div>
+        <table class="sym">
+          <tr><td><span class="tex">P</span></td><td>the polygon, as a closed region of the plane</td></tr>
+          <tr><td><span class="tex">(r,c)</span></td><td>row and column of a pixel; row 0 is the top row</td></tr>
+          <tr><td><span class="tex">p_{rc}</span></td><td>the centre of pixel (r, c)</td></tr>
+          <tr><td><span class="tex">L_{rc}</span></td><td>the class label of that pixel (1 building, 0 background)</td></tr>
+          <tr><td><span class="tex">E</span>, <span class="tex">e=(i\to j)</span></td><td>the polygon's edges; each joins vertex i to vertex j, going around the boundary</td></tr>
+          <tr><td><span class="tex">x_e(p_y)</span></td><td>the x-coordinate where edge e crosses the horizontal line at height <span class="tex">p_y</span></td></tr>
+          <tr><td><span class="tex">N(p)</span></td><td>number of edges the rightward ray from p crosses; odd means inside (ray-casting parity test)</td></tr>
+          <tr><td><span class="tex">A</span></td><td>area by the shoelace formula, from the vertices in order</td></tr>
+        </table>
+
+        <h3 class="sec" style="max-width:780px">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play and watch one cell at a time. For each centre the red ticks mark where the ray crosses an edge. Count them yourself before the caption does.</li>
+          <li>Edit the vertex list. Move vertex C from (4.2, 4.7) to (4.2, 3.2). Watch the labelled count drop and notice which cells change.</li>
+          <li>Turn on the coverage numbers. Find two cells whose coverage is between 40% and 60%, one labelled and one not. Explain why neither the rule nor the number is wrong.</li></ol></div>
+        <div data-lab="rasterLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Small objects vanish.</b> A 2 m × 2 m shed on a 10 m pixel grid covers 4% of one pixel. Its centre may fall in no pixel at all, so the shed disappears from the labels. Use a finer grid, or accept that tiny objects need a different label type.</li>
+          <li><b>Pixel corner versus pixel centre.</b> GeoTIFFs can declare that a georeference refers to the pixel <i>area</i> (the usual case) or the pixel <i>point</i> (its centre). Mix them up and every label shifts by half a pixel. Check the raster type before you rasterise.</li>
+          <li><b>Mismatched CRS.</b> If the polygons are in latitude and longitude and the image is in UTM metres, the rasterised labels land somewhere else entirely. Always reproject labels to the image's CRS first (Module 1).</li>
+          <li><b>Overlapping polygons.</b> When two footprints overlap, the last one drawn wins unless you say otherwise. Decide the order, or flag the conflict.</li>
+          <li><b>Label noise is spatial.</b> A boundary digitised from a 0.5 m aerial photograph and applied to 10 m pixels can be off by a whole pixel. Record the digitising scale and date with the labels (see lesson 3.6).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Building-footprint benchmarks such as SpaceNet publish polygons; training a segmentation network (Module 5) needs them as a class map on the image grid, which is exactly this step.</li>
+          <li>Land-cover maps and crop-type labels are often collected as polygons in the field, then rasterised with the centre rule before training a pixel classifier (Module 4).</li>
+          <li>The same class map becomes the target of a per-pixel cross-entropy or Dice loss, so any label error becomes a training error.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 10 m pixel is 80% covered by a polygon, but its centre lies just outside the polygon. What label does the centre rule give?</summary><div class="ans">0. The rule looks only at the centre, so the 80% coverage is ignored. This is why the rule is a convention, not a measurement of area.</div></details>
+        <details class="check"><summary>2. A rightward ray from a point crosses the polygon boundary 2 times. Inside or outside?</summary><div class="ans">Outside. Two is even. A point is inside exactly when its ray crosses the boundary an odd number of times.</div></details>
+        <details class="check"><summary>3. A 2 m × 2 m car park lies on a 10 m grid. What is its expected number of labelled pixels, and why can the answer be zero?</summary><div class="ans">Its area is 4 m², and one pixel is 100 m², so the expected count is 4/100 = 0.04 pixels. A pixel gets a label only if its centre (one point in 100 m²) falls inside the car park. Most of the time no centre falls inside, so the car park is simply absent from the labels.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Rasterising means deciding, for each pixel, whether its centre lies inside the polygon.</li>
+          <li>The ray-casting test counts boundary crossings; an odd count means inside.</li>
+          <li>The centre rule is a point test, not an area vote. It can disagree with coverage, and small objects can disappear.</li>
+          <li>Check CRS and the pixel-area versus pixel-point convention before you trust a label grid.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 TILING ===================== -->
+    <section class="lesson" id="tiling-chipping" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.2</span><h2>Tiling, chipping &amp; overlap</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A scene is 1000 × 1000 pixels at 10 m. A neural network trains on fixed-size inputs, usually a few hundred pixels on each side, and a GPU cannot hold the whole scene at once. How do we cut the scene into equal pieces, how many pieces do we get, and what happens at the edges and at the seams between pieces?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Cutting a scene into <b>tiles</b> (also called <b>chips</b> or <b>patches</b>) is like cutting a loaf into equal slices. Each slice has the same size, which lets us batch them together. The trouble is the cut. A building that straddles a seam appears as two half-buildings, one in each tile, and the network sees neither whole. Near a tile border the network also has less surrounding context, so its predictions there are worse.</p>
+        <p><b>Overlap</b> solves this. Neighbouring tiles share a strip of pixels, so every pixel is seen well inside at least one tile. The distance you move the window between tiles is the <b>stride</b>: tile size minus overlap.</p>
+
+        <h3 class="sec">Build it up: one axis first</h3>
+        <p>Start in one dimension. Take a scene that is <span class="tex">S=1000</span> pixels long, tiles that are <span class="tex">T=256</span> pixels long, and an overlap of <span class="tex">O=32</span> pixels. The stride is <span class="tex">s=T-O=224</span>.</p>
+
+        <div class="worked"><b>Worked example · step 1, place the windows</b>
+          <p>The first window starts at 0 and covers pixels 0 to 255. Move the window by the stride each time: starts at 0, 224, 448, 672.</p>
+          <ul>
+            <li>Window 1 covers 0–256 (exclusive end).</li>
+            <li>Window 2 covers 224–480. It shares 224–256, which is 32 pixels with window 1. This is the overlap.</li>
+            <li>Window 3 covers 448–704. Window 4 covers 672–928.</li>
+          </ul>
+          <p>The fourth window ends at 928. The scene runs to 1000, so <b>72 pixels are still uncovered</b>.</p></div>
+
+        <div class="worked"><b>Worked example · step 2, handle the edge</b>
+          <p>There are two standard fixes, and both need a fifth window.</p>
+          <ul>
+            <li><b>Shift the last window</b> so it ends exactly at the edge: it starts at <span class="tex">S-T=744</span> and covers 744–1000. It now overlaps window 4 by <span class="tex">928-744=184</span> pixels, much more than 32. That is acceptable but wasteful, and you should record it.</li>
+            <li><b>Pad the scene</b> to the length the windows need: <span class="tex">224\cdot4+256=1152</span>. This adds <span class="tex">1152-1000=152</span> pixels of no-data, which the loader must ignore.</li>
+          </ul>
+          <p>Both give five windows along this axis, so the same count appears in two dimensions.</p></div>
+
+        <div class="worked"><b>Worked example · step 3, count the tiles</b>
+          <p>The general count for one axis is <span class="tex">n=\left\lceil \frac{S-T}{s}\right\rceil+1=\left\lceil \frac{744}{224}\right\rceil+1=\lceil 3.32\rceil+1=5</span>. For a square scene: <span class="tex">n\times n = 25</span> tiles.</p>
+          <p>Now the dangerous shortcut. If you count only the windows that fit completely, <span class="tex">\lfloor (S-T)/s\rfloor+1=4</span> per axis, you get <b>16 tiles</b> and an unlabelled, never-trained strip of 72 pixels along the right and bottom edges. No error is raised; the model just never learns those rows. This is the most common silent bug in tiling code.</p></div>
+
+        <div class="worked"><b>Worked example · step 4, what the overlap costs</b>
+          <p>One tile of 256 × 256 pixels with 4 bands stored as 32-bit floats occupies <span class="tex">256\cdot256\cdot4\cdot4=1{,}048{,}576</span> bytes, which is 1 MiB. Twenty-five tiles hold 25 MiB of pixels. Because the tiles overlap, each scene pixel is read on average <span class="tex">25\cdot256^2/1000^2=1.64</span> times. That 64% extra work is the <b>overlap tax</b>. A bigger tile sees more context (a 512 tile covers a whole field) but costs four times the memory per tile.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">s = T - O,\qquad n = \left\lceil \frac{S-T}{s}\right\rceil + 1\ \ (S\ge T),\qquad x_k = \min\big(k\,s,\ S-T\big),\quad k=0,\dots,n-1</div>
+        <table class="sym">
+          <tr><td><span class="tex">S</span></td><td>length of the scene along one axis, in pixels</td></tr>
+          <tr><td><span class="tex">T</span></td><td>tile length, in pixels</td></tr>
+          <tr><td><span class="tex">O</span></td><td>overlap between neighbouring tiles, in pixels; must satisfy <span class="tex">0\le O&lt;T</span></td></tr>
+          <tr><td><span class="tex">s</span></td><td>stride, the step between window starts</td></tr>
+          <tr><td><span class="tex">n</span></td><td>number of tiles along this axis (the total is <span class="tex">n\times n</span> for a square scene)</td></tr>
+          <tr><td><span class="tex">x_k</span></td><td>start of tile k; the <span class="tex">\min</span> pins the last tile to the edge (the "shift" rule)</td></tr>
+        </table>
+
+        <h3 class="sec" style="max-width:780px">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the tile to 256 and the overlap to 32. Confirm the readout says 5 × 5 = 25 tiles. Then switch the edge rule to "drop partial" and watch the count fall to 16 and the uncovered strip appear.</li>
+          <li>Set the overlap to 0. Watch the seams: press play, switch to "overwrite", and find the tile borders in the stitched image. Then move the overlap up and feather the blend. Notice that seams soften only when neighbours overlap.</li>
+          <li>Change the scene size to 2000. Predict the tile count with the formula before you read it off.</li></ol></div>
+        <div data-lab="tileLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The missing strip.</b> Dropping partial windows silently discards the scene's edges. Always check that the union of tiles covers the scene.</li>
+          <li><b>Labels cut differently from images.</b> Every tile needs the image and the label cut from the same window. A mismatch of one pixel teaches the network a wrong alignment.</li>
+          <li><b>Losing the window offsets.</b> Store where each tile came from (scene ID, x, y). Without it you cannot stitch predictions back, and you cannot check which tiles touch which.</li>
+          <li><b>Random splits of overlapping tiles.</b> Two tiles that share 32 pixels are nearly the same input. Put one in training and one in validation and you have a leak (lesson 3.4).</li>
+          <li><b>Discarding empty tiles.</b> Dropping tiles with no labelled pixels is a useful speed-up, but it changes the class balance and the base rate; record how many you dropped.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Chip datasets such as xView and SpaceNet ship pre-cut tiles; in both cases the window offsets and the overlap policy are part of the dataset's documentation.</li>
+          <li>Sliding-window inference over a whole scene (Module 5, <i>inference-at-scale</i>) uses exactly the stride and overlap defined here, with the overlaps blended to avoid seams.</li>
+          <li>Vision transformers and U-Nets with a fixed input size impose the same constraint: the scene must be cut to that size before the network sees it.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A scene is 2000 × 2000 pixels, tiles are 256, overlap is 32. How many tiles in total?</summary><div class="ans">Stride 224. Per axis: <span class="tex">\lceil (2000-256)/224\rceil+1=\lceil 7.79\rceil+1=9</span>. Total <span class="tex">9\times9=81</span> tiles.</div></details>
+        <details class="check"><summary>2. Tiles are 256 with no overlap (stride 256) on a 1000-pixel scene, using the shift rule. How many tiles per axis, and where does the last one start?</summary><div class="ans">Per axis: <span class="tex">\lceil 744/256\rceil+1=\lceil 2.91\rceil+1=4</span>. The windows start at 0, 256, 512 and then <span class="tex">\min(768, 744)=744</span>. The last window overlaps the third by <span class="tex">768-744=24</span> pixels even though the nominal overlap is zero.</div></details>
+        <details class="check"><summary>3. Why is a random split of overlapping tiles a leak, even though the tiles are different files?</summary><div class="ans">Neighbouring tiles share pixels. A validation tile that overlaps a training tile by 32 pixels has seen 32 pixels of its own content during training. The model can score well by recognising those pixels, not by generalising. Split by region, not by tile (lesson 3.4).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Stride = tile − overlap; the count per axis is <span class="tex">\lceil (S-T)/s\rceil+1</span> when the last tile is pinned to the edge.</li>
+          <li>The naive count drops the edge and silently loses a strip of the scene.</li>
+          <li>Overlap prevents seams and gives every pixel context, at a computational cost you can compute.</li>
+          <li>Store window offsets, cut labels with the same windows, and never split tiles of the same scene at random.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 NORMALISATION ===================== -->
+    <section class="lesson" id="band-normalization" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.3</span><h2>Band selection &amp; normalisation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The red band of a Sentinel-2 scene stores integers. Dark water might be near 300, bright sand near 4000, and a cloud or a saturated roof can reach 10,000 or more. A network's first layer learns weights for inputs of a sensible size. If we feed raw integers, a single cloud pixel dominates the signal. How do we scale each band so that the scale is the same for training and for the test scene?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a thermometer whose scale you choose. If you set it to run from −100 °C to 100 °C, every room temperature sits near the middle and the difference between 20 and 22 is hard to see. If you set it to run from 15 °C to 30 °C, that difference fills the scale. Normalisation picks the range of the scale. <b>Percentile clipping</b> picks the range from the data itself: the 2nd percentile becomes 0, the 98th becomes 1, and anything outside is clipped. A handful of extreme pixels (cloud, saturated roofs, sensor noise) then cannot squash the other 96% into a corner.</p>
+        <p>The rule that matters most is in the word <i>training</i>. The percentiles must be computed on training pixels only, and the same two numbers are then applied to every other scene, including the test set.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example · step 1, the physical scale</b>
+          <p>Sentinel-2 Level-2A reflectance is stored as an integer equal to reflectance times 10,000. So a stored value of 1650 means reflectance 0.165. Dividing by 10,000 is a <i>physical</i> conversion; it does not depend on the data. Check the product's processing baseline before you do it: from processing baseline 04.00 (January 2022) onwards, Sentinel-2 values include an offset of 1000 that must be subtracted first, so a stored 2650 means <span class="tex">(2650-1000)/10000=0.165</span>. Ignoring the offset makes every pixel look 0.1 brighter.</p></div>
+
+        <div class="worked"><b>Worked example · step 2, percentiles on a 5-pixel band</b>
+          <p>Five training pixels of one band, already sorted: <span class="tex">812,\ 1040,\ 1650,\ 2210,\ 9800</span>. Five is far too few for real work, but it makes every step visible. We use the common definition with linear interpolation: the <i>p</i>-th percentile sits at position <span class="tex">h = \frac{p}{100}(n-1)</span> in the sorted list, and between two sorted values we interpolate.</p>
+          <ul>
+            <li>2nd percentile: <span class="tex">h = 0.02\cdot4 = 0.08</span>, so <span class="tex">Q_2 = 812 + 0.08(1040-812) = 830.24</span>.</li>
+            <li>98th percentile: <span class="tex">h = 0.98\cdot4 = 3.92</span>, so <span class="tex">Q_{98} = 2210 + 0.92(9800-2210) = 9192.8</span>.</li>
+          </ul>
+          <p>The denominator is <span class="tex">Q_{98}-Q_2 = 8362.56</span>.</p></div>
+
+        <div class="worked"><b>Worked example · step 3, scale and clip</b>
+          <p>The formula is <span class="tex">x' = \text{clip}\!\left(\dfrac{x-Q_2}{Q_{98}-Q_2},\ 0,\ 1\right)</span>. Apply it to the five training pixels:</p>
+          <table class="tbl" style="max-width:520px">
+            <tr><th>x (raw)</th><th>(x − 830.24) / 8362.56</th><th>after clipping</th></tr>
+            <tr><td>812</td><td>−0.0022</td><td>0.0000</td></tr>
+            <tr><td>1040</td><td>0.0251</td><td>0.0251</td></tr>
+            <tr><td>1650</td><td>0.0980</td><td>0.0980</td></tr>
+            <tr><td>2210</td><td>0.1650</td><td>0.1650</td></tr>
+            <tr><td>9800</td><td>1.0726</td><td><b>1.0000</b></td></tr>
+          </table>
+          <p>The cloud-like value 9800 is clipped to 1, and the value 812 falls just below the lower percentile and is clipped to 0. The middle values keep their order and spacing.</p></div>
+
+        <div class="worked"><b>Worked example · step 4, the test scene</b>
+          <p>A test scene has pixels 2600, 11000 and 700. Apply the <i>training</i> numbers: 2600 becomes <span class="tex">0.2116</span>, 11000 becomes 1 (clipped), and 700 becomes 0 (clipped). Now suppose someone recomputes the percentiles on the test pixels alone (lower 776, upper 10,664). The pixel 2600 becomes <span class="tex">(2600-776)/9888=0.1845</span>. The same ground now has two different inputs, depending on which scene it sits in. The model's errors then reflect the scene's histogram, not the land cover.</p>
+          <p>(Five pixels cannot give meaningful percentiles, which is why real statistics come from many thousands of pixels.)</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">Q_p=x_{(\lfloor h\rfloor)}+(h-\lfloor h\rfloor)\big(x_{(\lfloor h\rfloor+1)}-x_{(\lfloor h\rfloor)}\big),\qquad h=\frac{p}{100}(n-1)</div>
+        <div class="eq">x'_{b}=\min\!\Big(1,\ \max\!\Big(0,\ \dfrac{x_b-Q^{\text{train}}_{\text{lo},b}}{Q^{\text{train}}_{\text{hi},b}-Q^{\text{train}}_{\text{lo},b}}\Big)\Big)</div>
+        <table class="sym">
+          <tr><td><span class="tex">x_{(k)}</span></td><td>the k-th smallest training value of the band (sorted, no-data removed)</td></tr>
+          <tr><td><span class="tex">n</span></td><td>number of training pixels used</td></tr>
+          <tr><td><span class="tex">p</span></td><td>percentile, e.g. 2 or 98</td></tr>
+          <tr><td><span class="tex">Q^{\text{train}}_{\text{lo}/\text{hi},b}</span></td><td>the low and high percentile of band b, computed on training pixels only</td></tr>
+          <tr><td><span class="tex">b</span></td><td>band index; each band has its own pair of numbers (their order must match the manifest)</td></tr>
+          <tr><td><span class="tex">\text{clip}(\cdot,0,1)</span></td><td>forces values outside the range into 0 or 1</td></tr>
+        </table>
+
+        <h3 class="sec" style="max-width:780px">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the dots fall from raw values into the normalised range. Find the dots that pile up at 0 and at 1: these are the clipped pixels.</li>
+          <li>Move the upper percentile from 98 to 100. Notice that the cloud pixels stop being clipped and the rest of the scale is squeezed. This is the cost of a range set by outliers.</li>
+          <li>Switch the test scene from "train statistics" to "its own statistics". Watch the test dots move, and read the change for the example pixel.</li></ol></div>
+        <div data-lab="normLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Fitting on everything.</b> Computing percentiles on train, validation and test together lets the test scene shape the scale. This is the same leak as scaling a dataset before splitting it.</li>
+          <li><b>Per-tile statistics.</b> If every tile is stretched to its own range, a dark forest tile and a bright desert tile both look equally bright. You destroy the absolute information the model needs.</li>
+          <li><b>No-data in the statistics.</b> A value of 0 at the scene edge is not a reflectance. Exclude no-data from the percentiles and mask it in the output.</li>
+          <li><b>Forgetting the offset.</b> The post-2022 Sentinel-2 offset is a silent shift of about 0.1 in reflectance; it changes indices and thresholds.</li>
+          <li><b>Mixing band order.</b> The statistics are a list in band order. If the list is [B02, B03, B04, B08] and the data are [B04, B03, B02, B08], every band is scaled with another band's numbers.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Foundation models for multispectral imagery ship their own per-band means and standard deviations, computed on their pretraining data. Reuse those numbers as given when you fine-tune; recomputing them on a small local dataset makes the inputs incompatible with the pretrained weights.</li>
+          <li>Standard image pipelines normalise with fixed per-channel statistics. Multispectral data need the same discipline with per-band numbers, stored in the manifest (lesson 3.6).</li>
+          <li>Percentile clipping is also the usual way to make a single cloud or saturated roof harmless in a stacked time series (Module 7).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A band's training 2nd percentile is 300 and its 98th is 7300. What is the normalised value of a pixel with value 8000?</summary><div class="ans">Numerator <span class="tex">8000-300=7700</span>, denominator 7000, so the ratio is 1.1. Clipping gives 1.</div></details>
+        <details class="check"><summary>2. A product has a stored red value of 2650 and carries the +1000 offset. What is the reflectance?</summary><div class="ans"><span class="tex">(2650-1000)/10000=0.165</span>. Without the offset you would get 0.265.</div></details>
+        <details class="check"><summary>3. Why must the percentiles come from training data alone, even when the test scene is in the same region?</summary><div class="ans">Because the test scene must be treated as unseen data. If its pixels influence the scale, the test inputs depend on information the model would not have in production, and the reported score is optimistic. The same number must also be reusable when a new scene arrives.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Convert to physical units first (÷10,000, minus any offset), then normalise.</li>
+          <li>Percentile clipping sets the range from the data and tames outliers; the formula is linear interpolation between sorted values.</li>
+          <li>Learn <span class="tex">Q_{\text{lo}}</span> and <span class="tex">Q_{\text{hi}}</span> per band, from training pixels only, and apply the same numbers everywhere.</li>
+          <li>Never compute statistics per tile; never let the test scene set the scale.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 SPATIAL SPLITS ===================== -->
+    <section class="lesson" id="spatial-splits" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.4</span><h2>Spatial train, validation &amp; test splits</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We split our pixels at random, 70% for training and 30% for evaluation. Validation accuracy comes back at 95%. We deploy the model to a valley 40 km away and it fails. Why did a careful-looking random split give such an optimistic number, and how should the map be divided instead?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Nearby places are alike. A field's neighbours share its soil, its crop, its shadows and its season. Geographers call this <b>spatial autocorrelation</b> (Tobler's first law: near things are more related than distant things). A random split puts a training pixel right next to a validation pixel, and that validation pixel is nearly a copy of its training neighbour. The model is then graded on whether it remembers its neighbours, which is not the same as whether it understands land cover.</p>
+        <p>The honest fix is to cut the <i>map</i> into regions, give each region to exactly one split, and leave a gap (a <b>buffer</b>) where the regions meet. A new valley then really is new to the model.</p>
+
+        <h3 class="sec">Build it up: a 6 × 6 map of blocks</h3>
+        <p>Divide a study area into a grid of 36 blocks, each large enough to hold many pixels. Two blocks are <b>neighbours</b> if they share an edge. In a 6 × 6 grid there are 6 × 5 = 30 horizontal neighbour pairs and 30 vertical ones, so <b>60 neighbour pairs</b> in total. A pair that has one block in training and one in a held-out split is a <b>leak</b>: its pixels are alike, so the model's score on the held-out block is inflated.</p>
+
+        <div class="worked"><b>Worked example · step 1, a random split of blocks</b>
+          <p>Give each block a random number <i>u</i> in [0, 1), in row-major order, from a fixed seed (7). If <span class="tex">u&lt;0.70</span> the block is training, if <span class="tex">u&lt;0.85</span> it is validation, otherwise test. Here is the result (R = train, V = validation, X = test):</p>
+          <table class="tbl" style="max-width:300px;text-align:center">
+            <tr><td>R</td><td>R</td><td>X</td><td>R</td><td>R</td><td>R</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>V</td><td>R</td><td>R</td></tr>
+            <tr><td>V</td><td>R</td><td>R</td><td>R</td><td>R</td><td>R</td></tr>
+            <tr><td>R</td><td>X</td><td>R</td><td>X</td><td>R</td><td>R</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>V</td><td>R</td><td>X</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>X</td><td>R</td><td>X</td></tr>
+          </table>
+          <p>Counting the 60 neighbour pairs: train–validation pairs 9, train–test pairs 15, validation–test pairs 2. The <b>leaking pairs are 9 + 15 = 24 of 60</b>. Almost half of the neighbour relations connect a training block to a block the model is graded on. Notice the test block at row 3, column 1, which sits in a sea of training blocks.</p></div>
+
+        <div class="worked"><b>Worked example · step 2, a spatial split</b>
+          <p>Now assign whole columns: columns 0 to 3 are training (24 blocks), column 4 is validation (6 blocks), column 5 is test (6 blocks).</p>
+          <table class="tbl" style="max-width:300px;text-align:center">
+            <tr><td>R</td><td>R</td><td>R</td><td>R</td><td>V</td><td>X</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>R</td><td>V</td><td>X</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>R</td><td>V</td><td>X</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>R</td><td>V</td><td>X</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>R</td><td>V</td><td>X</td></tr>
+            <tr><td>R</td><td>R</td><td>R</td><td>R</td><td>V</td><td>X</td></tr>
+          </table>
+          <p>The leaks are now only at the single border between training and validation: <b>6 train–validation pairs</b>. There are no train–test pairs at all. The validation and test columns touch (6 pairs), but neither is trained on, so it does not leak training information.</p></div>
+
+        <div class="worked"><b>Worked example · step 3, add a buffer</b>
+          <p>A buffer of one block removes every training block that touches a held-out block. Here that is column 3 (6 blocks). Training drops from 24 blocks to 18.</p>
+          <p>The train–validation leak falls from 6 to <b>0</b>. The price is 25% of the training blocks, which is what honesty costs. In practice you choose the buffer width from the scale of spatial correlation in your data (for example, from how far apart labels must be before their values stop being alike).</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal{E}=\{(b,b'):\ b\text{ and }b'\text{ share an edge}\},\qquad L(s)=\#\{(b,b')\in\mathcal{E}:\ \{s(b),s(b')\}=\{\text{train},\,\text{held-out}\}\}</div>
+        <div class="eq">d(b)=\min_{h\,\in\,\text{held-out}}\operatorname{dist}(b,h),\qquad \text{block } b\text{ is removed from training if } d(b)\le k</div>
+        <table class="sym">
+          <tr><td><span class="tex">b</span>, <span class="tex">b'</span></td><td>blocks (regions) of the map</td></tr>
+          <tr><td><span class="tex">\mathcal E</span></td><td>the set of neighbouring pairs; for a 6 × 6 grid it has 60 elements</td></tr>
+          <tr><td><span class="tex">s(b)</span></td><td>the split a block belongs to: train, validation or test</td></tr>
+          <tr><td><span class="tex">L(s)</span></td><td>leakage: the number of neighbouring pairs that connect a training block to a held-out block</td></tr>
+          <tr><td><span class="tex">\operatorname{dist}</span></td><td>the number of block-steps between two blocks, moving across shared edges</td></tr>
+          <tr><td><span class="tex">k</span></td><td>buffer width in blocks</td></tr>
+        </table>
+
+        <h3 class="sec" style="max-width:780px">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the random mode and press play. Watch each neighbour pair get checked. Count how many turn red before the counter says so.</li>
+          <li>Switch to spatial blocks. The red borders should shrink to one column. Then raise the buffer to 1 and watch the training blocks turn grey.</li>
+          <li>Press "new random seed" several times. The leak count changes every time, which is the point: a single random split is a lottery.</li></ol></div>
+        <div data-lab="splitLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Blocks smaller than the correlation.</b> If a block is smaller than the distance over which land cover stays alike, a block-level split still leaks along its borders. Choose block size from the data, not from convenience.</li>
+          <li><b>Buffering one side only.</b> A buffer between training and validation is not enough if the validation and test sets touch: hyperparameters tuned on validation can then leak into test. Buffer every boundary between sets that are compared.</li>
+          <li><b>Space is not time.</b> A spatial split does not stop the same place appearing in two years. If the same field is in training in 2023 and in test in 2024, use a spatio-temporal grouping.</li>
+          <li><b>Stratifying at the pixel level.</b> Balancing classes across random pixels spreads rare classes evenly, which hides the spatial leak instead of removing it.</li>
+          <li><b>Regions are a choice of question.</b> Leave-one-region-out tests generalisation to new places; random blocks test interpolation within the study area. Say which one you report.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Published Earth-observation benchmarks that report very high random-split accuracy often fall sharply when re-evaluated with spatial blocks. The gap is the leak.</li>
+          <li>Spatial cross-validation is available in R (for example the <code>blockCV</code> package), and grouped splitting in Python (for example scikit-learn's <code>GroupKFold</code> with one group per block).</li>
+          <li>Model-zoo and foundation-model evaluations (Module 7) rely on region-held-out splits so that a "new place" really is new.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many neighbour pairs does a 3 × 3 grid of blocks have?</summary><div class="ans">Horizontal: 3 rows × 2 = 6. Vertical: 2 × 3 columns = 6. Total 12.</div></details>
+        <details class="check"><summary>2. A 5 × 5 grid: training is columns 0–2, validation is column 3, test is column 4. How many train–validation pairs, and what does a buffer of 1 do?</summary><div class="ans">The border between columns 2 and 3 has 5 pairs (one per row), so the leak is 5. A buffer of 1 removes column 2 from training, which removes those five pairs. The leak becomes 0 and the training set loses a column.</div></details>
+        <details class="check"><summary>3. Two random splits of the same map give different leak counts. Which one should you trust?</summary><div class="ans">Neither as a score. Both are leaky; the number depends on luck. Use a spatial split with a buffer and report the leak count (here it is 0), so the reader can see the split is honest.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Nearby pixels are alike, so a random pixel or tile split leaks information from training into evaluation.</li>
+          <li>Split the map into regions; count the neighbour pairs that connect training to held-out regions.</li>
+          <li>A buffer removes the leak at the cost of training data. Choose its width from the data's spatial scale.</li>
+          <li>Report the split method and leak count with every score.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 AUGMENTATION ===================== -->
+    <section class="lesson" id="augmentation-geo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.5</span><h2>Geometric &amp; band-aware augmentation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We have 300 labelled tiles, which is not many. Rotating and flipping each one looks like a free way to get 2,400 tiles. But every tile here is georeferenced with north at the top. If we rotate a tile, does the georeference still describe it, and does the model still see the same land? Which augmentations are safe, and which quietly teach the network something false?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Augmentation is a promise: "this transformed input should still have the same label". A building rotated by 90 degrees is still a building, so for appearance-based classes rotations and flips are usually safe. But a georeferenced tile is also a <i>map</i>. Its layout says where north, east and south are. Rotate the pixels without changing that description and you have made a map that lies about direction. Some signals depend on direction: shadows point away from the sun, rivers flow downhill, slopes face a particular way, roads have a preferred orientation.</p>
+        <p>So there are two questions for every augmentation: does the <b>image</b> still show the same thing, and does the <b>geography</b> still describe it?</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example · step 1, rotate a 3 × 3 tile</b>
+          <p>Label the pixels by position, with <b>a</b> at the north-west corner:</p>
+          <table class="tbl" style="max-width:150px;text-align:center"><tr><td>a</td><td>b</td><td>c</td></tr><tr><td>d</td><td>e</td><td>f</td></tr><tr><td>g</td><td>h</td><td>i</td></tr></table>
+          <p>Rotate 90° clockwise. The new pixel in row <i>r</i>, column <i>c</i> is taken from the old row <i>n−1−c</i>, column <i>r</i>. The result:</p>
+          <table class="tbl" style="max-width:150px;text-align:center"><tr><td>g</td><td>d</td><td><b>a</b></td></tr><tr><td>h</td><td>e</td><td>b</td></tr><tr><td>i</td><td>f</td><td>c</td></tr></table>
+          <p>The north-west corner <b>a</b> is now in the north-east. Flipping left to right gives <span class="tex">c\,b\,a\ /\ f\,e\,d\ /\ i\,h\,g</span>, which also moves <b>a</b> to the north-east, but mirrors east and west as well.</p></div>
+
+        <div class="worked"><b>Worked example · step 2, what the georeference says</b>
+          <p>The file's georeference says: <i>pixel (0, 0) is the north-west corner, and north is up.</i> After the rotation, pixel (0, 0) holds <b>g</b>, which was the south-west corner. If we keep the old georeference, the model is told that the south-west corner is in the north-west, and every feature is placed about 180° from its real position in the tile's frame.</p>
+          <p>There are two honest options. (i) Rotate the labels with the pixels and record a <b>new transform</b> that says where north now points. (ii) Use the transformed tile for appearance learning only, and flag it as <i>not georeferenced</i>. What you must never do is keep the old transform silently.</p></div>
+
+        <div class="worked"><b>Worked example · step 3, band-aware colour augmentation</b>
+          <p>NDVI is <span class="tex">(\text{NIR}-\text{Red})/(\text{NIR}+\text{Red})</span>. A vegetated pixel with Red = 0.10 and NIR = 0.40 has NDVI <span class="tex">0.30/0.50=0.600</span>.</p>
+          <ul>
+            <li><b>Brightness, applied to all bands equally</b> (a haze or exposure change, factor 1.2): Red 0.12, NIR 0.48, NDVI <span class="tex">0.36/0.60=0.600</span>. Unchanged, because the factor cancels in the ratio.</li>
+            <li><b>Independent jitter per band</b> (Red × 1.2, NIR × 0.8): Red 0.12, NIR 0.32, NDVI <span class="tex">0.20/0.44=0.455</span>. The vegetation now looks much sparser than it is.</li>
+          </ul>
+          <p>A colour augmentation is safe for an index only if the index is invariant to it. Scale all bands together, or jitter in ways that preserve ratios, not band by band.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{rot}_{90}\colon\ (i,j)\mapsto(j,\ n-1-i)\qquad\text{for an } n\times n \text{ tile, with } (i,j) \text{ = (row, column)}</div>
+        <div class="eq">\text{NDVI}(\kappa N,\kappa R)=\frac{\kappa N-\kappa R}{\kappa N+\kappa R}=\text{NDVI}(N,R)\quad\text{for any }\kappa>0</div>
+        <table class="sym">
+          <tr><td><span class="tex">(i,j)</span></td><td>row and column of a pixel in the original tile</td></tr>
+          <tr><td><span class="tex">n</span></td><td>tile side length, in pixels</td></tr>
+          <tr><td><span class="tex">\text{rot}_{90}</span></td><td>the 90° clockwise rotation as a pixel permutation; no interpolation, so values are unchanged</td></tr>
+          <tr><td><span class="tex">N, R</span></td><td>near-infrared and red reflectance of a pixel</td></tr>
+          <tr><td><span class="tex">\kappa</span></td><td>a common brightness factor applied to every band</td></tr>
+        </table>
+
+        <h3 class="sec" style="max-width:780px">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Apply a single "Rotate 90° CW" and read the status line. Then switch "update the georeference" on and off and compare.</li>
+          <li>Turn off "transform labels with the image" and rotate. Notice that the building outline no longer sits on the building.</li>
+          <li>In the spectral panel, set the brightness factor to 1.2 and watch NDVI stay put. Then jitter the bands independently and watch it move.</li></ol></div>
+        <div data-lab="augLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Rotated labels, unrotated pixels.</b> The easiest bug in the whole module. Always transform image and label with the same function, and check one tile visually.</li>
+          <li><b>Direction-dependent classes.</b> Shadows encode the sun's position, and rivers and slopes encode a downhill direction. A flipped shadow points the wrong way for the date and time the image was acquired.</li>
+          <li><b>Arbitrary angles.</b> Multiples of 90° are exact. A rotation of 17° needs resampling, which blurs pixels and leaves empty corners that must be masked.</li>
+          <li><b>Flips are mirrors.</b> A left–right flip reverses east and west. A georeference can describe that only with a negative pixel width, which many tools do not expect.</li>
+          <li><b>Independent band jitter.</b> It changes indices and thresholds, so the model learns a physically impossible spectrum.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Many segmentation pipelines apply random flips and 90° rotations to training chips. This is appropriate for building and road appearance, and it is why the georeference must travel with the data.</li>
+          <li>Models for vegetation or water monitoring that use NDVI or NDWI as inputs rely on ratio-preserving colour augmentation; otherwise the index no longer means what the model is told it means.</li>
+          <li>Sun-synchronous satellite imagery has consistent illumination geometry. Strong rotation augmentation can teach the model shadow-direction shortcuts that do not hold for the next season.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In a 3 × 3 tile, where does the north-east corner end up after a 90° clockwise rotation?</summary><div class="ans">The south-east corner. Using the rule, the old pixel (0, 2) moves to (2, 2). Visually, a clockwise turn carries the north-east corner to the south-east.</div></details>
+        <details class="check"><summary>2. A tile has Red = 0.05 and NIR = 0.25. Multiply both by 1.5. Is the NDVI unchanged?</summary><div class="ans">Yes. Before: <span class="tex">0.20/0.30=0.667</span>. After: Red 0.075, NIR 0.375, giving <span class="tex">0.30/0.45=0.667</span>. A common factor cancels in the ratio.</div></details>
+        <details class="check"><summary>3. Why is a flipped tile with the old georeference wrong even though every pixel is a real pixel?</summary><div class="ans">Because the georeference maps each array position to a place on the ground. After the flip, the array position no longer holds the content it had, so the same position is now assigned to the wrong ground location.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An augmentation must preserve the label <i>and</i> the geography the tile describes.</li>
+          <li>90° rotations and flips are exact on the pixel grid, but they change north; transform the georeference with them or flag the tile.</li>
+          <li>Brightness applied equally to all bands preserves ratios; independent band jitter does not.</li>
+          <li>Direction-dependent cues (shadows, flow, slope) make some geometric augmentations physically wrong.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 MANIFESTS ===================== -->
+    <section class="lesson" id="dataset-manifests" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.6</span><h2>Dataset cards &amp; manifests</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Six months after training, a colleague asks three things: which bands, in which order, and in which projection were the tiles? Were the normalisation numbers computed on training data only? And may we publish the model under its current licence? Nobody remembers. The files are still there. Which facts must travel with the data so that a stranger can answer those questions in a minute?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A dataset without a manifest is a box of photographs with no labels on the back. A <b>manifest</b> is a small, machine-readable file placed next to the data, a passport that lists every fact a future user or tool needs. A <b>dataset card</b> is the human-readable companion: the same facts, plus the story of how the data were collected and what they should not be used for.</p>
+        <p>The cost of leaving a fact out is not a crash. A band order that is folklore quietly makes NDVI from the wrong pair of bands. A missing CRS quietly shifts every label. The manifest turns those silent failures into a check the loader can run.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example · step 1, list the facts</b>
+          <p>For this module's pipeline, a complete manifest records at least: the <b>projection</b> (EPSG:32636, UTM zone 36N) and <b>resolution</b> (10 m); the <b>band order</b> as names and indices (B02, B03, B04, B08 are indices 0 to 3); the <b>data type</b> (uint16) and the <b>scale</b> (divide by 10,000, after removing the offset of 1000); the <b>no-data value</b> (0); the <b>tile size and stride</b> (256 and 224); the <b>normalisation</b> numbers and the split they were fitted on; the <b>sources</b> (STAC item IDs and acquisition dates); the <b>label provenance</b> (who digitised them, at what scale, with which rule); the <b>split</b> method; and the <b>licence</b>, given separately for images and labels.</p></div>
+
+        <div class="worked"><b>Worked example · step 2, a manifest as JSON</b>
+          <p>Every value below is an illustrative example. The licence identifiers are examples too; check the terms of each real source.</p>
+          <pre><code>{
+  "name": "coastal-wetlands-demo",
+  "version": "1.2.0",
+  "created": "2026-10-31",
+  "crs": "EPSG:32636",
+  "resolution_m": 10,
+  "band_order": ["B02", "B03", "B04", "B08"],
+  "dtype": "uint16",
+  "nodata": 0,
+  "radiometric_offset": 1000,
+  "scale": 0.0001,
+  "tiles": { "size_px": 256, "stride_px": 224, "edge": "shift-last" },
+  "normalisation": {
+    "method": "percentile",
+    "percentiles": [2, 98],
+    "fitted_on": "train",
+    "stats_file": "stats/train_percentiles.json"
+  },
+  "splits": { "method": "spatial-blocks", "buffer_blocks": 1, "block_ids": "splits/blocks.geojson" },
+  "labels": { "digitised_scale": "1:5000", "rasterised_with": "pixel-centre rule" },
+  "sources": [
+    { "name": "Sentinel-2 L2A", "stac_item": "https://example.com/stac/items/demo-scene-001", "acquired": "2024-06-18" }
+  ],
+  "licence": { "images": "CC-BY-4.0", "labels": "ODbL-1.0" }
+}</code></pre>
+          <p>Read it as a checklist. The <code>scale</code> of 0.0001 agrees with the division in lesson 3.3. If it said 0.001, every reflectance would be ten times too large, and a loader can catch that by checking that a maximum-valued pixel maps to a value near 1.</p></div>
+
+        <div class="worked"><b>Worked example · step 3, a rule the manifest enforces</b>
+          <p>The manifest says <code>"fitted_on": "train"</code>. Suppose a later edit changes it to <code>"train+val"</code>. That is a leak (lesson 3.3), and it is also a broken contract, because the stored <code>stats_file</code> no longer matches the stated provenance. A validator should reject it. Each rule in the manifest is a rule you can test, and each test is a line of code.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal{M}\ \text{is valid}\iff \forall f\in R:\ f\in\mathcal M\ \wedge\ \text{check}_f(\mathcal M)=\text{true}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathcal M</span></td><td>the manifest, a JSON object stored beside the data</td></tr>
+          <tr><td><span class="tex">R</span></td><td>the set of required fields, for example CRS, resolution, band order, licence and sources</td></tr>
+          <tr><td><span class="tex">\text{check}_f</span></td><td>a rule for field f, for example "the CRS matches EPSG:n", "band names are unique", or "normalisation was fitted on train"</td></tr>
+          <tr><td><span class="tex">\wedge,\ \forall,\ \in</span></td><td>"and", "for every", "is a member of"</td></tr>
+        </table>
+
+        <h3 class="sec" style="max-width:780px">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start from the default values. Confirm the manifest is valid. Then change the CRS to <code>UTM 36N</code> (without the prefix) and watch the validator explain what is wrong.</li>
+          <li>Set "fitted on" to "train+val". Find which rule fails and why it matters.</li>
+          <li>Remove one band from the band list and then add a duplicate. Explain why each error is a bug waiting to happen.</li></ol></div>
+        <div data-lab="manifestLab"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Recording the source CRS only.</b> If you reproject tiles to UTM after download, the manifest must describe the tiles, not the original files.</li>
+          <li><b>Band order as names alone.</b> Store indices too, so a loader can check the array shape and the names together.</li>
+          <li><b>One licence for everything.</b> Imagery and labels often come from different sources with different terms. A derived dataset inherits the most restrictive of them.</li>
+          <li><b>Absolute local paths.</b> <code>C:\Users\...</code> means nothing to anyone else. Use relative paths, STAC links or stable identifiers.</li>
+          <li><b>No checksums.</b> Store a SHA-256 hash for each file, so a silent change to a tile is detectable.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Datasheets for datasets (Gebru and colleagues) and dataset cards on model hubs are the general form of this idea; a geospatial manifest adds the projection, resolution and band facts that images alone cannot carry.</li>
+          <li>STAC items (Module 2) describe scenes, and the STAC MLM record (Module 6) describes models. A dataset manifest does the same job for training tiles, and it should point to the STAC items it came from.</li>
+          <li>Reproducible pipelines and benchmarks depend on this file: a result you cannot regenerate from the manifest is not a result anyone else can check.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why store band order both as names and as indices?</summary><div class="ans">Names make the file readable and catch mismatches with the source metadata; indices match the array axis the loader actually reads. A loader that checks both can refuse to run when they disagree.</div></details>
+        <details class="check"><summary>2. The manifest says <code>"scale": 0.001</code> for reflectance stored as integers out of 10,000. What goes wrong and how do you detect it?</summary><div class="ans">Every reflectance is ten times too large (a stored 1650 becomes 1.65 instead of 0.165). Detect it by checking the maximum value: a valid reflectance is normally below about 1.2 after scaling, so 1.65 for a typical pixel fails the check.</div></details>
+        <details class="check"><summary>3. The labels came from a field survey and the imagery is open data. Which licence applies to the derived dataset?</summary><div class="ans">Both must be respected. Record the image and label licences separately, and treat the derived dataset as bound by the stricter terms. Confirm each with the source; the manifest only records what the sources say.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A manifest records the CRS, resolution, band order, scale, normalisation, splits, sources, provenance and licence next to the data.</li>
+          <li>Each fact should be checkable; a validator turns silent errors into loud ones.</li>
+          <li>Record normalisation provenance (train only) as a rule, not as a memory.</li>
+          <li>The manifest is what makes a result reproducible, shareable and safe to publish.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin:30px 0"><b>Module complete.</b> You can now turn vector labels into a class map on the image grid, cut scenes into tiles that cover every pixel, normalise bands without leaking the test set, split maps by place rather than by pixel, augment without breaking geography, and write a manifest that a stranger can check. Next, Module 4 covers spectral indices and classical GeoAI on these prepared tiles. The <a href="geoai.html">GeoAI hub</a> lists every module.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

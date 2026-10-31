@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoAI · AI Learning Hub</title>
+<meta name="description" content="A zero-to-hero GeoAI curriculum: geospatial foundations, cloud-native formats, STAC data discovery, preparing rasters for ML, deep learning for Earth observation, STAC MLM model description, foundation models, evaluation and responsible deployment.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="geoai">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="index.html#topics">Domains</a> › GeoAI</div>
+    <div class="hero">
+      <div class="big" style="background:#56d36426">🛰️</div>
+      <div style="flex:1">
+        <h1>GeoAI — zero to hero</h1>
+        <p>Artificial intelligence on Earth observation: from knowing what a map is, to finding satellite data with <b>STAC</b>, preparing rasters without spatial leakage, training segmentation and detection models, and describing your models with the <b>STAC MLM</b> extension so that others can discover, verify and run them.</p>
+        <div class="chips"><span class="chip">10 modules</span><span class="chip">63 lessons</span><span class="chip">STAC &amp; STAC MLM</span><span class="chip">Animated rasters &amp; models</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="lesson" id="start" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>How to learn from this</h2></div>
+      <div class="prose">
+        <p>Every lesson starts with a map or a picture, then a hand-worked example on a tiny raster, table or catalogue, then the formal definition, an <b>animated lab you can edit</b>, traps, real datasets and self-check questions. STAC lessons show real JSON you can read; STAC MLM lessons show how a model describes itself.</p>
+        <p>The maths and ML are linked, not repeated: when a lesson needs a metric, a loss or a backbone, it points to the matching <a href="machine-learning.html">Machine Learning</a> or <a href="computer-vision.html">Computer Vision</a> lesson.</p>
+      </div>
+    </section>
+
+    <section class="lesson" id="pipeline">
+      <div class="lesson-head"><h2>The GeoAI pipeline</h2></div>
+      <div class="prose"><p>Every GeoAI product follows these six stages, from a catalogue search to a published map. Click a stage for what it does, what it needs and where its data is stored.</p></div>
+      <div data-lab="pipeline" data-id="geoai"></div>
+    </section>
+
+    <section class="lesson" id="map">
+      <div class="lesson-head"><h2>The map</h2></div>
+      <div class="pathbar" id="pathbar"></div>
+      <div class="prose"><p>Modules 0–1 set up the geography and the file formats. Module 2 is STAC: how data is found. Module 3 prepares it for learning, and Module 4 starts with classical methods. Module 5 is deep learning on imagery. Module 6 is STAC MLM: how models are described and run. Module 7 covers foundation models and embeddings. Module 8 measures whether a map is right, and Module 9 deploys it responsibly.</p></div>
+    </section>
+
+    <section class="lesson" id="curriculum">
+      <div class="lesson-head"><h2>The curriculum</h2></div>
+      <div class="mods" id="mod-list"></div>
+      <p style="color:var(--muted);font-size:13px">Full lesson specification: <a href="https://github.com/AbdelrahmanKatkat/AI-Hub/blob/main/curriculum/geoai.md" target="_blank" rel="noopener">curriculum/geoai.md</a>.</p>
+    </section>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>
