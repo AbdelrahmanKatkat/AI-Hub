@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 · Advanced topics · Reinforcement Learning</title>
+<meta name="description" content="Advanced reinforcement learning: intrinsic motivation and count-based exploration, hierarchical RL with options, multi-agent learning and equilibria, offline RL with pessimism, and inverse RL from demonstrations.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-advanced.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="8">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 8</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">8</div>
+      <div style="flex:1">
+        <h1>Module 8 · Advanced topics</h1>
+        <p>Five extensions that change the basic agent–environment loop. <b>Exploration</b> when reward is rare, <b>hierarchy</b> when a task has many steps, <b>several learners</b> sharing one world, <b>learning from a fixed log</b> with no new experiments, and <b>recovering the reward</b> from an expert who shows what they do.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Modules 4–6</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>What stays the same.</b> Every lesson still has an agent, an environment, actions, rewards and a discount factor <span class="tex">\gamma</span>. What changes is <i>who</i> sets the reward, <i>how many</i> decision-makers there are, <i>where</i> the data comes from, and <i>which level</i> the decisions are made at. Module 0 defines the loop, and Modules 4 to 6 give the update rules used here.</p>
+      <p><b>How the labs work.</b> Every lab is an <i>illustrative</i> toy with a fixed random seed, so the same settings give the same run. Numbers in the captions are computed in the browser from the sliders and tables you can edit. The hand-worked examples in each lesson are computed separately, on very small problems, and they are exact.</p>
+    </section>
+
+    <!-- ===================== 8.1 ===================== -->
+    <section class="lesson" id="intrinsic-motivation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">8.1</span><h2>Exploration with intrinsic rewards</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot must find a charging dock in a building. The only reward is +1 at the dock, and the building has 400 rooms. A robot that moves at random may need hundreds of steps to reach the dock once, and until then every estimated value is zero and every update is zero. Can we pay the robot for something else, such as visiting rooms it has never seen, so that it explores long enough to find the dock? And if we do, what stops it from being paid forever for something pointless?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a visitor in a new city with no map and no guidebook. Nothing is labelled as "worth seeing", yet the visitor still walks down streets they have not walked before. Most of the city is found that way, and the visitor finds the famous square as a side effect. This is <b>curiosity</b>: the agent is rewarded for novelty, and the reward from the environment is only one part of its total.</p>
+        <p>There are two common ways to measure novelty. The first counts visits: a state visited 10 times is less interesting than one visited once. The second measures surprise: if the agent has a model that predicts what happens next, a large prediction error means the outcome was new. Both give an <b>intrinsic reward</b> that the environment does not supply, and both fade as the agent learns.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: add a second reward.</b> Let the environment reward be <span class="tex">r^e_t</span> (the +1 at the dock) and the intrinsic reward be <span class="tex">r^i_t</span>. The learner optimises <span class="tex">r_t = r^e_t + \beta\, r^i_t</span>, where <span class="tex">\beta \ge 0</span> sets how much curiosity is worth relative to the task. With <span class="tex">\beta = 0</span> we get back the original problem.</p>
+        <p><b>Step 2: count visits.</b> Let <span class="tex">N(s)</span> be the number of times state <span class="tex">s</span> has been entered so far. A simple intrinsic reward is <span class="tex">r^i = 1/\sqrt{N(s)}</span>, so the first visit pays 1, the second about 0.71, the third about 0.58. Why the square root and not <span class="tex">1/N</span>? The bonus must keep some pull for a while: with <span class="tex">1/\sqrt{N}</span> the bonuses of the first <span class="tex">n</span> visits add up to roughly <span class="tex">2\sqrt{n}</span>, so a barely visited state stays attractive, while a constant bonus would never stop paying.</p>
+        <p><b>Step 3: a worked trace.</b> Let the agent walk along a chain of states 0, 1, 2, 3 and back, with <span class="tex">\beta = 1</span>. Each visit increases the count, and the bonus is paid on arrival:</p>
+
+        <div class="worked"><b>Worked example: counts and bonuses on a chain</b>
+          <p>Trajectory of states: <span class="tex">0 \to 1 \to 2 \to 1 \to 0 \to 1 \to 2 \to 3</span>. The start state 0 is counted but no bonus is paid for starting there. Each arrival increases the count of the new state, then pays <span class="tex">\beta/\sqrt{N}</span>.</p>
+          <table class="tbl">
+            <tr><th>step t</th><th>arrives at</th><th>count N after arrival</th><th>bonus 1/√N</th></tr>
+            <tr><td>1</td><td>1</td><td>1</td><td>1.0000</td></tr>
+            <tr><td>2</td><td>2</td><td>1</td><td>1.0000</td></tr>
+            <tr><td>3</td><td>1</td><td>2</td><td>0.7071</td></tr>
+            <tr><td>4</td><td>0</td><td>2</td><td>0.7071</td></tr>
+            <tr><td>5</td><td>1</td><td>3</td><td>0.5774</td></tr>
+            <tr><td>6</td><td>2</td><td>2</td><td>0.7071</td></tr>
+            <tr><td>7</td><td>3</td><td>1</td><td>1.0000</td></tr>
+          </table>
+          <p>Total intrinsic reward over the trajectory: <span class="tex">5.6987\,\beta</span>. Notice that the two states that were new when first entered (1 and 2 at steps 1 and 2, and 3 at step 7) each pay the full 1.0, and the revisits pay less, so the bonus is largest exactly where the agent has learned least.</p></div>
+
+        <p><b>Step 4: curiosity from prediction error.</b> Count tables do not scale to images or continuous positions, because almost every state is new. Instead, learn a forward model <span class="tex">\hat f</span> that predicts the features of the next state, and pay for the error: <span class="tex">r^i = \eta\,\lVert \phi(s') - \hat f(\phi(s),a)\rVert^2</span>. Where the model has learned the dynamics, the error is small and the agent moves on. Where the outcome is new, the error is large and the agent is drawn there.</p>
+        <div class="worked"><b>Worked example: one prediction error</b>
+          <p>The model predicts the next feature value 0.4 after an action; the true value is 0.7. With <span class="tex">\eta = 1</span>: <span class="tex">r^i = (0.7 - 0.4)^2 = 0.09</span>. After the model is trained on this transition, the prediction moves toward 0.7 and the bonus for the same transition drops. The bonus is a memory of what has not yet been learned.</p></div>
+
+        <p><b>Step 5: the noisy-TV trap.</b> Suppose an action makes the next state a fair coin flip between feature values 0 and 1 (a television showing static). The best possible prediction is 0.5, and the expected error is <span class="tex">\mathbb E[(X-0.5)^2] = 0.25</span> however long the agent watches. The error never falls, so a prediction-error bonus keeps paying for the static. The fix is to predict only the parts of the state the agent can influence, which is the idea behind learned feature spaces.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">r_t = r^e_t + \beta\, r^i_t,\qquad r^i_t = \frac{1}{\sqrt{N_t(s_{t+1})}}</div>
+        <div class="eq">\text{or}\qquad r^i_t = \eta\,\big\lVert \phi(s_{t+1}) - \hat f(\phi(s_t),a_t)\big\rVert^2</div>
+        <table class="sym">
+          <tr><td><span class="tex">r^e_t, r^i_t</span></td><td>environment (extrinsic) reward and intrinsic bonus at step t</td></tr>
+          <tr><td><span class="tex">\beta, \eta</span></td><td>scale of the intrinsic bonus; the learner’s weight on curiosity (β) and the scale of the prediction error (η)</td></tr>
+          <tr><td><span class="tex">N_t(s)</span></td><td>number of visits to state s up to and including step t</td></tr>
+          <tr><td><span class="tex">\phi</span></td><td>a feature map from raw observations to a learned or chosen representation</td></tr>
+          <tr><td><span class="tex">\hat f</span></td><td>the learned forward model that predicts the next features from the current features and action</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: where does the bonus send the agent?</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set β to 0 (a random walk), press Reset, and note the step at which the goal G is first found. Press Reset again: the seed is fixed, so the run repeats exactly.</li>
+          <li>Set β to 1 and reset. Compare the number of cells visited after 150 steps with the random walk. The bonus spreads the agent out.</li>
+          <li>Push β to 2. Watch whether the agent keeps touring the grid after the goal is found: the bonus does not switch off just because the goal is known.</li>
+          <li>Pause and press Step. Read the caption: the next-move bonus is β/√(N+1) for the cell you are about to enter, and it shrinks each time you revisit.</li></ol></div>
+        <div data-lab="intrinsic-grid"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The bonus is not the task.</b> A policy trained only on the intrinsic reward explores the whole grid and then has no reason to stay anywhere. Use the bonus to find rewards early, and reduce it (anneal β) so that the environment reward takes over.</li>
+            <li><b>The noisy TV.</b> Prediction-error bonuses pay for randomness that cannot be learned, as Step 5 showed. Count bonuses are immune to this, but they fail in large state spaces.</li>
+            <li><b>Scale matters.</b> If β is larger than the typical environment reward, the agent wanders for ever. If it is too small, the bonus is ignored. Check the ratio of bonus to reward in the logs.</li>
+          </ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Count-based exploration with bonuses of the form <span class="tex">\beta/\sqrt{N}</span> has a formal basis in the optimism principle (Strehl and Littman, 2008). Bellemare and colleagues (2016) extended counts to large spaces with pseudo-counts from a density model.</li>
+            <li>The Intrinsic Curiosity Module (Pathak and colleagues, 2017) uses prediction error in a learned feature space that ignores what the agent cannot control, which avoids the noisy TV.</li>
+            <li>Random Network Distillation (Burda and colleagues, 2018) pays for the error of a predictor that copies a fixed random network. It was among the first agents to make progress on the hardest Atari exploration games, where the reward is sparse.</li>
+          </ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (the bonus is computed for each transition) and estimate stage (the agent learns from the sum of both rewards). Cost: a count table is a constant-time update per step; a forward model adds one network pass and one gradient step per update. Stores: the visit counts or the model weights, and the rewards used for training, kept separate from the environment reward for logging.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the chain trace, what is the total intrinsic reward (β = 1) if the last step went to state 1 instead of state 3?</summary><div class="ans">State 1 would then have count 4 on the last arrival, so the bonus is 1/√4 = 0.5 instead of 1.0. The total is 5.6987 − 1.0000 + 0.5000 = 5.1987.</div></details>
+          <details class="check"><summary>2. Why does the noisy-TV agent keep receiving a bonus even after it has seen a million transitions?</summary><div class="ans">The error comes from randomness that no model can predict. For a fair coin between 0 and 1 the best prediction is 0.5 and the expected squared error is 0.25 whatever the data count, so the bonus never shrinks.</div></details>
+          <details class="check"><summary>3. Why is the bonus designed to shrink with the count, rather than being a constant?</summary><div class="ans">A constant bonus would pay for every visit forever, so the agent would never settle on exploiting the reward it has found. Shrinking the bonus with the count means familiar states stop attracting the agent, and unfamiliar ones keep doing so.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>An intrinsic reward pays for novelty, so the agent gathers data when the environment reward is rare.</li>
+            <li>Count bonuses of order <span class="tex">\beta/\sqrt{N}</span> shrink as states become familiar; prediction-error bonuses shrink only where the outcome is learnable.</li>
+            <li>The bonus is a means to finding reward. Anneal it, and watch for noise that never goes away.</li>
+          </ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.2 ===================== -->
+    <section class="lesson" id="hierarchical-rl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">8.2</span><h2>Hierarchical RL and options</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A cooking robot must fetch eggs, crack them, whisk, and then plate the dish. Its motors take a decision every 20 milliseconds, so the whole meal is tens of thousands of decisions. The reward arrives only when the plate is served, so the credit must travel back through tens of thousands of updates. Could the robot decide at a coarser level, for example "go to the fridge" as a single decision, and leave the small motions to a lower layer?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>In a company, the manager says "get the quarterly report written", and a team member then makes many small decisions: open the spreadsheet, check the numbers, draft a paragraph. The manager does not choose each keystroke, but the manager does decide which job comes next once the report is finished. Two levels of decision, each working at its own time scale.</p>
+        <p>Sutton, Precup and Singh (1999) formalised this as <b>options</b>. An option is a temporally extended action. It has three parts: where it can start, a low-level policy that acts while it runs, and a rule for when it stops. The high-level policy then chooses among options, and the low-level policy chooses primitive actions.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: an option.</b> An option <span class="tex">\omega</span> is a triple <span class="tex">(I_\omega, \pi_\omega, \beta_\omega)</span>. It can start in states <span class="tex">I_\omega</span>. While it runs, it uses the low-level policy <span class="tex">\pi_\omega</span> to choose primitive actions. At each state <span class="tex">s</span>, it stops with probability <span class="tex">\beta_\omega(s)</span>. (Here <span class="tex">\beta_\omega</span> is a termination function, not the bonus scale of lesson 8.1.)</p>
+        <p><b>Step 2: options last a random number of steps.</b> An option that runs for <span class="tex">k</span> steps collects the discounted reward <span class="tex">R = \sum_{j=0}^{k-1} \gamma^j r_{t+j}</span> and lands in a new state <span class="tex">s_{t+k}</span>. The next state must be discounted by <span class="tex">\gamma^k</span>, not by <span class="tex">\gamma</span>, because the option took <span class="tex">k</span> steps to get there. Taking the wrong power is the most common error in this lesson.</p>
+        <p><b>Step 3: learn at the option level.</b> Since options are chosen at decision points and finish after <span class="tex">k</span> steps, the high-level decision process is a <i>semi-Markov</i> decision process. Its Q-learning update is</p>
+        <div class="eq">Q(s,\omega) \leftarrow Q(s,\omega) + \alpha\Big[R + \gamma^{k}\max_{\omega'} Q(s',\omega') - Q(s,\omega)\Big]</div>
+        <p>Only the decision points are updated, so the value of the first state of a long option is learned in one update rather than in <span class="tex">k</span> separate ones.</p>
+
+        <h3 class="sec">A worked example with two options</h3>
+        <p>Take a corridor of states 0 to 6. Entering state 6 pays +1 and ends the episode, and every other step pays 0. Use <span class="tex">\gamma = 0.9</span> and <span class="tex">\alpha = 0.5</span>, with all Q values starting at 0. There are two options. <b>toA</b> starts in state 0, runs 3 primitive steps to state 3 and pays 0 on the way. <b>toG</b> starts in state 3, runs 3 steps to state 6 and pays 0, 0, +1.</p>
+        <div class="worked"><b>Worked example: two episodes at the option level</b>
+          <p><b>Episode 1.</b> The agent takes toA from 0. It runs 3 steps, collects <span class="tex">R = 0</span>, and arrives at 3. The update for toA uses the best option value at 3, which is still 0:</p>
+          <div class="eq">Q(0,\text{toA}) \leftarrow 0 + 0.5\,[\,0 + 0.9^{3}\cdot 0 - 0\,] = 0</div>
+          <p>Next the agent takes toG from 3. It runs 3 steps and collects <span class="tex">R = 0 + 0.9\cdot 0 + 0.9^2\cdot 1 = 0.81</span>. It lands in the terminal state 6, so there is no future value:</p>
+          <div class="eq">Q(3,\text{toG}) \leftarrow 0 + 0.5\,[\,0.81 - 0\,] = 0.405</div>
+          <p><b>Episode 2.</b> The agent takes toA from 0 again. This time the value at 3 is 0.405, so the update for toA is</p>
+          <div class="eq">Q(0,\text{toA}) \leftarrow 0 + 0.5\,[\,0 + 0.9^{3}\cdot 0.405\,] = 0.5\cdot 0.295245 = 0.14762</div>
+          <p>Finally toG runs again and <span class="tex">Q(3,\text{toG}) \leftarrow 0.405 + 0.5\,(0.81 - 0.405) = 0.6075</span>. After two episodes, state 0 already knows that reaching the goal is worth something, even though it has never been past state 3. A flat learner that updates one primitive step at a time would need a separate update for each of the three steps between states 3 and 6, and a separate chain of updates to pass the value back to state 0.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">R_{t:t+k} = \sum_{j=0}^{k-1}\gamma^{j} r_{t+j}</div>
+        <div class="eq">Q(s,\omega)\leftarrow Q(s,\omega)+\alpha\Big[R_{t:t+k}+\gamma^{k}\max_{\omega'}Q(s_{t+k},\omega')-Q(s,\omega)\Big]</div>
+        <table class="sym">
+          <tr><td><span class="tex">\omega</span></td><td>an option, a temporally extended action with its own policy and stopping rule</td></tr>
+          <tr><td><span class="tex">I_\omega, \pi_\omega, \beta_\omega</span></td><td>the initiation set, the low-level policy and the termination probability of option ω</td></tr>
+          <tr><td><span class="tex">k</span></td><td>the random number of primitive steps the option actually ran</td></tr>
+          <tr><td><span class="tex">R_{t:t+k}</span></td><td>the discounted reward collected while the option ran</td></tr>
+          <tr><td><span class="tex">\gamma^k</span></td><td>the discount applied to the value of the state where the option ended</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a high level choosing options in two rooms</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults (Q for door bottom is 0.50, door top 0.20, goal 0.10). Watch the agent pick door bottom in room A and then the goal in room B. Only the goal option is available in room B.</li>
+          <li>Raise door top to 0.90. The high level changes its choice at its next decision, but the low-level path code is unchanged. Note that the options are the same, only the choice moved.</li>
+          <li>Set the goal value to 0.95. The agent now chooses the goal directly from room A, and its path goes through a door.</li>
+          <li>Compare the primitive step count with the number of high-level decisions in the caption. A handful of decisions can drive dozens of steps.</li></ol></div>
+        <div data-lab="hier-rooms"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Discount by γ^k, not γ.</b> An option that takes 3 steps must multiply the next value by 0.9³ = 0.729. Using 0.9 overstates the value of options that run for a long time.</li>
+            <li><b>Options need an initiation set.</b> A door option that starts in room B is meaningless, and a learner that tries it will waste effort. Restrict the choice to options that can start in the current state.</li>
+            <li><b>Hand-made options encode the designer.</b> The "doors" here came from knowing the layout. Learned options (the option-critic) are harder to train, and they can collapse into a single option that does everything.</li>
+          </ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>The option-critic (Bacon, Harb and Precup, 2017) learns the internal policies and termination functions of options end to end with policy gradients.</li>
+            <li>HIRO (Nachum and colleagues, 2018) trains a high-level policy that sets goals for a low-level policy, and relabels past data with the goals that were actually reached.</li>
+            <li>SayCan (Ahn and colleagues, 2022) uses a language model to score which of a library of learned robot skills to run next, which is a high-level policy choosing among options.</li>
+          </ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (the high level acts every k steps) and estimate stage (the SMDP update). The high-level table has one entry per state and option, which is small; each low-level policy is a separate network or table. Stores: the option-value table and the low-level policies. Cost: decisions are fewer, so there are fewer high-level updates per episode.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. An option runs for k = 4 steps and the value of its end state is 0.405. What discount multiplies that value in the update, and what is it numerically?</summary><div class="ans">γ⁴ = 0.9⁴ = 0.6561, so the discounted value is 0.6561 × 0.405 = 0.2657.</div></details>
+          <details class="check"><summary>2. In the worked example, why is Q(0, toA) still 0 after episode 1?</summary><div class="ans">The toA update happens when the option ends at state 3, before toG has run. At that moment the best value at state 3 is still 0, so the target is 0. The value of 3 reaches state 0 only in episode 2.</div></details>
+          <details class="check"><summary>3. An option collects rewards 0, 2 and 1 in its three steps, with γ = 0.9. What is R?</summary><div class="ans">R = 0 + 0.9 × 2 + 0.9² × 1 = 1.8 + 0.81 = 2.61.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>An option is a temporally extended action with a start set, a low-level policy and a stop rule.</li>
+            <li>Learning at the option level is a semi-Markov problem: discount the next value by <span class="tex">\gamma^k</span> for the k steps the option took.</li>
+            <li>Options shorten credit assignment and make decisions cheaper, but they are only as good as the structure they encode.</li>
+          </ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.3 ===================== -->
+    <section class="lesson" id="multi-agent" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">8.3</span><h2>Multi-agent reinforcement learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two delivery robots share a narrow corridor. Each has learned, over a week, to wait when the other is coming. Then one robot receives a software update that makes it faster, and the other starts colliding with it. Nothing about the second robot's own code changed. Why did a policy that worked yesterday stop working, and what does "best" mean when two learners are each part of the other's world?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine learning to drive on a road where every other driver is also learning. When you decide to merge, your reward depends on what the other drivers do, and they are changing their habits too. From your point of view the road keeps changing. A rule that was right last week can be wrong this week, because the other drivers changed, not because you did.</p>
+        <p>In single-agent RL the environment is fixed, and Q-learning converges under standard conditions because the target does not move. With several learners the environment includes the other learners, so each agent faces a <b>non-stationary</b> target. This single fact drives most of what follows.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: joint actions.</b> With two agents, each step has a joint action <span class="tex">(a_1, a_2)</span>. Each agent receives its own reward <span class="tex">R_i(s, a_1, a_2)</span>, which can depend on what the other agent did. The model is a <i>stochastic game</i> (a Markov game): a generalisation of an MDP to several decision-makers.</p>
+        <p><b>Step 2: independent learners.</b> The simplest method gives each agent its own learner and treats the other agents as part of the environment. This is easy to build and scales to many agents, but each learner's target depends on the other agents' current policies, which are moving. So the convergence guarantees of single-agent Q-learning do not carry over.</p>
+        <p><b>Step 3: what counts as a solution.</b> In a game with two or more decision-makers, the natural target is an equilibrium. A <b>Nash equilibrium</b> is a joint policy in which no agent can do better by changing only its own policy. The team's total return is a separate question, and it is where cooperation and competition differ: in a cooperative game the agents share one reward, and in a competitive (zero-sum) game one agent's gain is the other's loss.</p>
+
+        <h3 class="sec">Worked examples in three games</h3>
+        <p>Use two players, each with actions A and B. Payoffs are written as (player 1, player 2).</p>
+        <div class="worked"><b>Worked example 1: the coordination game and a moving best reply</b>
+          <p>Both players get 1 if they both choose A, 2 if they both choose B, and 0 if they choose different actions. Let player 2 play A with probability <span class="tex">q</span>. Player 1's expected payoffs are</p>
+          <div class="eq">\mathbb E[\text{payoff of A}] = q\cdot 1 + (1-q)\cdot 0 = q</div>
+          <div class="eq">\mathbb E[\text{payoff of B}] = q\cdot 0 + (1-q)\cdot 2 = 2(1-q)</div>
+          <p>The two are equal at <span class="tex">q = 2/3</span>. Player 1 should play A when player 2's probability of A is above 2/3, and B when it is below. With the same payoffs:</p>
+          <table class="tbl">
+            <tr><th>player 2's P(A) = q</th><th>payoff of A = q</th><th>payoff of B = 2(1 − q)</th><th>player 1's best reply</th></tr>
+            <tr><td>0.5</td><td>0.5</td><td>1.0</td><td>B</td></tr>
+            <tr><td>0.8</td><td>0.8</td><td>0.4</td><td>A</td></tr>
+          </table>
+          <p>Player 1 has not changed at all, but its best reply has flipped because player 2 changed. Both pure equilibria, (A, A) with payoff 1 each and (B, B) with payoff 2 each, are stable, and independent learners can settle on either. Nothing in the update tells them which is better for both.</p></div>
+
+        <div class="worked"><b>Worked example 2: the prisoner’s dilemma</b>
+          <p>Let A mean "cooperate" and B mean "defect". Payoffs (player 1, player 2): (A, A) gives (3, 3); (A, B) gives (0, 5); (B, A) gives (5, 0); (B, B) gives (1, 1). Compare player 1's payoffs for each action given player 2's choice: if player 2 plays A, B gives 5 and A gives 3; if player 2 plays B, B gives 1 and A gives 0. Defecting is better whatever the other player does, so B is a dominant action. The unique pure Nash equilibrium is (B, B), with total payoff 2. The joint outcome (A, A) has total payoff 6, but neither player can reach it alone.</p></div>
+
+        <div class="worked"><b>Worked example 3: matching pennies has no pure equilibrium</b>
+          <p>Player 1 wins 1 if the two actions match and loses 1 if they differ; player 2 is the reverse. Let player 2 play A with probability <span class="tex">q</span>. Player 1's payoff of A is <span class="tex">q - (1-q) = 2q - 1</span> and of B is <span class="tex">-q + (1-q) = 1 - 2q</span>. These are equal at <span class="tex">q = 1/2</span>. Each player's best reply flips around the other's probability of 1/2, so independent learners tend to chase each other in cycles rather than settle. The only equilibrium is the mixed one, where each player plays A with probability 1/2.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{Nash: for each } i:\quad V_i(\pi_i^*, \pi_{-i}^*) \;\ge\; V_i(\pi_i, \pi_{-i}^*)\quad\text{for every alternative } \pi_i</div>
+        <p>Here the stochastic game has states <span class="tex">s</span>, joint actions <span class="tex">\mathbf a = (a_1,\dots,a_n)</span> and transitions <span class="tex">P(s' \mid s, \mathbf a)</span>. Each agent's value depends on all the policies, which is why the definition compares one agent at a time.</p>
+        <table class="sym">
+          <tr><td><span class="tex">n</span></td><td>the number of agents</td></tr>
+          <tr><td><span class="tex">\mathbf a</span></td><td>the joint action, one action per agent</td></tr>
+          <tr><td><span class="tex">\pi_i, \pi_{-i}</span></td><td>agent i’s policy, and the policies of all the other agents</td></tr>
+          <tr><td><span class="tex">V_i</span></td><td>the expected discounted return of agent i under a joint policy</td></tr>
+          <tr><td><span class="tex">\pi_i^*</span></td><td>a policy that is a best reply to the others (the superscript star marks equilibrium policies)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: two learners in a repeated game</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with the coordination preset. Watch the two curves: both agents usually settle on the same action, but which one depends on the seed. Edit the payoffs so that (A, A) pays 3 each and (B, B) pays 2 each, and see whether the learners find the better equilibrium.</li>
+          <li>Choose matching pennies. The curves oscillate and do not settle. This is the non-stationary target from Worked example 3.</li>
+          <li>Choose the prisoner’s dilemma. Both learners drift to B (defect), because B dominates, even though (A, A) would pay both more.</li>
+          <li>Read the best-reply line in the caption. It states the opponent probability at which each agent switches, and it moves whenever the other agent's policy moves.</li></ol></div>
+        <div data-lab="ma-games"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Treating other agents as noise.</b> Independent learners are not guaranteed to converge when others are learning too. A test that looks stable for 10 000 rounds can fail after a policy update somewhere else.</li>
+            <li><b>An equilibrium is not an optimum.</b> The prisoner’s dilemma equilibrium is stable, and it is worse for both players than cooperation. Stability and efficiency are different properties.</li>
+            <li><b>Many equilibria.</b> The coordination game has two. Which one learners reach depends on their early experience, so results can differ from run to run. Report the spread over seeds.</li>
+          </ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>AlphaStar (Vinyals and colleagues, 2019) trained a league of agents that played against past versions of each other, so that no single opponent could be exploited for long.</li>
+            <li>Hide-and-seek experiments (Baker and colleagues, 2019) showed agents inventing tool use in a competitive game, driven by the other team’s changing strategy.</li>
+            <li>QMIX (Rashid and colleagues, 2018) learns a team value that decomposes into per-agent values for cooperative control, such as the StarCraft micromanagement tasks.</li>
+          </ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (all agents act together each step) and estimate stage (each agent updates its own value). The joint action space has <span class="tex">|A|^n</span> entries, so tabular methods fail quickly as agents are added. Stores: one table or network per agent, and, for training with a centralised critic, the joint experience. Evaluation must test against a population of opponents, not one.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the coordination game, what is player 1’s best reply if player 2 plays A with probability 0.6?</summary><div class="ans">A pays q = 0.6 and B pays 2(1 − 0.6) = 0.8. B is better, so the best reply is B.</div></details>
+          <details class="check"><summary>2. In the prisoner’s dilemma, why is (B, B) the only pure Nash equilibrium, and what is the total payoff there compared with (A, A)?</summary><div class="ans">B is better for each player whatever the other does (5 against 3, and 1 against 0), so each player's best reply is B in every case. Total payoff at (B, B) is 1 + 1 = 2, and at (A, A) it is 3 + 3 = 6.</div></details>
+          <details class="check"><summary>3. Why can a single agent’s learning rule be stable against a fixed opponent but oscillate against a learning one in matching pennies?</summary><div class="ans">Against a fixed opponent, the best reply is a fixed target and Q-learning can settle on it. Against a learning opponent, the best reply switches whenever the opponent's probability crosses 1/2, so each agent keeps overshooting the other's new policy and the pair cycles.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Other learners make the environment non-stationary, which breaks the single-agent convergence arguments.</li>
+            <li>The right target is an equilibrium, and an equilibrium can be stable yet inefficient.</li>
+            <li>Test against populations of opponents, report results over seeds, and use team methods when the reward is shared.</li>
+          </ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.4 ===================== -->
+    <section class="lesson" id="offline-rl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">8.4</span><h2>Offline reinforcement learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A hospital holds five years of treatment records: what each patient received, and what happened next. It may not run new trials on patients to find a better treatment. Can an agent learn a better policy from those records alone? And what goes wrong when the policy it learns would prescribe a treatment that the records never contain?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Suppose you are learning to drive by watching hours of dash-camera footage, with no car of your own. You can learn a great deal: how drivers slow for junctions, what they do in rain. But you cannot learn what happens if you swerve into a ditch, because no one filmed it. If you then try to decide for yourself by imagining the ditch as a fine option, you will believe something false and nothing in the footage will correct you.</p>
+        <p>That is the core of <b>offline RL</b> (also called batch RL). The agent receives a fixed dataset of transitions, collected by some unknown <b>behaviour policy</b> <span class="tex">\mu</span>, and it may not interact with the environment while learning. The danger is not the lack of data for common actions, but the use of actions that the data never contains.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the dataset.</b> The data are tuples <span class="tex">(s, a, r, s')</span> recorded while the behaviour policy acted. Some actions are common in the data; others never appear in a given state.</p>
+        <p><b>Step 2: the Bellman target uses a maximum.</b> Q-learning computes <span class="tex">r + \gamma \max_{a'} Q(s', a')</span>. The maximum ranges over all actions, including the ones the data never tried. If the estimate for an untried action is too high, the target is too high, and the error spreads backwards through every state that leads to it. Nothing in the data can correct the error, because there is no sample of that action to compare with.</p>
+        <p><b>Step 3: stay close to the data or be pessimistic.</b> There are two broad remedies. One is to restrict the learned policy to actions similar to the behaviour policy (behaviour-constrained methods). The other is to <i>penalise</i> values of actions the data do not support, so that the learner only prefers an unseen action when the evidence is strong. Pessimism is the idea behind conservative methods.</p>
+
+        <h3 class="sec">A worked example: an unseen action with a high estimate</h3>
+        <div class="worked"><b>Worked example: naive versus pessimistic choice</b>
+          <p>One state, two actions. Action a1 appears <span class="tex">n = 50</span> times in the data, and its estimate is <span class="tex">\hat Q(s,a_1) = 1.0</span>. Action a2 never appears (<span class="tex">n = 0</span>), but a neural network extrapolates to <span class="tex">\hat Q(s,a_2) = 3.0</span>.</p>
+          <p><b>Naive rule.</b> Pick the largest estimate: a2, with value 3.0. The data cannot check this number at all.</p>
+          <p><b>Pessimistic rule.</b> Subtract an uncertainty penalty <span class="tex">\kappa/\sqrt{n+1}</span> with <span class="tex">\kappa = 3</span>:</p>
+          <div class="eq">\text{a1: } 1.0 - \frac{3}{\sqrt{51}} = 1.0 - 0.4201 = 0.5799,\qquad \text{a2: } 3.0 - \frac{3}{\sqrt{1}} = 0.0</div>
+          <p>The pessimistic rule picks a1. The unseen action has lost its advantage, because its estimate is not supported by any data. (The same penalty is smaller for a1 because it is well sampled.)</p>
+          <p><b>The conservative penalty in CQL.</b> Conservative Q-learning adds, for each state, a term <span class="tex">\log \sum_a e^{Q(s,a)} - Q(s, a_{\text{data}})</span>. Here <span class="tex">\log(e^{1} + e^{3}) - 1 = 3.1269 - 1 = 2.1269</span>. Minimising this lowers the values of all actions in proportion to how large they are, and raises the value of the action the data actually used. An unseen action with an inflated value is pushed down.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\min_Q\;\; \alpha\,\mathbb E_{s\sim\mathcal D}\Big[\log\sum_a e^{Q(s,a)} - \mathbb E_{a\sim\hat\mu(\cdot\mid s)}\,Q(s,a)\Big]</div>
+        <div class="eq">\qquad + \tfrac12\,\mathbb E_{\mathcal D}\big[(Q(s,a) - r - \gamma \bar Q(s'))^2\big]</div>
+        <p>The first term is the conservative penalty, and the second is the usual Bellman error on the logged transitions. The learned policy is then greedy with respect to the conservative <span class="tex">Q</span>. The version above is a simplified form of the objective in Kumar and colleagues (2020).</p>
+        <table class="sym">
+          <tr><td><span class="tex">\mathcal D</span></td><td>the fixed dataset of logged transitions</td></tr>
+          <tr><td><span class="tex">\mu, \hat\mu</span></td><td>the behaviour policy that generated the data, and its estimate from the data</td></tr>
+          <tr><td><span class="tex">\alpha</span></td><td>the strength of the conservative penalty</td></tr>
+          <tr><td><span class="tex">\bar Q</span></td><td>a target network, a slowly updated copy of Q used for stability</td></tr>
+          <tr><td><span class="tex">\kappa, n</span></td><td>in the worked example, the pessimism scale, and the number of times an action appears in the data for that state</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: how pessimism changes each choice</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set κ to 0 (the naive rule). Note the chosen action in state 0 (a3, never in the data) and in state 2 (a2, never in the data).</li>
+          <li>Set κ to 3. The chosen action in state 0 changes to a1, and the penalty bar for a3 drops to zero.</li>
+          <li>Increase κ slowly from 2 to 3. Find the value at which state 0 switches to a1. It is about κ = 2.33. Check it by hand: a2 has penalised score 3 − κ, a1 has 1 − κ/√51, and they are equal at κ = 2/(1 − 1/√51).</li>
+          <li>In state 2, the two candidates a1 and a3 are close after penalty (0.5955 and 0.5753 at κ = 3). Notice how little it takes to change the choice.</li></ol></div>
+        <div data-lab="offline-pess"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>More data does not fix missing actions.</b> A larger log of the same behaviour leaves untried actions untried. Coverage, not size, decides what the learner can justify.</li>
+            <li><b>Pessimism can become copying.</b> If the penalty is too strong, the learner only picks the most-logged actions, which is behaviour cloning under another name, with no gain over the logs.</li>
+            <li><b>Offline evaluation is itself biased.</b> Scoring a new policy with the same Q values that chose it reuses the optimistic errors. Use held-out logs, importance-weighted estimates (which need the behaviour probabilities), or a simulator, and report uncertainty.</li>
+          </ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Batch-constrained Q-learning (Fujimoto and colleagues, 2019) restricts the learned policy to actions that the data make plausible, and it was among the first offline methods to show the extrapolation failure clearly.</li>
+            <li>Conservative Q-learning (Kumar and colleagues, 2020) and implicit Q-learning (Kostrikov and colleagues, 2021) are the standard baselines on the D4RL benchmark of logged datasets.</li>
+            <li>Logged data from recommendation and advertising systems is the everyday setting: the system only ever showed the items its old policy chose, so any new policy must be judged against that coverage.</li>
+          </ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage only: training uses the fixed log and does not touch the act loop. The trained policy is evaluated offline, then rolled out carefully (a small share of traffic, or a simulator first), and monitored. Stores: the immutable dataset with the behaviour probabilities if you have them, and the model versions. Cost: one pass over the log per epoch, with no new interaction.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With κ = 3, what does the pessimistic rule choose in state 1, where a2 has n = 60 and Q̂ = 1.6, and why?</summary><div class="ans">a2. Its penalised score is 1.6 − 3/√61 = 1.216, against about −0.94 for a1 and −0.53 for a3. a2 is also the naive choice, because it is well covered by the data.</div></details>
+          <details class="check"><summary>2. Using the worked example, what is the conservative penalty term if the data action were a2 instead of a1?</summary><div class="ans">log(e¹ + e³) − 3 = 3.1269 − 3 = 0.1269. The penalty is smaller, because the logged action is the high-value one: the term pushes down the unseen values and leaves the logged high value alone.</div></details>
+          <details class="check"><summary>3. Why does a larger dataset from the same behaviour policy not remove the need for pessimism?</summary><div class="ans">The new samples come from the same behaviour policy, so they cover the same actions. The untried actions still have no data, and their estimates are still unchecked by any observation.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Offline RL learns from a log, and the danger is in the actions the log never contains.</li>
+            <li>The Bellman maximum can pick an unsupported action; pessimism or policy constraints stop it doing so.</li>
+            <li>Judge an offline policy by its coverage of the data, and evaluate it without trusting the same optimistic numbers.</li>
+          </ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.5 ===================== -->
+    <section class="lesson" id="inverse-rl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">8.5</span><h2>Imitation and inverse reinforcement learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An experienced surgeon shows a trainee how to close a wound. Behaviour cloning (<a href="robo-learning.html#behaviour-cloning">lesson 7.1 of the robotics module</a>) would copy the surgeon's movements in the situations shown. But the trainee will face new tissue and new angles. What the surgeon was really optimising (speed, safety, tissue damage, a neat seam) would transfer to those situations, while the copied movements would not. Can we recover the reward that explains the surgeon's choices, and then plan with it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>When you watch someone choose, you learn about what they value. A friend who always orders the spicy dish, even when a mild one is on offer, probably likes heat. You can predict what they will order at a restaurant you have never visited, because you learned their taste, not a list of their past orders. <b>Inverse reinforcement learning</b> (IRL), introduced by Ng and Russell (2000), does this for an agent: the demonstrations are treated as optimal behaviour, and the task is to find the reward that makes them optimal.</p>
+        <p>This is different from behaviour cloning. Cloning learns a map from situations to actions. IRL learns the goal, and then a planner (ordinary RL) produces actions for any situation, including new ones.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: a parametrised reward.</b> Assume the reward is linear in features: <span class="tex">r(s,a) = w^\top \phi(s,a)</span>. The features are chosen by the designer, for example distance to the curb, a collision indicator and a jerk penalty. The unknown is the weight vector <span class="tex">w</span>.</p>
+        <p><b>Step 2: expected feature counts.</b> For a policy <span class="tex">\pi</span>, let <span class="tex">\mu(\pi) = \mathbb E_\pi[\sum_t \gamma^t \phi(s_t,a_t)]</span> be its discounted feature count. Its value under reward <span class="tex">w</span> is <span class="tex">V_w(\pi) = w^\top \mu(\pi)</span>. So a learner whose feature counts match the expert's does as well as the expert under every linear reward (Abbeel and Ng, 2004). This is the matching idea that most IRL methods use.</p>
+        <p><b>Step 3: the ambiguity.</b> Many different <span class="tex">w</span> explain the same demonstrations. Scaling <span class="tex">w</span> by 2 changes no choice, because the best action is unchanged. And if the expert's choices are indifferent between options, any reward that makes them tie also explains them. The worked example below makes this exact.</p>
+        <p><b>Step 4: maximum-entropy IRL.</b> To pick one answer, Ziebart and colleagues (2008) assume the expert is noisy: the probability of a choice grows exponentially with its reward. For a single choice from a set of actions, <span class="tex">P(a) \propto \exp(w^\top\phi(a))</span>. The gradient of the log-likelihood of a demonstration is then</p>
+        <div class="eq">\nabla_w \log P_w(a_{\text{demo}}) = \phi(a_{\text{demo}}) - \mathbb E_{P_w}[\phi(a)]</div>
+        <p>The gradient is the demonstrated features minus the features the learner currently expects. Gradient ascent moves <span class="tex">w</span> until the two agree.</p>
+
+        <div class="worked"><b>Worked example 1: many rewards explain one choice</b>
+          <p>Three actions with features <span class="tex">\phi(a_1) = (1,0)</span>, <span class="tex">\phi(a_2) = (0,1)</span> and <span class="tex">\phi(a_3) = (0.5, 0.5)</span>. The expert chooses a1 when all three are on offer. Chosen a1 must beat a2 and a3:</p>
+          <div class="eq">w_1 \ge w_2 \qquad\text{(a1 against a2)}</div>
+          <div class="eq">w_1 \ge \tfrac12(w_1 + w_2) \iff w_1 \ge w_2 \qquad\text{(a1 against a3)}</div>
+          <p>Both constraints reduce to the same half-plane <span class="tex">w_1 \ge w_2</span>. The reward <span class="tex">(1,0)</span>, the reward <span class="tex">(2,1)</span>, and the reward <span class="tex">(10, 0)</span> all explain the choice, and so does <span class="tex">(1,1)</span>, where all three actions tie. A learner cannot tell them apart from this one demonstration.</p></div>
+
+        <div class="worked"><b>Worked example 2: one maximum-entropy step</b>
+          <p>Start at <span class="tex">w = (0,0)</span>. All three actions are equally likely, <span class="tex">P = 1/3</span> each, so the expected features are <span class="tex">\mathbb E[\phi] = \tfrac13(1+0+0.5,\; 0+1+0.5) = (0.5, 0.5)</span>. The gradient from one demonstration of a1 is</p>
+          <div class="eq">\phi(a_1) - \mathbb E[\phi] = (1,0) - (0.5,0.5) = (0.5,\,-0.5)</div>
+          <p>A step of size 0.5 gives <span class="tex">w = (0.25, -0.25)</span>. The learner now assigns <span class="tex">P(a_1) = 0.4192</span>, <span class="tex">P(a_2) = 0.2543</span> and <span class="tex">P(a_3) = 0.3265</span>. The probability of the demonstrated action has risen from one third to 0.42, and the gradient at this point is smaller, so repeated steps settle.</p></div>
+
+        <div class="worked"><b>Worked example 3: a second demonstration narrows the set</b>
+          <p>Suppose a later demonstration offers the same three actions and the expert picks a3. Then a3 must beat a1 and a2:</p>
+          <div class="eq">\tfrac12(w_1 + w_2) \ge w_1 \iff w_2 \ge w_1 \qquad\text{(against a1)}</div>
+          <div class="eq">\tfrac12(w_1 + w_2) \ge w_2 \iff w_1 \ge w_2 \qquad\text{(against a2)}</div>
+          <p>Together with the first demonstration (which needs <span class="tex">w_1 \ge w_2</span>), the feasible set is <span class="tex">w_1 = w_2</span>: a line through the origin on which all three actions tie. Two demonstrations that pick different actions leave only the directions in which the expert is indifferent.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Maximum-entropy IRL chooses the weights that make the demonstrations most likely under a noisy expert. Its gradient has the familiar form: demonstrated features minus expected features.</p>
+        <div class="eq">\max_w \sum_{i=1}^{m}\log P_w(\tau_i),\qquad P_w(\tau)\propto \exp\big(w^\top \phi(\tau)\big)</div>
+        <div class="eq">\nabla_w = \hat\mu_{\text{demo}} - \mathbb E_{P_w}[\phi(\tau)]</div>
+        <table class="sym">
+          <tr><td><span class="tex">\phi(s,a)</span></td><td>the feature vector of a state–action pair, chosen by the designer</td></tr>
+          <tr><td><span class="tex">w</span></td><td>the unknown reward weights to be recovered</td></tr>
+          <tr><td><span class="tex">\mu(\pi)</span></td><td>the discounted feature count of policy π, the expected sum of features along its trajectories</td></tr>
+          <tr><td><span class="tex">\tau_i</span></td><td>the i-th demonstrated trajectory, and <span class="tex">\phi(\tau)</span> its total feature count</td></tr>
+          <tr><td><span class="tex">P_w</span></td><td>the probability of a trajectory when the expert is noisy with reward w</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: the set of rewards that explain the expert</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep θ* at 30° and press Play. Each demonstration offers 3 of the 5 points. The green arc, the directions still consistent with every choice, narrows as demonstrations accumulate.</li>
+          <li>Pause after about 10 demonstrations. Find the orange arrow (the expert’s true direction) inside the green arc. It is always there, because the expert’s choices are consistent with its own reward.</li>
+          <li>Let the run continue to its end. The arc stops shrinking before it becomes a point: the directions that remain are those in which the expert's chosen point is best, and no finite set of choices can separate them further.</li>
+          <li>Change θ* to 200°. The demonstrations restart and the arc moves to a different part of the circle. The learner recovers direction, not magnitude: the scale of w is never shown.</li></ol></div>
+        <div data-lab="irl-arc"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Recovered rewards are ambiguous.</b> Worked example 1 shows that many rewards fit the same data. A recovered reward can plan well in the demonstrated setting and poorly elsewhere, so check it on held-out situations.</li>
+            <li><b>The features limit the reward.</b> If the true objective is not a linear function of your features, the recovered reward explains the demonstrations badly and the learned plans will show it. Add features, or move to a nonlinear reward model.</li>
+            <li><b>Each step needs a planner.</b> Standard IRL solves a forward RL problem inside every gradient step, so it is expensive. Demonstrations that are not optimal also need a noisy-expert model such as maximum entropy.</li>
+          </ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Apprenticeship learning (Abbeel and Ng, 2004) matched feature counts to fly a helicopter through aerobatic manoeuvres from expert pilot demonstrations.</li>
+            <li>Maximum-entropy IRL (Ziebart and colleagues, 2008) was used to predict driver route choices from GPS traces of taxi drivers.</li>
+            <li>Generative adversarial imitation learning (Ho and Ermon, 2016) learns a discriminator that acts like a reward, and the same idea appears in reward modelling from human preferences, which is the subject of Module 9.</li>
+          </ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage: the demonstrations are stored offline, and the inner loop solves a forward RL problem for each reward estimate. The output, the reward weights, is then used by a planner in the act loop. Stores: the demonstration trajectories with their features, and the recovered weights with the version of the feature code that produced them.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In worked example 1, what constraints does a demonstration of a2 (offered with a1 and a3) impose?</summary><div class="ans">a2 must beat a1, so w2 ≥ w1; and a2 must beat a3, so w2 ≥ 0.5(w1 + w2), which is also w2 ≥ w1. The feasible set is the half-plane w2 ≥ w1.</div></details>
+          <details class="check"><summary>2. After the first maximum-entropy step in worked example 2, what is the probability of a1, and what does it say about the learning?</summary><div class="ans">P(a1) = 0.4192. It rose from 1/3, because the demonstrated features (1, 0) were above the expected features (0.5, 0.5) in the direction of a1, so the update pushed the reward toward a1.</div></details>
+          <details class="check"><summary>3. Why can the reward not be recovered in magnitude from choices alone, and how does this affect planning?</summary><div class="ans">Multiplying w by a positive number does not change which action is best, so the choices are unchanged. Planning needs only the ordering of rewards, so the recovered reward is defined up to a positive scale (and, for policies, up to shaping terms that do not change the optimal policy).</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Inverse RL recovers the reward that explains demonstrations; it transfers to new situations where copying does not.</li>
+            <li>Choices reveal reward only up to ambiguity: many weights fit, and scale is never identified.</li>
+            <li>Matching feature counts, with a maximum-entropy model for noisy experts, is the standard route, at the cost of an inner planning loop.</li>
+          </ul></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now explain why exploration needs an intrinsic reward and when that reward misleads, how options shorten credit assignment, why several learners give moving targets and equilibria rather than optima, why offline learning needs pessimism about unseen actions, and how a reward can be recovered from demonstrations. Next, <b>Module 9</b> applies these ideas to alignment, games and real systems: <a href="rl-applied.html">Module 9 · Applied RL, alignment &amp; evaluation</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

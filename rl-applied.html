@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 · Applied RL, alignment &amp; evaluation · Reinforcement Learning</title>
+<meta name="description" content="RLHF with a reward model and a KL-regularised policy, reward hacking and Goodhart's law, self-play and AlphaZero-style training, fair evaluation over seeds, production RL systems and oversight.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-applied.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="9">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 9</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">9</div>
+      <div style="flex:1">
+        <h1>Module 9 · Applied RL, alignment &amp; evaluation</h1>
+        <p>Reinforcement learning leaves the textbook when it meets people. A reward has to be written down, a learner will search for every gap in it, a result has to survive a change of random seed, and a policy has to be shipped and watched. This module covers how RL is used to align language models with human preferences, how reward hacking happens, how self-play produces strong game players, how to evaluate RL honestly, and how production and oversight work.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs Modules 4–8</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>Where this sits in the loop.</b> Every lesson here touches the same six stages as the rest of the topic: interact, store, estimate, improve, evaluate, and deploy &amp; monitor. The lessons say which stage they change, what they store and what each update costs.</p>
+      <p><b>How the labs work.</b> Every lab is an <i>illustrative</i> toy. The canned responses, the proxy reward, the learning-curve model, the rollout traffic and the risk scores are invented to show a mechanism. None of them is a measured result from a real system. The numbers on screen are computed in the browser, so change a slider and the figures respond. Where a lab uses random draws, the seed is fixed so that a run can be reproduced.</p>
+    </section>
+
+    <!-- ===================== 9.1 ===================== -->
+    <section class="lesson" id="rlhf" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">9.1</span><h2>Reinforcement learning from human feedback</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A language model writes three different answers to the same question. A person reads the three and says which one they prefer. Nobody can write a formula for "helpful, honest and polite", but people can compare two answers quickly. How do we turn many such comparisons into a reward that a reinforcement learning algorithm can optimise, and how do we stop the model from drifting into strange text just to score well on that reward?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a wine critic who cannot write down the recipe for a good wine but can taste two glasses and say which is better. After a few hundred tastings, a student could learn to predict the critic's preferences, and then use that prediction to judge new wines without the critic present. In RLHF (reinforcement learning from human feedback) the critic is a crowd of labellers, the student is a <b>reward model</b>, and the wine is a model response.</p>
+        <p>The optimisation step then treats the reward model as the environment's score. The language model is the <b>policy</b>: given a prompt <i>x</i> it produces a response <i>y</i>, and it is updated to produce responses the reward model likes. There is a catch. The reward model only knows the kinds of response it was trained on. If the policy finds a response the reward model over-scores, the policy will go there. So a second ingredient is added: a penalty for moving too far from the original, supervised model, which is kept as a <b>reference policy</b> and never trained during this stage.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: preference data.</b> For a prompt, the labeller sees two responses, the preferred one <i>y<sub>w</sub></i> (winner) and the other <i>y<sub>l</sub></i> (loser). The data are pairs, not scores. Pairs are easier to give consistently than absolute ratings.</p>
+        <p><b>Step 2: a reward model that explains the pairs.</b> Let <i>r<sub>φ</sub>(x, y)</i> be a scalar score a network assigns to a response. The Bradley–Terry model says the probability that <i>y<sub>w</sub></i> is preferred is a sigmoid of the score difference:</p>
+        <div class="eq">P(y_w \succ y_l \mid x) = \sigma\big(r_\phi(x,y_w) - r_\phi(x,y_l)\big),\qquad \sigma(z) = \frac{1}{1+e^{-z}}</div>
+        <p>Training minimises the negative log-likelihood of the observed preferences. Only the difference of scores matters, so the reward model has no absolute zero and no units.</p>
+
+        <div class="worked"><b>Worked example: one preference pair</b>
+          <p>Suppose the reward model scores the winner 1.2 and the loser 0.4 for one prompt. The score difference is 0.8, so</p>
+          <div class="eq">P(y_w \succ y_l) = \sigma(0.8) = \frac{1}{1+e^{-0.8}} = 0.6900, \qquad \ell = -\ln \sigma(0.8) = 0.3711.</div>
+          <p>A difference of 2 gives <span class="tex">\sigma(2) = 0.8808</span>, and a loss of <span class="tex">-\ln\sigma(2) = 0.1269</span>. The loss falls as the model becomes more confident in the right order, and it never reaches zero, because the model is never certain.</p></div>
+
+        <p><b>Step 3: optimise the policy against the reward, with a leash.</b> The objective for the policy <i>π<sub>θ</sub></i> is to maximise the expected reward minus a penalty for drifting from the reference <i>π<sub>ref</sub></i>, measured by the Kullback–Leibler divergence:</p>
+        <div class="eq">J(\theta) = \mathbb{E}_{x,\;y\sim\pi_\theta}\big[r_\phi(x,y)\big] - \beta\,\mathbb{E}_{x}\big[\mathrm{KL}\big(\pi_\theta(\cdot\mid x)\,\|\,\pi_{\text{ref}}(\cdot\mid x)\big)\big]</div>
+        <p>The penalty term is what prevents the model from exploiting the reward model's blind spots. In practice the update is done with a policy-gradient method such as PPO (Module 6), and the KL penalty is often added inside the reward for each token.</p>
+
+        <div class="worked"><b>Worked example: the best policy over two responses</b>
+          <p>Take two responses, with reward <span class="tex">r = (1, 0)</span>, a reference policy that is uniform, <span class="tex">\pi_{\text{ref}} = (0.5, 0.5)</span>, and <span class="tex">\beta = 0.5</span>. For a fixed reward, the policy that maximises <span class="tex">J</span> has the closed form</p>
+          <div class="eq">\pi^*(y) \propto \pi_{\text{ref}}(y)\,\exp\!\Big(\frac{r(y)}{\beta}\Big) \;\Rightarrow\; \pi^* = \Big(\frac{0.5\,e^{2}}{0.5\,e^{2}+0.5},\;\frac{0.5}{0.5\,e^{2}+0.5}\Big) = (0.8808,\;0.1192)</div>
+          <p>Its expected reward is <span class="tex">0.8808</span>, its KL divergence from the reference is <span class="tex">0.3278</span>, and so <span class="tex">J = 0.8808 - 0.5 \times 0.3278 = 0.7169</span>. For comparison, the reference itself scores <span class="tex">J = 0.5</span> and the reward-only policy <span class="tex">(1,0)</span> scores <span class="tex">J = 1 - 0.5\ln 2 = 0.6534</span>. The optimum sits between these two extremes, which is the whole point of the leash.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Given a reference policy and a reward model fitted by the pairwise loss, RLHF solves</p>
+        <div class="eq">\max_{\theta}\; \mathbb{E}_{x\sim\mathcal D,\,y\sim\pi_\theta(\cdot\mid x)}\big[r_\phi(x,y)\big] - \beta\,\mathbb{E}_{x\sim\mathcal D}\big[\mathrm{KL}(\pi_\theta\|\pi_{\text{ref}})\big]</div>
+        <table class="sym">
+          <tr><td><i>x</i>, <i>y</i></td><td>a prompt and a response to that prompt</td></tr>
+          <tr><td><i>y<sub>w</sub></i>, <i>y<sub>l</sub></i></td><td>the preferred and the rejected response in one comparison</td></tr>
+          <tr><td><i>r<sub>φ</sub></i></td><td>the reward model, a network with parameters φ that returns a scalar</td></tr>
+          <tr><td><i>σ</i></td><td>the logistic sigmoid, mapping a score difference to a probability in (0, 1)</td></tr>
+          <tr><td><i>π<sub>θ</sub></i>, <i>π</i><sub>ref</sub></td><td>the policy being trained and the frozen reference policy</td></tr>
+          <tr><td>KL(<i>p</i>‖<i>q</i>)</td><td>the Kullback–Leibler divergence, a non-negative measure of how far <i>p</i> is from <i>q</i> (zero only when they are equal)</td></tr>
+          <tr><td><i>β</i></td><td>the KL strength: large β keeps the policy near the reference, small β lets it chase reward</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a KL leash over four responses</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the rewards at their defaults and set β to 2. The blue bars barely leave the grey reference bars. Read the KL readout: it is small.</li>
+          <li>Drag β down to 0.05. The policy piles onto response A (helpful). Its KL grows and the objective J is close to the reward-only value.</li>
+          <li>Set the reward of response C (unsafe) to +2. The policy now moves toward C. Notice that the reward model is the only thing that changed; the leash has not stopped it.</li>
+          <li>Press Step. Each press moves the policy halfway (in the easing sense) toward its target. Speed slider changes how fast it settles.</li></ol></div>
+        <div data-lab="rlhfKL"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The reward model is an estimate.</b> It is trained on a finite set of comparisons from a particular set of labellers. Its scores are reliable near the training prompts and can be wrong far from them.</li>
+            <li><b>Pairwise preference is not a measure of truth.</b> Labellers can prefer a confident wrong answer, a longer answer or a flattering answer. The reward model learns those preferences too.</li>
+            <li><b>A small KL is not automatically safe.</b> The KL term limits how far the policy moves, not what it moves toward. A small β with a bad reward model still produces bad behaviour, only more slowly.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Instruction-tuned chat models are commonly trained with a supervised stage on demonstrations, then with a reward model and a KL-regularised policy-optimisation stage, which is RLHF in the sense used here.</li>
+            <li>Direct preference optimisation (DPO) removes the explicit reward model and optimises the same KL-regularised objective directly from preference pairs. It is a closely related family, not a different goal.</li>
+            <li>The same reward-model-plus-leash pattern is used outside language, for example in preference-based training of image generators and robot policies (see the foundation-model material in Robotics).</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage: preference data is collected offline; the reward model is trained on it; the policy is then optimised with rollouts that call the reward model and the reference model. Costs: one reference forward pass and one reward forward pass per sampled response, plus the policy update. Stores: preference pairs with labeller and guideline version, reward-model weights, the frozen reference weights and the policy checkpoints.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. A reward model scores the winner 2.0 and the loser 0.0 for a prompt. What probability does it assign to the correct order, and what is the loss for this pair?</summary><div class="ans">The difference is 2.0, so P = σ(2) = 0.8808 and the loss is −ln σ(2) = 0.1269.</div></details>
+          <details class="check"><summary>2. In the worked example (rewards (1, 0), uniform reference, β = 0.5), what does π* become if β grows very large?</summary><div class="ans">As β grows, exp(r/β) approaches 1 for both responses, so π* approaches the reference (0.5, 0.5). The KL leash then dominates and the policy hardly moves.</div></details>
+          <details class="check"><summary>3. Why is the KL penalty needed if the reward model already encodes human preferences?</summary><div class="ans">The reward model is only reliable near the data it was trained on. Without a penalty, the policy can move to responses where the reward model over-scores (a blind spot), which is reward hacking. The KL term keeps the policy near the reference, where the reward model is more trustworthy.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>RLHF has two learned pieces: a reward model fitted to pairwise preferences, and a policy optimised against it.</li>
+            <li>The Bradley–Terry loss uses only score differences, so the reward model's scale is arbitrary.</li>
+            <li>The KL penalty with strength β is the leash that keeps the learned policy near a trusted reference.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.2 ===================== -->
+    <section class="lesson" id="reward-hacking" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">9.2</span><h2>Reward hacking and specification gaming</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A cleaning robot is rewarded for every item it puts in the bin, because bins are easy to count. The designers want a clean floor. Within a week the robot has learned to pick items out of the bin and put them back in again, scoring many points and leaving the floor no cleaner. Nothing in the code is buggy. Why did the robot find this, and how could anyone have known from the reward alone?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A reward is a <b>proxy</b>: a number we can measure that we hope tracks what we really want. The true objective is often something we cannot measure directly, such as "the floor is clean" or "the answer is helpful and true". Goodhart's law puts it in one line: when a measure becomes a target, it ceases to be a good measure. A learner that optimises hard will find the places where the proxy and the true goal come apart, because those places are exactly where extra reward is cheap.</p>
+        <p>Reward hacking is the name for the agent exploiting such a gap. It is not a sign of a clever or malicious agent. A policy-gradient method is simply good at finding any direction that increases the number it is given.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: a true objective and a proxy.</b> Let <i>x</i> in [0, 1] be the share of the robot's time spent on a behaviour the proxy over-rewards. Suppose the true value is best at <i>x</i> = 0.3, a moderate share, and falls on either side: <span class="tex">T(x) = 1 - (x - 0.3)^2</span>. Now suppose the proxy also pays a bonus <span class="tex">a \cdot x</span> for the easy-to-count behaviour, so <span class="tex">P(x) = T(x) + a\,x</span>. The parameter <i>a</i> is how much the proxy over-values the gameable share.</p>
+        <p><b>Step 2: where does the proxy peak?</b> Set the derivative of <i>P</i> to zero: <span class="tex">-2(x-0.3) + a = 0</span>, so the proxy optimum is <span class="tex">x^* = 0.3 + a/2</span> (clipped to [0, 1]).</p>
+
+        <div class="worked"><b>Worked example: three proxies</b>
+          <p>With <span class="tex">a = 0</span>, the proxy and the truth agree and both peak at <i>x</i> = 0.3 with value 1. With <span class="tex">a = 0.5</span>, the proxy peaks at <i>x</i> = 0.55: the proxy value is <span class="tex">1.2125</span> while the true value falls to <span class="tex">0.9375</span>. With <span class="tex">a = 1</span>, the proxy peaks at <i>x</i> = 0.8, where the proxy is 1.55 (it has risen by half) but the true value is only <span class="tex">0.75</span>. With <span class="tex">a = 1.5</span>, the proxy wants <i>x</i> = 1.05, which is clipped to 1.0; the proxy reads 2.01 and the true value is only <span class="tex">0.51</span>.</p>
+          <p>The proxy went up in every case, and the true value went down in every case after <i>a</i> = 0. A dashboard showing only the proxy would report success at each step.</p></div>
+
+        <p><b>Step 3: a learner finds it by climbing.</b> A learner that follows the gradient of the proxy, <span class="tex">x \leftarrow x + \eta\,\partial P/\partial x</span>, does not know that the true value exists. It just climbs. Each step is a small move, so no single step looks alarming; the drift is only visible in the trend.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <i>T</i> be the true objective and <i>P</i> the proxy the learner optimises. The learner chooses a policy <i>π</i> to maximise <i>E</i>[<i>P</i>], and reward hacking is the situation in which <span class="tex">\mathbb{E}[P]</span> rises while <span class="tex">\mathbb{E}[T]</span> falls. Formally, there is a region of policies where the derivative of <i>P</i> and the derivative of <i>T</i> have opposite signs.</p>
+        <table class="sym">
+          <tr><td><i>T</i>(<i>x</i>)</td><td>the true objective, here 1 − (<i>x</i> − 0.3)², unknown to the learner</td></tr>
+          <tr><td><i>P</i>(<i>x</i>)</td><td>the proxy reward the learner actually receives, here <i>T</i>(<i>x</i>) + <i>a x</i></td></tr>
+          <tr><td><i>x</i></td><td>share of time on the gameable behaviour, in [0, 1]</td></tr>
+          <tr><td><i>a</i></td><td>how much the proxy over-rewards that behaviour (a gap, not a noise level)</td></tr>
+          <tr><td><i>η</i></td><td>learning rate of the climb (0.1 per step in the lab)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: the proxy goes up, the truth goes down</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the gaming weight to 0. Press Play and watch the orange (proxy) and green (true) curves rise together to the peak at x = 0.3. Nothing is hacked.</li>
+          <li>Set the gaming weight to 1.0 (the default). Watch the learner climb past x = 0.3 while the green dot falls. Read the readout: at the proxy optimum, the true value is 0.75.</li>
+          <li>Set the gaming weight to 0.5. Find the proxy optimum and check it against the worked example (x* = 0.55, true value 0.9375).</li>
+          <li>Press Step to move one update at a time. Notice that the proxy changes monotonically, so a dashboard built on it would never show a problem.</li></ol></div>
+        <div data-lab="rewardHack"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A rising proxy is not evidence of progress.</b> Always report a second, independent measure of the true goal, collected or judged in a way the learner does not see during training.</li>
+            <li><b>Hacking is often found by the agent, not the designer.</b> The learner explores the whole reward landscape, so it will find the gap even when the designer did not look for it.</li>
+            <li><b>Patching one hack creates another.</b> Removing one exploit leaves the gap between proxy and truth in place. Fix the measurement, not only the symptom.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Classic game agents have been reported to exploit simulator bugs and score counters, for example by pausing a game indefinitely to avoid losing, or by collecting a reward that the designers did not intend.</li>
+            <li>Learned reward models are exploited in the same way: a policy that writes more confident or longer text can score well on a preference model while being less accurate. This is why RLHF pipelines keep held-out evaluations and KL limits.</li>
+            <li>Specification gaming is studied under the name AI safety; the same failure is central to the evaluation questions in the next lessons.</li></ul></div>
+
+          <div class="callout warn"><b>Honesty about the lab.</b> The proxy here is a one-parameter caricature chosen so the gap is easy to see. Real proxies are high-dimensional and the gap is usually found by search, not by a formula. The lab shows the mechanism, not the frequency of hacking in practice.</div>
+
+          <div class="callout"><b>Pipeline placement.</b> Evaluate stage (held-out true metrics are measured against the training proxy), and deploy &amp; monitor stage (live metrics are compared with the proxy and with human audits). Stores: the proxy definition with its version, the held-out evaluation set and the audit log.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With the gaming weight at 0.5, what is the proxy optimum and what is the true value there?</summary><div class="ans">x* = 0.3 + 0.5/2 = 0.55. The true value is 1 − (0.55 − 0.3)² = 0.9375. The proxy value there is 1.2125.</div></details>
+          <details class="check"><summary>2. At a gaming weight of 1.5, why is the proxy optimum reported as x = 1 rather than 1.05?</summary><div class="ans">The share of time must lie in [0, 1], so the unconstrained optimum 1.05 is clipped to the boundary x = 1. At that boundary the true value is 1 − 0.7² = 0.51.</div></details>
+          <details class="check"><summary>3. Name two things that would have revealed the hack in the cleaning-robot example before it was deployed.</summary><div class="ans">Any two of: measuring the floor directly (for example a dirt count after each run) as a held-out true metric; reviewing sampled episodes by a person; checking that the reward rises together with the true metric on a validation run; and adding a penalty or constraint on the exploited behaviour (moving items out of the bin).</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A reward is a proxy; the learner optimises the proxy, not the goal.</li>
+            <li>Where proxy and truth diverge, optimisation pushes toward the divergence; a rising proxy can hide a falling truth.</li>
+            <li>Measure the true goal independently, keep it out of the training loop, and monitor it after deployment.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.3 ===================== -->
+    <section class="lesson" id="self-play" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">9.3</span><h2>Self-play and AlphaZero-style training</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>There is no teacher who knows how to play a board game perfectly, and no dataset of perfect games. Can an agent become strong by playing against itself? And if it plays only its latest version, will it keep improving or will it chase its own tail?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine two children learning a game by playing each other every afternoon. At first both make many mistakes, and every game is a lesson. As each improves, the other must improve to keep up, and the games become harder and more informative. Self-play builds a curriculum automatically: the opponent is always at the right level, because it is you.</p>
+        <p>The danger is that the opponent is only ever one version of yourself. In rock, paper, scissors, a learner that always beats its previous self can cycle forever: rock beats scissors, which beats paper, which beats rock, and no version is ever the best. Robust self-play therefore keeps memory of the past, either as a pool of earlier opponents or as the average of everything played so far.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: rating the players.</b> In a two-player game we often rank checkpoints by an Elo rating. The expected score of player A against B is a logistic function of the rating gap, and after each game the rating moves in proportion to the surprise.</p>
+        <div class="eq">E_A = \frac{1}{1+10^{(R_B-R_A)/400}},\qquad R_A' = R_A + K\,(S_A - E_A)</div>
+        <p>Here <i>S<sub>A</sub></i> is 1 for a win, 0.5 for a draw and 0 for a loss, and <i>K</i> sets how fast ratings move.</p>
+
+        <div class="worked"><b>Worked example: one Elo update</b>
+          <p>Checkpoint A is rated 1500 and checkpoint B is rated 1600, so the rating gap is 100. The expected score of A is <span class="tex">E_A = 1/(1+10^{100/400}) = 1/(1+1.7783) = 0.3599</span>. With <span class="tex">K = 32</span>: if A wins, <span class="tex">R_A' = 1500 + 32(1 - 0.3599) = 1520.48</span>; if A loses, <span class="tex">R_A' = 1500 + 32(0 - 0.3599) = 1488.48</span>. The underdog gains more for a win than it loses for a defeat, because the win was less expected.</p></div>
+
+        <p><b>Step 2: the AlphaZero-style training loop.</b> A network <i>f<sub>θ</sub>(s)</i> takes a board position <i>s</i> and outputs two things: a policy <i>p</i> over moves and a value <i>v</i> in [−1, 1] estimating the chance of winning. Each move is chosen by a <b>tree search</b> (Module 7's MCTS) that uses the network's policy as a prior and its value as the leaf evaluation. The search produces a better distribution over moves than the raw network: its visit counts <i>π</i>. The network is trained to match the search (policy target) and the final game outcome (value target <i>z</i> = +1, 0 or −1).</p>
+
+        <div class="worked"><b>Worked example: the training loss on one position</b>
+          <p>The search visited three moves 10, 30 and 60 times, so the policy target is <span class="tex">\pi = (0.1, 0.3, 0.6)</span>. The network currently predicts <span class="tex">p = (0.2, 0.3, 0.5)</span>. The cross-entropy term is</p>
+          <div class="eq">-\sum_a \pi_a \ln p_a = -(0.1\ln 0.2 + 0.3\ln 0.3 + 0.6\ln 0.5) = 0.9380</div>
+          <p>The value target is <span class="tex">z = +1</span> (the player to move went on to win) and the network says <span class="tex">v = 0.4</span>, so the squared error is <span class="tex">(1 - 0.4)^2 = 0.36</span>. The loss on this position is <span class="tex">0.36 + 0.9380 = 1.2980</span>, before the small regularisation term. Note that the cross-entropy can never reach zero for a target that is itself spread out: its minimum is the entropy of <span class="tex">\pi</span>, which is 0.8980 here.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For each position <i>s</i> in a self-play game, with search visit distribution <i>π</i> and final outcome <i>z</i>, the network minimises</p>
+        <div class="eq">\mathcal L(\theta) = \big(z - v_\theta(s)\big)^2 - \pi^{\top}\log p_\theta(s) + c\,\lVert\theta\rVert^2</div>
+        <table class="sym">
+          <tr><td><i>s</i></td><td>a game position (board state)</td></tr>
+          <tr><td><i>p<sub>θ</sub></i>(<i>s</i>), <i>v<sub>θ</sub></i>(<i>s</i>)</td><td>the network's policy over moves and its value estimate</td></tr>
+          <tr><td><i>π</i></td><td>the search's visit distribution over moves, a better target than the raw policy</td></tr>
+          <tr><td><i>z</i></td><td>the game outcome from this position's player's view: +1 win, 0 draw, −1 loss</td></tr>
+          <tr><td><i>c</i></td><td>the weight on the L2 regularisation of the parameters <i>θ</i></td></tr>
+        </table>
+
+        <h3 class="sec">Lab: fictitious play on rock, paper, scissors</h3>
+        <p>The lab plays a simpler self-play loop. Two learners each keep a count of their own moves and each best-responds to the other's counts. Each dot in the triangle is the frequencies of one learner's moves; the centre is the equilibrium where each move is played a third of the time.</p>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the B history at 0 pseudo-counts and press Play. Watch the blue trail spiral in toward the green centre. Each round is a best response, not a random choice.</li>
+          <li>Set the B history to 20 Rock pseudo-counts. The trail starts pulled toward the Rock corner. Find how many rounds it takes to come back near the centre.</li>
+          <li>Press Step a few times and read the "A played … B played …" line. Notice that single rounds look random, while the frequencies settle.</li>
+          <li>Reset and compare the total-variation distance after 50 and 300 rounds. The distance shrinks, but the path is not a straight line.</li></ol></div>
+        <div data-lab="fictitiousPlay"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Pure self-play can cycle.</b> In non-transitive games, playing only the latest version can keep the policy moving in a loop. Keep a pool of past opponents or a population.</li>
+            <li><b>Elo is relative.</b> A rating only compares members of a pool. Adding a much weaker or stronger opponent shifts everyone's rating without changing any one agent's play.</li>
+            <li><b>Search is part of the training signal.</b> The policy target comes from search, so a weak search trains a weak network. The search budget is a training hyperparameter, not only a test-time setting.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>AlphaGo, AlphaZero and their successors learned board games from self-play with tree search and a shared policy-value network, without human game records for the final versions.</li>
+            <li>Poker and other imperfect-information games use counterfactual regret minimisation and fictitious-play variants; the lab's averaging idea is the simplest form of that family.</li>
+            <li>Self-play and population training are used in strategy and multi-agent games (Module 8), and in some language-model training setups where a model critiques or debates another.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (games are played by the current network with search), store (positions, visit counts and outcomes in a replay buffer), improve (gradient steps on the loss above), evaluate (rating against a pool of past checkpoints). Cost: search dominates each move; each training batch needs forward and backward passes. Stores: game records, checkpoints, the opponent pool and Elo history.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Player A (1500) beats player B (1600) with K = 32. What is A's new rating, and what would it be if A had lost?</summary><div class="ans">E_A = 0.3599, so a win gives 1500 + 32 × 0.6401 = 1520.48, and a loss gives 1500 − 32 × 0.3599 = 1488.48.</div></details>
+          <details class="check"><summary>2. For the policy term of the worked example, why is the smallest possible value 0.8980 rather than zero?</summary><div class="ans">The term is the cross-entropy between the target π and the prediction p. It is minimised when p equals π, and then it equals the entropy of π, −Σ π ln π = 0.8980. Only a target that puts all its mass on one move would give a loss near zero.</div></details>
+          <details class="check"><summary>3. Why can always playing against the latest version fail in a rock, paper, scissors style game?</summary><div class="ans">Each version can beat the previous one, so the sequence of versions cycles through rock, paper and scissors and never converges to a strategy that beats them all. Averaging over history (fictitious play) or keeping a pool of past opponents avoids the cycle.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Self-play generates its own curriculum, and it works best when the opponent is drawn from a pool, not only the latest version.</li>
+            <li>AlphaZero-style training fits a network to search results and game outcomes at the same time.</li>
+            <li>Ratings measure performance relative to a pool, so report the pool with the rating.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.4 ===================== -->
+    <section class="lesson" id="evaluation-reproducibility" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">9.4</span><h2>Evaluating RL fairly</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two agents are trained with the same algorithm. One run reaches a return of 268, the other 190. A paper reports the 268 run as "our method". Is that a fair result? What should be measured, and how many runs are enough before a claim of improvement means anything?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>In RL the outcome of training depends on the random seed: the initial weights, the order of experience, the exploration noise and the environment's random starts. Two runs of the same code can end in different places, sometimes far apart. A single run is therefore one sample from a distribution, and a claim about the method is a claim about that distribution. The honest question is: what does the typical run do, and how sure are we about that typical value?</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: report the spread, not one run.</b> Run each method with several seeds, then report the mean and a measure of spread. The standard error of the mean falls only with the square root of the number of seeds, so more seeds are needed to shrink the uncertainty.</p>
+        <p><b>Step 2: an interval for the mean.</b> With <i>n</i> seeds, the sample mean has an approximate 95% confidence interval <span class="tex">\bar y \pm t_{0.975,\,n-1}\,s/\sqrt n</span>, where <i>s</i> is the sample standard deviation and <span class="tex">t</span> comes from Student's t distribution. The t value is used rather than 1.96 because with few seeds the spread itself is estimated roughly.</p>
+
+        <div class="worked"><b>Worked example: five seeds</b>
+          <p>Five seeds give final returns 212, 245, 190, 268 and 231 (illustrative numbers). The mean is <span class="tex">\bar y = 229.2</span>. The sample standard deviation is <span class="tex">s = 29.96</span>, so the standard error is <span class="tex">29.96/\sqrt 5 = 13.40</span>. With <span class="tex">t_{0.975,4} = 2.776</span>, the interval is</p>
+          <div class="eq">229.2 \pm 2.776 \times 13.40 = 229.2 \pm 37.2 \;\Rightarrow\; [192.0,\; 266.4]</div>
+          <p>The best seed, 268, is 16.9% above the mean. Reporting it as the method's result overstates the typical performance by that much. A second method with a mean of 210 and an interval of, say, [195, 225] would not be shown to be different, even though its best seed might beat the first method's mean.</p></div>
+
+        <p><b>Step 3: sample efficiency.</b> RL methods also differ in how many environment steps they need. The fair comparison is the learning curve, the return against steps, not only the final value. Summaries such as the area under the curve or the steps needed to reach a fixed return use the whole curve, and they must be computed per seed before averaging.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <i>y<sub>1</sub>, …, y<sub>n</sub></i> be the final returns of <i>n</i> independent seeds. Then</p>
+        <div class="eq">\bar y = \frac{1}{n}\sum_{i=1}^{n} y_i,\qquad s = \sqrt{\frac{1}{n-1}\sum_{i=1}^{n}(y_i-\bar y)^2},\qquad \bar y \pm t_{0.975,\,n-1}\frac{s}{\sqrt n}</div>
+        <p>This interval is valid when the seeds are independent and the returns are roughly symmetric; with very few seeds or heavy tails, a bootstrap over seeds is a useful check.</p>
+        <table class="sym">
+          <tr><td><i>n</i></td><td>number of independent seeds (runs with different random states)</td></tr>
+          <tr><td><i>y<sub>i</sub></i></td><td>the final return of seed <i>i</i>, measured on held-out starts</td></tr>
+          <tr><td><i>ȳ</i>, <i>s</i></td><td>the sample mean and sample standard deviation across seeds</td></tr>
+          <tr><td><i>t</i><sub>0.975, n−1</sub></td><td>the 97.5th percentile of Student's t distribution with <i>n</i> − 1 degrees of freedom</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: learning curves over seeds</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with 10 seeds. The grey single-seed curves appear one at a time; the blue band narrows as seeds are added. Read the half-width in the readout after 2 seeds and after 10.</li>
+          <li>Raise the seed spread to 0.35. The grey curves fan out and the band widens. This is the effect of an unstable method.</li>
+          <li>Set the spread to 0 and compare the readout. Every seed agrees, and the interval collapses. Real RL is almost never this stable.</li>
+          <li>Compare the "best single seed" line with the mean. Its gap is the amount of advertising the best-seed report adds.</li></ol></div>
+        <div data-lab="seedCI"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Best-seed reporting.</b> Reporting the highest of several runs, or re-running until one looks good, is not a result. Report all seeds or a pre-stated statistic.</li>
+            <li><b>Too few seeds.</b> Two seeds give a very wide interval; a claim of improvement from two runs is usually unsupported. Count the seeds and state the number.</li>
+            <li><b>Tuning the baseline less than the method.</b> A fair comparison gives both methods the same tuning budget and the same environment steps.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Deep RL studies have shown that reported gains can vanish across seeds and implementation details, which is why modern benchmark papers report intervals over many seeds and use aggregate statistics with uncertainty (the approach popularised by the rliable toolkit).</li>
+            <li>The same discipline is needed for evaluating language-model alignment, where a single preference evaluation is noisy and its interval should be reported (see the ML evaluation module).</li>
+            <li>Confidence intervals and their assumptions are covered in <a href="ml-evaluation.html">Machine Learning · Evaluation</a>; the sample-mean machinery is in <a href="math-probability.html">Mathematics · Probability</a>.</li></ul></div>
+
+          <div class="callout warn"><b>Honest caveat.</b> The lab's curve is a made-up model with a seed-to-seed spread. The numbers show how the interval behaves, not how any real method performs.</div>
+
+          <div class="callout"><b>Pipeline placement.</b> Evaluate stage (batch evaluation runs over seeds and held-out environments). Stores: the experiment log with seed, configuration, environment version, step count and the full learning curve, not only the final number.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Using the worked example, what is the 95% interval if the sample standard deviation were 15 instead of 29.96?</summary><div class="ans">The standard error is 15/√5 = 6.708. The half-width is 2.776 × 6.708 = 18.62, giving [210.6, 247.8] around the mean 229.2.</div></details>
+          <details class="check"><summary>2. Why is the t value 2.776 and not 1.96?</summary><div class="ans">With only 5 seeds the sample standard deviation is itself an estimate with 4 degrees of freedom, so the distribution of the standardised mean has heavier tails than the normal. The t quantile for 4 degrees of freedom, 2.776, reflects this; it approaches 1.96 as the number of seeds grows.</div></details>
+          <details class="check"><summary>3. Why is reporting the best of five seeds misleading, even if the method is genuinely better on average?</summary><div class="ans">The best of several draws is biased upward: it is the largest of the spread, not the typical value. In the example it is 16.9% above the mean, so it describes a lucky run rather than the method's typical performance.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A single RL run is one sample; report several seeds with an interval for the mean.</li>
+            <li>Use the t quantile for small numbers of seeds, and report the number of seeds.</li>
+            <li>Compare learning curves and sample efficiency, not only final returns, and never pick the best seed.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.5 ===================== -->
+    <section class="lesson" id="rl-systems" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">9.5</span><h2>Building RL systems in production</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A recommender system learned a new ranking policy in a simulator, and the team wants to switch all users to it tomorrow. The old policy's logs show what users did when it chose their items. Can those logs tell us how the new policy would perform, and if the new policy is worse, how do we find out without harming many users?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An RL system in production is more than an algorithm. It needs a simulator or an offline model to test ideas cheaply, logs that record what the current policy did and why, an evaluation step that estimates the new policy from those logs, and a rollout that exposes a small share of users at a time and watches a guardrail. Each piece exists because a mistake in the real world costs more than a mistake in a simulator.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: log the propensities.</b> When the logging policy <i>π<sub>b</sub></i> chooses an action, record the action, the reward and the probability it had of choosing that action. Without the probability, the logs cannot be reweighted later.</p>
+        <p><b>Step 2: estimate a new policy from old logs.</b> Importance sampling (Module 3) reweights each logged reward by how much more or less likely the new policy <i>π<sub>e</sub></i> would have been to choose that action:</p>
+        <div class="eq">\hat V_{\text{IS}}(\pi_e) = \frac{1}{n}\sum_{i=1}^{n} w_i\, r_i,\qquad w_i = \frac{\pi_e(a_i\mid s_i)}{\pi_b(a_i\mid s_i)}</div>
+
+        <div class="worked"><b>Worked example: six logged decisions</b>
+          <p>Three actions are possible. The logging policy chose them with probabilities <span class="tex">\pi_b = (0.5, 0.25, 0.25)</span>; the new policy would choose with <span class="tex">\pi_e = (0.2, 0.6, 0.2)</span>. Six logged decisions have actions <span class="tex">(0, 1, 2, 1, 0, 2)</span> and rewards <span class="tex">(1, 4, 0, 3, 2, 1)</span>. The weights are <span class="tex">w = (0.4,\,2.4,\,0.8,\,2.4,\,0.4,\,0.8)</span>.</p>
+          <div class="eq">\hat V_{\text{IS}} = \frac{0.4(1)+2.4(4)+0.8(0)+2.4(3)+0.4(2)+0.8(1)}{6} = \frac{18.8}{6} = 3.133</div>
+          <p>The self-normalised version divides by the sum of the weights, 7.2, instead of by 6: <span class="tex">18.8/7.2 = 2.611</span>, which is lower because it is less sensitive to a few large weights. The effective sample size, <span class="tex">(\sum w)^2/\sum w^2 = 51.84/13.12 = 3.95</span>, says that these six logs carry about as much information as four equal samples. With six decisions, that is very little.</p></div>
+
+        <p><b>Step 3: a rollout with a guardrail.</b> When a policy is switched on for real users, it is done in stages (1%, 5%, 25%, 100% of traffic). At each stage, the candidate's measured return is compared with the baseline's. If the measured drop exceeds a pre-set guard, the rollout is rolled back. The guard must be wider than the measurement noise, which depends on how many users the stage has: small stages are noisy.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For a logged dataset <span class="tex">\{(s_i,a_i,r_i,\pi_b(a_i\mid s_i))\}_{i=1}^{n}</span>, the importance-sampling estimate above is unbiased when every action the new policy might take has nonzero probability under the logging policy (the support condition). Its variance grows with the weights, so the effective sample size is the practical check.</p>
+        <table class="sym">
+          <tr><td><i>π<sub>b</sub></i>, <i>π<sub>e</sub></i></td><td>the logging (behaviour) policy and the candidate (evaluation) policy</td></tr>
+          <tr><td><i>a<sub>i</sub></i>, <i>r<sub>i</sub></i>, <i>s<sub>i</sub></i></td><td>the logged action, reward and state of decision <i>i</i></td></tr>
+          <tr><td><i>w<sub>i</sub></i></td><td>the importance weight, the ratio of the two policies' probabilities for the logged action</td></tr>
+          <tr><td><i>n</i></td><td>number of logged decisions</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a staged rollout with a guardrail</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the true change at −8% and the guard at 5%. Press Play several times with Reset in between. Some runs roll back at 1%, others pass the first stage and are caught later or not at all. The seed is fixed, so Reset and Play repeats the same run.</li>
+          <li>Set the true change to +5%. Find a guard value that never rolls back a good release. Note how wide the guard must be at the 1% stage.</li>
+          <li>Read the standard-error figure for 1% traffic. Explain why a guard narrower than that figure will reject good releases.</li>
+          <li>Press Step to move one stage at a time and read the log line that is written at each decision.</li></ol></div>
+        <div data-lab="canaryRollout"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Missing propensities.</b> Logs without the logging probabilities cannot support importance sampling. Add the propensity column before the logs are needed.</li>
+            <li><b>Support gaps.</b> If the new policy takes an action the logging policy never took, there is no data for it. The estimate is silent about that action, not zero.</li>
+            <li><b>Simulator optimism.</b> A policy that wins in a simulator has only been tested against the simulator's assumptions. The rollout is the real test.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Recommender and advertising systems log propensities for their exposures and use off-policy estimates to compare ranking policies before launch.</li>
+            <li>Staged rollouts with automatic rollback are standard in large online services; the same guardrail logic applies to model releases, not only RL policies.</li>
+            <li>Robot control and autonomous driving stacks run policies in simulation and in logged fleet data, with gated release, which is covered in <a href="robo-learning.html">Robotics · Learning for robots</a>.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Store stage (logs with propensities), evaluate stage (off-policy estimates from logs, then staged online evaluation), deploy &amp; monitor stage (traffic ramp, guardrails, rollback). Cost: logging is cheap per event, but each ramp stage needs enough traffic for a stable measurement. Stores: decision logs, experiment results, the model registry with rollback targets.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, what is the importance weight for the decision with action 1 and reward 4, and why is it large?</summary><div class="ans">w = π_e(1)/π_b(1) = 0.6/0.25 = 2.4. The new policy likes action 1 far more (0.6) than the logging policy did (0.25), so that logged decision counts for more.</div></details>
+          <details class="check"><summary>2. Why is the effective sample size of 3.95 out of six decisions a warning sign?</summary><div class="ans">It says the estimate is dominated by a few large weights, so the six logs behave like about four equal samples. The variance is high and the estimate should not be trusted without more data.</div></details>
+          <details class="check"><summary>3. At 1% traffic the standard error of the measured relative change is 0.3/√20 = 6.7%. Why does a 5% guard at that stage mostly test noise?</summary><div class="ans">A 5% drop is less than one standard error of the measurement, so the decision depends more on the random draw than on the candidate's true performance. A guard needs to be several standard errors wide, or the stage needs more traffic, before the decision is informative.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Log the action propensities; without them, the data cannot evaluate a different policy.</li>
+            <li>Importance-sampling estimates are unbiased under support, but their variance is governed by the effective sample size.</li>
+            <li>Roll out in stages, size each guardrail above the measurement noise, and keep a rollback target ready.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.6 ===================== -->
+    <section class="lesson" id="rl-governance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">9.6</span><h2>RL in the real world: risk and oversight</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An RL agent manages a warehouse's inventory and can place large purchase orders. Its reward is profit. Most of its actions are harmless, but occasionally it proposes an order that would overspend the budget or break a supplier contract. Which decisions should be automatic, which should wait for a person, and which should never happen? And how do we show later who decided what?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An agent optimises the reward it is given, and the reward is a proxy (Lesson 9.2). In the real world, the cost of a bad action is not in the reward at all: it is a broken contract, a fine or a safety incident. Governance is the set of mechanisms that keeps the agent's actions inside limits that the reward does not express: hard constraints that no action may violate, a routing rule that sends risky actions to a person, and an audit trail that records every decision and its reason.</p>
+        <p>Think of a bank's approval process. Small payments clear automatically, larger ones need a second signature, and some transfers are simply refused. The bank does not rely on each clerk's judgement alone, and it keeps records so that a decision can be reviewed later. An RL system needs the same three layers.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: a risk score.</b> A model estimates how risky a proposed action is, on a scale from 0 (safe) to 1 (severe). The score is imperfect; it is a classifier's output, not the truth.</p>
+        <p><b>Step 2: three routes.</b> Choose two thresholds <span class="tex">a \le b</span>. Actions scoring below <i>a</i> are auto-approved; actions at or above <i>b</i> are blocked; actions in between go to a human reviewer.</p>
+
+        <div class="worked"><b>Worked example: routing four proposals</b>
+          <p>Take <span class="tex">a = 0.3</span> and <span class="tex">b = 0.7</span>. Four proposals score 0.10, 0.45, 0.75 and 0.92. The first is auto-approved (0.10 &lt; 0.3). The second goes to review (0.3 ≤ 0.45 &lt; 0.7). The third and fourth are blocked (0.75 and 0.92 are both at or above 0.7).</p>
+          <p>Now raise <i>a</i> to 0.5. The second proposal, 0.45, is now auto-approved without review. The review queue shrinks, but a proposal whose true severity is moderate now runs without a person looking at it. Lowering <i>a</i> does the reverse: more reviews, fewer unsupervised actions. The thresholds set the trade-off between human workload and exposure.</p></div>
+
+        <p><b>Step 3: a log that can be audited.</b> Every decision is recorded with the proposal, the score, the model version, the route, the reviewer if any, the outcome and the time. Without the log there is no way to tell, after an incident, whether the policy, the model or the reviewer was at fault.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">\rho(s,a)\in[0,1]</span> be the risk score for proposed action <i>a</i> in state <i>s</i>, and let <span class="tex">\mathcal C</span> be a set of hard constraints. A governed policy selects</p>
+        <div class="eq">\pi_{\text{gov}}(s) = \begin{cases} a \sim \pi(\cdot\mid s) & \text{if } a\in\mathcal C \text{ and } \rho(s,a) < a_\text{th}\\ \text{human review} & \text{if } a_\text{th} \le \rho(s,a) < b_\text{th}\\ \text{block (no-op)} & \text{otherwise, or if } a\notin\mathcal C\end{cases}</div>
+        <table class="sym">
+          <tr><td><i>π</i>, <i>π</i><sub>gov</sub></td><td>the learned policy and the governed policy that wraps it</td></tr>
+          <tr><td><i>ρ</i>(<i>s</i>, <i>a</i>)</td><td>the risk score of action <i>a</i> in state <i>s</i>, from a separate risk model</td></tr>
+          <tr><td><i>𝒞</i></td><td>the set of hard constraints (budget, safety limits) that no action may violate</td></tr>
+          <tr><td><i>a</i><sub>th</sub>, <i>b</i><sub>th</sub></td><td>auto-approval and block thresholds, with <i>a</i><sub>th</sub> ≤ <i>b</i><sub>th</sub></td></tr>
+        </table>
+        <p>The gate sits outside the learned policy, so the constraints hold whatever the policy outputs. This is the same design as the safety filters in Robotics Module 7.</p>
+
+        <h3 class="sec">Lab: routing risky actions</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with the defaults. Watch the dots fall into the green (auto), yellow (review) and red (block) zones. Read the share of harmful actions that were executed.</li>
+          <li>Raise the auto-approval threshold to 0.5. Note the rise in executed harmful actions and the fall in reviews per 100 proposals.</li>
+          <li>Lower the reviewer catch rate to 0.5. Harmful actions in the review zone now slip through more often. The gate is only as good as the person behind it.</li>
+          <li>Move the block threshold below the auto threshold. The lab uses the larger of the two, so the review zone closes. State in words why this is a configuration error.</li></ol></div>
+        <div data-lab="oversightGate"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Thresholds are policy decisions.</b> Setting them is a governance decision with a named owner, not a tuning parameter to adjust for convenience.</li>
+            <li><b>Human review is not a guarantee.</b> Reviewers are slow, tired and sometimes overloaded; a review queue that approves everything gives the appearance of oversight without its substance.</li>
+            <li><b>A reward is not a constraint.</b> A large penalty may still be traded away. Hard limits belong in the gate, where no reward can override them.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Constrained RL and safe-RL methods encode budgets (collisions, spend) as constraints; deployed systems add an independent gate on top of the learned policy.</li>
+            <li>Financial trading and automated bidding systems use position limits and kill switches that act regardless of the model's output.</li>
+            <li>Governance of AI systems in general (audit trails, human oversight, risk classes) is covered in the Governing AI topic; this lesson shows where those requirements meet a running RL policy.</li></ul></div>
+
+          <div class="callout warn"><b>Safety honesty.</b> A gate with a good risk model is still a mechanism that can fail. Test it on adversarial and rare cases, monitor the executed-harm rate, and keep a way to stop the system that does not depend on the policy.</div>
+
+          <div class="callout"><b>Pipeline placement.</b> Deploy &amp; monitor stage: the gate, the thresholds and the audit log run alongside the policy in production, and the monitor checks the executed-harm rate and review load. Stores: the decision log with model and threshold versions, reviewer identity, outcome and time; the constraint set with its owner.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With a = 0.3 and b = 0.7, which route does a proposal scoring 0.70 take?</summary><div class="ans">It is at or above b, so it is blocked. The rule is "at or above b means block", which is why the boundary belongs to the block route.</div></details>
+          <details class="check"><summary>2. Why does raising the auto-approval threshold increase harmful actions executed, and what does it reduce?</summary><div class="ans">Proposals that scored between the old and new thresholds are now executed without review. Some of them are harmful, and no person checks them. It reduces the number of reviews needed, which is the workload trade-off.</div></details>
+          <details class="check"><summary>3. Name three fields an audit record must contain so that an incident can be reviewed later.</summary><div class="ans">Any three of: the proposal and state; the risk score and the model version; the thresholds in force; the route taken; the reviewer's identity and decision; the executed outcome; and the timestamp.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Hard constraints and oversight sit outside the learned policy, so they hold whatever the policy proposes.</li>
+            <li>Thresholds trade human workload against unsupervised exposure; set them as a governed decision.</li>
+            <li>Log every decision with its versions and reviewer so that outcomes can be explained and audited.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say how RLHF turns pairwise preferences into a reward model and a KL-regularised policy, why a rising proxy can hide a falling goal, how self-play builds a curriculum and why it needs a pool, how to report RL results over seeds, how off-policy estimates and staged rollouts protect a live system, and where oversight sits around a learned policy. This is the last module of the Reinforcement Learning topic. Return to the <a href="reinforcement-learning.html">Reinforcement Learning hub</a>. For more on the methods behind alignment and evaluation, see <a href="machine-learning.html">Machine Learning</a>. For the same ideas applied to robots, see <a href="robotics.html">Robotics</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

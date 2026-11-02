@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · Foundations of sequential decisions · Reinforcement Learning</title>
+<meta name="description" content="What reinforcement learning is, rewards and discounted returns, Markov decision processes, policies and values, and exploration versus exploitation, with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-foundations.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">0</div>
+      <div style="flex:1">
+        <h1>Module 0 · Foundations of sequential decisions</h1>
+        <p>Every reinforcement learning problem has the same shape: an agent acts, the world answers with a new situation and a reward, and the agent must work out which actions lead to good long-run outcomes. This module builds that shape from the ground up: the interaction loop, the return that a reward sequence adds up to, the Markov decision process that formalises the problem, values and policies, and the first tension every learner must face, exploring against exploiting.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs basic probability</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>How to read the labs.</b> Every lab is an <i>illustrative</i> toy: a corridor, a small grid or a three-armed slot machine, chosen so the numbers can be checked by hand. Each lab has a caption that says what is happening, a speed slider, Pause, Step and Reset. Where a formula or a probability is involved, you can change it and watch the animation respond.</p>
+      <p><b>Notation.</b> Time steps are written <span class="tex">t = 0, 1, 2, \dots</span>. The state at time <span class="tex">t</span> is <span class="tex">S_t</span>, the action taken is <span class="tex">A_t</span>, and the reward that arrives on the next step is <span class="tex">R_{t+1}</span>. Writing the reward with the index <span class="tex">t+1</span> is a convention: the reward is the consequence of the action at time <span class="tex">t</span>, and it is observed at time <span class="tex">t+1</span>.</p>
+    </section>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="what-is-rl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.1</span><h2>What reinforcement learning is</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot vacuum has to decide, many times a minute, whether to turn left, turn right or keep going. Nobody gives it a labelled answer for each moment, and nobody can list the right move for every room it will ever see. What can it learn from, and how is that different from learning to recognise cats in photographs?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of learning to ride a bicycle. Nobody hands you a table that says "in this exact wobble, lean this many degrees." Instead you try something, you fall or you stay up, and you adjust. The feedback is not a correct answer; it is a consequence. Reinforcement learning (RL) is the branch of machine learning built on that kind of feedback. An <b>agent</b> chooses <b>actions</b> inside an <b>environment</b>. The environment changes and sends back a <b>reward</b>, a single number that says how good the last step was. The agent's job is to choose actions so that the total reward it collects over time is as large as possible.</p>
+        <p>Compare this with supervised learning, where every training example comes with the right answer. A supervised learner is told "this photo is a cat" and learns to map photos to labels. An RL agent is told only "that move earned +1." It is not told whether a different move would have earned +5, and its own actions decide which situations it sees next. Those two differences, <b>partial feedback</b> and <b>actions that change the data</b>, are what make RL both powerful and hard.</p>
+
+        <h3 class="sec">Build it up: the interaction loop</h3>
+        <p><b>Step 1: one step.</b> At each time <span class="tex">t</span> the agent observes the state <span class="tex">S_t</span>, chooses an action <span class="tex">A_t</span>, and the environment responds with a reward <span class="tex">R_{t+1}</span> and a new state <span class="tex">S_{t+1}</span>.</p>
+        <p><b>Step 2: an episode.</b> Repeating that step gives a trajectory <span class="tex">S_0, A_0, R_1, S_1, A_1, R_2, S_2, \dots</span>. Many tasks have a natural end: a game finishes, a robot reaches its goal or falls over. One run from start to end is an <b>episode</b>.</p>
+        <p><b>Step 3: a worked episode.</b> Take the five-cell corridor in the lab below. Cells are numbered 0 to 4. The agent starts at cell 2. Reaching cell 4 gives reward +1 and ends the episode; reaching cell 0 gives −1 and ends it; every other step gives 0. Suppose the agent takes the actions left, right, right, right:</p>
+        <div class="worked"><b>Worked example: one episode, step by step</b>
+          <table class="tbl">
+            <tr><td><span class="tex">t</span></td><td><span class="tex">S_t</span></td><td><span class="tex">A_t</span></td><td><span class="tex">R_{t+1}</span></td><td><span class="tex">S_{t+1}</span></td></tr>
+            <tr><td>0</td><td>2</td><td>left</td><td>0</td><td>1</td></tr>
+            <tr><td>1</td><td>1</td><td>right</td><td>0</td><td>2</td></tr>
+            <tr><td>2</td><td>2</td><td>right</td><td>0</td><td>3</td></tr>
+            <tr><td>3</td><td>3</td><td>right</td><td>+1</td><td>4 (goal, end)</td></tr>
+          </table>
+          <p>The first move was a detour, and it cost nothing directly: the reward was 0 at that step. But it cost time. The episode took 4 steps instead of 2. With no discounting (γ = 1, defined in the next lesson), the total reward is <span class="tex">0+0+0+1 = 1</span>. If the same reward were earned in only 2 steps, the total would still be 1, which is why the next lesson adds a discount to make time matter.</p></div>
+
+        <h3 class="sec">Try it: watch the loop run</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the policy on <i>random</i>. Press Pause and then Step. Each Step advances one phase: observe, act, respond. Find the moment the reward arrives and note that it arrives on the step after the action.</li>
+          <li>Switch to <i>always right</i> and let it run. Count how many steps the episode takes from cell 2.</li>
+          <li>Switch to <i>always left</i>. Notice that the agent reaches the pit, and that an episode can end in a bad outcome just as it can in a good one.</li>
+          <li>Slow the speed to 0.25× and watch the blue agent glide between cells. The glide is only a display; the state changes exactly at the response phase.</li></ol></div>
+        <div data-lab="rl-loop"></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>An RL problem is specified by the interaction protocol: for each <span class="tex">t = 0, 1, 2, \dots</span> the agent draws <span class="tex">A_t</span> from its policy, the environment draws <span class="tex">R_{t+1}</span> and <span class="tex">S_{t+1}</span> from a distribution that depends on the current state and action,</p>
+        <div class="eq">A_t \sim \pi(\cdot \mid S_t), \qquad (R_{t+1},\,S_{t+1}) \sim p(\cdot \mid S_t, A_t)</div>
+        <table class="sym">
+          <tr><td>S_t, A_t, R_{t+1}</td><td>state, action and reward at time t (the reward is received at t+1)</td></tr>
+          <tr><td>π(a ∣ s)</td><td>the policy: the probability of choosing action a in state s</td></tr>
+          <tr><td>p(s′, r ∣ s, a)</td><td>the environment's dynamics: the probability of next state s′ and reward r after taking a in s</td></tr>
+          <tr><td>∼</td><td>"is drawn from" a probability distribution</td></tr>
+        </table>
+        <p>The agent does not know <span class="tex">p</span> in advance. Learning means improving the policy from the observed trajectories alone.</p>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A reward is not a label.</b> "+1" says the step was good; it does not say what the correct action was. Never treat a reward as the target of a supervised loss without asking what the agent could have done instead.</li>
+            <li><b>The reward at time t+1 belongs to the action at time t.</b> Off-by-one errors here are the most common bugs in RL code.</li>
+            <li><b>Episodes are not always there.</b> Continuing tasks, such as a thermostat or a data centre cooling loop, never end. Later lessons handle them with discounting.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Atari and board games: the state is the screen or the position, the action is a joystick move or a legal move, and the reward is the score or the win.</li>
+            <li>Robot control: the state is joint angles and sensor readings, the action is motor torques, and the reward is progress toward a target minus penalties for falling.</li>
+            <li>Large language models trained with reinforcement learning from human feedback: the state is the conversation so far, the action is the next token, and the reward comes from a model of human preference (Module 9).</li></ul></div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Why can't a supervised learner be trained directly on the sequence "left, right, right, right" with reward 0, 0, 0, +1?</summary><div class="ans">Supervised learning needs a correct action for each state. The data says only what happened and how good the outcome was; it does not say what the right action was in state 2. A reinforcement learner must infer which actions were responsible for the final +1, and it may need to try alternatives to find out.</div></details>
+          <details class="check"><summary>2. In the corridor, the agent starts at cell 2 and always moves right. How many steps until the goal, and what is the total undiscounted reward?</summary><div class="ans">Two steps: 2→3 (reward 0), then 3→4 (reward +1, goal, episode ends). The total undiscounted reward is 0 + 1 = 1. The goal is 4 − 2 = 2 cells away, so two steps is the shortest possible episode.</div></details>
+          <details class="check"><summary>3. Which of the following is an agent's responsibility and which is the environment's: the choice of the next move, the rule that a wall blocks movement, the score shown on screen?</summary><div class="ans">The choice of the next move belongs to the agent (it is the action). The wall rule and the score are part of the environment: the wall determines the next state, and the score is the reward signal it emits.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>An RL agent acts, the environment responds with a new state and a reward, and the loop repeats.</li>
+            <li>The feedback is evaluative (how good was that?), not instructive (what should I have done?). That is the key difference from supervised learning.</li>
+            <li>Learning means improving the policy from experience, so the agent's own actions shape the data it learns from.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="rewards-returns" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.2</span><h2>Rewards, returns &amp; discounting</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A chess engine can win a game in 10 moves or in 60. Both wins give the same reward of +1 at the end. Should the agent care about the difference? And what if the reward is spread across many steps, such as a robot that gets a small reward for every step it walks forward? How do we turn a stream of rewards into one number that the agent should maximise?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The reward at a single step is short-sighted. What the agent really cares about is the <b>return</b>: the total reward it collects from now until the end. The return from time <span class="tex">t</span> is the sum of all the rewards that follow:</p>
+        <div class="eq">G_t = R_{t+1} + R_{t+2} + R_{t+3} + \cdots</div>
+        <p>Plain addition treats a reward in a year's time the same as one now, and it has a problem with continuing tasks: the sum never stops growing. Discounting fixes both. A reward received <span class="tex">k</span> steps in the future is multiplied by <span class="tex">\gamma^k</span>, where the <b>discount factor</b> <span class="tex">\gamma</span> lies between 0 and 1. Rewards now count fully; rewards far away count less and less.</p>
+        <p>A useful picture is a bank account with interest that works in reverse: each step into the future, the value of a unit of reward shrinks by the factor <span class="tex">\gamma</span>. With <span class="tex">\gamma = 0.9</span>, a reward ten steps away is worth <span class="tex">0.9^{10} \approx 0.35</span> of the same reward now. A small <span class="tex">\gamma</span> makes the agent myopic; a <span class="tex">\gamma</span> close to 1 makes it patient.</p>
+
+        <h3 class="sec">Build it up: the discounted return</h3>
+        <p><b>Step 1: discount the rewards.</b> The discounted return is</p>
+        <div class="eq">G_t = R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \cdots = \sum_{k=0}^{\infty} \gamma^{k} R_{t+k+1}</div>
+        <p><b>Step 2: a recursive form.</b> The same sum can be written from one step to the next: the return from time <span class="tex">t</span> is the reward now plus <span class="tex">\gamma</span> times the return from time <span class="tex">t+1</span>.</p>
+        <div class="eq">G_t = R_{t+1} + \gamma\, G_{t+1}</div>
+        <p>This is the single most useful identity in RL. It means the return can be computed backwards, from the end of the episode toward the start, one step at a time. Algorithms later in the course rely on exactly this backward pass.</p>
+        <p><b>Step 3: the horizon.</b> If every reward is bounded by <span class="tex">|R| \le R_{\max}</span> and <span class="tex">0 \le \gamma &lt; 1</span>, the infinite sum converges, and its size is at most <span class="tex">R_{\max}/(1-\gamma)</span>. The number <span class="tex">1/(1-\gamma)</span> is the effective horizon: the number of steps over which the agent's choices still matter noticeably. With <span class="tex">\gamma = 0.9</span> it is 10 steps. With <span class="tex">\gamma = 0.99</span> it is 100.</p>
+
+        <div class="worked"><b>Worked example: a return computed backwards</b>
+          <p>Take the rewards <span class="tex">R_1, \dots, R_5 = 1,\ 0,\ 2,\ 0,\ 10</span> and <span class="tex">\gamma = 0.9</span>. The episode ends after <span class="tex">R_5</span>, so <span class="tex">G_5 = 0</span>. The backward pass gives:</p>
+          <div class="eq">\begin{aligned} G_4 &amp;= R_5 + \gamma G_5 = 10 + 0.9(0) = 10\\ G_3 &amp;= R_4 + \gamma G_4 = 0 + 0.9(10) = 9\\ G_2 &amp;= R_3 + \gamma G_3 = 2 + 0.9(9) = 10.1\\ G_1 &amp;= R_2 + \gamma G_2 = 0 + 0.9(10.1) = 9.09\\ G_0 &amp;= R_1 + \gamma G_1 = 1 + 0.9(9.09) = 9.181 \end{aligned}</div>
+          <p>Check the forward sum: <span class="tex">1 + 0.9\cdot 0 + 0.81\cdot 2 + 0.729\cdot 0 + 0.6561\cdot 10 = 1 + 1.62 + 6.561 = 9.181</span>. Both routes agree. Notice that the final reward of 10 contributes <span class="tex">6.561</span> to the return from the start, because it is four steps away, and that the early reward of 1 contributes exactly 1.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">G_t \;=\; \sum_{k=0}^{\infty} \gamma^{k}\, R_{t+k+1}, \qquad G_t = R_{t+1} + \gamma\, G_{t+1}, \qquad 0 \le \gamma \le 1</div>
+        <table class="sym">
+          <tr><td>G_t</td><td>the return from time t: the discounted sum of all future rewards</td></tr>
+          <tr><td>R_{t+k+1}</td><td>the reward received k+1 steps after time t</td></tr>
+          <tr><td>γ (gamma)</td><td>the discount factor, between 0 and 1; γ = 0 counts only the next reward, γ = 1 counts all rewards equally</td></tr>
+          <tr><td>γ^k</td><td>the weight on a reward k steps in the future</td></tr>
+          <tr><td>1/(1−γ)</td><td>the effective horizon, for γ &lt; 1</td></tr>
+        </table>
+        <p>For an episode of length <span class="tex">T</span> the sum stops at <span class="tex">R_T</span> and <span class="tex">G_T = 0</span>; this is why the backward pass starts from zero.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the reward list as given and set γ = 0.9. Press Play and watch the backward pass start at the last reward (the orange bar on t = 4 appears first, equal to 10).</li>
+          <li>Drag γ to 0.5. The early reward of 1 now dominates less, and G_0 falls. Notice the effective horizon readout changes from 10 to 2.</li>
+          <li>Set γ = 1. The horizon becomes infinite; for an episode that ends, the return is still finite, but for a continuing task the sum would not converge. Try γ = 0.99 and see how far the late reward still counts.</li>
+          <li>Edit the reward list to <i>0, 0, 0, 0, 1</i>. Predict G_0 before you look: it should be γ⁴ = 0.6561 at γ = 0.9.</li></ol></div>
+        <div data-lab="rl-returns"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Off-by-one indices.</b> Some texts write the reward at time t as <span class="tex">R_t</span>. This site uses <span class="tex">R_{t+1}</span>. When you read code, check which convention is used before comparing numbers.</li>
+            <li><b>Discounting changes the problem.</b> A small γ can make the agent take a quick small reward over a large delayed one. That is the intended effect, but it is a modelling choice, not a fact about the world.</li>
+            <li><b>γ = 1 needs a finite horizon.</b> For continuing tasks with rewards that do not decay, the undiscounted sum can diverge, so the discount is what keeps the objective finite.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Every RL objective is an expected return. Deep Q-networks, policy-gradient methods and PPO all estimate or maximise <span class="tex">G_t</span> with a discount, usually γ between 0.9 and 0.999.</li>
+            <li>Language-model alignment with RL uses a discounted return over the tokens of a reply, often with a penalty that keeps the policy close to the original model.</li>
+            <li>The effective horizon explains why long-horizon games and robotic tasks are hard: with γ = 0.99 the agent is effectively planning about 100 steps ahead, and credit must flow that far back.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (rewards arrive as the agent acts); the return is then computed in the estimate stage from stored rewards. Stores: the reward and discount sequence of each episode, usually in a replay buffer or a trajectory log.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With γ = 0.5, rewards R_1 = 4, R_2 = 0, R_3 = 8, and the episode ends after R_3, compute G_0.</summary><div class="ans">G_0 = 4 + 0.5·0 + 0.25·8 = 4 + 0 + 2 = 6. Backward check: G_2 = R_3 = 8; G_1 = R_2 + 0.5·8 = 4; G_0 = R_1 + 0.5·4 = 4 + 2 = 6.</div></details>
+          <details class="check"><summary>2. Why is the effective horizon 1/(1−γ) rather than a fixed number of steps?</summary><div class="ans">Because the weight γ^k decays geometrically. The total weight of all future steps is 1/(1−γ) (a geometric series summed over k), so that quantity measures how much future time the return "sees". Once γ^k is small, rewards beyond that point barely change G_t. With γ = 0.9 the weight falls below 0.01 after about 44 steps (0.9^44 ≈ 0.0097).</div></details>
+          <details class="check"><summary>3. Starting from the same reward sequence, a learner uses γ = 0.9 and another uses γ = 0.99. Which one should prefer a reward of 10 that arrives 30 steps later over a reward of 1 that arrives now?</summary><div class="ans">Compare 10·γ^30 with 1. At γ = 0.9, 10·0.9^30 ≈ 10·0.0424 = 0.42, so the immediate 1 wins. At γ = 0.99, 10·0.99^30 ≈ 10·0.740 = 7.40, so the delayed 10 wins. The patient learner prefers the later, larger reward.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>The return <span class="tex">G_t</span> is the discounted sum of future rewards, and it is the quantity an RL agent tries to maximise.</li>
+            <li>The identity <span class="tex">G_t = R_{t+1} + \gamma G_{t+1}</span> lets you compute returns backwards, one step at a time.</li>
+            <li>γ sets how far ahead the agent looks: the effective horizon is about 1/(1−γ) steps.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="mdp" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.3</span><h2>Markov decision processes</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery robot on a 3×3 floor tries to move right. Its wheels slip, so sometimes it goes up, sometimes down, and sometimes into a wall where it stays put. To plan well, the robot needs to know how likely each outcome is. But should the answer depend on how it reached its current square, or only on where it is now and what it tries to do? A theory of decisions needs a precise answer to that question.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>Markov decision process</b> (MDP) is the standard mathematical model of the sequential decision problem from the previous lessons. It packages four things: the states the world can be in, the actions the agent can take, the rules that say where each action leads and what reward it earns, and how the rewards are discounted. Its defining assumption is the <b>Markov property</b>: the future depends on the present state and action, not on the path that led there. If you know where the robot is and what it tries to do, its history adds nothing to the forecast of what happens next.</p>
+        <p>The property is an assumption about how the state is defined, not a fact that holds automatically. If the robot's position is recorded but its velocity is not, the next position depends on the velocity too, and the position alone is not a Markov state. The fix is to put enough information into the state. A good state summarises everything the future needs.</p>
+
+        <h3 class="sec">Build it up: the pieces, one at a time</h3>
+        <p><b>Step 1: states and actions.</b> The state space <span class="tex">\mathcal S</span> is the set of situations, here the nine cells of the floor. The action space <span class="tex">\mathcal A</span> is the set of moves: up, down, left, right.</p>
+        <p><b>Step 2: transitions.</b> For each state and action there is a probability distribution over next states. Write <span class="tex">p(s' \mid s, a)</span> for the probability of landing in <span class="tex">s'</span> after taking action <span class="tex">a</span> in state <span class="tex">s</span>. These numbers are the environment's dynamics, and for a slippery floor they are not 0 or 1.</p>
+        <p><b>Step 3: rewards.</b> Here a reward of +1 is given for entering the goal cell and −1 for entering a pit cell; both end the episode. Every other move gives 0.</p>
+
+        <div class="worked"><b>Worked example: the transition probabilities for one move</b>
+          <p>Use the slippery grid from the lab: cells are numbered 0 to 8 from top-left, row by row. The goal is cell 2 (top-right, +1), the pit is cell 1 (top-middle, −1), and the start is cell 6 (bottom-left). The slip probability is <span class="tex">p = 0.2</span>. The agent is in cell 6 and chooses <i>right</i>. The intended direction happens with probability <span class="tex">1 - p = 0.8</span>, and each sideways direction with probability <span class="tex">p/2 = 0.1</span>:</p>
+          <div class="eq">\begin{aligned} p(7 \mid 6, \text{right}) &amp;= 0.8 &amp;&amp;\text{(right: the bottom-middle cell)}\\ p(3 \mid 6, \text{right}) &amp;= 0.1 &amp;&amp;\text{(up: the middle-left cell)}\\ p(6 \mid 6, \text{right}) &amp;= 0.1 &amp;&amp;\text{(down would leave the grid, so the agent stays)}\end{aligned}</div>
+          <p>The three probabilities add to <span class="tex">0.8 + 0.1 + 0.1 = 1</span>, as they must. Now two steps in a row: the probability that both intended moves succeed, taking the agent from 6 to 7 and then from 7 to 8, is <span class="tex">0.8 \times 0.8 = 0.64</span>. Each step's probability depends only on the cell and the action chosen there, which is the Markov property in action.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal M = (\mathcal S,\ \mathcal A,\ p,\ \gamma), \qquad p(s', r \mid s, a) = \Pr\{S_{t+1}=s',\, R_{t+1}=r \mid S_t=s,\, A_t=a\}</div>
+        <div class="eq">\Pr\{S_{t+1}\mid S_t, A_t, S_{t-1}, A_{t-1}, \dots, S_0, A_0\} = \Pr\{S_{t+1}\mid S_t, A_t\}\qquad\text{(the Markov property)}</div>
+        <table class="sym">
+          <tr><td>𝒮, 𝒜</td><td>the finite sets of states and actions</td></tr>
+          <tr><td>p(s′, r ∣ s, a)</td><td>the joint probability of next state s′ and reward r after taking a in s; the rewards and transitions are packaged together</td></tr>
+          <tr><td>Pr{·}</td><td>"the probability that"</td></tr>
+          <tr><td>∣ (vertical bar)</td><td>"given that"</td></tr>
+          <tr><td>γ</td><td>the discount factor from the previous lesson</td></tr>
+        </table>
+        <p>Summing <span class="tex">p(s', r \mid s, a)</span> over all <span class="tex">s'</span> and <span class="tex">r</span> must give 1 for each state and action. That is the check that every probability distribution in an MDP must pass.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the slip at 0.2 and the action at <i>right</i>. Read the three outcomes with their probabilities. Confirm they sum to 1 and that the wall outcome is the one that keeps the agent in cell 6.</li>
+          <li>Press Count 200 samples. The observed frequencies should be close to 0.80, 0.10 and 0.10. Press it again: the frequencies change a little, but they settle near the exact values as the samples grow.</li>
+          <li>Set the slip to 0. Every outcome moves to a single cell. A deterministic MDP is the special case of a probability of 1.</li>
+          <li>Walk the agent with a fixed action. Notice that it lands in the goal or pit eventually, and that each move ignores the cells it visited earlier.</li></ol></div>
+        <div data-lab="rl-gridworld"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The state must carry what the future needs.</b> A camera frame of a moving ball is not Markov if a single frame hides its velocity. Stack frames, or add velocity to the state.</li>
+            <li><b>The Markov property is about the model, not the policy.</b> A policy can use the whole history, but the environment's response must depend only on the current state and action for the MDP to apply.</li>
+            <li><b>Probabilities must be complete.</b> Every outcome, including "stay in place" against a wall, needs a probability. Leaving it out is a silent error that breaks the sums.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Every RL algorithm in this course is designed for an MDP or a small extension of it, such as a partially observable MDP when the state is hidden.</li>
+            <li>Atari emulators and board-game engines are deterministic MDPs with huge state spaces; the agent does not see the full state, so practitioners stack recent frames to restore the Markov property.</li>
+            <li>Logistics and inventory planning use the same MDP structure: the state is stock and demand, the action is an order, and the transitions are random demand.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> The MDP describes the environment, so it is the interact and estimate stages' shared assumption. In planning methods the transition model <span class="tex">p</span> is stored explicitly (a table or a learned network); in model-free methods it is never stored and only samples are kept.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. From cell 6 with p = 0.2, the agent chooses up. Give the three outcomes and their probabilities.</summary><div class="ans">Up is intended with probability 0.8, landing in cell 3 (the middle-left cell). The sideways directions are left and right. Left would leave the grid, so the agent stays in cell 6 with probability 0.1. Right goes to cell 7 with probability 0.1. The probabilities sum to 0.8 + 0.1 + 0.1 = 1.</div></details>
+          <details class="check"><summary>2. A slip probability p = 0.3 is used. What is the probability that the agent in cell 6 moves right to cell 7 in one step, and what is the probability it goes anywhere else?</summary><div class="ans">The intended move succeeds with probability 1 − p = 0.7, so p(7 | 6, right) = 0.7. Elsewhere: each sideways outcome has probability p/2 = 0.15, so the outcomes are cell 3 (0.15) and cell 6 (0.15). Check: 0.7 + 0.15 + 0.15 = 1.</div></details>
+          <details class="check"><summary>3. A cart-pole agent records only the cart's position, not its velocity. Is the position a Markov state?</summary><div class="ans">Not in general. The next position depends on the velocity, which is hidden, so two identical positions with different velocities lead to different futures. A Markov state must include the velocity (or a recent history of positions from which velocity can be inferred).</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>An MDP is the tuple of states, actions, transition probabilities and rewards, together with a discount γ.</li>
+            <li>The Markov property says that the current state and action are enough to predict the future. Designing a good state is part of modelling.</li>
+            <li>Every transition distribution must sum to 1, and every outcome, including "stay put," needs its probability.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="policies-values" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.4</span><h2>Policies, state values &amp; action values</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A recommendation system must pick what to show next. Suppose we fix a particular way of choosing, say "show the most popular item 80% of the time and a random item 20% of the time." How good is that way of behaving, and how good is each individual choice inside it? Without a way to measure this, we cannot tell whether one behaviour is better than another.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A <b>policy</b> is a rule for behaviour. It may be deterministic, always doing the same thing in a state, or stochastic, choosing among actions with probabilities. We write <span class="tex">\pi(a \mid s)</span> for the probability that the policy chooses action <span class="tex">a</span> in state <span class="tex">s</span>. A policy is the thing the agent improves; everything else in RL is a way to judge a policy.</p>
+        <p>To judge a policy we use values. The <b>state value</b> <span class="tex">V^\pi(s)</span> is the expected return if the agent starts in state <span class="tex">s</span> and then follows <span class="tex">\pi</span> from there on. The <b>action value</b> <span class="tex">Q^\pi(s,a)</span> is the expected return if the agent starts in <span class="tex">s</span>, takes action <span class="tex">a</span> first, and then follows <span class="tex">\pi</span>. The first is a score for a place; the second is a score for a choice made in a place. The word "expected" matters: the environment and the policy are both random, so the value averages over both.</p>
+
+        <h3 class="sec">Build it up: a three-state chain by hand</h3>
+        <p><b>Step 1: a small world.</b> Take three states in a row, s1, s2, s3. From s1 going left exits with reward 0; from s3 going right exits with reward <span class="tex">r</span> (set to 1 here). Every other move shifts the agent one state along the chain. The policy is the same everywhere: go right with probability <span class="tex">p</span>, left with probability <span class="tex">1-p</span>. Take <span class="tex">p = 0.5</span> and <span class="tex">\gamma = 0.9</span>.</p>
+        <p><b>Step 2: the one-step look-ahead.</b> The value of a state is the policy-weighted average of what each action gives, counting the immediate reward and the discounted value of where the action leads:</p>
+        <div class="eq">V^\pi(s) = \sum_a \pi(a \mid s)\Big[\,r(s,a) + \gamma\,V^\pi(s')\Big]</div>
+        <p>This is the <b>Bellman expectation equation</b>. It relates the value of a state to the values of its neighbours, and it is the reason values can be computed by sweeping through the states, a theme of Module 2.</p>
+
+        <div class="worked"><b>Worked example: exact values for the chain</b>
+          <p>Write the Bellman equation for each state. From s1, right leads to s2 with reward 0; left exits with reward 0 and value 0. From s2 both directions lead to neighbours. From s3, right exits with reward 1 and value 0; left leads to s2:</p>
+          <div class="eq">\begin{aligned} V_1 &amp;= p\,\gamma V_2 = 0.5(0.9)V_2 \\ V_2 &amp;= p\,\gamma V_3 + (1-p)\,\gamma V_1 = 0.45\,V_3 + 0.45\,V_1 \\ V_3 &amp;= p\cdot 1 + (1-p)\,\gamma V_2 = 0.5 + 0.45\,V_2 \end{aligned}</div>
+          <p>Solving this three-equation linear system (Gaussian elimination, checked numerically) gives:</p>
+          <div class="eq">V_1 = 0.1702,\qquad V_2 = 0.3782,\qquad V_3 = 0.6702</div>
+          <p>Now the action values at s2. Using <span class="tex">Q(s,a) = r(s,a) + \gamma V(s')</span>:</p>
+          <div class="eq">Q(s_2,\text{right}) = 0 + 0.9(0.6702) = 0.6032,\qquad Q(s_2,\text{left}) = 0 + 0.9(0.1702) = 0.1532</div>
+          <p>The policy's value at s2 is the probability-weighted average: <span class="tex">0.5(0.6032) + 0.5(0.1532) = 0.3782 = V_2</span>. The Bellman relation holds.</p></div>
+        <p>Notice what the numbers say. Right is much better than left at s2, because right leads toward the rewarding exit. The policy is not optimal (it still goes left half the time), but the Q values already rank the two choices, which is what an improvement step will use in Module 2.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">V^\pi(s) = \mathbb E_\pi\big[\,G_t \mid S_t = s\,\big],\qquad Q^\pi(s,a) = \mathbb E_\pi\big[\,G_t \mid S_t = s,\ A_t = a\,\big]</div>
+        <div class="eq">V^\pi(s) = \sum_a \pi(a\mid s)\, Q^\pi(s,a), \qquad Q^\pi(s,a) = \sum_{s',r} p(s',r\mid s,a)\big[r + \gamma V^\pi(s')\big]</div>
+        <table class="sym">
+          <tr><td>π(a ∣ s)</td><td>the policy: probability of action a in state s</td></tr>
+          <tr><td>V^π(s)</td><td>the state value: expected return from s under π</td></tr>
+          <tr><td>Q^π(s,a)</td><td>the action value: expected return after taking a in s, then following π</td></tr>
+          <tr><td>𝔼_π[·]</td><td>expectation when actions are drawn from π and the environment responds with p</td></tr>
+          <tr><td>G_t</td><td>the return from the previous lesson</td></tr>
+        </table>
+        <p>The two identities say the same thing from two sides: a state's value is the average of its action values under the policy, and an action's value is the average over outcomes of the immediate reward plus the discounted value of the next state.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with p = 0.5, γ = 0.9, r = 1. Press Play and watch the values climb sweep by sweep from 0 toward the dashed exact marks. Notice that the largest change happens in the first few sweeps.</li>
+          <li>Change p to 0.9. State s3 becomes more valuable, and so does s2, because the policy now usually moves toward the exit.</li>
+          <li>Set γ = 0.5 and watch the values shrink: rewards far away count less. Then set the exit reward r to −1 and watch the values turn negative.</li>
+          <li>Choose state 2 in the inspector. Check that p·Q(right) + (1−p)·Q(left) equals V(s2) at the current sweep, as the readout shows.</li></ol></div>
+        <div data-lab="rl-values"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A value depends on the policy.</b> <span class="tex">V^\pi(s)</span> is not a property of the state alone. The same state can be valuable under one policy and worthless under another.</li>
+            <li><b>Q and V are not interchangeable.</b> V averages over the agent's own choices; Q fixes the first action. Quoting a Q value as if it were a V value is a frequent slip.</li>
+            <li><b>Expectation is not a single run.</b> One episode gives one sample of the return. The value is the average over many episodes, which is why the sweep lab converges instead of jumping.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Value-based methods such as Q-learning and deep Q-networks learn Q-values and act greedily with respect to them.</li>
+            <li>Actor–critic methods (Module 6) learn a policy (the actor) and a state-value estimate (the critic) at the same time, and use the critic to judge the actor's choices.</li>
+            <li>Evaluating a language model's behaviour under a sampling policy, or the expected reward of a recommender, is policy evaluation: estimating <span class="tex">V^\pi</span> for the policy that is actually deployed.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Estimate stage: values are computed from stored transitions (a table in tabular methods, a network in deep methods). Cost per update is one Bellman backup per visited state–action pair; storage is one number per state (V) or per state–action pair (Q).</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the chain with p = 0.5, γ = 0.9, r = 1, check that V_1 = 0.1702 using only V_2.</summary><div class="ans">V_1 = p·γ·V_2 = 0.5 × 0.9 × 0.3782 = 0.45 × 0.3782 = 0.17019, which rounds to 0.1702. From s1 the left move exits with reward 0 and value 0, so it contributes nothing.</div></details>
+          <details class="check"><summary>2. Why is Q(s,a) defined with the action fixed at the start, and not with the policy's own choice?</summary><div class="ans">Q(s,a) asks how good the particular action a is when taken now, and then the policy continues normally. This is what lets the agent compare actions in the same state. V(s) averages Q over the policy's own choices, so V cannot tell which action is better; Q can.</div></details>
+          <details class="check"><summary>3. If the policy becomes deterministic (always right at s2), what does the Bellman relation say about V(s2)?</summary><div class="ans">The sum over actions now has one term with weight 1, so V(s2) = Q(s2, right) = 0 + γ·V(s3). The Bellman relation still holds, but the values must be recomputed: changing the policy at s2 also changes V(s3), because the policy at s3 is unchanged while s2 now behaves differently. Only after recomputing V under the new policy does the number mean anything.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A policy is a probability distribution over actions in each state. Values measure how good a policy is.</li>
+            <li><span class="tex">V^\pi(s)</span> scores a state, <span class="tex">Q^\pi(s,a)</span> scores a choice, and V is the policy-weighted average of Q.</li>
+            <li>The Bellman expectation equation ties each value to its neighbours and makes values computable by sweeping.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="exploration-intro" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.5</span><h2>Exploration versus exploitation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A restaurant app has tried two places. The first one you tried gave a decent meal, so you keep going there. You never tried the other, which may be far better. Every new visit to a new place risks a worse dinner, but it is the only way to learn whether a better place exists. How much should you keep eating where you know, and how much should you try somewhere new?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every RL agent faces this tension, and it has two sides. <b>Exploitation</b> means using what you already know to collect reward now. <b>Exploration</b> means trying actions whose value you are unsure about, to learn something that may pay off later. Exploitation is safe in the short run; exploration is costly in the short run and valuable in the long run. An agent that only exploits can get stuck on a good-looking option and never find a better one. An agent that only explores never cashes in on what it has learned.</p>
+        <p>Greed is the extreme of exploitation. A <b>greedy</b> agent always picks the action with the highest current estimate. It sounds sensible, and it is often fine, but it has a blind spot: an action it has never tried has no estimate to beat, so it is never chosen. The fix is to keep trying other actions sometimes, and the simplest version of that is <b>epsilon-greedy</b>: with probability <span class="tex">\varepsilon</span> pick a random action, otherwise pick the greedy one.</p>
+
+        <h3 class="sec">Build it up: a concrete trap</h3>
+        <p><b>Step 1: estimates from samples.</b> Each action's value is estimated by averaging its observed rewards. Start both estimates at 0 and pull an arm; its estimate becomes the reward it returned.</p>
+        <p><b>Step 2: the greedy lock-in.</b> Here is a two-armed slot machine. Arm A always pays 0.5. Arm B always pays 2.0. Both estimates start at 0, and ties go to the lowest-numbered arm, A.</p>
+        <div class="worked"><b>Worked example: a greedy agent never finds B</b>
+          <table class="tbl">
+            <tr><td>Step</td><td>Q(A)</td><td>Q(B)</td><td>Greedy choice</td><td>Reward</td></tr>
+            <tr><td>1</td><td>0</td><td>0</td><td>A (tie, lowest index)</td><td>0.5</td></tr>
+            <tr><td>2</td><td>0.5</td><td>0</td><td>A (0.5 &gt; 0)</td><td>0.5</td></tr>
+            <tr><td>3, 4, …</td><td>0.5</td><td>0</td><td>A, every time</td><td>0.5</td></tr>
+          </table>
+          <p>Arm B is never pulled, so its estimate stays at 0 forever, and the greedy agent never sees that it pays 2.0. Its total reward after 100 steps is 50, while always playing B would give 200. The greedy choice was locally sensible at every step and globally wrong.</p></div>
+
+        <p><b>Step 3: epsilon-greedy repairs it.</b> Now the same two arms with <span class="tex">\varepsilon = 0.1</span>. On each step the agent explores with probability 0.1, choosing one of the two arms at random, so B is tried with probability <span class="tex">0.1 \times 0.5 = 0.05</span> per step. Once B is tried, its estimate is 2.0, which beats A's 0.5, and the greedy choice switches to B. How long does the search take? The chance that B is never tried in 60 steps is <span class="tex">0.95^{60} \approx 0.046</span>, so in most runs B is found within a few dozen steps. The cost is that the agent keeps exploring at rate 0.1 even after it knows the answer, which is the price of insurance.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\pi_\varepsilon(a\mid s) = \begin{cases} 1-\varepsilon + \dfrac{\varepsilon}{|\mathcal A|} &amp; \text{if } a = \arg\max_{b} Q(s,b)\\[6pt] \dfrac{\varepsilon}{|\mathcal A|} &amp; \text{otherwise} \end{cases}</div>
+        <table class="sym">
+          <tr><td>ε (epsilon)</td><td>the exploration rate, between 0 and 1</td></tr>
+          <tr><td>|𝒜|</td><td>the number of actions (here 2 for the two-armed example)</td></tr>
+          <tr><td>argmax<sub>b</sub> Q(s,b)</td><td>the action with the largest estimated value in s</td></tr>
+          <tr><td>π_ε(a ∣ s)</td><td>the resulting stochastic policy: every action keeps a probability of at least ε/|𝒜|</td></tr>
+        </table>
+        <p>The policy gives every action a probability of at least <span class="tex">\varepsilon/|\mathcal A|</span>. That guarantee is what lets the agent eventually try everything, if it keeps exploring long enough.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the noise to 0.4 and keep the arm means at A 0.5, B 2.0, C 1.2. Leave ε at 0.1 (the left panel is always greedy and ignores ε). Watch the left panel: the agent often commits to A or C early and stops testing the others.</li>
+          <li>Watch the right panel with ε = 0.1. Its pulls spread out, and it finds B, the best arm, after a while. Notice the best-arm share readout rising.</li>
+          <li>Set ε to 0.5 and then to 0. Exploration keeps up the search but also keeps wasting pulls. Find the setting where the right panel's total reward beats the left panel's over a full run, and say why it wins.</li>
+          <li>Move the mean of B down to 0.3, below A. Now the greedy agent is not wrong: it has the best arm. Exploration still has a cost. This is why "more exploration" is not always better.</li></ol></div>
+        <div data-lab="rl-explore"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Zero initial estimates are pessimistic.</b> Starting every estimate at 0 makes any arm that returns a positive reward look better than all untried arms. Optimistic starting values are one way to encourage early exploration (Module 1).</li>
+            <li><b>Exploring with noise is not the same as exploring well.</b> Random actions learn the same things at random; more sophisticated schemes concentrate the search on uncertain actions.</li>
+            <li><b>A single lucky sample can fool you.</b> Ten rewards from a lottery-like arm can average far from the truth. The estimate is only as good as the number of samples behind it.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Recommender systems and A/B tests face the same trade-off: show what is known to work, or test something new that may work better.</li>
+            <li>Epsilon-greedy is the default exploration rule in deep Q-networks (Module 5), where ε is often annealed from 1.0 to 0.01 over the first million steps.</li>
+            <li>Large language model training uses exploration in its sampling temperature and in the policy-gradient stage, so that the model tries answers it would not produce by default.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage: exploration decides which data gets collected, so it sets the data distribution every later stage learns from. Stores: the exploration rate schedule and the visit counts per action (needed by count-based and UCB methods in Module 1).</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the two-armed example, what is the probability that a single step of ε-greedy with ε = 0.2 tries arm B by exploration?</summary><div class="ans">Exploration happens with probability 0.2, and given exploration the arm is chosen uniformly from two arms, so B is picked with probability 0.2 × 0.5 = 0.10 on that step.</div></details>
+          <details class="check"><summary>2. Why can a greedy agent be wrong even when every individual choice is based on its best current estimate?</summary><div class="ans">The estimates for untried arms never change, because the agent never samples them. An arm whose true value is high but whose estimate is low or unknown is never chosen again, so the estimate is never corrected. The agent is right about the arms it knows and blind to the rest.</div></details>
+          <details class="check"><summary>3. With ε = 0.1 and two arms, what is the chance that arm B is never tried in 60 steps if it is never chosen greedily?</summary><div class="ans">Each step tries B with probability 0.05, so the chance it is never tried in 60 steps is 0.95^60 ≈ 0.046. If B were never chosen greedily, that is the probability that the agent never discovers it.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Exploitation uses what the agent knows; exploration gathers information that may pay off later. Both are needed.</li>
+            <li>A greedy agent can lock onto a suboptimal option, because untried options never get an estimate that could beat it.</li>
+            <li>Epsilon-greedy keeps a fixed share of actions exploratory; its cost is steady, its benefit is that every action keeps being tested.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== END OF LESSONS ===================== -->
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You now have the vocabulary and the objects that every later method uses: the agent and environment loop, the discounted return, the Markov decision process, values and policies, and the exploration trade-off. Next, <b>Module 1</b> studies the simplest sequential problem, a single state with many actions: the bandit, where exploration is all there is. Continue to <a href="rl-bandits.html">Module 1 · Bandits &amp; exploration</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

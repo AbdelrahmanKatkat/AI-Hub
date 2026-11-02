@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reinforcement Learning · AI Learning Hub</title>
+<meta name="description" content="A zero-to-hero reinforcement learning curriculum: Markov decision processes, bandits, dynamic programming, Monte Carlo and temporal-difference learning, deep Q-learning, policy gradients and PPO, model-based planning, advanced topics, and RLHF and evaluation.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › Reinforcement Learning</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">🎮</div>
+      <div style="flex:1">
+        <h1>Reinforcement Learning — zero to hero</h1>
+        <p>Agents that learn by <b>acting</b>, <b>receiving rewards</b> and <b>improving</b>: from the Markov decision process and bandits, through dynamic programming, Monte Carlo and temporal-difference learning, to deep Q-learning, policy gradients and PPO, model-based planning, and the reward design behind RLHF.</p>
+        <div class="chips"><span class="chip">10 modules</span><span class="chip">56 lessons</span><span class="chip">Value &amp; policy methods</span><span class="chip">Animated updates</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="lesson" id="start" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>How to learn from this</h2></div>
+      <div class="prose">
+        <p>Every lesson starts with a decision problem, a bandit, a gridworld or a game. Then comes a hand-worked example on a 2–4 state chain or a 3×3 grid, the formal definition, an <b>animated lab you can edit</b>, traps, real uses and self-check questions. Values are shown moving backwards through time, so you can see credit being assigned.</p>
+        <p>The maths and ML are linked, not repeated: expectations and gradients point to <a href="mathematics.html">Mathematics</a>, value and policy networks to <a href="machine-learning.html">Machine Learning</a>, and robot policies to <a href="robotics.html">Robotics</a>.</p>
+      </div>
+    </section>
+
+    <section class="lesson" id="pipeline">
+      <div class="lesson-head"><h2>The learning loop</h2></div>
+      <div class="prose"><p>Every reinforcement learning system runs these six stages, over and over. Click a stage for what it does, what it needs and where its data is stored.</p></div>
+      <div data-lab="pipeline" data-id="rl"></div>
+    </section>
+
+    <section class="lesson" id="map">
+      <div class="lesson-head"><h2>The map</h2></div>
+      <div class="pathbar" id="pathbar"></div>
+      <div class="prose"><p>Module 0 defines the problem: the agent, the environment, the return and the Markov decision process. Module 1 covers bandits and exploration, and Module 2 dynamic programming with a known model. Module 3 learns from complete episodes with Monte Carlo methods, and Module 4 learns from every step with temporal-difference methods. Module 5 scales these ideas with function approximation and deep Q-learning, and Module 6 learns policies directly with actor–critic methods and PPO. Module 7 uses learned models, Module 8 covers advanced topics such as offline and multi-agent RL, and Module 9 applies RL to alignment, games and real systems.</p></div>
+    </section>
+
+    <section class="lesson" id="curriculum">
+      <div class="lesson-head"><h2>The curriculum</h2></div>
+      <div class="mods" id="mod-list"></div>
+      <p style="color:var(--muted);font-size:13px">Full lesson specification: <a href="https://github.com/AbdelrahmanKatkat/AI-Hub/blob/main/curriculum/reinforcement-learning.md" target="_blank" rel="noopener">curriculum/reinforcement-learning.md</a>.</p>
+    </section>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

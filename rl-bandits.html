@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Bandits &amp; exploration · Reinforcement Learning</title>
+<meta name="description" content="Reinforcement learning, module 1: the k-armed bandit, sample averages, epsilon-greedy exploration, upper confidence bounds, gradient bandits and non-stationary tracking, with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-bandits.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">1</div>
+      <div style="flex:1">
+        <h1>Module 1 · Bandits &amp; exploration</h1>
+        <p>The simplest reinforcement learning problem has <b>no states at all</b>: you face a row of slot machines, pull one lever at a time, and see a noisy reward. Even this stripped-down problem contains the central tension of all RL: you must <b>explore</b> to learn which option is good and <b>exploit</b> what you already know to earn reward now. Everything later in the course builds on these ideas.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs probability and averages</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>Where this sits in the loop.</b> A bandit learner runs the whole learning loop with one state: <b>interact</b> (pull an arm), <b>store</b> (a running estimate per arm), <b>estimate</b> (update that estimate from the reward), <b>improve</b> (choose the next arm from the estimates). Nothing depends on where the agent is, so every choice affects only the immediate reward and the information it reveals.</p>
+      <p><b>How the labs work.</b> Each lab is an <i>illustrative</i> simulation with a fixed random seed, so every run is reproducible. Press Play, Step or change a slider and the learner responds at a slow, readable pace. Every number is labelled.</p>
+    </section>
+
+    <!-- ===================== 1.1 ===================== -->
+    <section class="lesson" id="bandit-problem" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">1.1</span><h2>The k-armed bandit</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A casino has three slot machines. Each pull costs the same and pays a random amount whose average differs from machine to machine. You have 100 pulls and no information. Which machine do you play, and how do you decide when to keep playing one and when to try another?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture yourself in front of the three machines. The first pull tells you a little: machine 2 paid 1.7 units, machine 1 paid 0.4. Is machine 2 better? One pull cannot tell, because every machine pays noisily: even the best machine sometimes pays less than the worst one. Yet you cannot wait forever, since each pull is also money you are spending. This is the <b>bandit problem</b>, named after the one-armed slot machine, which is also called a "one-armed bandit".</p>
+        <p>Three things make it hard. First, the rewards are <b>noisy</b>: a single reward is a weak clue about a machine's average. Second, you learn only about the machine you pulled. Pulling machine 1 tells you nothing about machine 3. Third, every pull has a <b>cost of learning</b>: if you spend all your pulls on a bad machine to find out it is bad, you have paid for that knowledge with reward you did not collect.</p>
+        <p>The bandit problem is the reinforcement learning problem with the states removed. There is an agent, an action, a reward, and a learning goal, but the world never changes, so no action leads to a different situation. That makes it the cleanest place to see exploration and exploitation without anything else getting in the way.</p>
+
+        <h3 class="sec">Build it up: one machine, then three</h3>
+        <p><b>Step 1: a reward is a random draw around a mean.</b> Suppose machine 1 pays a random amount with average <span class="tex">q^*(1)=1.0</span>. Each pull returns a value that sometimes is above 1.0 and sometimes below. The average, <span class="tex">q^*(1)</span>, is the number that matters for choosing; the single rewards are noise around it.</p>
+        <p><b>Step 2: the value of an action is its average reward.</b> Write <span class="tex">A_t</span> for the arm chosen at step <i>t</i> and <span class="tex">R_t</span> for the reward it returns. The <b>action value</b> of arm <i>a</i> is the expected reward when we choose it:</p>
+        <div class="eq">q^*(a) = \mathbb{E}\,[\,R_t \mid A_t = a\,]</div>
+        <p>With three arms, the best possible average is <span class="tex">q^*_{\max}=\max_a q^*(a)</span>. If we knew <span class="tex">q^*</span> we would pull the best arm every time and never waste a pull.</p>
+        <p><b>Step 3: measure a strategy by its regret.</b> Regret is the reward we gave up compared with always pulling the best arm. Each pull of arm <i>a</i> costs the gap <span class="tex">q^*_{\max}-q^*(a)</span>. Over <i>T</i> pulls:</p>
+        <div class="eq">\mathrm{Regret}_T = \sum_{t=1}^{T}\big(q^*_{\max} - q^*(A_t)\big)</div>
+        <p>Regret is the right yardstick because it is zero for a perfect player and it grows whenever we pull bad arms. A good learner keeps its regret growing slowly, ideally more slowly than <i>T</i> itself, so that its average reward per pull approaches the best value.</p>
+
+        <div class="worked"><b>Worked example: scoring a sequence of pulls</b>
+          <p>Three arms with true values <span class="tex">q^*=(1.0,\;2.0,\;1.5)</span>. The best value is <span class="tex">q^*_{\max}=2.0</span> (arm 2). Suppose we pull arms <span class="tex">1, 3, 2, 1</span>. The gaps are:</p>
+          <div class="eq">\begin{array}{c|c|c}\text{pull}&\text{arm}&\text{gap } 2.0-q^*(A_t)\\\hline 1&1&2.0-1.0=1.0\\2&3&2.0-1.5=0.5\\3&2&2.0-2.0=0.0\\4&1&2.0-1.0=1.0\end{array}</div>
+          <p>So <span class="tex">\mathrm{Regret}_4 = 1.0+0.5+0+1.0 = 2.5</span>. The expected reward of this sequence is <span class="tex">(1.0+1.5+2.0+1.0)/4 = 1.375</span> per pull, against 2.0 for an oracle: the gap is 0.625 per pull, and 4 × 0.625 = 2.5, which matches.</p>
+          <p>Now a realised reward. Pull 3 chose arm 2 and returned <span class="tex">1.7</span>, not 2.0. That single number is not <span class="tex">q^*(2)</span>; it is <span class="tex">q^*(2)</span> plus noise of <span class="tex">-0.3</span>. The regret above uses the true values, which the learner never sees.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>We have a set of actions <span class="tex">\mathcal A=\{1,\dots,k\}</span>. At each step the agent picks <span class="tex">A_t\in\mathcal A</span> and receives <span class="tex">R_t</span> drawn from a distribution that depends only on the chosen arm. The policy, written <span class="tex">\pi_t(a)</span>, is the probability of picking arm <i>a</i> at step <i>t</i>.</p>
+        <div class="eq">q^*(a)=\mathbb E[R_t\mid A_t=a],\qquad \mathrm{Regret}_T=T\,q^*_{\max}-\mathbb E\Big[\sum_{t=1}^{T}R_t\Big]</div>
+        <p>The two forms are equal in expectation: the first writes the regret as a sum of gaps, the second as the best possible total minus what the agent actually collected.</p>
+        <table class="sym">
+          <tr><td>k</td><td>the number of arms (actions)</td></tr>
+          <tr><td>t, T</td><td>the step counter, and the horizon (total number of pulls)</td></tr>
+          <tr><td>A_t</td><td>the arm pulled at step t</td></tr>
+          <tr><td>R_t</td><td>the reward returned at step t; it is random</td></tr>
+          <tr><td>q*(a)</td><td>the true action value of arm a: the mean reward if a is pulled</td></tr>
+          <tr><td>q*_max</td><td>the best true action value, max over a</td></tr>
+          <tr><td>E[·]</td><td>expectation: the average over the randomness</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: pull the arms yourself</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press <b>Pull arm 1</b> five times. Watch the arm 1 row fill with dots. Its mean bar moves around, because five noisy rewards do not pin down the average.</li>
+          <li>Press <b>Pull arm 2</b> and <b>arm 3</b> a few times each. Notice the regret counter rising every time you pull a worse arm, even though you did not know it was worse.</li>
+          <li>Tick <b>Show the hidden true means</b>. Compare each arm's bar with its dashed q* marker. The bar drifts towards the marker as the pulls accumulate.</li>
+          <li>Press <b>Reset</b>, then Play and let random pulls run at one per second. Is the average reward per pull above or below the best value 2.0? Why?</li></ol></div>
+        <div data-lab="rl-arena"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A single reward is not a value.</b> An arm that paid 3.0 once is not necessarily better than one that averages 2.0. Values are averages over many pulls.</li>
+            <li><b>Regret needs the true values.</b> The learner cannot compute regret; it is a yardstick the designer uses to compare strategies on problems where the truth is known.</li>
+            <li><b>Exploring is not wasted.</b> Pulls on worse arms cost reward, but they buy information. The question is how much to spend, which is the rest of this module.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li><b>A/B testing and online experiments.</b> Show two versions of a page and measure a conversion rate. A bandit version shifts traffic towards the better version as evidence accumulates, instead of splitting it 50/50 until the end.</li>
+            <li><b>Recommendation and ad selection.</b> Each impression chooses one item from a set and observes a click or no click. Systems such as news recommenders treat the choice as a bandit with many arms.</li>
+            <li><b>Choosing among model outputs.</b> Picking which of several candidate answers to show, given a noisy quality score, is a bandit problem whenever the score can be observed only after a choice.</li></ul></div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With q* = (1.0, 2.0, 1.5), what is the regret after pulling arm 1 five times?</summary><div class="ans">Each pull of arm 1 costs 2.0 − 1.0 = 1.0, so five pulls give regret 5.0.</div></details>
+          <details class="check"><summary>2. Why can a learner not simply compute its regret while it learns?</summary><div class="ans">Regret compares rewards with q*_max and q*(a), which are the true means. The learner only observes noisy rewards, so it can estimate those means but cannot know them exactly.</div></details>
+          <details class="check"><summary>3. If all three arms had the same true value, what would the regret of any policy be?</summary><div class="ans">Zero. Every gap q*_max − q*(a) is zero, so no pull costs anything. Exploration is free when the options are equally good.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A bandit is repeated choice among k actions, each with an unknown mean reward q*(a) and noisy observations.</li>
+            <li>Regret is the reward lost compared with always pulling the best arm; it is the standard measure of a strategy.</li>
+            <li>Each pull both earns reward and reveals information, which is why exploration has a cost and a purpose.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 ===================== -->
+    <section class="lesson" id="sample-average" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">1.2</span><h2>Sample averages &amp; incremental updates</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An arm has paid 1, 3, 2 and then 6. What is its value? And if the arm is pulled a million times, should we store a million rewards to compute its average, or can we update a single number after each pull?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The obvious estimate of an arm's value is the average of the rewards it has paid. If it paid 1, 3, 2 and 6, its average is 3. The average is the best guess that uses the data without favouring any one reward, and it is what the word "expected" means in the definition of <span class="tex">q^*</span>.</p>
+        <p>There is a catch for a learner. Storing every reward is wasteful, and recomputing the average from scratch after each pull repeats work. Instead, keep the current estimate <span class="tex">Q</span> and nudge it towards each new reward. The nudge is the <b>error</b> (new reward minus current estimate), scaled by a <b>step size</b>. This pattern, <i>new estimate = old estimate + step × error</i>, will return in every lesson of this course, so it is worth understanding it here in its simplest form.</p>
+
+        <h3 class="sec">Build it up: the average as a nudge</h3>
+        <p><b>Step 1: the average of n rewards.</b> Let <span class="tex">R_1,\dots,R_n</span> be the rewards an arm returned in its first <i>n</i> pulls. The sample average is</p>
+        <div class="eq">Q_n = \frac{1}{n}\sum_{i=1}^{n} R_i</div>
+        <p><b>Step 2: the same average, one reward at a time.</b> Suppose we already have <span class="tex">Q_{n-1}</span>, the average of the first <i>n</i>−1 rewards. The sum of the first <i>n</i> is the old sum plus <span class="tex">R_n</span>, and the old sum is <span class="tex">(n-1)Q_{n-1}</span>. So</p>
+        <div class="eq">Q_n = \frac{(n-1)\,Q_{n-1} + R_n}{n} = Q_{n-1} + \frac{1}{n}\big(R_n - Q_{n-1}\big)</div>
+        <p>The last form is the important one. The new estimate is the old one plus <span class="tex">1/n</span> times the error <span class="tex">R_n - Q_{n-1}</span>. A surprising reward (large error) moves the estimate a lot when <i>n</i> is small, and a nearly-expected reward barely moves it. As <i>n</i> grows, each new reward has less weight, because the average already holds many rewards.</p>
+
+        <div class="worked"><b>Worked example: the arm that paid 1, 3, 2, 6</b>
+          <p>Start with <span class="tex">Q_0=0</span> and use the update with step <span class="tex">1/n</span>.</p>
+          <div class="eq">\begin{aligned}Q_1&=0+\tfrac11(1-0)=1.000\\Q_2&=1+\tfrac12(3-1)=2.000\\Q_3&=2+\tfrac13(2-2)=2.000\\Q_4&=2+\tfrac14(6-2)=3.000\end{aligned}</div>
+          <p>Check against the definition: the averages are <span class="tex">(1)/1=1</span>, <span class="tex">(1+3)/2=2</span>, <span class="tex">(1+3+2)/3=2</span> and <span class="tex">(1+3+2+6)/4=3</span>. They agree.</p>
+          <p>Notice step 3. The reward 2 was exactly what the arm had already been estimated at, so the error was zero and the estimate did not move. The update never needs the old rewards, only <span class="tex">Q_{n-1}</span> and <span class="tex">n</span>.</p>
+          <p>How reliable is <span class="tex">Q_4=3</span>? If the noise has standard deviation <span class="tex">\sigma=1</span>, the standard error of an average of four rewards is <span class="tex">\sigma/\sqrt4 = 0.5</span>. The estimate is good to about half a unit, and it becomes twice as precise only after four times as many pulls.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">Q_n = Q_{n-1} + \alpha_n\big(R_n - Q_{n-1}\big),\qquad \alpha_n = \frac{1}{n}</div>
+        <p>With <span class="tex">\alpha_n=1/n</span> this rule reproduces the sample average exactly. If the rewards are independent draws with the same finite mean <span class="tex">q^*</span>, then <span class="tex">Q_n \to q^*</span> as <span class="tex">n\to\infty</span> (the law of large numbers). The standard error of <span class="tex">Q_n</span> is <span class="tex">\sigma/\sqrt n</span>, where <span class="tex">\sigma</span> is the noise standard deviation.</p>
+        <table class="sym">
+          <tr><td>Q_n</td><td>the estimate of the arm's value after its n-th pull</td></tr>
+          <tr><td>R_n</td><td>the reward from the n-th pull of this arm</td></tr>
+          <tr><td>α_n</td><td>the step size; here 1/n, which shrinks as data accumulates</td></tr>
+          <tr><td>R_n − Q_{n−1}</td><td>the error: what happened minus what we expected</td></tr>
+          <tr><td>σ</td><td>the standard deviation of the reward noise</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: the running average</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the defaults (μ = 2.0, σ = 1.0) and Step through a few rewards. Read the update line: it is always <i>old + (error)/n</i>.</li>
+          <li>Let it run to about 40 rewards. The orange line wanders at first and then settles near the dashed line μ. The blue band (Q_n ± 2σ/√n) narrows as <i>n</i> grows.</li>
+          <li>Raise <b>Noise σ</b> to 2.0. The grey dots spread out, and the band is wider for the same <i>n</i>. The average still converges, just more slowly.</li>
+          <li>Move <b>True mean μ</b> while the lab runs. The estimate follows slowly rather than jumping, because each new reward has less weight than the ones before it.</li></ol></div>
+        <div data-lab="rl-sample-mean"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Off-by-one in the step size.</b> The first reward should set the estimate exactly, so the first step size is 1/1 = 1. A step of 1/(n−1) or a fixed 1/2 gives a different number.</li>
+            <li><b>The average assumes a fixed target.</b> If the arm's true mean drifts, an average over all history lags behind it. Lesson 1.6 replaces 1/n with a constant step size for this reason.</li>
+            <li><b>Small samples mislead.</b> Four rewards give an estimate with a standard error of half the noise level. Acting greedily on such estimates is a problem we return to in the next lessons.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li><b>Monte Carlo value estimation.</b> Module 3 estimates a state's value as the average of observed returns, using exactly this incremental rule with step 1/n.</li>
+            <li><b>Constant-step updates everywhere in RL.</b> The temporal-difference update of Module 4 has the form new = old + α × error, the same pattern with a target that depends on the next estimate.</li>
+            <li><b>Streaming statistics.</b> Systems that track click-through or latency without storing every event use the same running update, so they use constant memory.</li></ul></div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. An arm pays 4, 4, 10. Using Q_0 = 0 and step 1/n, what is Q_3?</summary><div class="ans">Q_1 = 4. Q_2 = 4 + (4 − 4)/2 = 4. Q_3 = 4 + (10 − 4)/3 = 6. This equals the plain average (4 + 4 + 10)/3 = 6.</div></details>
+          <details class="check"><summary>2. If the noise standard deviation is σ = 2, how many pulls are needed before the standard error is 0.2?</summary><div class="ans">σ/√n = 0.2 gives √n = 2/0.2 = 10, so n = 100.</div></details>
+          <details class="check"><summary>3. Why does the update Q_n = Q_(n−1) + (R_n − Q_(n−1))/n not need to store past rewards?</summary><div class="ans">The sum of past rewards is hidden in Q_(n−1): it equals (n−1)·Q_(n−1). The new average needs only the old average, the count n and the new reward.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A sample average can be updated one reward at a time: Q_n = Q_(n−1) + (1/n)(R_n − Q_(n−1)).</li>
+            <li>The update has the form new = old + step × error; this pattern runs through all of reinforcement learning.</li>
+            <li>The standard error σ/√n shows how precise an estimate is, and why many pulls are needed to separate close arms.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 ===================== -->
+    <section class="lesson" id="epsilon-greedy" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">1.3</span><h2>Epsilon-greedy exploration</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Suppose you have estimated the three arms as Q = (1.2, 0.4, 0.9) after some pulls. Always pulling the arm with the highest estimate looks sensible. But what if the estimate for arm 2 is wrong, and it is in fact the best arm? How do we keep learning about arms we currently think are worse, without giving up too much reward?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The simplest answer is a coin with a small chance of landing on "explore". Most of the time, pick the arm that currently looks best (<b>greedy</b>). Occasionally, with probability <span class="tex">\varepsilon</span> (epsilon), pick an arm uniformly at random. The random picks are the exploration; the greedy picks are the exploitation. A pure greedy learner can lock onto an early winner and never find a better arm. A small amount of randomness is enough to break the lock.</p>
+        <p>The trade-off is simple to state. A larger <span class="tex">\varepsilon</span> finds the best arm more reliably, but it wastes more pulls on the others, so the average reward per pull is lower. A smaller <span class="tex">\varepsilon</span> earns more per pull, but it may take longer to discover the best arm or, with a bad start, never find it.</p>
+
+        <h3 class="sec">Build it up: how often do we pull each arm?</h3>
+        <p><b>Step 1: the greedy choice.</b> If the greedy arm is the one with the largest <span class="tex">Q(a)</span>, the greedy choice is <span class="tex">\arg\max_a Q(a)</span>, read "the arm whose index gives the largest Q".</p>
+        <p><b>Step 2: the random choice.</b> With probability <span class="tex">\varepsilon</span> we ignore <span class="tex">Q</span> and pick each of the <i>k</i> arms with probability <span class="tex">1/k</span>. Random picks include the greedy arm too, so the greedy arm gets extra pulls from exploration as well.</p>
+        <p><b>Step 3: the probability of choosing the greedy arm.</b> Add the two routes: greedy with probability <span class="tex">1-\varepsilon</span>, plus random with probability <span class="tex">\varepsilon</span> landing on it, which is <span class="tex">\varepsilon/k</span>. Each other arm is chosen with probability <span class="tex">\varepsilon/k</span> only.</p>
+
+        <div class="worked"><b>Worked example: four arms, two values of ε</b>
+          <p>Four arms with true values <span class="tex">q^*=(1.0,\;2.0,\;1.5,\;0.5)</span>; the best is arm 2 and the estimates have found it. With <span class="tex">k=4</span>:</p>
+          <div class="eq">\varepsilon=0.1:\quad P(\text{greedy arm}) = 1-0.1+\tfrac{0.1}{4} = 0.925,\qquad P(\text{each other arm}) = \tfrac{0.1}{4} = 0.025</div>
+          <div class="eq">\varepsilon=0.3:\quad P(\text{greedy arm}) = 1-0.3+\tfrac{0.3}{4} = 0.775,\qquad P(\text{each other arm}) = 0.075</div>
+          <p>The expected reward per pull is the probability-weighted average of the true values. For <span class="tex">\varepsilon=0.1</span>, the other arms have a total value of <span class="tex">1.0+1.5+0.5=3.0</span>:</p>
+          <div class="eq">\mathbb E[R]=0.925\cdot 2.0 + 0.025\cdot(1.0+1.5+0.5) = 1.850+0.075 = 1.925</div>
+          <p>For <span class="tex">\varepsilon=0.3</span>: <span class="tex">0.775\cdot 2.0 + 0.075\cdot 3.0 = 1.550+0.225 = 1.775</span>. The oracle, which always pulls arm 2, earns 2.0. So the 0.1 learner loses 0.075 per pull and the 0.3 learner loses 0.225 per pull, even though both find the best arm.</p>
+          <p>Over <span class="tex">T=1000</span> pulls, the 0.1 learner makes about 100 random picks. About a quarter of them land on the best arm, so roughly 900 + 25 = 925 pulls go to arm 2, which is 92.5% of pulls, as the formula predicts.</p></div>
+
+        <p><b>A learner that never explores gets stuck.</b> Take two arms, <span class="tex">q^*=(1.0,\;2.0)</span>, with all estimates starting at 0. Greedy breaks the tie by picking arm 1. Its reward is 1.2 (a lucky draw), so <span class="tex">Q(1)=1.2</span>. Now <span class="tex">Q(1)=1.2 > Q(2)=0</span>, so the greedy learner pulls arm 1 forever. Its estimate for arm 1 converges to 1.0, and arm 2, the best arm, is never tried. Its reward is 1.0 per pull against 2.0 for the oracle. An ε of 0.1 would eventually pull arm 2 about 5% of the time, and the estimate for it would correct itself.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">A_t=\begin{cases}\text{a uniformly random arm} &amp; \text{with probability }\varepsilon\\ \arg\max_a Q_t(a) &amp; \text{with probability }1-\varepsilon\end{cases}</div>
+        <p>Here <span class="tex">Q_t(a)</span> is updated by the sample-average rule of lesson 1.2. In the testbed used by the lab, ties are broken by the lowest arm index, and the same random numbers are reused for every ε, so the curves are directly comparable.</p>
+        <table class="sym">
+          <tr><td>ε</td><td>the exploration rate, between 0 and 1: the probability of a random pick</td></tr>
+          <tr><td>k</td><td>the number of arms</td></tr>
+          <tr><td>argmax_a Q_t(a)</td><td>the arm whose current estimate is largest</td></tr>
+          <tr><td>1 − ε + ε/k</td><td>the probability of choosing the greedy arm</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: the testbed</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with ε = 0.10. Press Play and watch the orange line (this ε) rise towards the dashed oracle line. The grey line (ε = 0) typically rises fast and then flattens below the orange line.</li>
+          <li>Watch the tally chips at the bottom. Blue chips are greedy picks; orange chips are random picks. About one chip in ten should be orange.</li>
+          <li>Set ε to 0.00 and let the live run continue. Notice how the bars stop moving once the greedy arm is locked in, while the average reward curve flattens.</li>
+          <li>Set ε to 0.30 and compare the long-run curve with 0.10. Which is higher at step 1000? Which is higher at step 100?</li></ol></div>
+        <div data-lab="rl-eps-greedy"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Exploring is not the same as choosing the worst arm.</b> A random pick is uniform over all arms, so it is usually a worse arm but sometimes the best one.</li>
+            <li><b>A fixed ε never stops exploring.</b> With ε = 0.1, the learner keeps paying about 0.075 per pull even after it knows the answer. Decaying ε over time reduces this cost, at the price of needing a schedule.</li>
+            <li><b>Comparing at one step can mislead.</b> A high ε can look better early and worse late. Always read the curves over the full horizon.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li><b>The default exploration baseline.</b> ε-greedy is the simplest exploration method and is often the first thing tried before more sophisticated ones.</li>
+            <li><b>Deep Q-learning.</b> DQN (Module 5) chooses actions ε-greedily while it learns a value network, and the ε schedule is one of its tuned hyperparameters.</li>
+            <li><b>Recommendation with a safety margin.</b> Showing a random item a small fraction of the time keeps estimates for new items from freezing at their first impressions.</li></ul></div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With k = 5 arms and ε = 0.2, what is the probability that the greedy arm is chosen?</summary><div class="ans">1 − 0.2 + 0.2/5 = 0.8 + 0.04 = 0.84.</div></details>
+          <details class="check"><summary>2. Using the four-arm worked example with ε = 0.1, what is the expected reward per pull if the greedy arm were arm 3 (value 1.5) instead of arm 2?</summary><div class="ans">Probability 0.925 on arm 3 and 0.025 on each other arm. The other arms total 2.0 + 1.0 + 0.5 = 3.5, so E[R] = 0.925·1.5 + 0.025·3.5 = 1.3875 + 0.0875 = 1.475. This is lower because the greedy arm is worse than the oracle, which is why the estimates must find arm 2 first.</div></details>
+          <details class="check"><summary>3. Why does the two-arm example with ε = 0 never discover arm 2, even though its estimate is 0 and not negative?</summary><div class="ans">The greedy rule compares estimates only. Arm 1's estimate (1.2) is above arm 2's (0), so arm 2 is never chosen. Since arm 2 is never pulled, its estimate never changes from 0, and the comparison never changes.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>ε-greedy picks the greedy arm with probability 1 − ε + ε/k and each other arm with probability ε/k.</li>
+            <li>A pure greedy learner can lock onto a poor arm forever; a small ε is enough to keep it learning.</li>
+            <li>Larger ε buys faster discovery at the cost of a steady loss per pull; the right value depends on the horizon.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 ===================== -->
+    <section class="lesson" id="ucb" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">1.4</span><h2>Upper confidence bound</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Epsilon-greedy explores blindly: a random pick is as likely to go to an arm pulled 100 times as to one pulled once. Could the learner instead explore where it is most <i>uncertain</i>? An arm with few pulls has an unreliable estimate and might be much better than it looks.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine two restaurants. One you have visited ten times and rated 3 stars on average. The other you have tried once and rated 4 stars. Which should you visit next? The one you tried once might be better than 4 stars, or worse than 3. Your uncertainty about it is large. A sensible strategy is <b>optimism under uncertainty</b>: act as if each option could be as good as its plausible upper limit. The arm with the highest plausible limit is either good, or it is a clear candidate to learn about.</p>
+        <p>The <b>upper confidence bound</b> (UCB) formalises this. For each arm it adds to the estimate a bonus that is large when the arm has few pulls and shrinks as the arm is pulled. The learner then picks the arm with the largest estimate-plus-bonus. Exploration is not random; it is aimed at the arms whose true value is still unknown.</p>
+
+        <h3 class="sec">Build it up: the bonus</h3>
+        <p><b>Step 1: the estimate with an uncertainty allowance.</b> Let <span class="tex">N_t(a)</span> be the number of times arm <i>a</i> has been pulled before step <i>t</i>, and <span class="tex">t</span> the total number of pulls so far. The UCB score of arm <i>a</i> is</p>
+        <div class="eq">\text{score}_t(a) = Q_t(a) + c\sqrt{\frac{\ln t}{N_t(a)}}</div>
+        <p><b>Step 2: read the bonus.</b> The term <span class="tex">\sqrt{\ln t / N_t(a)}</span> grows with <span class="tex">\ln t</span>, which means the bonus of every arm slowly rises while the arm waits, and falls with <span class="tex">N_t(a)</span>. An arm pulled often gets a small bonus; a neglected arm's bonus keeps rising until it is pulled. The constant <span class="tex">c</span> sets how strongly we trust the bonus: <span class="tex">c=0</span> is pure greedy, and larger <span class="tex">c</span> means more exploration.</p>
+        <p><b>Step 3: untried arms come first.</b> An arm with <span class="tex">N=0</span> has an unbounded score, so each arm is pulled once before the formula takes over.</p>
+
+        <div class="worked"><b>Worked example: which arm is pulled after 10 pulls?</b>
+          <p>After <span class="tex">t=10</span> pulls, arms 1, 2 and 3 have been pulled <span class="tex">N=(5,\,3,\,2)</span> times, with estimates <span class="tex">Q=(1.0,\,1.2,\,0.8)</span>. Use <span class="tex">c=2</span>, so <span class="tex">\ln 10 = 2.3026</span>.</p>
+          <div class="eq">\begin{aligned}\text{arm 1: }&amp;\; 2\sqrt{2.3026/5}=2\cdot0.6786=1.3572,&amp;\;\text{score}=1.0+1.3572=2.3572\\\text{arm 2: }&amp;\; 2\sqrt{2.3026/3}=2\cdot0.8760=1.7522,&amp;\;\text{score}=1.2+1.7522=2.9522\\\text{arm 3: }&amp;\; 2\sqrt{2.3026/2}=2\cdot1.0730=2.1460,&amp;\;\text{score}=0.8+2.1460=2.9460\end{aligned}</div>
+          <p>Arm 2 has the highest score, 2.9522, narrowly ahead of arm 3 at 2.9460. Arm 3 has the largest bonus, because it has been pulled only twice, but its estimate is low. The margin is small, and that is what makes UCB interesting: the choice depends on the bonus and the estimate together.</p>
+          <p>Arm 1 has the most pulls (five), so its bonus is the smallest, and its score, 2.3572, is the lowest of the three.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">A_t = \arg\max_a\Big[\,Q_t(a) + c\sqrt{\frac{\ln t}{N_t(a)}}\,\Big]</div>
+        <p>Under the standard analysis (Auer, Cesa-Bianchi and Fischer, 2002), the expected regret of UCB grows only logarithmically in <i>T</i>, which is a strong guarantee compared with ε-greedy, whose regret is linear in <i>T</i> for a fixed ε.</p>
+        <table class="sym">
+          <tr><td>score_t(a)</td><td>the UCB score: estimate plus uncertainty bonus</td></tr>
+          <tr><td>Q_t(a)</td><td>the sample-average estimate of arm a</td></tr>
+          <tr><td>N_t(a)</td><td>the number of pulls of arm a so far</td></tr>
+          <tr><td>t</td><td>the total number of pulls so far</td></tr>
+          <tr><td>c</td><td>the exploration constant; c = 2 is a common choice in examples</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: bonuses that shrink</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play at the default c = 2.00 and watch the first four pulls: each arm is tried once because its score is infinite.</li>
+          <li>Watch the faded bonus bar on top of each arm. Each time an arm is pulled, its bonus shrinks, and the others' bonuses keep growing slowly.</li>
+          <li>Set c to 0. The learner now picks the arm with the highest estimate and may lock onto a lucky early arm. Compare this with the default.</li>
+          <li>Tick <b>Show the hidden true q*</b>. The best arm is arm 3 (q* = 0.9). Does UCB pull it most often over time?</li></ol></div>
+        <div data-lab="rl-ucb"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The bonus is not a probability.</b> It is a term that makes the score optimistic in a controlled way. Its scale depends on c and on the time t.</li>
+            <li><b>UCB assumes rewards in a known range.</b> The standard guarantees need rewards bounded in a known interval, and a tuned c. A large c explores too much; c = 0 is greedy.</li>
+            <li><b>Stationarity is assumed.</b> The bonus shrinks with N, so it stops exploring an arm whose value has changed. Lesson 1.6 returns to this.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li><b>Principled exploration in bandits and monte-carlo tree search.</b> The UCT rule used in MCTS (Module 7) is UCB applied at every node of a search tree.</li>
+            <li><b>Online experiments.</b> Adaptive experiment platforms use upper confidence bounds to move traffic towards promising variants while keeping a record of uncertainty.</li>
+            <li><b>Bonus-based exploration in deep RL.</b> Count-based and prediction-error bonuses (Module 8) follow the same principle: add an uncertainty term to the reward.</li></ul></div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Using the worked example, what would arm 2's bonus be if it had been pulled 12 times instead of 3, with t = 10 and c = 2?</summary><div class="ans">2·√(2.3026/12) = 2·√0.19188 = 2·0.4380 = 0.8760. So the bonus drops from 1.7522 to 0.8760 and the score falls to 1.2 + 0.8760 = 2.0760.</div></details>
+          <details class="check"><summary>2. Why does the formula pull each arm once before using the score?</summary><div class="ans">An arm with N = 0 has no estimate and an infinite bonus, so its score is infinite. The rule treats each untried arm as maximally uncertain, and tries it first.</div></details>
+          <details class="check"><summary>3. With c = 0, what does UCB reduce to, and what is the risk?</summary><div class="ans">It becomes pure greedy: the arm with the largest estimate (after the initial untried pulls). The risk is locking onto an early lucky arm, as in the ε-greedy example with ε = 0.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>UCB adds an uncertainty bonus c√(ln t / N(a)) to each estimate and picks the largest score.</li>
+            <li>Exploration is aimed at arms with few pulls, not spread at random, and each arm's bonus shrinks as it is tried.</li>
+            <li>The guarantee is logarithmic regret under stated assumptions (bounded rewards, stationarity), a strong property compared with fixed-ε exploration.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 ===================== -->
+    <section class="lesson" id="gradient-bandit" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">1.5</span><h2>Gradient bandits &amp; softmax preferences</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Both ε-greedy and UCB pick arms from value estimates. What if the learner instead keeps a <i>preference</i> for each arm, a number that says how much it likes that arm, and turns the preferences into probabilities? Then the learner can improve its policy directly, by nudging preferences up for arms that paid better than expected.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a student choosing a seat in a lecture. Each seat has a preference score, a number the student raises when the seat turned out well and lowers when it did not. The student does not pick the highest score deterministically; the scores become probabilities, and seats with higher scores are chosen more often. Over time the scores reflect experience and the choices concentrate on the good seats.</p>
+        <p>This is a different style of learning. Instead of estimating <i>values</i> and acting greedily, the learner adjusts a <b>policy</b>, here a probability distribution over arms, to make rewarded actions more likely. The policy is always stochastic, so exploration is built into it. Later modules (policy gradients, Module 6) use the same idea on much larger problems.</p>
+
+        <h3 class="sec">Build it up: preferences to probabilities</h3>
+        <p><b>Step 1: preferences.</b> Keep a number <span class="tex">H_t(a)</span> for every arm. Preferences start at 0 for all arms, so every arm begins equally likely.</p>
+        <p><b>Step 2: softmax.</b> Turn preferences into probabilities with the softmax, which makes every probability positive and the total equal to 1:</p>
+        <div class="eq">\pi_t(a)=\frac{e^{H_t(a)}}{\sum_{b} e^{H_t(b)}}</div>
+        <p>A preference that is higher by 1 makes an arm about <span class="tex">e\approx2.72</span> times as likely, relative to the others. With all preferences at 0 each arm has probability <span class="tex">1/k</span>.</p>
+        <p><b>Step 3: the update.</b> After pulling arm <span class="tex">A_t</span> and seeing reward <span class="tex">R_t</span>, every preference moves by</p>
+        <div class="eq">H_{t+1}(a)=H_t(a)+\alpha\,(R_t-\bar R_t)\,\big(\mathbf 1[a=A_t]-\pi_t(a)\big)</div>
+        <p>Read it piece by piece. The factor <span class="tex">(R_t-\bar R_t)</span> is the surprise: a reward above the average raises the chosen arm's preference, and a reward below it lowers it. The factor <span class="tex">\mathbf 1[a=A_t]-\pi_t(a)</span> says the chosen arm moves up by <span class="tex">1-\pi_t(A_t)</span>, and every other arm moves down by <span class="tex">\pi_t(a)</span>. Both pieces together push probability towards arms that earned more than average.</p>
+        <p><b>Step 4: the baseline.</b> The reference <span class="tex">\bar R_t</span> is the average reward so far. It does not change which way the expected update points, but it reduces the size of the random jumps. Without it, a positive reward always raises the chosen arm, even when the arm was only average.</p>
+
+        <div class="worked"><b>Worked example: three arms, α = 0.5, baseline on</b>
+          <p>Start with <span class="tex">H_0=(0,0,0)</span>, so <span class="tex">\pi_0=(1/3,1/3,1/3)</span>. The baseline starts at <span class="tex">\bar R_0=0</span>.</p>
+          <p><b>Step 1.</b> Arm 1 is pulled and returns <span class="tex">R_1=2.0</span>. The surprise is <span class="tex">2.0-0=2.0</span>. Arm 1 rises by <span class="tex">0.5\cdot2.0\cdot(1-1/3)=0.6667</span>. Arms 2 and 3 each fall by <span class="tex">0.5\cdot2.0\cdot(1/3)=0.3333</span>.</p>
+          <div class="eq">H_1=(0.6667,\,-0.3333,\,-0.3333),\qquad \pi_1=(0.5761,\,0.2119,\,0.2119)</div>
+          <p>The baseline becomes <span class="tex">\bar R_1=2.0</span>. Arm 1 now has more than half the probability, and that came from one reward.</p>
+          <p><b>Step 2.</b> Arm 2 is pulled and returns <span class="tex">R_2=1.0</span>. The surprise is <span class="tex">1.0-2.0=-1.0</span>, which is below average. Arm 2 falls by <span class="tex">0.5\cdot(-1.0)\cdot(1-0.2119)=-0.3941</span>, so <span class="tex">H(2)=-0.3333-0.3941=-0.7274</span>. Arm 1 rises by <span class="tex">0.5\cdot(-1.0)\cdot(0-0.5761)=+0.2881</span>, so <span class="tex">H(1)=0.9547</span>. Arm 3 rises by <span class="tex">0.5\cdot(-1.0)\cdot(0-0.2119)=+0.1060</span>, so <span class="tex">H(3)=-0.2274</span>.</p>
+          <div class="eq">H_2=(0.9547,\,-0.7274,\,-0.2274),\qquad \pi_2=(0.6700,\,0.1246,\,0.2054),\qquad \bar R_2=1.5</div>
+          <p>A pull of arm 2 that gave a below-average reward lowered its probability. Arm 1, the arm that paid 2.0, is now chosen 67% of the time. Note that arm 1's preference went <i>up</i> on step 2 even though arm 1 was not pulled. The update for an unpulled arm is −α·(surprise)·π(a), and the surprise was negative, so the sign flips and the preference rises.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\pi_t(a)=\frac{e^{H_t(a)}}{\sum_b e^{H_t(b)}},\qquad H_{t+1}(a)=H_t(a)+\alpha\,(R_t-\bar R_t)\big(\mathbf 1[a=A_t]-\pi_t(a)\big),\qquad \bar R_{t}=\bar R_{t-1}+\tfrac1t(R_t-\bar R_{t-1})</div>
+        <p>The update is stochastic gradient ascent on the expected reward with respect to the preferences. The expected step equals the gradient, so the baseline does not change the expected direction, only the noise.</p>
+        <table class="sym">
+          <tr><td>H_t(a)</td><td>the preference for arm a at step t; any real number</td></tr>
+          <tr><td>π_t(a)</td><td>the probability of choosing arm a at step t (the policy)</td></tr>
+          <tr><td>α</td><td>the step size for preferences; here 0.5 in the worked example</td></tr>
+          <tr><td>R̄_t</td><td>the baseline: the average reward so far</td></tr>
+          <tr><td>𝟙[a = A_t]</td><td>1 if arm a was the one pulled, 0 otherwise (an indicator)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: preferences and the baseline</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the offset at 4.0 and press Play. Both learners start at 1/3 each. The blue learner (with baseline) and the orange learner (without) both move towards arm 2.</li>
+          <li>Set the offset to 0. The two learners now behave similarly. Explain why: without an offset, a reward is above the baseline about as often as below it.</li>
+          <li>Raise the offset to 8 and watch the orange curve. Without a baseline, every reward is positive, so every pull raises the chosen arm, and the learner becomes noisy.</li>
+          <li>Set α to 1.00 and then 0.01. What happens to the speed of convergence and the smoothness of the curves?</li></ol></div>
+        <div data-lab="rl-gradient"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The preferences are not values.</b> A preference of 0.9 for arm 2 does not mean its reward is 0.9. Only the probabilities have a direct meaning.</li>
+            <li><b>The baseline must not depend on the current action.</b> Using the reward of the action being updated as its own baseline biases the update. The running average over past rewards is a safe choice.</li>
+            <li><b>The probabilities never reach zero exactly.</b> Softmax keeps every arm possible, so the learner always explores a little. This is a feature, but it means the policy is never fully deterministic.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li><b>Policy gradients.</b> REINFORCE and the actor in actor–critic methods (Module 6) use softmax preferences and a baseline in exactly this way, over states as well as bandit arms.</li>
+            <li><b>Language-model decoding and RLHF.</b> A language model's next-token distribution is a softmax over logits, and reinforcement learning from human feedback nudges those logits with a reward and a baseline.</li>
+            <li><b>Stochastic policies for games and robots.</b> Keeping a probability over actions gives natural exploration, which is why softmax policies appear in many deep RL agents.</li></ul></div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With all preferences equal at 0 and three arms, what is π? Then if H(1) rises by 1 and the others stay at 0, what is π(1)?</summary><div class="ans">π = (1/3, 1/3, 1/3). With H = (1, 0, 0), π(1) = e / (e + 1 + 1) = 2.718/4.718 = 0.576.</div></details>
+          <details class="check"><summary>2. In the worked example, why did arm 1's preference rise on step 2 even though arm 1 was not pulled?</summary><div class="ans">The indicator for arm 1 is 0 and its probability is π(1) = 0.5761, so the term 𝟙 − π is −0.5761. Multiplied by the negative surprise (−1.0) and α = 0.5, the preference increases by 0.2881. Every arm that was not pulled moves in the direction of the surprise times its probability.</div></details>
+          <details class="check"><summary>3. Why does subtracting a baseline keep the expected update the same but reduce its size?</summary><div class="ans">The baseline is subtracted from every update, and the expected value of the term (𝟙[a = A] − π(a)) over the random choice of A is zero, so the subtraction adds zero in expectation. The random size of the update drops when the reward is close to the average.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A gradient bandit keeps preferences, turns them into probabilities with softmax, and moves them according to the surprise in each reward.</li>
+            <li>A baseline, usually the average reward so far, reduces the size of the updates without changing their expected direction.</li>
+            <li>Learning the policy directly keeps exploration inside the probabilities; this is the seed of policy gradient methods.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 ===================== -->
+    <section class="lesson" id="nonstationary-bandits" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">1.6</span><h2>Non-stationary problems &amp; constant step size</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A streaming service recommends a video to a viewer. The viewer's taste changes week by week, so a video that earned clicks last year may earn none now. A sample average over all history will be slow to notice. How should the estimate weigh recent rewards against old ones?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>An average over all history treats a reward from a year ago exactly like one from this morning. That is correct when the arm's true value is fixed. When it drifts, the old rewards describe a world that no longer exists. We want the estimate to <b>forget</b> gradually: recent rewards count for more, and old ones fade.</p>
+        <p>The fix is a small change to the sample-average rule. Replace the step size <span class="tex">1/n</span> with a fixed number <span class="tex">\alpha</span> between 0 and 1. The update is the same as before, but the step no longer shrinks, so each reward keeps a constant weight and older rewards are discounted by a constant factor each time a new one arrives.</p>
+
+        <h3 class="sec">Build it up: what the constant step does</h3>
+        <p><b>Step 1: the update.</b> Use <span class="tex">Q_n = Q_{n-1} + \alpha\,(R_n - Q_{n-1})</span> with a fixed <span class="tex">\alpha</span>.</p>
+        <p><b>Step 2: unroll it.</b> Substitute repeatedly to see how each past reward is weighted. The result, starting from <span class="tex">Q_0</span>, is</p>
+        <div class="eq">Q_n = (1-\alpha)^n Q_0 + \sum_{i=1}^{n}\alpha(1-\alpha)^{n-i}R_i</div>
+        <p>The newest reward has weight <span class="tex">\alpha</span>, the one before it <span class="tex">\alpha(1-\alpha)</span>, and so on. Each step back multiplies the weight by <span class="tex">1-\alpha</span>, so the weights decay geometrically, like a memory that halves every few pulls.</p>
+        <p><b>Step 3: the memory length.</b> The weight of a reward halves after <span class="tex">h</span> pulls when <span class="tex">(1-\alpha)^h = 1/2</span>, which gives <span class="tex">h = \ln(0.5)/\ln(1-\alpha)</span>. For <span class="tex">\alpha = 0.1</span> this is about 6.6 pulls. A rough rule is that the effective window is about <span class="tex">1/\alpha</span> pulls.</p>
+
+        <div class="worked"><b>Worked example: a reward jump with α = 0.5</b>
+          <p>Rewards are <span class="tex">1,\;1,\;4</span>, and <span class="tex">Q_0=0</span>, with a constant step <span class="tex">\alpha = 0.5</span>.</p>
+          <div class="eq">\begin{aligned}Q_1&amp;=0+0.5(1-0)=0.500\\Q_2&amp;=0.5+0.5(1-0.5)=0.750\\Q_3&amp;=0.75+0.5(4-0.75)=2.375\end{aligned}</div>
+          <p>Check with the unrolled form: <span class="tex">Q_3 = 0.125\cdot0 + 0.125\cdot1 + 0.25\cdot1 + 0.5\cdot4 = 0.125+0.25+2.0 = 2.375</span>. The weights are 0.5 on the newest reward, 0.25 on the one before, 0.125 on the first, and 0.125 on the initial value; they sum to 1.</p>
+          <p>The sample average after the same three rewards would be <span class="tex">(1+1+4)/3 = 2.0</span>, which weighs the 4 at 1/3. The constant-step estimate weighs it at 0.5, so it reacts faster to the jump, and forgets the early 1s sooner.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">Q_n = Q_{n-1} + \alpha\,(R_n - Q_{n-1}),\qquad 0 &lt; \alpha \le 1</div>
+        <p>For a fixed <span class="tex">\alpha</span> the estimate never converges to a single value if the arm's mean keeps moving; it keeps tracking. Its variance is larger than the sample average's, because it uses fewer effective rewards. The choice of <span class="tex">\alpha</span> is a trade-off between tracking speed and noise. The sample average is the right choice when the mean is fixed; a constant step is the right choice when it moves.</p>
+        <table class="sym">
+          <tr><td>α</td><td>the constant step size, between 0 and 1; a larger α forgets faster</td></tr>
+          <tr><td>(1 − α)^(n−i)</td><td>the weight given to reward i after n pulls (for constant α)</td></tr>
+          <tr><td>h</td><td>the half-life: pulls until a reward's weight halves</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a drifting arm</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the drift at 0.05 and α at 0.10. Press Play. The black line is the true mean drifting. The green sample average lags behind it, and the blue constant-α estimate follows it more closely.</li>
+          <li>Set the drift to 0.00. Now the true mean is fixed. Notice that the green sample average becomes the more accurate estimate, and the blue one still jitters.</li>
+          <li>Raise the drift to 0.15 and compare the errors. Which estimate has the smaller error at step 300?</li>
+          <li>Read the half-life in the readout. Change α to 0.5 and then 0.02. Explain the memory length in each case in your own words.</li></ol></div>
+        <div data-lab="rl-drift"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A constant step is not free.</b> It forgets old rewards, so it is noisier than the sample average when the world is stable.</li>
+            <li><b>α = 1 is pure memory of one reward.</b> The estimate becomes the last reward, which is very noisy. Values close to 0 remember too long.</li>
+            <li><b>Initial values matter.</b> With a constant step, Q_0 keeps a weight of (1 − α)^n. It fades, but slowly for small α.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li><b>Tracking drifting users and content.</b> Recommenders and ad systems use recency-weighted estimates so that yesterday's trends count more than last year's.</li>
+            <li><b>Temporal-difference learning.</b> The TD update of Module 4 uses a constant step size α in its tabular form; choosing α is a central tuning decision.</li>
+            <li><b>Exponential moving averages in training.</b> Momentum and running statistics in optimisers use the same exponentially decaying weights as the constant step.</li></ul></div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With α = 0.1, what is the weight of a reward that arrived 3 pulls ago relative to the newest reward?</summary><div class="ans">The newest reward has weight α = 0.1, one pull back has 0.1·0.9, two back 0.1·0.81, three back 0.1·0.729 = 0.0729. The reward three pulls ago has weight 0.0729.</div></details>
+          <details class="check"><summary>2. Using the worked example, what would Q_3 be if the update used step 1/n instead of α = 0.5?</summary><div class="ans">The sample average after 1, 1, 4 is (1 + 1 + 4)/3 = 2.0. With step 1/n, Q_1 = 1, Q_2 = 1, Q_3 = 1 + (4 − 1)/3 = 2.0.</div></details>
+          <details class="check"><summary>3. If the true mean of an arm is fixed, which estimator is better, and why?</summary><div class="ans">The sample average. It uses every reward with equal weight, which reduces the variance to σ²/n. A constant step keeps a weight on recent rewards and so has a larger variance; the extra responsiveness is wasted when nothing changes.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A constant step size α gives exponentially decaying weights on past rewards, a memory of about 1/α pulls.</li>
+            <li>Use the sample average when the mean is fixed and a constant step when it drifts; the choice is a trade-off between lag and noise.</li>
+            <li>The same constant-step update reappears in temporal-difference learning and in optimiser statistics.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now frame a repeated choice as a bandit, measure a strategy by its regret, update estimates one reward at a time, explore with ε-greedy or with optimistic upper bounds, learn a policy through softmax preferences and a baseline, and track a drifting target with a constant step. Next, <b>Module 2</b> assumes the model is known and uses dynamic programming to compute values and policies exactly: <a href="rl-dynamic-programming.html">Module 2 · Dynamic programming</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

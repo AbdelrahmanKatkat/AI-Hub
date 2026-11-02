@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 · Model-based RL · Reinforcement Learning</title>
+<meta name="description" content="Learned models and Dyna-Q, Monte Carlo tree search with UCT, model error and compounding rollouts, and model-predictive control with learned models.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-model-based.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="7">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 7</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">7</div>
+      <div style="flex:1">
+        <h1>Module 7 · Model-based reinforcement learning</h1>
+        <p>Model-free agents learn only from what they actually experience. A model-based agent also learns <b>how the world works</b>, a table or a network that predicts the next state and reward, and then uses that model to <b>plan</b>: it rehearses decisions in its head before trying them. This module covers Dyna-Q, Monte Carlo tree search, the way model errors compound, and model-predictive control with learned models.</p>
+        <div class="chips"><span class="chip">4 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Module 2 (planning) and Module 4 (TD)</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>Where this sits in the loop.</b> Model-based methods add a stage to the learning loop: every real transition is stored in a model (the <b>store</b> stage), the model is replayed or searched to produce extra value estimates (the <b>estimate</b> and <b>improve</b> stages), and the policy then acts in the real environment. The price is computation per real step; the gain is fewer real steps.</p>
+      <p><b>How the labs work.</b> Every lab is an <i>illustrative</i> simulation on a small problem, not a benchmark. All randomness uses a fixed seed, so a run can be repeated exactly. Numbers in the labs are computed in the browser, and each lab's caption states its simplifications.</p>
+    </section>
+
+    <!-- ===================== 7.1 ===================== -->
+    <section class="lesson" id="models-planning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.1</span><h2>Learned models &amp; Dyna-Q</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot arm must learn to reach a cup. Each real attempt takes ten seconds and wears the gears a little. A Q-learning agent from Module 4 would need thousands of attempts. Is there a way to get more learning out of each real attempt, by remembering what happened and rehearsing it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a learner who keeps a notebook. Every time something happens, the learner writes down two things: what the value of that action was, and what happened next. The first kind of note is the value estimate you already know from Module 4. The second kind of note is a <b>model</b>: "in this state, when I do this action, I end up in that state and get that reward."</p>
+        <p>Once the notebook has a model, the learner can <b>plan</b>. Instead of waiting for the world to show the same situation again, the learner opens the model, picks a remembered situation, imagines the outcome and updates its values as if the imagined outcome had really happened. This is a rehearsal. It costs computation, not real attempts. The method that combines real learning with these imagined updates is called <b>Dyna</b>.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: a model is a lookup table.</b> Take the simplest case, a deterministic world. For each state–action pair <span class="tex">(s,a)</span> we store the reward and next state we last saw, written <span class="tex">M(s,a) = (r, s')</span>. If the world is deterministic, one observation is enough and the table is exact.</p>
+        <p><b>Step 2: a real step does three things.</b> Suppose the agent is in state <span class="tex">s</span>, takes action <span class="tex">a</span>, and observes reward <span class="tex">r</span> and next state <span class="tex">s'</span>. It (i) updates its action values with the ordinary Q-learning rule, (ii) writes <span class="tex">M(s,a) \leftarrow (r,s')</span>, and (iii) performs <span class="tex">n</span> <b>planning updates</b>: pick a pair it has seen before, look up its stored outcome, and apply the same Q-learning rule to that imagined transition.</p>
+        <p><b>Step 3: a worked example by hand.</b> Consider a corridor with states 0, 1, 2 and a goal state 3. The actions are L (move left) and R (move right), moves are deterministic and walls stop at state 0. Entering the goal gives reward +1, and every other step gives 0. Use <span class="tex">\gamma = 0.9</span>, <span class="tex">\alpha = 0.5</span> and <span class="tex">n = 2</span> planning updates after every real step. In the first episode the agent always moves R. All values start at 0.</p>
+
+        <div class="worked"><b>Worked example: Dyna-Q on the three-step corridor</b>
+          <p>The real update for a transition is <span class="tex">Q(s,a) \leftarrow Q(s,a) + \alpha\,[\,r + \gamma \max_{a'} Q(s',a') - Q(s,a)\,]</span>. For the planning steps we replay stored pairs in a fixed order, from the pair nearest the goal backwards, cycling through the list.</p>
+          <table class="tbl">
+            <tr><th>real step</th><th>real update</th><th>planning updates (in order)</th><th>Q(0,R)</th><th>Q(1,R)</th><th>Q(2,R)</th></tr>
+            <tr><td>t=1: (0,R) → 1, r=0</td><td>Q(0,R) = 0</td><td>(0,R) → 0; (0,R) → 0</td><td>0</td><td>0</td><td>0</td></tr>
+            <tr><td>t=2: (1,R) → 2, r=0</td><td>Q(1,R) = 0</td><td>(1,R) → 0; (0,R) → 0</td><td>0</td><td>0</td><td>0</td></tr>
+            <tr><td>t=3: (2,R) → 3, r=1</td><td>Q(2,R) = 0.5(1 + 0 − 0) = 0.5</td><td>(1,R) → 0.5(0 + 0.9·0.5) = 0.225; (0,R) → 0.5(0 + 0.9·0.225) = 0.10125</td><td>0.10125</td><td>0.225</td><td>0.5</td></tr>
+          </table>
+          <p>The reward was seen only once, on the last real step. Without planning (n = 0) the table after the episode would be Q(0,R) = 0, Q(1,R) = 0, Q(2,R) = 0.5, so the start state would know nothing about the goal. With two planning updates per step, the value of the goal has been carried back two states using imagined transitions only. Note that the planning updates at t = 3 used the <i>new</i> value of Q(2,R), which is why the chain of values is built in one pass.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <p>Dyna-Q keeps three things: action values, a model, and a set of pairs seen so far. After each real transition <span class="tex">(s,a,r,s')</span> it performs the following.</p>
+        <div class="eq">\begin{aligned} &amp;\text{(direct)}\quad Q(s,a) \leftarrow Q(s,a) + \alpha\big[r + \gamma \max_{a'} Q(s',a') - Q(s,a)\big] \\ &amp;\text{(model)}\quad M(s,a) \leftarrow (r, s') \\ &amp;\text{(planning, repeated } n \text{ times)}\quad (\tilde s,\tilde a) \sim \text{seen pairs},\;(\tilde r,\tilde s') = M(\tilde s,\tilde a),\\ &amp;\qquad Q(\tilde s,\tilde a) \leftarrow Q(\tilde s,\tilde a) + \alpha\big[\tilde r + \gamma \max_{a'} Q(\tilde s',a') - Q(\tilde s,\tilde a)\big] \end{aligned}</div>
+        <table class="sym">
+          <tr><th>Symbol</th><th>Meaning</th></tr>
+          <tr><td><span class="tex">Q(s,a)</span></td><td>estimated value of taking action a in state s, followed by the best behaviour</td></tr>
+          <tr><td><span class="tex">\alpha</span></td><td>step size (learning rate), here 0.5; 0 &lt; α ≤ 1</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>discount factor, here 0.9; weights later rewards by γ per step</td></tr>
+          <tr><td><span class="tex">r, s'</span></td><td>reward and next state from the real environment (direct step) or from the model (planning step)</td></tr>
+          <tr><td><span class="tex">M(s,a)</span></td><td>the learned model: the last observed reward and next state for the pair</td></tr>
+          <tr><td><span class="tex">n</span></td><td>number of planning updates per real step (the computation budget)</td></tr>
+        </table>
+        <p>Dyna-Q with <span class="tex">n = 0</span> is ordinary Q-learning. Planning changes nothing about what the agent is allowed to do in the world; it only changes how much each real observation is reused.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set <i>planning steps n</i> to 0 and let the lab run 30 episodes. Note the curve for the baseline (n = 0).</li>
+          <li>Set n to 20. The curve for the planning run should fall to the goal in far fewer steps in the first few episodes. Notice how the first episode is usually the one that changes most.</li>
+          <li>Set n to 50 and then 2. Is more planning always better? Watch the cost in updates per real step that the caption reports.</li>
+          <li>Raise ε (exploration) to 0.4. Both curves become noisier; planning helps less when the real data are poor.</li>
+        </ol></div>
+        <div data-lab="rlmb-dyna"></div>
+        <div class="callout"><b>Pipeline placement.</b> Store stage: the model table (one entry per visited pair, size |S|·|A| in the tabular case). Estimate and improve stages: one real update plus n planning updates per real step, so the cost per real step is 1 + n table updates. The model is updated only in the store stage.</div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A planner is only as good as its model.</b> If the model is wrong, planning reinforces the error. The real updates are the only thing that corrects it.</li>
+          <li><b>The tabular model assumes determinism.</b> If the same pair leads to different outcomes, storing one (r, s') is wrong. The fix is to store averages or estimated distributions, which is the subject of 7.3.</li>
+          <li><b>Fewer real steps is not zero cost.</b> Dyna trades real experience for computation. On a robot, the planning cost may be cheap; on a large problem it is not.</li>
+          <li><b>Planning on pairs never visited is impossible.</b> The model only knows pairs the agent has tried, so exploration still matters.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <p>Dyna (Sutton, 1990) is the origin of this pattern. Its descendants include <b>Model-Based Policy Optimization</b> (Janner et al., 2019), which trains a policy on short rollouts from a learned dynamics model branched off real states, and <b>Dreamer</b> (Hafner et al.), which learns a latent world model and improves its policy by imagining trajectories through it. The same idea of reusing every real transition through a model is what lets these agents work with far fewer environment steps than model-free agents on the same tasks.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the worked example, why does Q(0,R) become nonzero at t = 3 even though state 0 is three moves from the goal?</summary><div class="ans">Because the planning updates at t = 3 propagate the new value Q(2,R) = 0.5 backwards. The update for (1,R) uses the model's next state 2 and gives Q(1,R) = 0.225; the next update for (0,R) uses the new Q(1,·) and gives 0.10125. Each planning update carries value back one state.</div></details>
+        <details class="check"><summary>2. The world is stochastic: from (s,a) the reward is 0 with probability 0.5 and 1 with probability 0.5. What should the model store instead of a single (r, s')?</summary><div class="ans">An estimate of the distribution, for example the running average reward and the empirical probabilities of each next state. Storing only the last observation makes the model give the same answer every time, so planning would overfit to one outcome.</div></details>
+        <details class="check"><summary>3. Dyna with n = 20 uses 21 table updates per real step. Under what circumstances is this worth it?</summary><div class="ans">When real steps are expensive or scarce (a robot, a clinical trial) and the table updates are cheap, and when the model is reasonably accurate. If the environment is cheap to simulate, model-free learning with more real steps may be simpler. The answer depends on the relative cost of a real step and a planning update.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A model is a stored prediction of (reward, next state) for each state–action pair; a real step updates both values and model.</li>
+          <li>Planning updates replay the model to propagate value backwards with no new real experience.</li>
+          <li>Dyna-Q is Q-learning plus n planning updates; the gain is sample efficiency, the cost is computation, and the risk is model error.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.2 ===================== -->
+    <section class="lesson" id="mcts" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.2</span><h2>Monte Carlo tree search</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Before a move, a planner has a model of the game but the full tree of possible futures is far too large to enumerate. In the game of Go the number of legal positions is in the order of 10<sup>170</sup>. How can a planner choose a good move after looking at only a tiny part of the tree, and how should it decide where to look next?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine searching a large building for a lost object. You cannot visit every room, so you go down the corridors that look most promising, but you also try doors you have never opened, because the best room may be behind one of them. Monte Carlo tree search (MCTS) does this for decision trees. It builds a tree of the options it has examined, and each new visit has two aims at once: to look deeper where the results are good (<b>exploit</b>) and to look at branches that have been examined too little to judge (<b>explore</b>).</p>
+        <p>Each iteration of MCTS has four phases, and the lab shows all four:</p>
+        <ol>
+          <li><b>Selection.</b> Starting at the root, follow the child with the best score until reaching a node that still has children not yet added to the tree.</li>
+          <li><b>Expansion.</b> Add one new child of that node to the tree.</li>
+          <li><b>Simulation.</b> From the new node, play random moves to the end of the game and record the final payoff. This is the "Monte Carlo" part.</li>
+          <li><b>Backup.</b> Add one visit and the payoff to every node on the path from the root to the new node.</li>
+        </ol>
+        <p>After many iterations the root's children have visit counts and average payoffs. The move to play is the child visited most often, which is more reliable than the one with the highest average when visit counts are small.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the test tree.</b> Our decision problem has two decisions. First choose one of three actions A, B, C. Then choose x or y. The leaf payoffs are: A: x = 0.2, y = 0.8; B: x = 0.5, y = 0.4; C: x = 0.9, y = 0.1. The best achievable payoff is 0.9, by playing C then x.</p>
+        <p><b>Step 2: the average is not enough.</b> The average payoff of each first action, if the second decision is random, is A: (0.2 + 0.8)/2 = 0.5, B: (0.5 + 0.4)/2 = 0.45, C: (0.9 + 0.1)/2 = 0.5. A planner that uses only averages cannot tell A from C, and C is the one that contains the best answer. Search must keep looking into C.</p>
+        <p><b>Step 3: how to choose where to look.</b> The UCT rule (upper confidence bound applied to trees) scores each child by its average payoff plus a bonus that is large when the child has few visits compared with its parent:</p>
+
+        <div class="worked"><b>Worked example: four iterations, then the UCT choice</b>
+          <p>Use <span class="tex">c = \sqrt{2}</span>. Run the first three iterations. Each expansion adds one first-action node, and the rollout (random second decision) is fixed here so the example is exact: iteration 1 rolls out to y (payoff 0.8), iteration 2 to x (0.5), iteration 3 to y (0.1).</p>
+          <table class="tbl">
+            <tr><th>iteration</th><th>phase</th><th>node added</th><th>payoff</th><th>root (N, W)</th><th>A, B, C (N, W)</th></tr>
+            <tr><td>1</td><td>expand A, roll out</td><td>A</td><td>0.8</td><td>(1, 0.8)</td><td>A (1, 0.8)</td></tr>
+            <tr><td>2</td><td>expand B, roll out</td><td>B</td><td>0.5</td><td>(2, 1.3)</td><td>B (1, 0.5)</td></tr>
+            <tr><td>3</td><td>expand C, roll out</td><td>C</td><td>0.1</td><td>(3, 1.4)</td><td>C (1, 0.1)</td></tr>
+          </table>
+          <p>At iteration 4 all three first actions have been added, so selection applies UCT at the root, with parent visits N = 3. Every child has one visit, so the bonus is the same for all: <span class="tex">c\sqrt{\ln 3 / 1} = 1.4142 \times \sqrt{1.0986} = 1.4823</span>. The scores are</p>
+          <div class="eq">\text{UCT}(A) = 0.8 + 1.4823 = 2.2823,\quad \text{UCT}(B) = 0.5 + 1.4823 = 1.9823,\quad \text{UCT}(C) = 0.1 + 1.4823 = 1.5823</div>
+          <p>So A is selected. Node A has no children yet, so expansion adds A-x, which is terminal with payoff 0.2. The backup gives the root (4, 1.6), A (2, 1.0), A-x (1, 0.2). Notice that C, the branch with the best answer, was visited only once, and that its average 0.1 looks bad after a single unlucky rollout. Further iterations are needed to recover it; this is exactly why the bonus term exists.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <p>For a node <span class="tex">v</span> with child <span class="tex">u</span>, the UCT score is</p>
+        <div class="eq">\text{UCT}(u) = \frac{W_u}{N_u} + c\sqrt{\frac{\ln N_v}{N_u}}</div>
+        <table class="sym">
+          <tr><th>Symbol</th><th>Meaning</th></tr>
+          <tr><td><span class="tex">N_u</span></td><td>number of visits to child u so far</td></tr>
+          <tr><td><span class="tex">W_u</span></td><td>sum of payoffs backed up through u; <span class="tex">W_u / N_u</span> is its average payoff</td></tr>
+          <tr><td><span class="tex">N_v</span></td><td>number of visits to the parent v (equal to the sum of its children's visits, plus one for v itself where applicable)</td></tr>
+          <tr><td><span class="tex">c</span></td><td>exploration constant; <span class="tex">\sqrt{2}</span> is a common default, but payoffs in [0,1] are assumed</td></tr>
+        </table>
+        <p>The bonus term is large when <span class="tex">N_u</span> is small compared with <span class="tex">N_v</span>, and it shrinks as the child is visited more. Its growth is logarithmic in the parent's visits, so every branch keeps getting some attention. Under the usual assumption that payoffs lie in [0,1], UCT is the bandit algorithm of Module 1 applied at every node of the tree, which is why the same bounds on regret carry over at each level.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and watch the first three iterations. Each one expands a new first action. Read the caption for the phase.</li>
+          <li>Set the exploration constant c to 0. The search now chooses purely by average payoff. Does it find C-x quickly?</li>
+          <li>Set c to 3 and then 0.5. Which setting finds the 0.9 leaf fastest, and which one settles on the wrong action?</li>
+          <li>Let the lab run to 200 iterations. Compare the most visited root child with the child that has the highest average. Are they the same?</li>
+        </ol></div>
+        <div data-lab="rlmb-mcts"></div>
+        <div class="callout"><b>Pipeline placement.</b> Act stage, at decision time: MCTS runs before each move, using the model from the store stage. It stores only the tree for the current decision (one node per expansion), and its cost is iterations × depth model calls per move. The tree is usually discarded after the move, but its statistics can be reused.</div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Choosing by average payoff.</b> With few visits the average is noisy. The robust choice is usually the most visited child.</li>
+          <li><b>Random rollouts are biased.</b> Random play gives a crude estimate of the value of a position. Strong systems replace it with a learned value estimate.</li>
+          <li><b>The payoffs must be bounded for the constant to mean anything.</b> If payoffs range over [−100, 100], c = √2 explores far too little or too much; rescale the payoffs.</li>
+          <li><b>Two-player games need a sign flip.</b> The lab is single-agent. In a two-player game, the payoff is negated at alternate levels, so each player's choices are scored from its own point of view.</li>
+          <li><b>MCTS is anytime, but not free.</b> It can be stopped at any iteration and still return a move, with quality rising with the budget.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <p><b>AlphaGo</b> (Silver et al., 2016) used MCTS guided by a policy network that proposed moves and a value network that scored positions instead of random rollouts. <b>AlphaZero</b> (2017) used the same search, with the visit counts of the root children as the training target for the policy network. <b>MuZero</b> (2020) ran MCTS on a learned model without being given the rules of the game, which links this lesson to 7.1 and 7.3.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the iteration-3 values (root N = 3, A, B, C with N = 1 each and averages 0.8, 0.5, 0.1), which child does UCT select first, and why does the average alone not decide it?</summary><div class="ans">A is selected, with UCT 2.2823 against 1.9823 for B and 1.5823 for C. The average alone would also select A here, but the bonus is what forces the search to keep visiting B and C later as their visit counts stay low.</div></details>
+        <details class="check"><summary>2. The actions A and C both have an average of 0.5 under random second decisions. Why can an average-only planner not tell which one to choose, and what does MCTS do instead?</summary><div class="ans">Averages hide the spread of the payoffs: A has 0.2 and 0.8, C has 0.9 and 0.1. A search that keeps exploring under-visited children and records the actual values at the leaves will eventually find the 0.9 leaf, while a planner that reads only the mean cannot distinguish the two.</div></details>
+        <details class="check"><summary>3. Why is the final move chosen by visit count rather than by the highest average?</summary><div class="ans">A child with a high average after only one or two visits may be a lucky rollout. Visit counts concentrate on children the search has repeatedly found to be good, so the most visited child is more robust. The UCT rule already moves visits towards the best children, so visit count and value usually agree after enough iterations.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>MCTS grows a tree by four repeated phases: selection, expansion, simulation and backup.</li>
+          <li>UCT adds a logarithmic exploration bonus to each child's average, so under-visited branches keep being checked.</li>
+          <li>Choose the move by visit count, and remember that the search is anytime and its quality depends on the budget.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.3 ===================== -->
+    <section class="lesson" id="model-error" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.3</span><h2>Model error &amp; compounding rollouts</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A learned model predicts the next state with an error of 0.02 at every step. A planner uses the model to imagine ten steps into the future. Is the imagined future about 0.02 wrong, or about 10 × 0.02 = 0.2 wrong, or something else? And if the error grows, is there a safe way to use the model at all?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A model that predicts from its own predictions is like a game of telephone. The first person hears the message slightly wrong and passes on a slightly wrong version; each relay adds its own mistake, and the mistakes stack. Whether they stack gently or explosively depends on the dynamics. If small differences shrink each step, the error stays small. If they grow each step, the imagined future drifts far from the real one even when every single prediction looked accurate.</p>
+        <p>This is why a model can have excellent <i>one-step</i> accuracy and still be useless for long plans. Planning with a model is always an open-loop rollout: the model is fed its own predictions until the planning horizon ends.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: one step.</b> Let the true system be linear, <span class="tex">x_{t+1} = a\,x_t</span>, with <span class="tex">a = 1.05</span> (the state grows by 5% per step). The model is <span class="tex">\hat x_{t+1} = a\,\hat x_t + \varepsilon</span>, where the constant <span class="tex">\varepsilon = 0.02</span> is the one-step error. Both start from the same state.</p>
+        <p><b>Step 2: two steps.</b> After one step the error is <span class="tex">d_1 = \varepsilon</span>. After the second step the model applies the same map to its already-wrong value, so <span class="tex">d_2 = a\,d_1 + \varepsilon = a\varepsilon + \varepsilon</span>. The first error has been multiplied by the gain <span class="tex">a</span> before being passed on.</p>
+        <p><b>Step 3: the general pattern.</b> Repeating the step gives <span class="tex">d_h = \varepsilon(1 + a + \dots + a^{h-1})</span>, which is a geometric sum. For <span class="tex">a \ne 1</span> it equals <span class="tex">\varepsilon\,(a^h - 1)/(a - 1)</span>.</p>
+
+        <div class="worked"><b>Worked example: one-step error 0.02, gain 1.05</b>
+          <p>With <span class="tex">\varepsilon = 0.02</span> and <span class="tex">a = 1.05</span>, the error after <span class="tex">h</span> steps is</p>
+          <div class="eq">d_h = 0.02\,\frac{1.05^h - 1}{0.05}</div>
+          <table class="tbl">
+            <tr><th>h</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>10</th></tr>
+            <tr><td>d_h</td><td>0.02000</td><td>0.04100</td><td>0.06305</td><td>0.08620</td><td>0.11051</td><td>0.25156</td></tr>
+          </table>
+          <p>After ten steps the error is 0.25, more than twelve times the one-step error. Now suppose the planner may only trust the model while the error stays below a tolerance <span class="tex">\tau = 0.1</span>. The largest usable horizon is the largest <span class="tex">h</span> with <span class="tex">d_h \le 0.1</span>. Since <span class="tex">d_4 = 0.0862</span> and <span class="tex">d_5 = 0.1105</span>, the answer is <span class="tex">h = 4</span> steps.</p></div>
+
+        <p><b>Step 4: a stable system.</b> If instead <span class="tex">a = 0.95</span>, the sum converges: <span class="tex">d_\infty = \varepsilon/(1 - a) = 0.02/0.05 = 0.4</span>. The error saturates instead of growing without bound, but it saturates at twenty times the one-step error. Stability of the dynamics decides how bad compounding is, but even a stable system can accumulate a large error.</p>
+
+        <p><b>Step 5: the short-rollout remedy.</b> Instead of rolling the model out for the full horizon, restart the rollout from a <i>real</i> state every <span class="tex">k</span> steps. Each segment then accumulates at most <span class="tex">k</span> steps of error. This is the idea behind branched rollouts in MBPO: the policy sees mostly real states, and the model contributes short imagined segments.</p>
+
+        <h3 class="sec">Formal definition</h3>
+        <p>Let <span class="tex">f</span> be the true one-step map and <span class="tex">\hat f</span> the model. Assume that <span class="tex">f</span> is <span class="tex">L</span>-Lipschitz in the state (nearby states map to nearby next states with a gain of at most L) and that <span class="tex">\|\hat f(x,u) - f(x,u)\| \le \varepsilon</span> for all states and actions the rollout visits. Then for an open-loop rollout that starts from the same state, the error satisfies</p>
+        <div class="eq">\|\hat x_h - x_h\| \;\le\; \varepsilon \sum_{j=0}^{h-1} L^{\,j} \;=\; \varepsilon\,\frac{L^h - 1}{L - 1}\quad (L \ne 1)</div>
+        <table class="sym">
+          <tr><th>Symbol</th><th>Meaning</th></tr>
+          <tr><td><span class="tex">x_h, \hat x_h</span></td><td>the true and the model's state after h steps, from the same start</td></tr>
+          <tr><td><span class="tex">\varepsilon</span></td><td>bound on the one-step prediction error, assumed to hold along the visited states</td></tr>
+          <tr><td><span class="tex">L</span></td><td>Lipschitz constant of the true dynamics; the gain by which state differences can grow in one step</td></tr>
+          <tr><td><span class="tex">h</span></td><td>rollout horizon (number of model steps)</td></tr>
+          <tr><td><span class="tex">k</span></td><td>length of a branched rollout that restarts from a real state; the bound uses k in place of h</td></tr>
+        </table>
+        <p>The inequality is a worst-case bound. It is exact for the linear example, where the errors add with no cancellation. Its message is the important part: the bound grows like <span class="tex">L^h</span> when <span class="tex">L &gt; 1</span> and linearly in <span class="tex">h</span> when <span class="tex">L = 1</span>. Restarting from real states replaces <span class="tex">h</span> with <span class="tex">k</span>, so the bound no longer depends on the total horizon.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the gravity error to 0% and then to +5%. With no model error, the imagined and real pendulum coincide. Notice how quickly a 5% error separates them.</li>
+          <li>Set the rollout length to 4 s (open-loop). Read the error at t = 4 s in the readout.</li>
+          <li>Set the rollout length to 0.5 s with the same model error. Does the error stay small throughout? Compare the maximum error for each rollout length.</li>
+          <li>Find the rollout length at which the maximum error first exceeds 0.1 rad with a 5% gravity error. This is the practical version of the tolerance τ in the worked example.</li>
+        </ol></div>
+        <div data-lab="rlmb-error"></div>
+        <div class="callout"><b>Pipeline placement.</b> Estimate and improve stages: model rollouts are generated in the learn stage from the model store, with a horizon chosen as a hyperparameter. The cost per model rollout grows linearly with its length. The evaluation stage should measure model error on states the planner actually visits, not only on the training data.</div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>One-step accuracy is not enough.</b> A model with a small one-step error can still produce useless long rollouts, as the worked example shows.</li>
+          <li><b>Average error hides compounding.</b> Report error as a function of horizon, not as a single number.</li>
+          <li><b>Errors are largest where the data are sparse.</b> Imagined states far from the training data are the least reliable, and planning tends to seek exactly those states because they look good under the model.</li>
+          <li><b>Using a Lipschitz bound you do not have.</b> The bound requires an estimate of L. For a neural network it can be very loose, so treat the formula as a guide to the shape of the error curve, not a guarantee.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <p><b>MBPO</b> (Janner et al., 2019) draws short branched rollouts of a learned ensemble model from real states, which keeps the compounding bounded by the rollout length. <b>Dreamer</b> (Hafner et al.) imagines trajectories of about 15 steps in a learned latent space and then learns from them, and it relies on the same trade-off between horizon and model error. Any robot that plans with a learned dynamics model has to make the same choice of horizon.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A model has a one-step error of 0.02 and the true gain is a = 1.05. What is the error after 3 steps, and why is it not 0.06?</summary><div class="ans">d_3 = 0.02·(1 + 1.05 + 1.05²) = 0.02 × 3.1525 = 0.06305. It is not exactly 0.06 because each earlier error is multiplied by the gain 1.05 at every later step, so the errors compound slightly.</div></details>
+        <details class="check"><summary>2. With a = 0.95 and ε = 0.02, does the error keep growing? What is its limit?</summary><div class="ans">No. The error converges to ε/(1 − a) = 0.02/0.05 = 0.4. A stable system bounds the compounding, but the bound can still be twenty times the one-step error.</div></details>
+        <details class="check"><summary>3. How does restarting a rollout from real states every k steps change the bound, and what does it cost?</summary><div class="ans">The bound depends on the segment length k instead of the full horizon h, so the error no longer keeps growing with the total horizon. The cost is that the model is used for fewer consecutive steps, so fewer imagined transitions are produced per real state, and the policy gets less benefit from planning far ahead.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Open-loop model rollouts feed predictions back into the model, so one-step errors compound with a gain that depends on the dynamics.</li>
+          <li>A small one-step error is harmless for short horizons and can be ruinous for long ones; always check error against horizon.</li>
+          <li>Short branched rollouts from real states bound the error without giving up model-based learning entirely.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.4 ===================== -->
+    <section class="lesson" id="model-predictive-rl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.4</span><h2>Model-predictive control with learned models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot's learned model says that pushing with command 1 moves the hand 0.5 units. In reality the hand moves 1 unit. A planner that trusts the model will plan a path that is too slow and then too fast. Can the robot still reach the cup, and what should it do at each moment?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Model-predictive control (MPC) is the habit of a driver looking far down the road but steering only for the next few metres. At every moment the controller imagines a sequence of future actions, scores each imagined future with the model, and then carries out only the <b>first</b> action of the best sequence. At the next moment it looks again, now from the state the world actually reached.</p>
+        <p>Replanning is the safety net. A model error changes the predicted future, but the next replanning starts from the real state, so the error is corrected each step instead of being accumulated over the whole plan. This is the bridge from Module 7 to robot control: the planner of Module 7 is the controller that robotics calls MPC.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: a one-dimensional reaching task.</b> Let <span class="tex">p</span> be the position of the hand, with the cup at <span class="tex">p = 0</span>. A command <span class="tex">u</span> moves the hand by <span class="tex">g\,u</span>, where <span class="tex">g</span> is the true gain. The cost of a state is <span class="tex">p^2</span> (distance from the cup, squared) and the cost of a command is a small <span class="tex">\lambda u^2</span> with <span class="tex">\lambda = 0.1</span>.</p>
+        <p><b>Step 2: plan over a short horizon.</b> With horizon <span class="tex">H = 2</span> and commands in <span class="tex">\{-1, 0, +1\}</span>, there are nine action sequences. The planner evaluates each one with the <i>model</i> gain <span class="tex">\hat g</span> and picks the cheapest.</p>
+        <p><b>Step 3: execute one step and replan.</b> Only the first command is sent to the real hand. The new real position is observed, and the planner starts again from it.</p>
+
+        <div class="worked"><b>Worked example: model gain 0.5, true gain 1, start at p = 2</b>
+          <p>The model predicts <span class="tex">\hat g = 0.5</span>; the truth is <span class="tex">g = 1</span>. Plan with H = 2 and cost <span class="tex">\sum_{k=1}^{2} (p_k^2 + 0.1\,u_k^2)</span>. The cheapest sequence under the model is <span class="tex">(-1,-1)</span>. Its predicted positions are <span class="tex">p_1 = 2 - 0.5 = 1.5</span> and <span class="tex">p_2 = 1.5 - 0.5 = 1.0</span>, so its cost is</p>
+          <div class="eq">J = (1.5^2 + 0.1) + (1.0^2 + 0.1) = 2.35 + 1.10 = 3.45</div>
+          <p>For comparison, <span class="tex">(-1,0)</span> costs 4.60 and <span class="tex">(0,0)</span> costs 8.00. The planner sends <span class="tex">u_0 = -1</span>. The real hand moves to <span class="tex">p = 2 - 1 \cdot 1 = 1.0</span>, not 1.5 as predicted. Replanning from <span class="tex">p = 1.0</span>: the best sequence is again <span class="tex">(-1,-1)</span>, with cost <span class="tex">(0.5^2 + 0.1) + (0^2 + 0.1) = 0.45</span>. The second real move gives <span class="tex">p = 0</span>, the cup. The error in the model was half the step, and the closed loop absorbed it in one replanning.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <p>At time <span class="tex">t</span>, with the current observed state <span class="tex">x_t</span>, the planner solves</p>
+        <div class="eq">\min_{u_t,\dots,u_{t+H-1}}\; \sum_{k=0}^{H-1} c(\hat x_{t+k}, u_{t+k}) \quad\text{subject to}\quad \hat x_{t+k+1} = \hat f(\hat x_{t+k}, u_{t+k}),\; \hat x_t = x_t</div>
+        <p>It applies <span class="tex">u_t^\star</span>, the first action of the best sequence, to the real system, observes <span class="tex">x_{t+1}</span>, and repeats. The optimisation over sequences can be done by enumeration (as in the worked example), by random shooting (sample many sequences and keep the best, as in the lab), or by iterative methods such as the cross-entropy method.</p>
+        <table class="sym">
+          <tr><th>Symbol</th><th>Meaning</th></tr>
+          <tr><td><span class="tex">x_t, \hat x_t</span></td><td>the real observed state at time t, and the model's predicted state in the plan</td></tr>
+          <tr><td><span class="tex">\hat f</span></td><td>the learned one-step model, here <span class="tex">\hat x + \hat g u</span></td></tr>
+          <tr><td><span class="tex">c</span></td><td>the stage cost (squared distance plus a command penalty in the example)</td></tr>
+          <tr><td><span class="tex">H</span></td><td>planning horizon, the number of steps planned ahead</td></tr>
+          <tr><td><span class="tex">u_t^\star</span></td><td>the first action of the best sequence; the only action that is executed</td></tr>
+        </table>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the model gain to 1.0 (correct model). The hand should reach the cup without oscillating. Note the number of steps.</li>
+          <li>Set the model gain to 0.4 and then 1.4. Watch how the path overshoots or lags. Does replanning still bring the hand in?</li>
+          <li>Set the horizon to 1, then 8, then 20. A horizon of 1 is greedy; does a longer horizon help when the model is wrong?</li>
+          <li>Increase the number of sampled sequences. Does a larger sample always give a better first action?</li>
+        </ol></div>
+        <div data-lab="rlmb-mpc"></div>
+        <div class="callout"><b>Pipeline placement.</b> Act stage, every control step: the planner runs at the control rate of the robot on top of the model stored after the learn stage. Its compute cost is samples × horizon model calls per step, which sets the maximum control rate. The model should be refit in the learn stage from data gathered by the controller, and its error monitored in the monitor stage.</div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A short horizon is greedy.</b> With H = 1 the planner only sees one step, so it may overshoot a target that a longer plan would approach smoothly.</li>
+          <li><b>A long horizon amplifies model error.</b> The plan's far end is the least reliable part, as 7.3 showed, so the value of a long horizon depends on model quality.</li>
+          <li><b>Replanning is not free.</b> Each control step costs a full search, so the search budget must fit in the control period.</li>
+          <li><b>MPC is not the optimal policy.</b> It is a receding-horizon approximation; it is good when the model is reasonable and the cost is well shaped.</li>
+          <li><b>Random shooting scales badly.</b> In high-dimensional action spaces, sampling uniformly wastes almost every sample; more structured optimisers are used in practice.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <p>MPC with learned models is used in robot manipulation and locomotion, where the planner re-optimises at the control rate on top of a dynamics model. <b>MuZero</b> (Schrittwieser et al., 2020) combined a learned model with tree search to choose each move, which is the same closed loop of plan, act and replan applied to games. For robot control with classical models, see <a href="robo-control.html">Robot control</a> and <a href="robo-planning.html">Robot planning</a>.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the worked example, why does the planner choose (−1,−1) and not (−1,0), even though the second action costs something?</summary><div class="ans">Under the model with gain 0.5, the sequence (−1,−1) brings the predicted position to 1.0 after two steps, whereas (−1,0) leaves it at 1.5. The squared-distance cost of 1.0² is much smaller than 1.5², which outweighs the extra command cost of 0.1.</div></details>
+        <details class="check"><summary>2. After the first real step the hand is at 1.0, but the plan predicted 1.5 at step 1. Why does the controller not simply follow the old plan?</summary><div class="ans">The old plan was built on a model that is wrong. MPC applies only the first action and then plans again from the observed state, so the mismatch is corrected immediately. Following the old plan would reproduce the model's error at every step.</div></details>
+        <details class="check"><summary>3. Why is a horizon of 1 sometimes a poor choice even when the model is perfect?</summary><div class="ans">A one-step planner minimises the cost of the next state only, so it can make moves that look good now but leave the system far from the target later. A longer horizon accounts for the future cost of each action; with a correct model, it reaches the goal with smoother motion.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>MPC plans a sequence with the model, applies only the first action, observes the real state and replans.</li>
+          <li>Replanning corrects model error step by step, which is why MPC tolerates imperfect models far better than an open-loop plan.</li>
+          <li>The horizon, the number of samples and the model quality together set the trade-off between accuracy, reaction and compute.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say how a learned model is stored and replayed (Dyna-Q), how Monte Carlo tree search uses UCT to balance depth and breadth, why one-step model accuracy does not guarantee long-horizon accuracy, and how model-predictive control replans to correct model error. Next, <b>Module 8</b> covers advanced topics such as exploration, hierarchy and offline learning: <a href="rl-advanced.html">Module 8 · Advanced topics</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

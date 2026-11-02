@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Dynamic programming · Reinforcement Learning</title>
+<meta name="description" content="Dynamic programming for reinforcement learning: Bellman equations, iterative policy evaluation, policy improvement, policy iteration, value iteration and generalised policy iteration, with animated gridworld labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-dynamic-programming.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Dynamic programming</h1>
+        <p>Suppose you know the rules of the world exactly: from every state, what each action does and what it pays. Then you do not need to try anything. You can <b>compute</b> how good each state is, and then compute a better way to act. This module shows how to do that with the Bellman equations, iterative policy evaluation, policy improvement, policy iteration and value iteration, and why all of them are one pattern.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs a known model</span><span class="chip">Animated value tables</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>What "known model" means.</b> Dynamic programming assumes the transition probabilities <span class="tex">p(s',r\mid s,a)</span> and the rewards are available to the algorithm. The agent does not learn them from experience; it reads them from a table or a simulator it fully trusts. That is a strong assumption, and it is why this module is the first place to build intuition: every update here is an exact calculation, so you can check each number by hand. Later modules remove the assumption.</p>
+      <p><b>The running example.</b> Most labs use a 4×4 gridworld. The two corner cells in the top-left and bottom-right are <b>terminal</b>: an episode ends there. Every move costs <span class="tex">-1</span>. A move that would leave the grid leaves you where you are. The question is always the same: what is the value of each cell, and how should the agent move?</p>
+      <p><b>How the labs work.</b> Each lab computes its numbers in the browser with the same rules as the hand examples, so change a slider and the table responds. A lab marked <i>illustrative</i> would stand in for something larger; the labs in this module are exact on their small worlds.</p>
+    </section>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="bellman-equations" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">2.1</span><h2>Bellman expectation &amp; optimality equations</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An agent stands in state <span class="tex">A</span>. It can <i>stay</i>: reward 1, and it remains in A. Or it can <i>go</i>: reward 3 on the way to a state <span class="tex">B</span>, where the only move pays 0 and returns to A. Which choice is worth more over a long horizon? The answer depends on the value of A, but A's value depends on the states it leads to, and those depend on A again. How can we assign a number to a state when its value is defined in terms of other values?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of value as a running ledger. The value of being in a state is what you collect right now, plus what the position you land in will be worth, discounted a little because later money is worth less than money now. Write one such ledger line for every state and you get a system of equations. These are the <b>Bellman equations</b>, named after Richard Bellman, who saw in the 1950s that a problem over a long horizon can be split into "this step, plus the rest" at every step.</p>
+        <p>The important point is that the Bellman equations are not a formula that gives the value directly. They are a <b>consistency condition</b>: the true values are the numbers that satisfy every ledger line at once. Finding those numbers is the job of the algorithms in the rest of this module.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the return splits into "now" and "later".</b> The return from time <span class="tex">t</span> is <span class="tex">G_t = R_{t+1} + \gamma G_{t+1}</span>, where <span class="tex">\gamma \in [0,1)</span> is the discount factor. Taking the expectation of this identity, given that the agent is in state <span class="tex">s</span> and follows a policy <span class="tex">\pi</span>, gives the value of that state as a one-step average of "reward now plus discounted value next":</p>
+        <div class="eq">V^\pi(s)=\mathbb E_\pi\!\left[R_{t+1}+\gamma V^\pi(S_{t+1})\mid S_t=s\right]</div>
+
+        <p><b>Step 2: a worked example with no choices.</b> First remove the decisions, so that the only randomness is in the world. Take two states. From <span class="tex">A</span>, with probability one half the agent stays in A and earns 1, and with probability one half it moves to B and earns 0. From <span class="tex">B</span> the agent always returns to A and earns 2. Use <span class="tex">\gamma = 0.9</span>. Writing one ledger line per state:</p>
+        <div class="worked"><b>Worked example: two states, no choices</b>
+          <div class="eq">V(A)=\tfrac12\big(1+0.9\,V(A)\big)+\tfrac12\big(0+0.9\,V(B)\big),\qquad V(B)=2+0.9\,V(A)</div>
+          <p>Substitute the second line into the first: <span class="tex">V(A)=0.5+0.45V(A)+0.45(2+0.9V(A))=1.4+0.855\,V(A)</span>. Therefore <span class="tex">0.145\,V(A)=1.4</span>, so <span class="tex">V(A)=9.655</span> and <span class="tex">V(B)=2+0.9(9.655)=10.690</span>.</p>
+          <p><b>Check</b> the first line: <span class="tex">\tfrac12(1+8.690)+\tfrac12(9.621)=4.845+4.810=9.655</span>. Both ledger lines balance, so these are the values.</p></div>
+
+        <p><b>Step 3: add a choice, and the average becomes a maximum.</b> Now let the agent choose. Give A two actions: <i>stay</i> (reward 1, back to A) and <i>go</i> (reward 3, to B). Give B one action (reward 0, back to A). The value of the best behaviour is no longer an average over the policy's choices; the agent picks the action whose ledger line is largest:</p>
+        <div class="worked"><b>Worked example: the choice in state A</b>
+          <p>With <span class="tex">\gamma=0.9</span>, the optimality equations are <span class="tex">V^*(A)=\max\{1+0.9\,V^*(A),\;3+0.9\,V^*(B)\}</span> and <span class="tex">V^*(B)=0.9\,V^*(A)</span>.</p>
+          <p>If the agent always chooses <i>go</i>, then <span class="tex">V(A)=3+0.9\cdot 0.9\,V(A)=3+0.81\,V(A)</span>, so <span class="tex">V(A)=3/0.19=15.789</span> and <span class="tex">V(B)=14.211</span>. Now check the alternative: <span class="tex">Q(A,\text{stay})=1+0.9(15.789)=15.211</span>, which is less than <span class="tex">Q(A,\text{go})=3+0.9(14.211)=15.789</span>. Going is better, so the solution is consistent. Always staying would give only <span class="tex">1/(1-0.9)=10</span>.</p>
+          <p>So <span class="tex">V^*(A)=15.79</span>, <span class="tex">V^*(B)=14.21</span>. The reward of 3 is worth taking a longer route, but only because the discounted value of the route is large enough to compensate.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For a policy <span class="tex">\pi</span> (a rule that gives probabilities of actions in each state), the two value functions and the three equations are:</p>
+        <div class="eq">V^\pi(s)=\sum_a \pi(a\mid s)\sum_{s',r}p(s',r\mid s,a)\big[r+\gamma V^\pi(s')\big]</div>
+        <div class="eq">Q^\pi(s,a)=\sum_{s',r}p(s',r\mid s,a)\Big[r+\gamma\sum_{a'}\pi(a'\mid s')\,Q^\pi(s',a')\Big]</div>
+        <div class="eq">V^*(s)=\max_a\sum_{s',r}p(s',r\mid s,a)\big[r+\gamma V^*(s')\big]</div>
+        <table class="sym">
+          <tr><td><span class="tex">s,\ s'</span></td><td>the current state and the state reached next</td></tr>
+          <tr><td><span class="tex">a</span></td><td>an action</td></tr>
+          <tr><td><span class="tex">r</span></td><td>the reward received on the transition</td></tr>
+          <tr><td><span class="tex">p(s',r\mid s,a)</span></td><td>the probability of landing in <span class="tex">s'</span> with reward <span class="tex">r</span>, after action <span class="tex">a</span> in state <span class="tex">s</span></td></tr>
+          <tr><td><span class="tex">\pi(a\mid s)</span></td><td>the probability that the policy picks action <span class="tex">a</span> in state <span class="tex">s</span></td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>the discount factor, with <span class="tex">0\le\gamma&lt;1</span> here; it sets an effective horizon of about <span class="tex">1/(1-\gamma)</span> steps</td></tr>
+          <tr><td><span class="tex">V^\pi(s),\ Q^\pi(s,a)</span></td><td>the expected discounted return from <span class="tex">s</span> (or from <span class="tex">s</span> after taking <span class="tex">a</span>) when following <span class="tex">\pi</span></td></tr>
+          <tr><td><span class="tex">V^*,\ Q^*</span></td><td>the best values achievable by any policy</td></tr>
+        </table>
+        <p>The first equation averages over the policy's choices (<span class="tex">\sum_a\pi</span>). The third takes a maximum over choices instead. That single change, average versus maximum, separates evaluating a behaviour from finding the best one.</p>
+
+        <h3 class="sec">Lab: a fixed point you can watch</h3>
+        <p>The lab below solves the two-state choice problem by repeatedly applying the right-hand side of a Bellman equation to the current guesses. Start with zero everywhere. Each backup replaces the guess by the ledger line, and the guesses settle on the exact values. This is the "fixed point" view: the Bellman equation is a map, and its solution is the place where the map returns its input unchanged.</p>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the mode on <i>Optimal</i>. Press Play and watch V(A) climb towards 15.79 and V(B) towards 14.21. Note that each backup uses the previous numbers, not the ones it is computing.</li>
+          <li>Switch to <i>Always stay</i>. V(A) now converges to <span class="tex">r_s/(1-\gamma)=10</span>. Switch to <i>Always go</i> and watch it converge to 15.79 instead.</li>
+          <li>Set γ to 0.5. The values shrink and settle in fewer backups. Set γ to 0.99 and the process takes hundreds of backups: a long horizon makes the ledger slow to balance.</li>
+          <li>Set the stay reward to 2. Staying is now worth 2/(1 − 0.9) = 20, more than going (15.79), so the optimal mode switches to stay, and the dashed exact line changes to match.</li>
+        </ol></div>
+        <div data-lab="dp-bellman"></div>
+
+        <h3 class="sec">Common traps</h3>
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Average versus maximum.</b> <span class="tex">V^\pi</span> averages over <span class="tex">\pi</span>; <span class="tex">V^*</span> takes the best action. Using a max where the policy is fixed evaluates the wrong thing.</li>
+          <li><b>The equation is a constraint, not a recipe.</b> Plugging in guessed numbers and checking that they balance is a test; a set of values that balances every line is the answer only when the solution is unique, which holds for <span class="tex">\gamma&lt;1</span> on finite problems.</li>
+          <li><b>Rewards belong to transitions.</b> The reward <span class="tex">r</span> is paid when the agent moves, not when it arrives. Writing <span class="tex">R(s')</span> is only correct if the reward really depends on the destination alone.</li>
+          <li><b>Terminal states have value zero.</b> Once an episode ends there is nothing more to collect, so <span class="tex">V(\text{terminal})=0</span> in every equation.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every value-based RL method is a sampled Bellman equation.</b> TD(0) moves <span class="tex">V(S)</span> towards <span class="tex">R+\gamma V(S')</span> using one observed successor. Q-learning and DQN move <span class="tex">Q(S,A)</span> towards <span class="tex">R+\gamma\max_{a'}Q(S',a')</span>, which is the optimality equation with one sampled next state in place of the expectation.</li>
+          <li><b>Planning with a known model.</b> Inventory control, routing and game-tree search all write a Bellman recursion over states and solve it exactly when the state space is small.</li>
+        </ul></div>
+        <div class="callout"><b>Pipeline placement.</b> Estimate stage (value estimation) with the model supplied rather than learned. Stores one number per state for <span class="tex">V</span>, or one per state–action pair for <span class="tex">Q</span>. Cost per backup is the number of successor outcomes for one state and action.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the choice example, what is V*(B), and why?</summary><div class="ans">V*(B) = 0.9 · V*(A) = 0.9 · 15.789 = 14.21. B has one action, pays 0, and returns to A, so its value is the discounted value of A.</div></details>
+        <details class="check"><summary>2. In state A, which action is optimal and what is Q*(A, stay) compared with Q*(A, go)?</summary><div class="ans">Go. Q*(A, stay) = 1 + 0.9 · 15.789 = 15.21, while Q*(A, go) = 3 + 0.9 · 14.211 = 15.79. The larger immediate reward of go outweighs its longer route.</div></details>
+        <details class="check"><summary>3. A policy picks each of two actions with probability 1/2 in state s. Write its Bellman expectation equation for V^π(s).</summary><div class="ans">V^π(s) = ½ Σ<sub>s′,r</sub> p(s′,r | s,a₁)[r + γV^π(s′)] + ½ Σ<sub>s′,r</sub> p(s′,r | s,a₂)[r + γV^π(s′)]. The policy's probabilities multiply the one-step backup of each action, and the two are averaged.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The value of a state is one step's reward plus the discounted value of the next state, averaged over what the policy does.</li>
+          <li>Bellman equations are consistency conditions. They are solved by iteration, not by plugging values in.</li>
+          <li>Replacing the policy's average with a maximum gives the optimality equation, whose solution is the best value.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="policy-evaluation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">2.2</span><h2>Iterative policy evaluation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot starts somewhere on the 4×4 grid and moves at random: up, down, left or right, each with probability one quarter. Every move costs 1, and the episode ends when it reaches either corner marked as terminal. From each cell, how many moves does it take on average before the episode ends? We could simulate thousands of walks, but the Bellman equations promise an exact answer without any sampling.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Start with a guess for every cell, say zero. Then go through the grid, cell by cell, and replace each cell's guess by its one-step ledger line: the cost of the move plus the current guess for the cell it lands in, averaged over the directions. Repeat. Each pass is called a <b>sweep</b>. Information travels one cell per sweep: the cells next to a goal learn their correct value first, then their neighbours learn from them, and so on, like ripples spreading from a stone.</p>
+        <p>Nothing about the answer changes if you stop early or change the order of the cells; only the speed does. That is why the method is called iterative: it converges, and you decide how close is close enough.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the rules.</b> Label the cells 0 to 15, row by row. Cells 0 and 15 are terminal, so <span class="tex">V(0)=V(15)=0</span>. Cells 1 to 14 are non-terminal. For cell 1, moving left reaches the terminal cell 0, moving right reaches cell 2, moving down reaches cell 5, and moving up stays in cell 1 because the grid edge blocks it.</p>
+        <p><b>Step 2: sweep one.</b> Start with all values zero. Every move from a non-terminal cell costs 1 and lands on a cell whose value is 0, so every non-terminal cell becomes <span class="tex">-1</span>.</p>
+        <p><b>Step 3: sweep two, carefully, for cell 1.</b> The values after sweep one are −1 for every non-terminal cell. Now:</p>
+        <div class="worked"><b>Worked example: cell 1 under the uniform random policy, γ = 1</b>
+          <div class="eq">V_2(1)=\tfrac14\big[(-1+0)+(-1+V_1(1))+(-1+V_1(2))+(-1+V_1(5))\big]=\tfrac14\big[-1-2-2-2\big]=-1.75</div>
+          <p>The four terms are: left reaches the goal (value 0); up stays in cell 1 (value −1); right reaches cell 2 (−1); down reaches cell 5 (−1). Each costs 1 and adds the neighbour's value. Cell 5 gets <span class="tex">V_2(5)=-2</span> by the same reasoning, because none of its neighbours is a goal.</p>
+          <p><b>Sweep three for cell 1.</b> The values after sweep two are <span class="tex">V_2(1)=-1.75</span>, <span class="tex">V_2(2)=-2</span>, <span class="tex">V_2(5)=-2</span>. Then <span class="tex">V_3(1)=\tfrac14[(-1)+(-1-1.75)+(-1-2)+(-1-2)]=\tfrac14(-9.75)=-2.4375</span>.</p></div>
+        <p><b>Step 4: the answer.</b> If we keep sweeping, the values settle. For this policy with <span class="tex">\gamma=1</span>, after 426 sweeps every change is smaller than <span class="tex">10^{-10}</span>, and the table is:</p>
+        <table class="tbl" style="max-width:360px;text-align:center">
+          <tr><td>0 (goal)</td><td>−14</td><td>−20</td><td>−22</td></tr>
+          <tr><td>−14</td><td>−18</td><td>−20</td><td>−20</td></tr>
+          <tr><td>−20</td><td>−20</td><td>−18</td><td>−14</td></tr>
+          <tr><td>−22</td><td>−20</td><td>−14</td><td>0 (goal)</td></tr>
+        </table>
+        <p>Cells next to a corner have the highest values because a random walk reaches the corner sooner from there. Cell 1 is −14: on average a random walk needs 14 moves from it.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Start from any <span class="tex">V_0</span> (zero is the usual choice; terminal states are fixed at zero). For <span class="tex">k=0,1,2,\dots</span>, sweep every non-terminal state:</p>
+        <div class="eq">V_{k+1}(s)=\sum_a\pi(a\mid s)\sum_{s',r}p(s',r\mid s,a)\big[r+\gamma V_k(s')\big]</div>
+        <p>Stop when <span class="tex">\max_s |V_{k+1}(s)-V_k(s)|<\theta</span>, for a small tolerance <span class="tex">\theta</span>. The update is called a <b>backup</b>: a Bellman expectation equation turned into an assignment.</p>
+        <table class="sym">
+          <tr><td><span class="tex">V_k</span></td><td>the estimate after <span class="tex">k</span> sweeps (not the true value)</td></tr>
+          <tr><td><span class="tex">\pi(a\mid s)</span></td><td>the policy being evaluated; uniform random in the worked example</td></tr>
+          <tr><td><span class="tex">p(s',r\mid s,a)</span></td><td>the model: here a move is deterministic, so the probability is 1 for one successor</td></tr>
+          <tr><td><span class="tex">\theta</span></td><td>the stopping tolerance on the size of one sweep's change</td></tr>
+        </table>
+        <p>Two facts make the method correct. For <span class="tex">\gamma&lt;1</span> the backup is a contraction: the largest error shrinks by a factor of at least <span class="tex">\gamma</span> each sweep, so <span class="tex">\max_s|V_k(s)-V^\pi(s)|\le\gamma^k\max_s|V_0(s)-V^\pi(s)|</span>. When the policy ends every episode with probability one, the same convergence holds with <span class="tex">\gamma=1</span>.</p>
+
+        <h3 class="sec">Lab: sweeping the table</h3>
+        <p>The lab runs exactly the sweeps above on the 4×4 grid. Each sweep replaces every cell at once, using the previous sweep's numbers (the "two-array" form). Watch the goal's influence spread out.</p>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep γ = 1 and the uniform policy. Step once at a time and check that the first sweep gives −1 everywhere, and the second gives −1.75 for cell 1.</li>
+          <li>Change the stopping tolerance from 0.01 to 0.000001. Count how many sweeps are needed. Notice that the change per sweep drops quickly at first and then slowly.</li>
+          <li>Set γ to 0.9. Each value is now smaller in size, because far-away outcomes count for less.</li>
+          <li>Choose <i>Always down</i> with γ = 1. The values fall without limit. Explain why, using the trap below.</li>
+        </ol></div>
+        <div data-lab="dp-evaluation"></div>
+
+        <h3 class="sec">Common traps</h3>
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A small change is not a small error.</b> A sweep with a tiny change can still be far from the answer when γ is close to 1. The error is bounded by about <span class="tex">\gamma\,\Delta/(1-\gamma)</span>, where Δ is the change in the last sweep.</li>
+          <li><b>Undiscounted improper policies diverge.</b> Under <i>always down</i>, cells 1, 5 and 9 walk to the bottom row and then stay there forever, never reaching a goal. With γ = 1 each sweep subtracts another 1, so the values run off to −∞. The same policy with γ = 0.9 converges, to −10 for those cells.</li>
+          <li><b>Two arrays or one.</b> Updating in place (using values already changed in this sweep) also converges, usually faster, but the numbers in a sweep then depend on the order of cells. The two-array form used here gives reproducible sweeps.</li>
+          <li><b>Forgetting that terminal cells stay at zero.</b> If the goal is updated like any other cell, the whole table drifts.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Critics in actor–critic methods.</b> A critic network is trained to predict the value of the current policy, which is policy evaluation with a function approximator in place of the table.</li>
+          <li><b>Advantage estimation in PPO.</b> The advantage that drives each policy-gradient step is computed from values of the current policy, the same quantity this method computes exactly on a small grid.</li>
+          <li><b>Offline policy evaluation.</b> When a company tests a new policy using logged data, it estimates the policy's value by an extension of the same backup.</li>
+        </ul></div>
+        <div class="callout"><b>Pipeline placement.</b> Evaluate stage. Stores one value per state (a table with 16 numbers here, a network in large problems). One sweep costs one backup per non-terminal state and action: 14 × 4 = 56 backups, each reading a single successor because the moves here are deterministic.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Under the uniform policy with γ = 1, why is V₂(5) = −2?</summary><div class="ans">Each of the four moves from cell 5 costs −1 and lands on a non-goal cell whose sweep-one value is −1 (or stays put, which also has value −1). Each term is therefore −1 + (−1) = −2, and the average is −2.</div></details>
+        <details class="check"><summary>2. Cell 1 ends at −14 under the uniform policy. Roughly how many moves does a random walk need from it, on average?</summary><div class="ans">About 14. With γ = 1 the value is the negative of the expected number of moves until the episode ends, so −14 means 14 moves on average.</div></details>
+        <details class="check"><summary>3. Why does "always down" with γ = 1 never converge?</summary><div class="ans">From cell 1 the moves are 1 → 5 → 9 → 13, and from 13 the down move stays in 13 forever. The episode never ends, so the sum of −1 rewards is infinite and each sweep makes the values more negative.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Policy evaluation is repeated Bellman expectation backups: each sweep replaces each value by its one-step look-ahead under the policy.</li>
+          <li>Information spreads one step per sweep, so convergence is fast on small grids and slow for long horizons.</li>
+          <li>The tolerance controls how much you trust the answer; with γ near 1, a small change can still hide a large error.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="policy-improvement" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">2.3</span><h2>Policy improvement &amp; the greedy policy</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We now know that a random walker in cell 1 of the 4×4 grid needs about 14 moves to finish. Suppose the walker is allowed to pick its move on purpose. Is a random move the best choice in cell 1? If not, what should it do, and does changing the move in cell 1 alone matter, or do we have to change the policy everywhere?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine you have a map with a good estimate of how far each town is from the destination. Standing in a junction, you look at each road, add up the cost of driving it and the estimated distance from where it leads, and take the road with the smallest total. You did not have to know the whole route in advance; a one-step look-ahead with the current estimates is enough to improve on a random choice.</p>
+        <p>This look-ahead is the <b>action value</b> <span class="tex">Q^\pi(s,a)</span>: the value of taking action <span class="tex">a</span> once in state <span class="tex">s</span>, then following <span class="tex">\pi</span>. If one action has a larger action value than the policy's own average, switching to it is an improvement.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the policy's average is its value.</b> In cell 1, the uniform policy takes each action with probability one quarter. Its value is the average of the four action values: <span class="tex">V^\pi(1)=\sum_a\pi(a\mid 1)Q^\pi(1,a)</span>.</p>
+        <p><b>Step 2: compute the action values from the converged table.</b> Using the values from lesson 2.2 (cell 2 is −20, cell 5 is −18, and the goal is 0), the four action values in cell 1 are:</p>
+        <div class="worked"><b>Worked example: action values in cell 1, uniform policy, γ = 1</b>
+          <div class="eq">Q^\pi(1,\text{left})=-1+0=-1,\qquad Q^\pi(1,\text{up})=-1+V^\pi(1)=-1-14=-15</div>
+          <div class="eq">Q^\pi(1,\text{down})=-1+V^\pi(5)=-1-18=-19,\qquad Q^\pi(1,\text{right})=-1+V^\pi(2)=-1-20=-21</div>
+          <p><b>Check</b> that the average of these four equals the policy's value: <span class="tex">\tfrac14(-1-15-19-21)=\tfrac14(-56)=-14=V^\pi(1)</span>. The bookkeeping is consistent.</p>
+          <p>The best action is <i>left</i>, with value −1: go straight to the goal. Acting greedily in cell 1 improves its value from −14 to −1. Note that the choice in cell 1 only needed the values of the neighbours, not a new evaluation.</p></div>
+        <p><b>Step 3: why one state's improvement is worth making in every state.</b> Take the new greedy action in every cell at once. The <b>policy improvement theorem</b> says the resulting policy is at least as good as the old one in every state, and strictly better in some state unless the old policy was already optimal. The argument is that replacing the first action of a policy by a better one, then following the old policy, never decreases value; repeating that step for every decision in sequence then pushes the whole value up.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Given a policy <span class="tex">\pi</span> and its action values <span class="tex">Q^\pi</span>, the greedy policy <span class="tex">\pi'</span> is defined by</p>
+        <div class="eq">\pi'(s)=\arg\max_a Q^\pi(s,a)\qquad\text{for every state }s</div>
+        <p>and the theorem states that <span class="tex">V^{\pi'}(s)\ge V^\pi(s)</span> for every state <span class="tex">s</span>, when <span class="tex">\pi'</span> is greedy with respect to <span class="tex">Q^\pi</span> and both are evaluated under the same conditions (a finite problem with <span class="tex">\gamma&lt;1</span>, or proper policies when <span class="tex">\gamma=1</span>).</p>
+        <table class="sym">
+          <tr><td><span class="tex">Q^\pi(s,a)</span></td><td>the value of taking <span class="tex">a</span> in <span class="tex">s</span> once, then following <span class="tex">\pi</span></td></tr>
+          <tr><td><span class="tex">\arg\max_a</span></td><td>the action that gives the largest value; if several tie, any of them is greedy</td></tr>
+          <tr><td><span class="tex">\pi'</span></td><td>the improved policy, which is deterministic when there are no ties</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: one look-ahead at a time</h3>
+        <p>The lab starts from the uniform policy and its converged values. Click any cell to see its four action values as bars, with the arithmetic written out in the readout. Then apply the greedy improvement to every cell and see how many decisions change.</p>
+        <div class="try"><b>Try this</b><ol>
+          <li>Click cell 1. Confirm that the bars read left −1, up −15, down −19, right −21, and that the readout's mean equals V(1) = −14.</li>
+          <li>Press <i>Improve</i>. Count how many cells changed their arrow. Then press <i>Evaluate</i> and check that the value of cell 1 rises above −14.</li>
+          <li>Repeat Improve and Evaluate a few times. Note that the arrows stop changing after the improved policy is evaluated: the policy is now greedy with respect to its own values.</li>
+          <li>Set γ to 0.9 and reset to uniform. The same steps give different values but the same kind of improvement.</li>
+        </ol></div>
+        <div data-lab="dp-improvement"></div>
+
+        <h3 class="sec">Common traps</h3>
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Greedy is with respect to Q, not V.</b> Choosing the action with the largest <span class="tex">V(s')</span> of the next state ignores the reward on the move. Use <span class="tex">r+\gamma V(s')</span> for each action, which is exactly <span class="tex">Q</span>.</li>
+          <li><b>Improvement needs an evaluation to be trusted.</b> The new values are only known after you evaluate the new policy. Improvement by itself uses the old values.</li>
+          <li><b>Ties are not an error.</b> If two actions have equal values, either is greedy; a policy that splits probability among them is still optimal.</li>
+          <li><b>The theorem assumes exact values.</b> With approximate or sampled <span class="tex">Q</span>, an apparent improvement can be noise. Sampling-based methods need care here.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>The control step of every value-based method.</b> Q-learning, SARSA and DQN act greedily with respect to their current action values, which is this step applied to samples.</li>
+          <li><b>Greedy decoding in search.</b> Choosing the next move with the best look-ahead is the same operation as the greedy policy, applied in board games and planners.</li>
+        </ul></div>
+        <div class="callout"><b>Pipeline placement.</b> Improve stage. Reads the value table and writes a new policy (a table of arrows here, a softmax or network in larger problems). Cost is one look-ahead per state and action, which is cheap compared with the evaluation that precedes it.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Under the uniform policy, what is Q(1, right), and why is it not the best action in cell 1?</summary><div class="ans">Q(1, right) = −1 + V(2) = −1 − 20 = −21. It is the worst action because cell 2 is far from a goal, so the walk to the right takes many more moves.</div></details>
+        <details class="check"><summary>2. Check that the uniform policy's value at cell 1 is the average of its action values.</summary><div class="ans">(−1 − 15 − 19 − 21) / 4 = −56 / 4 = −14 = V(1). Every action value is consistent with the value of the policy that chooses among them.</div></details>
+        <details class="check"><summary>3. Does greedy improvement in one cell help the policy elsewhere?</summary><div class="ans">Not by itself. The theorem applies to the whole policy: when every cell is made greedy at once, the values are no worse anywhere, and strictly better somewhere unless the policy was already optimal.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An action's value is its one-step reward plus the discounted value of where it leads: <span class="tex">Q=r+\gamma V(s')</span>.</li>
+          <li>Acting greedily with respect to the action values of a policy never makes the policy worse.</li>
+          <li>Improvement and evaluation are separate steps; the new values are known only after evaluating the new policy.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="policy-iteration" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">2.4</span><h2>Policy iteration</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Start the robot on the 4×4 grid with a bad habit: it always moves down. With a discount of γ = 0.9, the values under that habit are poor, and many cells have values of −10 because they never reach a goal. Can we find the best policy from this starting point without guessing, and how do we know when we are done?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Use the two tools from the last lessons in turn. First, <b>evaluate</b> the current policy honestly: find its values. Second, <b>improve</b> it by acting greedily on those values. Then evaluate the new policy, improve again, and so on. Think of a coach who first grades the team's current play, then changes the tactics that the grades show to be weakest. Each round either changes the tactics or confirms that nothing more can be gained.</p>
+        <p>Each improvement is a strict gain until the policy is optimal, and there are only finitely many policies, so the process must stop. It stops exactly when the greedy policy equals the policy that was just evaluated.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the bad starting policy.</b> Let <span class="tex">\pi_0</span> be "always move down", with the usual rule that a move off the grid leaves you in place. With <span class="tex">\gamma=0.9</span>, evaluate it. Cells that never reach a goal under this habit are worth <span class="tex">-1/(1-0.9)=-10</span>: cell 1 goes down to cell 5, to cell 9, to cell 13, and then stays in 13 forever.</p>
+        <p><b>Step 2: the values that reach a goal.</b> Cell 3 goes down to 7, to 11, to 15: three moves. Its value is <span class="tex">-1-0.9-0.81=-2.71</span>. Cell 7 has value <span class="tex">-1-0.9=-1.9</span>, and cell 11 has value −1.</p>
+        <p><b>Step 3: improve.</b> In cell 2, the choices are:</p>
+        <div class="worked"><b>Worked example: improving cell 2 under "always down", γ = 0.9</b>
+          <div class="eq">Q(2,\text{right})=-1+0.9\,V(3)=-1+0.9(-2.71)=-3.44,\qquad Q(2,\text{left})=-1+0.9\,V(1)=-1+0.9(-10)=-10</div>
+          <p>Down and up give −10 as well, because they lead to cells with value −10. So the greedy action in cell 2 is <i>right</i>. The same comparison, done for every cell, gives the first improved policy. Cell 1's greedy action is <i>left</i>, which goes straight to the goal.</p></div>
+        <p><b>Step 4: repeat.</b> Evaluating the first improved policy takes 78 sweeps; the next improvement changes a few more cells, and so on. The run of the algorithm from "always down" is:</p>
+        <table class="tbl" style="max-width:560px">
+          <tr><th>Round</th><th>Evaluation sweeps</th><th>What the improvement changed</th></tr>
+          <tr><td>1</td><td>220</td><td>cell 2 now right; cell 1 now left; many others</td></tr>
+          <tr><td>2</td><td>78</td><td>cells 2, 5, 6, 9 and 10 now point towards a goal</td></tr>
+          <tr><td>3</td><td>4</td><td>cell 3 and cell 6 change to their final choices</td></tr>
+          <tr><td>4</td><td>4</td><td>nothing: the greedy policy equals the evaluated one, so it stops</td></tr>
+        </table>
+        <p>The final values, which are the optimal values <span class="tex">V^*</span> at γ = 0.9, are:</p>
+        <table class="tbl" style="max-width:360px;text-align:center">
+          <tr><td>0 (goal)</td><td>−1.0</td><td>−1.9</td><td>−2.7</td></tr>
+          <tr><td>−1.0</td><td>−1.9</td><td>−2.7</td><td>−1.9</td></tr>
+          <tr><td>−1.9</td><td>−2.7</td><td>−1.9</td><td>−1.0</td></tr>
+          <tr><td>−2.7</td><td>−1.9</td><td>−1.0</td><td>0 (goal)</td></tr>
+        </table>
+        <p>Notice that the fourth round needed only four sweeps. This table restarts each round's evaluation from zero, as the lab does, so the drop comes from this policy's values settling quickly, not from a warm start. Starting evaluation from the previous round's values (a warm start) is a common practical speed-up.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\pi_0\ \rightarrow\ V^{\pi_0}\ \xrightarrow{\text{improve}}\ \pi_1\ \rightarrow\ V^{\pi_1}\ \rightarrow\ \cdots\ \rightarrow\ \pi^*</div>
+        <p>Evaluation is the iterative method of lesson 2.2 run until its sweeps change less than <span class="tex">\theta</span>. Improvement is the greedy step of lesson 2.3, <span class="tex">\pi_{k+1}(s)=\arg\max_a Q^{\pi_k}(s,a)</span>. The algorithm stops when <span class="tex">\pi_{k+1}=\pi_k</span> in every state, at which point the Bellman optimality equation holds and <span class="tex">\pi_k</span> is optimal.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\pi_k</span></td><td>the policy after round <span class="tex">k</span></td></tr>
+          <tr><td><span class="tex">V^{\pi_k}</span></td><td>its evaluated values</td></tr>
+          <tr><td><span class="tex">\pi^*</span></td><td>an optimal policy: one whose values equal <span class="tex">V^*</span> in every state</td></tr>
+        </table>
+        <p><b>Why it converges.</b> In a finite MDP there are finitely many deterministic policies, and each round produces a policy at least as good as the last, strictly better unless it is already optimal. A sequence of strictly improving policies cannot repeat, so it must reach an optimal one. With γ = 1 the same argument needs every policy considered to terminate.</p>
+
+        <h3 class="sec">Lab: alternating the two steps</h3>
+        <p>The lab runs policy iteration on the discounted grid. The caption tells you which of the two steps is happening. You can start from "always down", which is the walk through this lesson, or from the uniform policy, which gets to the answer in fewer rounds. The evaluation phase is fast-forwarded (the values fill in sweep by sweep), and the improvement phase is shown as a pause in which the proposed arrows appear in orange.</p>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start from "always down" at γ = 0.9. Watch the first evaluation: the cells in the lower-left stay at −10 and the values spread from the goal corners. Count the evaluation sweeps shown in the readout.</li>
+          <li>When the orange arrows appear, check one cell by hand, for example cell 2, against the worked example.</li>
+          <li>Start from uniform. Count the rounds. The first improvement is already close to optimal, so the run takes fewer rounds.</li>
+          <li>Compare the evaluation sweeps and the number of rounds at γ = 0.9 and at γ = 0.99. Which one grows, and why would a longer horizon make evaluation slower?</li>
+        </ol></div>
+        <div data-lab="dp-policy-iteration"></div>
+
+        <h3 class="sec">Common traps</h3>
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Stopping on equal values instead of equal policies.</b> Two policies can have different arrows and the same values in some cells. The stopping rule is that the greedy policy is unchanged.</li>
+          <li><b>Evaluating too loosely.</b> A loose tolerance can make the improvement step choose from noisy values and oscillate. Evaluate to a tolerance well below the size of the value differences you care about.</li>
+          <li><b>Confusing the evaluation with the answer.</b> A policy can be evaluated exactly and still be bad. Evaluation tells you its value; only the improvement step looks for a better policy.</li>
+          <li><b>Expecting this to scale.</b> Each round needs a full evaluation. Large state spaces need approximate evaluation, which is the subject of the next modules.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model-based planning.</b> Planners for games and logistics with a known model use policy iteration, or its variants, to compute the best plan.</li>
+          <li><b>The template for approximate control.</b> Methods that alternate between fitting a critic and improving the actor follow this loop, with the evaluation step done approximately by a network.</li>
+        </ul></div>
+        <div class="callout"><b>Pipeline placement.</b> Evaluate and improve stages in alternation, both run offline on a model. Stores the policy and the value table; each round costs one full evaluation, which dominates the total cost.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Under "always down" with γ = 0.9, why is V(1) = −10?</summary><div class="ans">From cell 1 the walk is 1 → 5 → 9 → 13, then it stays in 13 forever with reward −1 each step. The discounted sum is −1/(1 − 0.9) = −10.</div></details>
+        <details class="check"><summary>2. Why did the fourth evaluation take only four sweeps?</summary><div class="ans">Round four's policy is already close to optimal, and this table restarts evaluation from zero, so the four sweeps reflect how fast this policy's values settle. A warm start from round three's values is a further speed-up that practical implementations use.</div></details>
+        <details class="check"><summary>3. Why must policy iteration terminate on a finite MDP?</summary><div class="ans">Each round produces a policy at least as good as the previous one, and strictly better unless the previous one is optimal. There are finitely many deterministic policies (4 actions in each of 14 cells here, so 4^14), so the sequence cannot go on forever without stopping at an optimal policy.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Policy iteration alternates full evaluation and greedy improvement until the policy stops changing.</li>
+          <li>Each round is an exact improvement, so the algorithm converges in a finite number of rounds on a finite MDP.</li>
+          <li>The cost is dominated by evaluation; a good starting policy makes later evaluations much faster.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="value-iteration" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">2.5</span><h2>Value iteration</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Policy iteration evaluates a full policy before every improvement, and each evaluation can take hundreds of sweeps. The floor of the gridworld is now slippery: when the robot tries to move, with probability 0.2 it instead moves in one of the other three directions, chosen at random. Do we really need to evaluate a whole policy before improving it, or can we improve the values directly, sweep by sweep?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Value iteration removes the separate evaluation. In each sweep, every cell takes the <b>best</b> one-step look-ahead, rather than the average under a policy. The values are then the best achievable values after one more step of planning. The policy is never written down during the process; it is read off the final values at the end, by acting greedily.</p>
+        <p>You can think of it as policy iteration with exactly one evaluation sweep before each improvement. There is no need to finish evaluating a policy that is about to change anyway.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: start with the deterministic grid.</b> Every move succeeds, <span class="tex">\gamma=0.9</span>, and the values start at zero. In sweep one, every cell's best move costs −1 and lands on a cell of value 0, so every non-terminal cell becomes −1.</p>
+        <p><b>Step 2: sweep two.</b> Cell 5 can move up to cell 1, which now has value −1, so it gets <span class="tex">-1+0.9(-1)=-1.9</span>. Cell 1 is still −1, because moving left reaches the goal directly. On this grid every cell is at most three moves from a goal, so the values are already optimal after sweep three; a fourth sweep changes nothing.</p>
+        <p><b>Step 3: add the slip, and the problem becomes a real convergence question.</b> Take <span class="tex">\text{slip}=0.2</span>: the intended move happens with probability 0.8, and each of the three other moves with probability <span class="tex">0.2/3</span>. The best action in cell 1 during sweep two is again left:</p>
+        <div class="worked"><b>Worked example: cell 1 with slip 0.2, γ = 0.9, sweep two</b>
+          <p>After sweep one, <span class="tex">V_1=-1</span> for every non-terminal cell. The action "left" has four possible outcomes, and the cost of each move is −1:</p>
+          <div class="eq">Q(1,\text{left})=0.8\,(-1+0)+\tfrac{0.2}{3}\big[(-1+0.9V_1(1))+(-1+0.9V_1(2))+(-1+0.9V_1(5))\big]</div>
+          <div class="eq">=0.8(-1)+\tfrac{0.2}{3}\big[-1.9-1.9-1.9\big]=-0.8-0.38=-1.18</div>
+          <p>So <span class="tex">V_2(1)=-1.18</span>. Each later sweep changes the values by at least a factor of γ less than the sweep before, so the sequence settles.</p></div>
+        <p><b>Step 4: the formal update.</b> Each sweep replaces <span class="tex">V_k</span> by the best backup of <span class="tex">V_k</span>. With tolerance 0.001 the values settle near −1.38 at cell 1 after about 13 sweeps (the lab shows the count).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">V_{k+1}(s)=\max_a\sum_{s',r}p(s',r\mid s,a)\big[r+\gamma V_k(s')\big]</div>
+        <p>Stop when <span class="tex">\max_s|V_{k+1}(s)-V_k(s)|<\theta</span>, then act greedily with respect to <span class="tex">V_{k+1}</span>. Two results matter. First, the backup contracts: <span class="tex">\max_s|V_k(s)-V^*(s)|\le\gamma^k\max_s|V_0(s)-V^*(s)|</span>. Second, if the last sweep changed the values by less than θ, then <span class="tex">\max_s|V_{k+1}(s)-V^*(s)|\le\frac{\gamma}{1-\gamma}\theta</span>. The second bound is the one to use when deciding when to stop.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\max_a</span></td><td>the best action in each state, instead of the policy's average</td></tr>
+          <tr><td><span class="tex">p(s',r\mid s,a)</span></td><td>the model; with slip, the intended action has probability 0.8 and each other action 0.2/3</td></tr>
+          <tr><td><span class="tex">\theta</span></td><td>the stopping tolerance on one sweep's largest change</td></tr>
+          <tr><td><span class="tex">\gamma/(1-\gamma)</span></td><td>the factor that turns a small change into an error bound: 9 for γ = 0.9</td></tr>
+        </table>
+        <p><b>Cost.</b> One sweep looks at every state, every action and every possible successor. The 4×4 grid has 14 non-terminal cells (the two goals are fixed), 4 actions and 4 outcomes each, so a sweep is 14 × 4 × 4 = 224 outcome terms. Small grids make this trivial; the cost grows with the number of states times the number of actions times the branching of each action.</p>
+
+        <h3 class="sec">Lab: sweeps, the greedy arrows and the stopping bound</h3>
+        <p>The lab runs value iteration on the slippery grid. The plot shows the largest change in each sweep on a logarithmic scale, and the readout shows the bound on the error if you stop now. The greedy arrows are recomputed after every sweep, so you can see the policy settle before the values do.</p>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set slip to 0 and press Play. The values stop changing after the third or fourth sweep, because every cell is at most three moves from a goal.</li>
+          <li>Set slip to 0.2 and step once at a time. Check the sweep-two value for cell 1 against the worked example: −1.18.</li>
+          <li>Set the tolerance to 0.01 and read the number of sweeps and the error bound at the stop. Then set it to 0.0001 and compare.</li>
+          <li>Set γ to 0.99 and slip to 0.4. Watch the change per sweep fall much more slowly, and see how many sweeps the stopping rule now needs.</li>
+        </ol></div>
+        <div data-lab="dp-value-iteration"></div>
+
+        <h3 class="sec">Common traps</h3>
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Stopping on a small change without the bound.</b> A tolerance of 0.01 on the change means an error of up to 0.09 at γ = 0.9, and up to 0.99 at γ = 0.99. Choose the tolerance with γ in mind.</li>
+          <li><b>Mixing up max and average.</b> Value iteration uses the max over actions; if you average over a fixed policy, you have written policy evaluation, not value iteration.</li>
+          <li><b>The greedy policy of an early sweep can be wrong.</b> Only the final values determine the optimal policy. Arrows drawn from early sweeps may still change.</li>
+          <li><b>Mistaking exact convergence for a general fact.</b> The deterministic grid converges in three sweeps because of its small size. With slip or larger grids, convergence takes many more sweeps.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Planning in known models.</b> Operations research and robotics planners solve Markov decision processes with value iteration over a discretised state space.</li>
+          <li><b>Q-learning in disguise.</b> Q-learning replaces the expectation over successors in the max-backup by one sampled successor. Value iteration is its exact, model-based counterpart.</li>
+        </ul></div>
+        <div class="callout"><b>Pipeline placement.</b> Estimate and improve stages, fused into one update, run offline on a known model. Stores one value per state; the policy is computed from the values when needed.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With slip 0.2 and γ = 0.9, what is Q(1, left) after sweep two, if every value after sweep one is −1?</summary><div class="ans">0.8(−1) + (0.2/3)(−1.9 − 1.9 − 1.9) = −0.8 − 0.38 = −1.18.</div></details>
+        <details class="check"><summary>2. The sweep changed the values by at most 0.01, and γ = 0.9. What is the largest possible error of the current values?</summary><div class="ans">γθ/(1 − γ) = 0.9 × 0.01 / 0.1 = 0.09. The values are within 0.09 of V* in the worst state.</div></details>
+        <details class="check"><summary>3. How many outcome terms does one sweep need on the 4×4 grid with four outcomes per action?</summary><div class="ans">14 non-terminal states × 4 actions × 4 outcomes = 224 terms. The two goal cells are skipped because their values are fixed.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Value iteration applies the best one-step backup in every sweep and does not evaluate a policy in between.</li>
+          <li>The values contract by γ per sweep, so the error after k sweeps is bounded by γ<sup>k</sup> times the starting error.</li>
+          <li>Stop on a small change, but convert it to an error bound with γ/(1 − γ) before trusting the answer.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.6 ===================== -->
+    <section class="lesson" id="generalized-policy-iteration" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">2.6</span><h2>Generalised policy iteration</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Policy iteration does a complete evaluation before each improvement; value iteration does a single sweep. Between these extremes lie many choices: three sweeps of evaluation, then an improvement; ten sweeps; or a very long evaluation. Which is best? And is there a single principle that explains all of them, including the learning methods that come later?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every method in this module keeps two things: a value table and a policy. The <b>evaluation</b> process pushes the values towards the values of the current policy. The <b>improvement</b> process pushes the policy towards the greedy policy for the current values. Each process moves the other: a new policy makes the old values wrong, and new values make the old policy suboptimal.</p>
+        <p>Picture two people walking toward each other on a path, one holding the values and one holding the policy. They do not need to finish their steps before the other begins. Whatever the amount of evaluation per round, the pair ends at the same place: the point where the values match the policy and the policy is greedy for the values. That point is the solution of the Bellman optimality equation.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: a tiny example where the two processes meet.</b> Return to the two-state choice problem of lesson 2.1, with γ = 0.9. Start from the policy "always stay" in A. Its value is <span class="tex">V(A)=1/(1-0.9)=10</span> and <span class="tex">V(B)=0.9\cdot10=9</span>.</p>
+        <div class="worked"><b>Worked example: evaluation and improvement in turn</b>
+          <p><b>Improve.</b> The action values under the current values are <span class="tex">Q(A,\text{stay})=1+0.9(10)=10</span> and <span class="tex">Q(A,\text{go})=3+0.9(9)=11.1</span>. "Go" is larger, so the greedy policy is "go".</p>
+          <p><b>Evaluate.</b> Under "always go", the values are <span class="tex">V(A)=3+0.81V(A)</span>, so <span class="tex">V(A)=15.789</span> and <span class="tex">V(B)=14.211</span>. Both values rose, as the improvement theorem promised.</p>
+          <p><b>Improve again.</b> <span class="tex">Q(A,\text{stay})=1+0.9(15.789)=15.21</span> and <span class="tex">Q(A,\text{go})=3+0.9(14.211)=15.79</span>. The greedy action is still "go", so nothing changes and the pair has met: these values are the optimal ones.</p></div>
+        <p><b>Step 2: how much evaluation per round?</b> Let <span class="tex">k</span> be the number of evaluation sweeps before each improvement. With <span class="tex">k=1</span> the evaluation sweep is followed by a greedy step over the same values, which is exactly the value iteration of lesson 2.5. With <span class="tex">k=\infty</span>, evaluation runs to convergence before each improvement, which is policy iteration. Values of <span class="tex">k</span> in between trade work per round against the number of rounds.</p>
+        <p><b>Step 3: what is shared.</b> Both extremes converge to the same optimal values, and so does every value of <span class="tex">k</span> in between, under the same conditions. Only the path changes: small <span class="tex">k</span> makes many cheap rounds, large <span class="tex">k</span> makes few expensive rounds with a good policy to evaluate.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Generalised policy iteration (GPI) is any scheme that alternates an evaluation process and an improvement process, each applied with any schedule:</p>
+        <div class="eq">\text{evaluation: } V \leftarrow T^{\pi}V \quad (\text{repeated } k \text{ times}),\qquad \text{improvement: } \pi(s)\leftarrow\arg\max_a Q_V(s,a)</div>
+        <p>Here <span class="tex">T^\pi</span> is the Bellman expectation backup for the policy <span class="tex">\pi</span>, and <span class="tex">Q_V(s,a)=\sum_{s',r}p(s',r\mid s,a)[r+\gamma V(s')]</span> is the action value computed from the table <span class="tex">V</span>. The process has reached its goal when the values are unchanged by evaluation and the policy is unchanged by improvement, which is the optimality equation.</p>
+        <table class="sym">
+          <tr><td><span class="tex">T^\pi</span></td><td>the expectation backup for policy <span class="tex">\pi</span>: one sweep of policy evaluation</td></tr>
+          <tr><td><span class="tex">k</span></td><td>the number of evaluation sweeps per improvement; <span class="tex">k=1</span> is value iteration, <span class="tex">k=\infty</span> is policy iteration</td></tr>
+          <tr><td><span class="tex">Q_V</span></td><td>the action values computed from a value table <span class="tex">V</span></td></tr>
+        </table>
+        <p>The value of a policy and the policy that is greedy for those values are two descriptions of the same fixed point. GPI is a description of the pattern, not a single algorithm.</p>
+
+        <h3 class="sec">Lab: how much evaluation per improvement?</h3>
+        <p>The lab runs GPI on the slippery grid with a chosen <span class="tex">k</span>. The grid shows the values and arrows after each sweep, and the plot shows the error (the largest difference from the optimal values) against the total number of sweeps. Two dashed reference curves show <span class="tex">k=1</span> (value iteration) and <span class="tex">k=\infty</span> (policy iteration), so you can compare the cost of each choice.</p>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set k = 1 and press Play. Note that each sweep is followed by a new greedy policy: the arrows change often early on.</li>
+          <li>Set k = ∞. Watch the evaluation run to the end of each round before the arrows change. Compare the error against the number of total sweeps with the k = 1 run.</li>
+          <li>Try k = 3, 5 and 10. For each, read the total sweeps needed to reach error 0.001. Do larger k always need fewer sweeps? Explain.</li>
+          <li>Set slip to 0 and compare the curves with the slippery grid. Then raise γ to 0.99 and see which curves slow down most.</li>
+        </ol></div>
+        <div data-lab="dp-gpi"></div>
+
+        <h3 class="sec">Common traps</h3>
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>More evaluation is not always cheaper.</b> A large k can waste sweeps evaluating a policy that is about to change. The best k depends on how quickly the policy settles.</li>
+          <li><b>GPI does not mean "evaluate until perfect, then improve".</b> That is policy iteration, one special case. Evaluation can be stopped early and the process still converges.</li>
+          <li><b>The optimum is a fixed point of both processes.</b> If the values stop changing but the policy would change, you are not done; if the policy is stable but its values are still moving, you are not done either.</li>
+          <li><b>Convergence assumes the usual conditions.</b> The results above need a finite MDP and γ &lt; 1, or a terminating problem. With function approximation the two processes can interfere with each other, which is the subject of Module 5.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Actor–critic methods.</b> A2C and PPO alternate a few critic updates (evaluation) with actor updates (improvement). They are GPI with a truncated, approximate evaluation.</li>
+          <li><b>Q-learning and SARSA.</b> Each step evaluates the current policy with one sampled backup and improves it greedily (or ε-greedily). The pattern is GPI with k of one, on samples.</li>
+        </ul></div>
+        <div class="callout"><b>Pipeline placement.</b> Estimate and improve stages interleaved on a schedule chosen by the designer; a model is needed for exact backups. Stores the value table and the policy; the cost of a round is k sweeps plus one improvement.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Which special case of GPI is value iteration?</summary><div class="ans">k = 1: one evaluation sweep, then a greedy improvement on the same values. After a greedy improvement, one evaluation sweep of the new policy is exactly the max-backup of the old values, so the pair is value iteration.</div></details>
+        <details class="check"><summary>2. In the two-state example, why is the greedy action "go" after evaluating "always stay"?</summary><div class="ans">Q(A, go) = 3 + 0.9 · V(B) = 3 + 0.9 · 9 = 11.1, which is larger than Q(A, stay) = 1 + 0.9 · 10 = 10. Going is worth more given the current values.</div></details>
+        <details class="check"><summary>3. Does a different k change the optimal values that GPI converges to?</summary><div class="ans">No. Under the same conditions every schedule converges to the same optimal values and policy. The schedule changes how many sweeps and rounds it takes to get there.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Evaluation and improvement are two pressures that push a value table and a policy towards each other.</li>
+          <li>Policy iteration and value iteration are the two extremes of how much evaluation to do before each improvement.</li>
+          <li>Almost every RL control method is GPI with samples, approximate evaluation or a learned critic.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now compute exact values and optimal policies whenever the rules of the world are known: the Bellman equations, policy evaluation, the greedy improvement, policy iteration, value iteration, and the general pattern that joins them. Next, <b>Module 3</b> (<a href="rl-monte-carlo.html">rl-monte-carlo.html</a>) drops the known model: it learns the same values from complete episodes of experience.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

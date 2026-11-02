@@ -24,7 +24,11 @@ window.HUB = {
     { id: 'voice', title: 'Voice', icon: '🎙️', color: '#db61a2', status: 'soon', desc: 'Speech recognition, synthesis and real-time voice pipelines.' },
     { id: 'genai', title: 'Generative AI', icon: '✨', color: '#a371f7', status: 'soon', desc: 'Transformers, diffusion, and how models create text, images and code.' },
     { id: 'gov', title: 'Governing AI', icon: '⚖️', color: '#d29922', status: 'soon', desc: 'How AI is kept safe, fair and accountable: risk, ethics, regulation, auditing and responsible deployment.' },
-    { id: 'rl', title: 'Reinforcement Learning', icon: '🎮', color: '#f85149', status: 'soon', desc: 'Agents, rewards, policies and learning by interaction.' },
+    {
+      id: 'rl', title: 'Reinforcement Learning', icon: '🎮', color: '#f85149', status: 'live', href: 'reinforcement-learning.html', curriculum: 'assets/curriculum-rl.js', next: 'domains',
+      desc: 'Zero to hero: bandits, dynamic programming, Monte Carlo and temporal-difference learning, deep Q-learning, policy gradients and PPO, model-based planning, offline RL and RLHF.',
+      tags: ['Bandits', 'Q-learning', 'Policy gradient', 'PPO', 'Model-based RL', 'RLHF'],
+    },
     { id: 'domains', title: 'Domains', icon: '🌍', color: '#56d364', status: 'soon', children: [
         { title: 'Healthcare & Bio', icon: '🧬' }, { title: 'Climate & Earth', icon: '🌦️' }, { title: 'Finance', icon: '💹' }, { title: 'Other domains', icon: '➕' },
       ], desc: 'Applied AI, one page per field: GeoAI, Robotics, Healthcare, Climate, Finance and more.' },
@@ -43,6 +47,16 @@ window.HUB = {
 
 /* Each page's pipeline: stages animate left→right. Edit text here, not in the lab code. */
 window.PIPELINES = {
+  rl: {
+    stages: [
+      { name: 'Interact', color: '#2f81f7', items: ['Observe state', 'Choose action', 'Receive reward'], out: 'transition (s, a, r, s′)', compute: 'Environment step; CPU or GPU batch simulation', storage: 'Episode buffer', desc: 'The agent acts in the environment at each step, observes the next state and receives a reward that may arrive long after the action.' },
+      { name: 'Store', color: '#39c5cf', items: ['Replay buffer', 'Trajectories', 'Logged data'], out: 'mini-batches of transitions', compute: 'Memory and sampling', storage: 'Replay buffer, dataset', desc: 'Transitions are kept, either for one pass (on-policy) or for many reuses (replay), so that updates are based on a stream of experience.' },
+      { name: 'Estimate', color: '#a371f7', items: ['TD error', 'Returns', 'Advantage'], out: 'value and advantage estimates', compute: 'GPU forward passes on value networks', storage: 'Value table or network weights', desc: 'The agent turns rewards into estimates of how good states and actions are, using bootstrapped targets or Monte Carlo returns.' },
+      { name: 'Improve', color: '#db6d28', items: ['Greedy step', 'Gradient step', 'Target update'], out: 'updated policy', compute: 'Gradient steps (GPU) or table updates', storage: 'Policy parameters, target network', desc: 'The policy changes toward actions with higher estimated value, either greedily or by a gradient step, with safeguards that limit how far it moves.' },
+      { name: 'Evaluate', color: '#db61a2', items: ['Learning curve', 'Seeds & CI', 'Held-out tasks'], out: 'return with confidence band', compute: 'Batch evaluation runs', storage: 'Experiment logs', desc: 'Returns are measured over several seeds and held-out environments, so that a single lucky run is not reported as progress.' },
+      { name: 'Deploy & monitor', color: '#3fb950', items: ['Safe rollout', 'Reward monitor', 'Rollback'], out: 'policy in production', compute: 'Serving and monitoring', storage: 'Model registry, telemetry', desc: 'The policy is rolled out gradually with reward and safety monitors, and rolled back when the live reward or constraint checks fail.' },
+    ],
+  },
   robotics: {
     stages: [
       { name: 'Sense', color: '#2f81f7', items: ['Encoders & IMU', 'Camera & LiDAR', 'Timestamps'], out: 'synchronised sensor frames', compute: 'Real-time drivers, microcontroller and CPU', storage: 'Rosbag / log files', desc: 'Joint encoders, inertial and range sensors are read at fixed rates and time-stamped so that every later step uses the same moment.' },

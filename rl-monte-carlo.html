@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · Monte Carlo methods · Reinforcement Learning</title>
+<meta name="description" content="Monte Carlo prediction from complete episodes, Monte Carlo control with exploring starts, on-policy control with epsilon-soft policies, importance sampling, off-policy control, and the strengths and limits of Monte Carlo.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-monte-carlo.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · Monte Carlo methods</h1>
+        <p>A Monte Carlo method learns from <b>whole episodes</b>. The agent plays a game or a task from start to finish, the total reward it collected is recorded, and that total is averaged over many episodes. No model of the world is needed, only the experience itself. This module covers how those averages estimate values, how they drive control, how to reuse data from a different policy with importance sampling, and where the method is strong and where it is weak.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs expectation and sampling</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>The running example.</b> Every lesson uses the same tiny world, a <b>corridor</b> with five cells numbered 0 to 4. Cells 1, 2 and 3 are the inside of the corridor, and cells 0 and 4 are the two ends, where the episode stops. The agent moves <b>L</b> (one cell left) or <b>R</b> (one cell right). Entering cell 0 gives reward 0. Entering cell 4 gives reward 1. Every other step gives reward 0. The discount factor is γ = 0.9 unless a lesson says otherwise, and the start is cell 2 unless stated.</p>
+      <p><b>How the labs work.</b> Every lab is animated in slow, real-time steps. The walker moves one cell at a time, the returns are then carried back along the path, and only then do the estimates change. The random numbers are seeded, so each run is reproducible. Labs marked <i>illustrative</i> are toy simulations of a larger idea.</p>
+    </section>
+
+    <!-- ===================== 3.1 ===================== -->
+    <section class="lesson" id="mc-prediction" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">3.1</span><h2>Monte Carlo prediction</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot has run 200 times through an aisle of a warehouse. Each run was logged from start to finish, together with whether it succeeded. We do not know the motor noise, the floor friction or the exact probability of each move. Using only these logged runs, how good is the policy that produced them, at each position in the aisle?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Suppose you want to know how long your commute takes from a particular junction to the office. You do not need a map of the traffic. You drive the route many times, and each time you pass the junction you note how long the rest of the trip took. Averaged over the trips, those remaining times are your estimate of the junction's value. The estimate is only ready when a trip ends, because until then you do not know the total.</p>
+        <p>That is the whole idea of <b>Monte Carlo prediction</b>. The value of a situation is the average of the total reward that followed it, measured over real episodes. The word "Monte Carlo" means exactly this: estimate an expectation by sampling.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the return.</b> Suppose at time <span class="tex">t</span> the agent is in state <span class="tex">S_t</span>. The rewards that follow are <span class="tex">R_{t+1}, R_{t+2}, \dots</span>, where <span class="tex">R_{t+1}</span> is the reward for the step taken at time <span class="tex">t</span>. The <b>return</b> is the discounted sum of everything that follows:</p>
+        <div class="eq">G_t = R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \cdots = R_{t+1} + \gamma\, G_{t+1}</div>
+        <p>The discount γ makes near rewards count more than distant ones. The second form is the one we use in code: work backwards from the end of the episode, and each return is the next reward plus γ times the return that follows it.</p>
+        <p><b>Step 2: the value.</b> The <b>value</b> of a state under a policy π is the expected return from that state, <span class="tex">V_\pi(s) = \mathbb{E}_\pi[G_t \mid S_t = s]</span>. The expectation is over the randomness of the policy and the environment. We cannot compute it directly without a model, but we can sample it: every time an episode visits <span class="tex">s</span>, the return from that visit is one sample.</p>
+        <p><b>Step 3: first visit or every visit.</b> An episode can pass through the same state more than once. The <b>first-visit</b> method uses only the return from the first time <span class="tex">s</span> appears in the episode. The <b>every-visit</b> method averages the returns from all of the visits. Both converge to <span class="tex">V_\pi(s)</span> as the number of episodes grows.</p>
+
+        <div class="worked"><b>Worked example: three episodes in the corridor</b>
+          <p>Start in cell 2. The policy being evaluated chooses L or R at random with probability 0.5 each. Three episodes are recorded. Episode 1 goes 2 → 3 → 4. Episode 2 goes 2 → 1 → 2 → 3 → 4. Episode 3 goes 2 → 1 → 0.</p>
+          <p>The rewards are: episode 1 gives <span class="tex">R_1 = 0,\; R_2 = 1</span>. Episode 2 gives <span class="tex">R_1 = R_2 = R_3 = 0,\; R_4 = 1</span>. Episode 3 gives <span class="tex">R_1 = R_2 = 0</span>. Working backwards with γ = 0.9:</p>
+          <div class="eq">\begin{aligned} &\text{Ep 1: } G_1 = 1,\; G_0 = 0 + 0.9(1) = 0.90 \\ &\text{Ep 2: } G_3 = 1,\; G_2 = 0.9,\; G_1 = 0.81,\; G_0 = 0.729 \\ &\text{Ep 3: } G_1 = 0,\; G_0 = 0 \end{aligned}</div>
+          <p>Now collect the returns by state (time index in brackets):</p>
+          <table class="tbl"><tr><th>state</th><th>visits (return)</th><th>first-visit average</th><th>every-visit average</th></tr>
+            <tr><td>1</td><td>ep2 [t=1]: 0.810 · ep3 [t=1]: 0</td><td>0.405</td><td>0.405</td></tr>
+            <tr><td>2</td><td>ep1 [t=0]: 0.900 · ep2 [t=0]: 0.729 · ep2 [t=2]: 0.900 · ep3 [t=0]: 0</td><td>(0.900 + 0.729 + 0)/3 = 0.543</td><td>(0.900 + 0.729 + 0.900 + 0)/4 = 0.632</td></tr>
+            <tr><td>3</td><td>ep1 [t=1]: 1.000 · ep2 [t=3]: 1.000</td><td>1.000</td><td>1.000</td></tr></table>
+          <p>State 2 is the only state visited twice in one episode (episode 2), which is why the two methods disagree there. The first-visit average uses 0.729 from that episode, and the every-visit average uses both 0.729 and 0.900. For comparison, the true value under the uniform random policy, found by solving the Bellman equations exactly, is <span class="tex">V(1) = 0.170,\; V(2) = 0.378,\; V(3) = 0.670</span>. Three episodes give a noisy answer, and the estimate for state 2 (0.543) is above the truth purely because of sampling noise.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For each state <span class="tex">s</span> let <span class="tex">N(s)</span> be the number of returns collected for it so far, and let <span class="tex">\text{Returns}(s)</span> be the list of those returns. The Monte Carlo estimate is the average:</p>
+        <div class="eq">V(s) \approx \frac{1}{N(s)}\sum_{G \in \text{Returns}(s)} G \qquad\text{equivalently}\qquad V(s) \leftarrow V(s) + \frac{1}{N(s)}\big(G_t - V(s)\big)</div>
+        <p>The incremental form is the one labs use. The update moves the estimate toward the new return by a fraction <span class="tex">1/N(s)</span>. Because the first visit's return is an independent sample per episode, first-visit MC has the simplest theory. Under the usual conditions (the expected return exists and the policy is evaluated in a finite episodic task), both versions converge to <span class="tex">V_\pi(s)</span> as <span class="tex">N(s) \to \infty</span>.</p>
+        <table class="sym">
+          <tr><td><span class="tex">s, S_t</span></td><td>a state, and the state at time t</td></tr>
+          <tr><td><span class="tex">R_{t+1}</span></td><td>the reward received after acting at time t</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>the discount factor, 0 ≤ γ ≤ 1; here 0.9</td></tr>
+          <tr><td><span class="tex">G_t</span></td><td>the return from time t to the end of the episode</td></tr>
+          <tr><td><span class="tex">V_\pi(s)</span></td><td>the value of state s under policy π: the expected return from s</td></tr>
+          <tr><td><span class="tex">N(s)</span></td><td>the number of returns recorded for s so far</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: walk, collect, average</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and watch one episode. The walker moves cell by cell first, then the returns are carried back from the end. Read the G value shown under each visited cell.</li>
+          <li>Switch between First-visit and Every-visit and notice the column that changes. Look for the episode where state 2 is visited twice.</li>
+          <li>Set γ to 0.5 and then to 1.0. Watch how the return from the start shrinks when the discount is small, because the reward at the far end is worth less.</li>
+          <li>Let the run go for about 30 episodes. The exact value for the uniform random policy is shown in the table; the estimates should approach it.</li></ol></div>
+        <div data-lab="mc-walk"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>No episode end, no return.</b> A return is defined only when the episode finishes (or is cut off, which introduces bias). A continuing task that never ends gives no sample to average.</li>
+            <li><b>Index slips.</b> <span class="tex">G_t</span> starts from <span class="tex">R_{t+1}</span>, not <span class="tex">R_t</span>. Off-by-one errors in the reward index change every number in a hand calculation.</li>
+            <li><b>Forgetting the discount on the first term.</b> The first reward after time t is multiplied by γ⁰ = 1, so <span class="tex">G_0 = R_1 + \gamma R_2 + \cdots</span>, not <span class="tex">\gamma R_1 + \cdots</span>.</li>
+            <li><b>Counting visits as episodes.</b> Every-visit MC averages visits, not episodes. Two visits in one episode are correlated, which is why the every-visit estimate needs care in its analysis.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Evaluating a fixed policy from recorded experience, for example scoring a game-playing policy from the full games it has played.</li>
+            <li>Monte Carlo return targets are the basis of REINFORCE and other policy-gradient methods in Module 6, where the return of each episode weights the gradient.</li>
+            <li>Rollout-based search, such as the random playouts used to evaluate positions in Monte Carlo tree search, uses the same averaging of complete outcomes.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Estimate stage (the average is updated after each episode ends); the interact stage produces the episode, and the store stage keeps the returns or running sums per state. Cost per update: one pass over the episode, O(T) work for an episode of length T, and O(1) memory per state.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Change episode 3 in the worked example to 2 → 3 → 4 (rewards 0, then 1). What is the first-visit estimate of V(2) after the three episodes?</summary><div class="ans">In the new episode 3, state 2 is visited at time 0 with return G_0 = 0 + 0.9(1) = 0.900. The first-visit average is (0.900 + 0.729 + 0.900)/3 = 2.529/3 = 0.843.</div></details>
+          <details class="check"><summary>2. Why does the every-visit estimate for state 2 differ from the first-visit one in the worked example?</summary><div class="ans">Episode 2 visits state 2 twice, at time 0 (return 0.729) and at time 2 (return 0.900). First-visit uses only the time-0 return, while every-visit uses both, so the every-visit average has four samples instead of three.</div></details>
+          <details class="check"><summary>3. The exact value of state 2 under the uniform random policy is about 0.378, but the three-episode estimate is 0.543. Is the estimate biased?</summary><div class="ans">No, the difference is sampling noise. Each return is an unbiased sample of V(2), so the average is unbiased for every number of episodes. With only three samples, the random variation is large (the standard deviation of one return from state 2 is about 0.40), so the average can sit well away from the truth.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Monte Carlo prediction estimates the value of a state by averaging the returns observed after visits to it.</li>
+            <li>It needs no model of the environment, but it must wait until each episode ends before any estimate changes.</li>
+            <li>First-visit and every-visit both converge; the choice changes how the samples are correlated, not where the average goes.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 ===================== -->
+    <section class="lesson" id="mc-control" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">3.2</span><h2>Monte Carlo control with exploring starts</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Knowing that cell 2 is worth 0.378 is not enough to act. To choose between L and R in cell 2, we need to know how good each <i>action</i> is there. Can we estimate the value of taking a particular action in a particular state, using only episodes, and then improve the policy by picking the best action?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a chess player who knows how good each position is, but cannot see the consequences of each possible move. To choose, the player must know how good each move is from the current position. The quantity that answers this is the <b>action value</b>, written <span class="tex">Q(s,a)</span>: the expected return after taking action a in state s and then continuing with the policy.</p>
+        <p>Monte Carlo control alternates two steps. First, play episodes and average the returns to update <span class="tex">Q</span>. Second, make the policy greedy: in each state, choose the action with the highest <span class="tex">Q</span>. Then play again. This alternation of evaluation and improvement is called <b>generalised policy iteration</b>, and it is the pattern behind almost every method in this course.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: action values.</b> <span class="tex">Q_\pi(s,a) = \mathbb{E}_\pi[G_t \mid S_t = s, A_t = a]</span>. The returns are the same as before, but the first action is fixed to a. The action value is what lets us compare actions without a model.</p>
+        <p><b>Step 2: greedy improvement.</b> Given estimates <span class="tex">Q</span>, the greedy policy is <span class="tex">\pi'(s) = \arg\max_a Q(s,a)</span>. The policy improvement theorem says this new policy is at least as good as the old one in every state.</p>
+        <p><b>Step 3: the problem of unvisited pairs.</b> If the policy is greedy, it may never take an action it has not already valued. The value of an action that is never tried stays at its starting value, so the agent cannot discover that it is better. The fix in this lesson is <b>exploring starts</b>: every episode begins from a random state and a random first action, so every pair has a chance of being visited.</p>
+
+        <div class="worked"><b>Worked example: two episodes with exploring starts</b>
+          <p>The initial policy is always R. Each episode starts from a random pair (s, a), takes that action, then follows the current greedy policy. Episode 1 starts at (2, L): the agent goes to cell 1, then R to 2, R to 3, R to 4. Episode 2 starts at (3, L): the agent goes to cell 2, then R to 3, R to 4. The returns, with γ = 0.9, are:</p>
+          <div class="eq">\begin{aligned} &\text{Ep 1: } G(2,L)=0.729,\; G(1,R)=0.810,\; G(2,R)=0.900,\; G(3,R)=1.000 \\ &\text{Ep 2: } G(3,L)=0.810,\; G(2,R)=0.900,\; G(3,R)=1.000 \end{aligned}</div>
+          <p>Averaging by first visit gives <span class="tex">Q(2,L)=0.729,\; Q(1,R)=0.810,\; Q(2,R)=(0.900+0.900)/2=0.900,\; Q(3,L)=0.810,\; Q(3,R)=1.000</span>. The greedy action is R in every cell: in cell 2, Q(2,R) = 0.900 is larger than Q(2,L) = 0.729. The policy does not change, and it is already optimal. Compare these estimates with the true optimal action values: 0.729, 0.810, 0.900, 0.810 and 1.000. Every estimate matches, because each pair was sampled exactly once or twice in a deterministic world.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For each episode, after computing the return <span class="tex">G_t</span> for the first visit to the pair <span class="tex">(s,a)</span>, update the running average of <span class="tex">Q</span>, and then set the policy to be greedy:</p>
+        <div class="eq">Q(s,a) \leftarrow \text{average of } \text{Returns}(s,a), \qquad \pi(s) \leftarrow \arg\max_{a} Q(s,a)</div>
+        <p>Under exploring starts, with every pair sampled infinitely often, the policy converges to an optimal policy (Sutton and Barto, Section 5.4, for the tabular case). The proof relies on the policy improvement theorem. The condition is strong, which is why the next lessons relax it.</p>
+        <table class="sym">
+          <tr><td><span class="tex">Q(s,a)</span></td><td>the action value: expected return after taking a in s and then following the policy</td></tr>
+          <tr><td><span class="tex">\text{Returns}(s,a)</span></td><td>the list of returns collected after first visits to the pair (s, a)</td></tr>
+          <tr><td><span class="tex">\pi(s)</span></td><td>the deterministic greedy action in state s</td></tr>
+          <tr><td><span class="tex">\arg\max_a</span></td><td>the action with the largest value; ties broken toward R in the lab</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: exploring starts versus a fixed start</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>With exploring starts selected, watch several episodes. Each begins from a new random pair; the bars under each pair fill as its returns come in.</li>
+          <li>Switch to the fixed start (2, R). Every episode now begins in the same place. Notice the L bars stay at zero, and the policy still reads R everywhere.</li>
+          <li>In the fixed-start mode, ask why the policy looks correct. The greedy action is right here only because R happens to be better; the zero estimates for L are wrong.</li>
+          <li>Change γ and watch the Q values scale together.</li></ol></div>
+        <div data-lab="mc-control"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Exploring starts are not a real-world option.</b> A robot cannot be placed in an arbitrary state with an arbitrary first action. Exploring starts work in simulators that can reset to any state, and they are a stepping stone to the later methods.</li>
+            <li><b>A zero estimate is not a value.</b> An action never tried has no samples, so its Q is just the initial value. Greedy choice then compares a real number with an unknown, and the unknown can hide a better action.</li>
+            <li><b>Ties are a policy decision.</b> With Q(s,L)=Q(s,R)=0 at the start, the choice of tie-breaking decides the early behaviour.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Model-free control from complete episodes, where the agent learns action values without a model of the environment.</li>
+            <li>Generalised policy iteration, the pattern of alternating evaluation and improvement, returns in Module 4 (SARSA and Q-learning) and Module 5 (deep Q-learning).</li>
+            <li>Simulators with resettable states are the main setting where exploring starts are used, for example in training controllers before deployment.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Improve stage (the greedy policy is recomputed after each episode); interact stage produces the episode; the store stage keeps a table of Q and counts. Cost per update: O(T) for the backward pass over the episode, plus a per-state argmax over the actions.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. After the two-episode example, what action does the greedy policy take in cell 2, and why?</summary><div class="ans">R. Q(2,R) = 0.900 is larger than Q(2,L) = 0.729, so the greedy choice is R.</div></details>
+          <details class="check"><summary>2. Why do exploring starts guarantee that every state-action pair is eventually updated?</summary><div class="ans">Each episode begins from a randomly chosen pair with positive probability. Over many episodes, every pair is chosen as a start, so every Q(s,a) receives returns. Without this, pairs that the greedy policy never takes would keep their initial values forever.</div></details>
+          <details class="check"><summary>3. An agent always starts at (2,R) and then follows its greedy policy. What is Q(2,L) after 1000 episodes, and why is this a problem?</summary><div class="ans">It stays at its initial value 0, because no episode takes L in cell 2. The true value is 0.729. The greedy choice is still R, so the policy looks right, but the agent has no evidence about L, and a change in the environment that made L better would never be noticed.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Control needs action values, not just state values, so that the agent can compare actions without a model.</li>
+            <li>Monte Carlo control alternates averaging returns and acting greedily; this is generalised policy iteration.</li>
+            <li>Exploring starts make the method converge in theory but are unrealistic; the next lessons keep exploration inside the policy.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 ===================== -->
+    <section class="lesson" id="on-policy-mc" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">3.3</span><h2>On-policy Monte Carlo with ε-soft policies</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Exploring starts need a simulator that can reset to any state. A real agent starts where it is. How can an agent keep trying all actions during learning, without needing to be placed in arbitrary states, and still end up with a useful policy?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A restaurant reviewer who only ever orders the dish they like best will never learn whether another dish is better. A good reviewer orders their favourite most of the time, but occasionally tries something else. The reviewer's policy is still mostly "order the favourite", but no dish is ever ruled out completely. This is the idea of an <b>ε-soft policy</b>: every action keeps some probability, so exploration never stops.</p>
+        <p><b>On-policy</b> means the same policy generates the data and is being improved. The agent learns about the behaviour it actually uses, including its exploratory moves.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the ε-greedy policy.</b> Let <span class="tex">|\mathcal A|</span> be the number of actions, here 2. With probability <span class="tex">1-\varepsilon</span> take the greedy action; with probability <span class="tex">\varepsilon</span> take an action uniformly at random. The chance of the greedy action is then <span class="tex">1-\varepsilon+\varepsilon/|\mathcal A|</span>, and each other action gets <span class="tex">\varepsilon/|\mathcal A|</span>.</p>
+        <p><b>Step 2: why the policy must stay ε-soft.</b> A policy is ε-soft if every action in every state has probability at least <span class="tex">\varepsilon/|\mathcal A|</span>. Because every pair keeps a chance to be sampled, Monte Carlo evaluation still reaches every Q(s,a), and no exploring start is needed.</p>
+        <p><b>Step 3: improvement stays inside the class.</b> When we make the policy greedy with respect to Q, we must keep the ε-soft constraint. The new policy is therefore the ε-greedy policy for the current Q. The policy improvement theorem still applies inside this class, so the improved policy is never worse than the old one.</p>
+
+        <div class="worked"><b>Worked example: the ε-greedy policy in cell 2</b>
+          <p>Take ε = 0.2 and two actions. Suppose the current estimates in cell 2 are Q(2,R) = 0.900 and Q(2,L) = 0.729. The greedy action is R, so</p>
+          <div class="eq">\pi(R\mid 2)=1-0.2+\frac{0.2}{2}=0.9,\qquad \pi(L\mid 2)=\frac{0.2}{2}=0.1,\qquad 0.9+0.1=1</div>
+          <p>The expected action value in cell 2 under this policy is</p>
+          <div class="eq">0.9(0.900)+0.1(0.729)=0.8829</div>
+          <p>This is less than the greedy value 0.900, which is the price of exploration. The learner pays a small cost for keeping its options open. In this corridor, the best ε-soft policy puts probability 0.9 on R in every cell, because each action must keep at least 0.1 and R is always the better choice.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For a state s, the ε-greedy policy with respect to the action values Q is</p>
+        <div class="eq">\pi(a\mid s)=\begin{cases}1-\varepsilon+\dfrac{\varepsilon}{|\mathcal A|} & \text{if } a=\arg\max_{a'}Q(s,a') \\[6pt] \dfrac{\varepsilon}{|\mathcal A|} & \text{otherwise}\end{cases}</div>
+        <p>On-policy first-visit Monte Carlo control generates episodes with the current ε-soft policy, updates Q by averaging returns, and then sets π to the ε-greedy policy for the new Q. Among all ε-soft policies, the limit of this process is the best one, not the optimal deterministic policy. With ε > 0 the limit cannot place probability 0 on any action.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\varepsilon</span></td><td>the exploration rate, 0 ≤ ε ≤ 1; here 0.2 in the worked example</td></tr>
+          <tr><td><span class="tex">|\mathcal A|</span></td><td>the number of actions in the state (2 in the corridor)</td></tr>
+          <tr><td><span class="tex">\pi(a\mid s)</span></td><td>the probability of choosing action a in state s</td></tr>
+          <tr><td><span class="tex">\arg\max_{a'}Q(s,a')</span></td><td>the action with the highest current action value</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: learning with exploration that never stops</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with ε = 0.20. Press Play and watch the policy bars for each cell. At the start every Q is zero, so ties go to R and π(R) = 0.9 in every cell.</li>
+          <li>Let the run continue. Each cell's R bar settles toward 0.9, the best ε-soft probability for this corridor, and never reaches 1.</li>
+          <li>Set ε to 0.05, then to 0.5. The limit changes to 0.975 and 0.75 respectively for R.</li>
+          <li>Read the readout and check the expected value in cell 2 under the policy against the formula above.</li></ol></div>
+        <div data-lab="mc-onpolicy"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The ε-soft optimum is not the optimal policy.</b> The algorithm is optimal only among policies that keep exploring. If you need the best deterministic policy, you must reduce ε over time or act greedily after learning.</li>
+            <li><b>Wrong ε-soft probabilities.</b> The greedy action gets 1 − ε + ε/|A|, not 1 − ε. With two actions and ε = 0.2 the greedy probability is 0.9, not 0.8.</li>
+            <li><b>Mixing on-policy and off-policy data.</b> Episodes from an old policy should not update the current one unless you use the importance weights of lesson 3.4.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>ε-greedy exploration is the default exploration rule in deep Q-learning (Module 5) and in many tabular agents.</li>
+            <li>On-policy methods with stochastic policies appear in policy-gradient methods such as PPO (Module 6), which keep an explicit probability over actions so that exploration is built into the policy.</li>
+            <li>Deployed systems that must keep learning from their own actions, such as recommendation or ad ranking, face the same trade-off between exploiting the best known action and sampling alternatives.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (episodes are generated by the ε-soft policy); the improve stage recomputes the ε-greedy policy after each batch; the store stage keeps Q, counts and ε. Cost per update: O(T) per episode, plus an argmax per state.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With ε = 0.2 and two actions, what are π(R|s) and π(L|s) when R is greedy?</summary><div class="ans">π(R|s) = 1 − 0.2 + 0.2/2 = 0.9, and π(L|s) = 0.2/2 = 0.1. They sum to 1.</div></details>
+          <details class="check"><summary>2. With ε = 0.2, Q(2,R) = 0.900 and Q(2,L) = 0.729, what is the expected action value in cell 2 under the policy?</summary><div class="ans">0.9(0.900) + 0.1(0.729) = 0.810 + 0.0729 = 0.8829.</div></details>
+          <details class="check"><summary>3. In this corridor R is always the better action. What probability on R does the best ε-soft policy converge to, and why can it not be 1?</summary><div class="ans">1 − ε/2 = 0.9 for ε = 0.2. Each action must keep at least ε/2 = 0.1, so the best ε-soft policy puts the rest of the probability on R, which is 0.9.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>An ε-soft policy keeps every action possible, so Monte Carlo can learn all action values without exploring starts.</li>
+            <li>On-policy control learns the best policy within the ε-soft class, which is slightly worse than the optimal one.</li>
+            <li>The greedy probability is 1 − ε + ε/|A|; check it with the worked example before trusting a lab.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 ===================== -->
+    <section class="lesson" id="importance-sampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">3.4</span><h2>Importance sampling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A recommendation system logged a month of decisions made by an old policy, which showed items at random. We now want to know how well a new policy, which mostly shows the best item, would have done. We cannot run the new policy on the users again. Can the logged episodes still tell us its value?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Suppose you want to know the average height of people in a city, but your sample was taken mostly from the basketball court. You can still correct the sample. Tall people were over-sampled, so give each measured person a weight that says how much more or less likely they were to be chosen under the city's real mix. This reweighting is <b>importance sampling</b>.</p>
+        <p>In reinforcement learning, the logged policy is the <b>behaviour policy</b> <span class="tex">b</span>, and the policy we want to evaluate is the <b>target policy</b> <span class="tex">\pi</span>. An episode that the target policy would have produced often, but the behaviour policy rarely produced, gets a large weight. An episode the target policy would never produce gets weight zero.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the ratio for one step.</b> At a single step in state s with action a, the ratio is <span class="tex">\pi(a\mid s)/b(a\mid s)</span>. It is bigger than 1 when the target policy likes the action more than the behaviour policy does.</p>
+        <p><b>Step 2: the ratio for a whole episode.</b> Multiply the step ratios from time t to the end of the episode. The product <span class="tex">\rho_{t:T-1}</span> is the weight of that trajectory. The environment's own transition probabilities cancel from the ratio, so no model is needed.</p>
+        <p><b>Step 3: two estimators.</b> With n sampled returns, the <b>ordinary</b> importance-sampling estimate is the sum of weighted returns divided by n. The <b>weighted</b> estimate divides by the sum of the weights instead. Ordinary is unbiased but can have huge variance; weighted is biased for small n but usually much steadier.</p>
+
+        <div class="worked"><b>Worked example: the corridor with a deterministic target</b>
+          <p>The target policy always goes right: π(R|s) = 1 everywhere. The behaviour policy chooses L or R with probability 0.5 each. The value we want is the value of state 2 under π, which is 0.900: from cell 2 the target goes 2 → 3 → 4, with reward 1 on the second step, so 0.9 × 1 = 0.900.</p>
+          <p>Each step taken by the target contributes a ratio of <span class="tex">1/0.5 = 2</span>. Each step taken as L contributes <span class="tex">0/0.5 = 0</span>. Three episodes from cell 2 are recorded:</p>
+          <table class="tbl"><tr><th>episode</th><th>actions</th><th>weight ρ</th><th>return G</th></tr>
+            <tr><td>A</td><td>R, R</td><td>2 × 2 = 4</td><td>0.900</td></tr>
+            <tr><td>B</td><td>L, R, R, R</td><td>0 (first action is L)</td><td>0.729</td></tr>
+            <tr><td>C</td><td>R, L, R, R</td><td>0 (second action is L)</td><td>0.729</td></tr></table>
+          <div class="eq">\text{ordinary}=\frac{4(0.900)+0+0}{3}=1.200,\qquad \text{weighted}=\frac{4(0.900)+0+0}{4+0+0}=0.900</div>
+          <p>With only three episodes, the ordinary estimate says 1.2, which overshoots the true 0.9 by a third. The weighted estimate gives exactly 0.9, here because the only trajectories with weight have the same return. Add a fourth episode that repeats A (R, R): the ordinary estimate becomes 7.2/4 = 1.800, while the weighted one stays at 7.2/8 = 0.900. The ordinary estimator is unbiased in expectation, but a single large weight can dominate a short sample.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\rho_{t:T-1}=\prod_{k=t}^{T-1}\frac{\pi(A_k\mid S_k)}{b(A_k\mid S_k)},\qquad V^{\text{ord}}(s)=\frac{\sum_{i=1}^{n}\rho^{(i)}G^{(i)}}{n},\qquad V^{\text{wt}}(s)=\frac{\sum_{i=1}^{n}\rho^{(i)}G^{(i)}}{\sum_{i=1}^{n}\rho^{(i)}}</div>
+        <p>Importance sampling requires <span class="tex">b(a\mid s)>0</span> wherever <span class="tex">\pi(a\mid s)>0</span> (coverage). Otherwise some target trajectories could never be observed and no reweighting could recover them. Under coverage, the ordinary estimate is unbiased for <span class="tex">V_\pi(s)</span>, and the weighted one is consistent: it converges to <span class="tex">V_\pi(s)</span> as n grows.</p>
+        <table class="sym">
+          <tr><td><span class="tex">b</span></td><td>the behaviour policy: the policy that generated the data</td></tr>
+          <tr><td><span class="tex">\pi</span></td><td>the target policy: the policy whose value we want</td></tr>
+          <tr><td><span class="tex">\rho_{t:T-1}</span></td><td>the importance ratio of the trajectory from time t to the end</td></tr>
+          <tr><td><span class="tex">n</span></td><td>the number of sampled returns</td></tr>
+          <tr><td><span class="tex">G^{(i)}</span></td><td>the return of the i-th sampled episode from the state of interest</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: reweighting the logs</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the target probability of R to 1.0 and press Play. Each R step multiplies the weight by 2, and each L step sets it to zero. Watch the weight bar on the trajectory.</li>
+          <li>Set the target probability to 0.5, which equals the behaviour policy. Every ratio is 1, and the two estimates coincide with the truth.</li>
+          <li>Set the target probability to 0.8. Watch the ordinary estimate (orange) swing around the true value (green dashed) for the first few episodes, while the weighted estimate (blue) settles sooner.</li>
+          <li>Notice the caption: the weights are computed from the policies only, not from any model of the world.</li></ol></div>
+        <div data-lab="mc-is"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Zero weight is not zero information.</b> A trajectory with weight 0 is still a sample. Ignoring zero-weight trajectories in the denominator of the weighted estimator changes the answer.</li>
+            <li><b>Weights explode.</b> A ratio of 2 per step gives 2^k after k steps. Long episodes with a mismatched behaviour policy produce enormous, rare weights.</li>
+            <li><b>Ordinary versus weighted is a bias–variance choice.</b> Ordinary is unbiased but volatile; weighted is biased for small samples but usually more stable. Neither is "the right one" for all data sizes.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Off-policy evaluation of recommendation and advertising policies from logs uses inverse propensity scoring (IPS) and its self-normalised version, which are the importance-sampling estimators of this lesson.</li>
+            <li>Off-policy corrections in distributed RL, such as Retrace and V-trace, truncate the importance ratios so that the weights cannot explode.</li>
+            <li>Learning from logged data in healthcare or education, where the logging policy is known but the new policy cannot be tested on people directly, follows the same reweighting logic.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Evaluate stage (the new policy is scored from logs before deployment); the store stage keeps the logged episodes with their behaviour probabilities, which the ratio needs. Cost per update: O(T) per episode to form the product, plus one running sum for the numerator and denominator.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Under π = always R and b = 0.5 for each action, what is the importance ratio of the trajectory 2 → 1 → 2 → 3 → 4?</summary><div class="ans">0. Its first action is L, and the target policy takes L with probability 0, so the ratio is 0/0.5 times the others, which is 0.</div></details>
+          <details class="check"><summary>2. Suppose π(R|s) = 0.8 in every state and b = 0.5. What weight does a trajectory with actions R, R receive?</summary><div class="ans">(0.8/0.5) × (0.8/0.5) = 1.6 × 1.6 = 2.56.</div></details>
+          <details class="check"><summary>3. In the worked example, why does the weighted estimate equal exactly 0.900 with three episodes?</summary><div class="ans">Only episode A has nonzero weight, and every trajectory with nonzero weight has the same return, 0.900. The weighted average is therefore 0.900 whatever the number of such episodes. The ordinary estimate, 1.2, depends on how many zero-weight episodes were included in the divisor.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Importance sampling reweights returns from a behaviour policy so they estimate the value of a target policy.</li>
+            <li>The weight is a product of per-step probability ratios, so it can be zero or very large.</li>
+            <li>The ordinary estimator is unbiased but volatile; the weighted estimator is biased for small samples but usually steadier.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 ===================== -->
+    <section class="lesson" id="off-policy-mc" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">3.5</span><h2>Off-policy Monte Carlo control</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We want the agent to end up with the best deterministic (greedy) policy, but the agent must keep exploring while it learns, and exploring makes it deviate from that policy. Can we learn the greedy policy's action values from exploratory episodes, using the importance weights of lesson 3.4?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A student studies from a messy set of practice exams, some of which take unusual routes through the material. The final exam will use the clean method the teacher recommends. The student can still learn the recommended method from the practice exams, provided they count only the parts of each exam that follow the recommended method, and give extra weight to the parts that a careful student would have done the same way. Learning about one policy while behaving with another is <b>off-policy</b> learning.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the target is greedy.</b> The target policy is <span class="tex">\pi(s)=\arg\max_a Q(s,a)</span>, a deterministic policy. The behaviour policy <span class="tex">b</span> is any exploratory policy with coverage, here uniform random.</p>
+        <p><b>Step 2: walk the episode backwards.</b> Start at the end of the episode with weight <span class="tex">W=1</span>. At each step from the end toward the start, first add the return and the weight to the statistics, update Q, and recompute the greedy action. If the action that the behaviour policy took is <i>not</i> the greedy action, stop: the earlier steps have a target probability of zero for the rest of the trajectory, so they carry no information about the greedy policy's return.</p>
+        <p><b>Step 3: multiply the weight.</b> If the action was greedy, multiply <span class="tex">W</span> by <span class="tex">1/b(A_t\mid S_t)</span> before moving to the previous step. With uniform behaviour, each greedy step doubles the weight.</p>
+
+        <div class="worked"><b>Worked example: two episodes, backwards</b>
+          <p>Start with Q = 0 everywhere, the greedy policy taking R on ties, and b = 0.5 for each action. Episode 1 is 2 → 1 → 2 → 3 → 4 with actions L, R, R, R and rewards 0, 0, 0, 1. Working backwards with γ = 0.9, and using the weighted update with the running count C(s,a):</p>
+          <table class="tbl"><tr><th>t</th><th>(s, a)</th><th>G</th><th>W (before)</th><th>C(s,a)</th><th>Q(s,a)</th><th>greedy at s</th><th>continue?</th></tr>
+            <tr><td>3</td><td>(3, R)</td><td>1.000</td><td>1</td><td>1</td><td>1.000</td><td>R</td><td>yes, W → 2</td></tr>
+            <tr><td>2</td><td>(2, R)</td><td>0.900</td><td>2</td><td>2</td><td>0.900</td><td>R</td><td>yes, W → 4</td></tr>
+            <tr><td>1</td><td>(1, R)</td><td>0.810</td><td>4</td><td>4</td><td>0.810</td><td>R</td><td>yes, W → 8</td></tr>
+            <tr><td>0</td><td>(2, L)</td><td>0.729</td><td>8</td><td>8</td><td>0.729</td><td>R</td><td>no: L ≠ R, stop</td></tr></table>
+          <p>The update at time 0 for (2, L) is still applied; the stop comes after it. Episode 2 is 3 → 2 → 1 → 0 with actions L, L, L and rewards 0, 0, 0. The backward pass starts at (1, L) with G = 0 and W = 1; C(1,L) = 1, Q(1,L) = 0. The greedy action at cell 1 is R, which differs from L, so the pass stops immediately. The final greedy policy is R in cells 1, 2 and 3, and Q(2,L) = 0.729 equals the true optimal value 0.9 × 0.81 = 0.729.</p>
+          <p>The weight doubles at each greedy step, so the last update in episode 1 used W = 8. A long run of greedy steps before a deviation would give even larger weights, which is why the weighted average matters.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\begin{aligned} &C(s,a)\leftarrow C(s,a)+W,\qquad Q(s,a)\leftarrow Q(s,a)+\frac{W}{C(s,a)}\big(G-Q(s,a)\big) \\ &\pi(s)\leftarrow\arg\max_{a}Q(s,a) \\ &\text{if } A_t\neq\pi(S_t)\text{ then exit}; \qquad W\leftarrow W\,/\,b(A_t\mid S_t) \end{aligned}</div>
+        <p>This is the incremental weighted importance-sampling control of Sutton and Barto (Algorithm 5.7). Under coverage and with the target greedy, it converges to the optimal policy in the tabular case. The weights are recomputed per episode, so the algorithm never needs the transition model.</p>
+        <table class="sym">
+          <tr><td><span class="tex">C(s,a)</span></td><td>the running sum of the weights for the pair (s, a)</td></tr>
+          <tr><td><span class="tex">W</span></td><td>the importance weight accumulated so far in the backward pass</td></tr>
+          <tr><td><span class="tex">G</span></td><td>the return from the current step, computed backwards</td></tr>
+          <tr><td><span class="tex">b(A_t\mid S_t)</span></td><td>the probability that the behaviour policy took the action taken</td></tr>
+          <tr><td><span class="tex">\pi</span></td><td>the greedy target policy with respect to the current Q</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: learning the greedy policy from exploration</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play. Each episode is generated by the uniform behaviour policy. Watch the backward pass: steps that match the greedy policy are highlighted green, the first mismatch turns red and the pass stops.</li>
+          <li>Watch the weight W double along a greedy run, and note the value it reaches at the first mismatch.</li>
+          <li>Observe the greedy arrows. They are settled after a few episodes, even though the behaviour is still random.</li>
+          <li>Press Step to see one backward update at a time, and compare the Q numbers with the table in the worked example.</li></ol></div>
+        <div data-lab="mc-offpolicy"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Stopping early is the rule, not a bug.</b> Once the behaviour action differs from the greedy action, earlier steps get no credit under this algorithm. The updates are correct but few.</li>
+            <li><b>Coverage must hold.</b> If the behaviour policy never takes an action that the target policy would take, that action's value can never be learned from data.</li>
+            <li><b>Slow when behaviour and target disagree.</b> A very exploratory behaviour makes the pass stop early, so each episode produces little learning. This is the main practical cost of the method.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Off-policy control from logged data, where a conservative behaviour policy generated the logs and a greedy policy is to be deployed.</li>
+            <li>Learning from demonstrations or from a previous controller, where the old controller's actions are the behaviour policy.</li>
+            <li>Off-policy corrections for value-based RL, such as Retrace (Module 4 and 5), which keep the spirit of stopping or truncating the trace when the behaviour and target policies disagree.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (the exploratory behaviour policy generates the data); improve stage (the greedy policy is recomputed during the backward pass); store stage (Q, the count C and the logged behaviour probabilities). Cost per update: O(T) per episode, with an early stop that often reduces the work.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In episode 2 of the worked example, why is only the (1, L) update made?</summary><div class="ans">The backward pass starts at the last step, (1, L). The greedy action at cell 1 is R, and the agent took L, so the pass stops after that one update. Nothing earlier in the episode is updated.</div></details>
+          <details class="check"><summary>2. What is the weight W just before the update at time 0 in episode 1, and why?</summary><div class="ans">8. The three greedy steps at times 3, 2 and 1 each multiply W by 1/0.5 = 2, giving 2 × 2 × 2 = 8 before the time-0 update.</div></details>
+          <details class="check"><summary>3. Why is off-policy MC control limited to episodes where the behaviour and greedy actions often agree?</summary><div class="ans">Once a behaviour action differs from the greedy one, the backward pass stops, so the steps before that point do not contribute. When behaviour and greedy actions disagree often, few steps per episode are used, and the method learns slowly.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Off-policy control learns the greedy policy's values from exploratory episodes, using importance weights.</li>
+            <li>The backward pass stops at the first action that the greedy policy would not take, because the later weights would be zero.</li>
+            <li>Coverage and the behaviour's exploration rate decide how fast the method learns in practice.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 ===================== -->
+    <section class="lesson" id="mc-tradeoffs" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">3.6</span><h2>Monte Carlo strengths and limits</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We now have a complete family of Monte Carlo methods. Before moving on to methods that learn from every step, how good is Monte Carlo as an estimator? When is it the right choice, and when does its need for complete episodes become a serious limit?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A Monte Carlo estimate is like a poll. Each respondent gives one honest answer, and the poll average is unbiased: it is aimed at the truth. But the spread of the answers sets how precise the average is, and the more uncertain each answer, the more respondents you need. Monte Carlo returns are honest answers that are sometimes very noisy: a return adds up every random reward until the episode ends.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: unbiased.</b> The return <span class="tex">G_t</span> is a sample of a quantity whose expectation is <span class="tex">V_\pi(S_t)</span>. Averaging unbiased samples gives an unbiased estimate, for any number of episodes. Monte Carlo never has to guess what the value of a later state is.</p>
+        <p><b>Step 2: high variance.</b> The return sums many random rewards. The more steps in the episode and the more random the transitions, the larger the spread of <span class="tex">G_t</span>. From state 2 under the uniform random policy with γ = 0.9, the exact mean return is 0.378 and the standard deviation of one return is about 0.398.</p>
+        <p><b>Step 3: the rate.</b> The standard error of the average of n independent returns is <span class="tex">\sigma/\sqrt{n}</span>. Quadrupling the data only halves the error. From the numbers above: with n = 25 episodes the standard error is about 0.080, with n = 100 it is about 0.040, and with n = 400 it is about 0.020.</p>
+        <p><b>Step 4: the need for complete episodes.</b> Monte Carlo must wait until the episode ends before it can make any update. In a task that lasts thousands of steps, or never ends, that wait is the central practical limit.</p>
+
+        <div class="worked"><b>Worked example: the error budget</b>
+          <p>Suppose a practitioner needs the value of a state estimated to within ±0.05 with about 95% confidence. Using the standard error for the corridor from state 2, σ ≈ 0.398, the approximate half-width is 1.96 × σ/√n. Setting this equal to 0.05:</p>
+          <div class="eq">1.96\cdot\frac{0.398}{\sqrt n}=0.05\quad\Rightarrow\quad \sqrt n=\frac{1.96\cdot 0.398}{0.05}=15.6\quad\Rightarrow\quad n\approx 244 \text{ episodes}</div>
+          <p>In the corridor, 244 episodes is cheap. In a task where each episode takes an hour of robot time, the same precision costs 244 hours. This is why the lab shows the error curve: the cost of precision grows with the square of the accuracy you want.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbb E[\hat V_n(s)]=V_\pi(s),\qquad \operatorname{Var}[\hat V_n(s)]=\frac{\operatorname{Var}[G\mid S_t=s]}{n},\qquad \text{standard error}=\frac{\sigma}{\sqrt n}</div>
+        <p>Here <span class="tex">\hat V_n(s)</span> is the sample average of n returns from s. The first equation says the method is unbiased, the second that its variance falls as 1/n, and the third is the standard error. These hold when the returns are independent samples, which first-visit MC with independent episodes satisfies.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\hat V_n(s)</span></td><td>the Monte Carlo estimate of the value of s after n episodes</td></tr>
+          <tr><td><span class="tex">\sigma</span></td><td>the standard deviation of a single return from s</td></tr>
+          <tr><td><span class="tex">n</span></td><td>the number of independent episodes</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: how the error falls with episodes</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play. Each step adds one more episode to a single run, and the error (orange) traces down the log-log plot. The dashed guide falls with slope −1/2.</li>
+          <li>Look at the thirty faint curves, each a separate run with its own seed. They all fall at about the same rate; the spread is the variance.</li>
+          <li>Set γ to 0.5, then to 0.95. A larger γ makes the return depend on more random steps, so the same episodes give a noisier estimate.</li>
+          <li>Read the bias check in the readout. The average estimate across all runs, at the largest n, sits close to the exact value.</li></ol></div>
+        <div data-lab="mc-error"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Unbiased does not mean accurate.</b> An unbiased estimator with large variance can be far from the truth for a long time. Check the spread, not only the mean.</li>
+            <li><b>Doubling precision costs four times the data.</b> The 1/√n rate is a fundamental feature of averaging independent samples.</li>
+            <li><b>Episodes are not free.</b> Counting episodes ignores the cost of each one. Compare methods by cost per unit of accuracy.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Monte Carlo returns are the baseline target that later methods, such as TD learning in Module 4, trade against bootstrapped targets with lower variance but some bias.</li>
+            <li>Episodic tasks such as games, simulated navigation and episodic robot trials are the natural home of Monte Carlo methods.</li>
+            <li>Policy-gradient methods (Module 6) use Monte Carlo returns in REINFORCE, and their high variance is the reason baselines and advantage estimates were introduced.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Evaluate stage (the error bars and sample counts are tracked as episodes arrive); the store stage keeps running sums and counts. Cost per update: one episode per unit of data, so the cost of accuracy is paid in episodes, not in per-step computation.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. The error at 100 episodes is 0.10. Roughly what is the error at 400 episodes?</summary><div class="ans">About 0.05. Quadrupling n halves the standard error, since the error falls as 1/√n.</div></details>
+          <details class="check"><summary>2. Why is a Monte Carlo return an unbiased target for the value of the current state?</summary><div class="ans">The value is the expected return from that state under the policy, and the return from a visit is one random draw of that expectation. Its average over episodes therefore has the right expectation.</div></details>
+          <details class="check"><summary>3. A task never ends and has no reset. Why can pure Monte Carlo not learn from it?</summary><div class="ans">A return is the sum of rewards up to the end of the episode, and there is no end. Pure Monte Carlo needs finished returns; truncating the sum at a horizon makes the estimate biased by an amount that depends on the discount.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Monte Carlo estimates are unbiased, but their variance grows with episode length and randomness, and the error falls only as 1/√n.</li>
+            <li>The method needs complete episodes, so it fits episodic tasks well and continuing tasks poorly.</li>
+            <li>Monte Carlo is the honest baseline: the next module keeps the unbiased idea but learns from every step, trading bias for much lower variance.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say how a Monte Carlo estimate turns complete episodes into values, how exploring starts and ε-soft policies drive control, how importance sampling reuses data from another policy, and where the method is unbiased but slow. Next, <b>Module 4</b> learns from every step with temporal-difference methods: <a href="rl-td.html">Module 4 · Temporal-difference learning</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

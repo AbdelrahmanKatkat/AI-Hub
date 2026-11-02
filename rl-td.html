@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · Temporal-difference learning · Reinforcement Learning</title>
+<meta name="description" content="Learning from every step: TD(0) prediction and bootstrapping, SARSA, Q-learning, Expected SARSA, n-step returns and TD(lambda) with eligibility traces, with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-td.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · Temporal-difference learning</h1>
+        <p>Learn from <b>every step</b>, not only from the end of an episode. A TD method guesses the value of where you are now, checks that guess one step later, and corrects itself. From this one idea come SARSA, Q-learning, Expected SARSA, n-step returns and eligibility traces.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Module 3</span><span class="chip">Animated updates</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 4.1 ===================== -->
+    <section class="lesson" id="td-prediction" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.1</span><h2>TD(0) prediction &amp; bootstrapping</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot walks down a corridor. It gets a reward only when it reaches the charging dock, which may take 200 steps. Monte Carlo methods must wait until the episode ends before they learn anything. Can the robot learn that a corridor cell near the dock is good <i>during</i> the walk, before the reward arrives?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine you are estimating how long your commute takes from each junction. Monte Carlo waits until you arrive home, writes down the total time, and then corrects every junction you passed. TD learning does something cleverer: when you reach junction B from junction A, you already have a rough estimate of the time from B. You update your estimate of A using the step you just took <i>plus</i> your current estimate of B. You are using a guess to improve a guess. This is <b>bootstrapping</b>: lifting yourself up by your own boot straps.</p>
+        <p>The value of a state, <span class="tex">V(s)</span>, is the expected total discounted reward from <i>s</i> onward under the policy. We never know it exactly, so we keep an estimate <span class="tex">V(s)</span> and refine it.</p>
+
+        <h3 class="sec">Build it up: the TD error</h3>
+        <p>Suppose the agent is in state <span class="tex">S_t</span>, takes an action, receives reward <span class="tex">R_{t+1}</span> and lands in <span class="tex">S_{t+1}</span>. Two numbers can now be compared. The estimate we had for <span class="tex">S_t</span> was <span class="tex">V(S_t)</span>. A fresh estimate, built from one real step and the current guess for the next state, is <span class="tex">R_{t+1}+\gamma V(S_{t+1})</span>. The difference between them is the <b>TD error</b>:</p>
+        <div class="eq">\delta_t = R_{t+1} + \gamma V(S_{t+1}) - V(S_t)</div>
+        <p>If <span class="tex">\delta_t</span> is positive, the step turned out better than we expected, so we raise <span class="tex">V(S_t)</span>. If negative, we lower it. The TD(0) update moves the estimate a fraction <span class="tex">\alpha</span> of the way toward the target:</p>
+        <div class="eq">V(S_t) \leftarrow V(S_t) + \alpha\,\delta_t</div>
+
+        <div class="worked"><b>Worked example: a three-state chain</b>
+          <p>States <span class="tex">S_1 \to S_2 \to S_3 \to</span> end. Every move gives reward 0, except the last move from <span class="tex">S_3</span>, which gives reward 1. Use <span class="tex">\gamma = 0.9</span>, <span class="tex">\alpha = 0.5</span>, and start with <span class="tex">V = (0,0,0)</span>. The true values are <span class="tex">V^*(S_3)=1</span>, <span class="tex">V^*(S_2)=0.9</span>, <span class="tex">V^*(S_1)=0.81</span>.</p>
+          <p><b>Episode 1.</b> <span class="tex">S_1\to S_2</span>: <span class="tex">\delta = 0 + 0.9\cdot0 - 0 = 0</span>. <span class="tex">S_2\to S_3</span>: <span class="tex">\delta = 0+0.9\cdot 0 - 0 = 0</span>. <span class="tex">S_3\to</span> end: <span class="tex">\delta = 1 + 0 - 0 = 1</span>, so <span class="tex">V(S_3) = 0 + 0.5\cdot 1 = 0.5</span>.</p>
+          <p><b>Episode 2.</b> <span class="tex">S_1\to S_2</span>: <span class="tex">\delta = 0</span>. <span class="tex">S_2\to S_3</span>: <span class="tex">\delta = 0 + 0.9\cdot 0.5 - 0 = 0.45</span>, so <span class="tex">V(S_2)=0.225</span>. <span class="tex">S_3\to</span> end: <span class="tex">\delta = 1 - 0.5 = 0.5</span>, so <span class="tex">V(S_3)=0.75</span>.</p>
+          <p><b>Episode 3.</b> <span class="tex">S_1\to S_2</span>: <span class="tex">\delta = 0 + 0.9\cdot 0.225 - 0 = 0.2025</span>, so <span class="tex">V(S_1)=0.10125</span>. <span class="tex">S_2\to S_3</span>: <span class="tex">\delta = 0.9\cdot 0.75 - 0.225 = 0.45</span>, so <span class="tex">V(S_2)=0.45</span>. <span class="tex">S_3\to</span> end: <span class="tex">\delta = 1-0.75=0.25</span>, so <span class="tex">V(S_3)=0.875</span>.</p>
+          <p>Notice the order of events. The reward 1 was seen in episode 1, but its influence reached <span class="tex">S_2</span> only in episode 2 and <span class="tex">S_1</span> only in episode 3. Credit moves backwards one state per visit. After three episodes the estimates are <span class="tex">(0.101, 0.45, 0.875)</span>, already closing in on <span class="tex">(0.81, 0.9, 1)</span>.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">V(S_t) \leftarrow V(S_t) + \alpha\big[R_{t+1} + \gamma V(S_{t+1}) - V(S_t)\big]</div>
+        <table class="sym">
+          <tr><td>V(s)</td><td>the current estimate of the value of state <i>s</i> under the policy being evaluated</td></tr>
+          <tr><td>R<sub>t+1</sub></td><td>the reward received on the step after time <i>t</i></td></tr>
+          <tr><td>γ (gamma)</td><td>discount factor, <span class="tex">0\le\gamma\le1</span>: rewards later are worth a little less</td></tr>
+          <tr><td>α (alpha)</td><td>step size (learning rate), <span class="tex">0&lt;\alpha\le 1</span>: how far one update moves the estimate</td></tr>
+          <tr><td>δ<sub>t</sub></td><td>the TD error: the surprise between the target and the current estimate</td></tr>
+          <tr><td>V(S<sub>t+1</sub>) = 0</td><td>for a terminal state, by convention</td></tr>
+        </table>
+        <p>Under standard conditions (a fixed policy, every state visited infinitely often, and step sizes that decay in the usual Robbins–Monro way) TD(0) converges to <span class="tex">V^\pi</span>. For a constant <span class="tex">\alpha</span> it keeps fluctuating around the answer.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play and watch one episode. Each step shows its TD error δ; find the step where the walk exits right and check that δ = 1 − V(5) by hand.</li>
+        <li>Set α to 0.01 and then 0.5. Small α learns smoothly but slowly; large α jumps around. Note the RMS error readout in both cases.</li>
+        <li>Set γ to 0.5. The true values (dashed green) shrink, because a reward far away is worth little. Compare with γ = 1.</li></ol></div>
+      <div data-lab="td-ripple"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The TD target is not the truth.</b> <span class="tex">R+\gamma V(S')</span> uses an estimate, so TD is <i>biased</i> early on. Monte Carlo targets are unbiased but noisy, because the whole random future is included.</li>
+          <li><b>Terminal states have value zero.</b> Forgetting this makes the last update use a made-up number.</li>
+          <li><b>Bootstrapping needs a sensible starting guess.</b> Starting values of zero are common; a very wrong initial table takes longer to correct, and the early estimates can mislead the policy.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Value estimation at scale: the critic of an actor–critic method is trained by TD on a neural network (Module 6).</li>
+          <li>Reward models and evaluators that must give a value to a partial trajectory before it ends.</li>
+          <li>The same TD error, <span class="tex">\delta</span>, is the signal in dopamine neurons, a link often drawn in neuroscience texts on learning.</li></ul>
+          <p><b>Pipeline view.</b> Stage: <i>estimate</i>. Stores: one table entry V(s) per state. Cost per update: one lookup of V(S′), one multiply-add, constant time and memory per transition.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the chain example, why does V(S₁) stay at 0 in episodes 1 and 2?</summary><div class="ans">Because the two first steps had zero reward and the estimate of the next state was still zero, so every TD error was zero. Credit had not reached S₁ yet; it needs S₂ to have a non-zero value first.</div></details>
+        <details class="check"><summary>2. Compute δ for a step from s to s′ with r = 0.5, γ = 0.9, V(s) = 1.0 and V(s′) = 2.0.</summary><div class="ans">δ = 0.5 + 0.9·2.0 − 1.0 = 0.5 + 1.8 − 1.0 = 1.3. The step was better than expected, so V(s) rises.</div></details>
+        <details class="check"><summary>3. Why is TD(0) said to have lower variance than Monte Carlo?</summary><div class="ans">Its target depends on one random reward and one random next state, not on the whole random future of the episode. The price is bias, because V(S′) is only an estimate.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>TD learning updates after every step, using the TD error δ = R + γV(S′) − V(S).</li>
+          <li>It bootstraps: the target uses the current estimate of the next state.</li>
+          <li>Credit moves backwards one state per visit, so distant rewards take several episodes to reach the start.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 ===================== -->
+    <section class="lesson" id="sarsa" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.2</span><h2>SARSA: on-policy TD control</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot must cross a warehouse floor from its start to a goal. Along one edge is a drop-off. Each step costs 1; falling costs 100 and sends the robot back to start. The robot still explores at random now and then. Should its learning rule assume that it will always act perfectly from now on, or should it learn the value of the moves it will <i>actually</i> make, mistakes included?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Prediction (lesson 4.1) asks: how good is this policy? Control asks: how do I find a better policy? A simple way is to learn <b>action values</b> <span class="tex">Q(s,a)</span>, the expected return from doing action <i>a</i> in state <i>s</i>, and then act greedily with respect to them. The trouble is that we also need to explore, so the policy we <i>follow</i> is not quite the greedy one.</p>
+        <p>SARSA (State, Action, Reward, next State, next Action) answers this honestly. It is <b>on-policy</b>: its target uses the next action that the behaviour policy really chose. If exploring means stepping near the cliff and possibly falling, SARSA knows about that risk, because the risk is in its own data. It learns the value of the <i>ε-greedy</i> behaviour, not of a perfect robot.</p>
+
+        <h3 class="sec">Build it up: the update rule</h3>
+        <p>A transition now involves five quantities, which is where the name comes from: <span class="tex">(S,A,R,S',A')</span>. The agent is in <i>S</i>, takes <i>A</i>, gets <i>R</i>, arrives at <i>S′</i>, and then chooses <i>A′</i> from <i>S′</i> with its exploring policy. The update is the TD(0) update applied to Q:</p>
+        <div class="eq">Q(S,A) \leftarrow Q(S,A) + \alpha\big[R + \gamma Q(S',A') - Q(S,A)\big]</div>
+        <p>An <b>ε-greedy</b> policy takes the greedy action with probability <span class="tex">1-\varepsilon</span> and a uniformly random action with probability <span class="tex">\varepsilon</span>. With three actions, the greedy action has probability <span class="tex">1-\varepsilon+\varepsilon/3</span> and each other action <span class="tex">\varepsilon/3</span>.</p>
+
+        <div class="worked"><b>Worked example: one SARSA update at the cliff</b>
+          <p>Suppose from the current state the agent took an action that moves it to <i>S′</i>, where the greedy action is safe with <span class="tex">Q(S',\text{safe}) = -1</span> and the cliff move has <span class="tex">Q(S',\text{cliff}) = -100</span>. Let <span class="tex">Q(S,A)=-5</span>, <span class="tex">R=-1</span>, <span class="tex">\gamma=1</span>, <span class="tex">\alpha=0.5</span>.</p>
+          <p>If exploration picks the cliff move as <i>A′</i>, the SARSA target is <span class="tex">-1 + 1\cdot(-100) = -101</span>, and <span class="tex">Q(S,A) \leftarrow -5 + 0.5(-101+5) = -53</span>.</p>
+          <p>If exploration picks the safe move, the target is <span class="tex">-1 + (-1) = -2</span>, and <span class="tex">Q(S,A) \leftarrow -5 + 0.5(-2+5) = -3.5</span>.</p>
+          <p>The same transition gives very different updates, depending on which action was sampled at <i>S′</i>. That is the on-policy character of SARSA: the risky sample is averaged into the estimate in proportion to how often exploration takes it.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">Q(S_t,A_t) \leftarrow Q(S_t,A_t)+\alpha\big[R_{t+1}+\gamma Q(S_{t+1},A_{t+1})-Q(S_t,A_t)\big]</div>
+        <table class="sym">
+          <tr><td>Q(s,a)</td><td>estimated action value: return from taking <i>a</i> in <i>s</i> and then following the policy</td></tr>
+          <tr><td>A<sub>t+1</sub></td><td>the action actually selected in <i>S<sub>t+1</sub></i> by the behaviour policy (here ε-greedy)</td></tr>
+          <tr><td>ε (epsilon)</td><td>exploration rate, the chance of a random action</td></tr>
+          <tr><td>α, γ</td><td>step size and discount, as in 4.1</td></tr>
+        </table>
+        <p>SARSA converges to the optimal policy <i>among ε-greedy policies</i> under standard conditions (every state–action pair keeps being tried and the step size decays). If ε is kept fixed, the answer is the best policy that still explores at rate ε, which is the safer choice near the cliff.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the cliff</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play and watch the first few episodes wander. Read the caption: the target uses the action the agent really took next, not the best one.</li>
+        <li>Let it run for a few hundred episodes and watch the average return. Note the greedy route, the arrows, and how the route changes as the table fills in.</li>
+        <li>Set ε to 0 and let it run. With no exploration the route may stop changing, but it is not necessarily the best one, because the agent never tries alternatives.</li></ol></div>
+      <div data-lab="cliff-sarsa"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>SARSA is not the value of the best policy.</b> It is the value of the policy you actually follow, including its exploration. Its learned route can be longer than the best route because the best route is risky under exploration.</li>
+          <li><b>The next action must be chosen before the update.</b> Choosing it after, or taking the max instead, turns SARSA into Q-learning.</li>
+          <li><b>Terminal transitions have no next action.</b> At the goal the target is just R.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>On-policy control in safety-sensitive settings, where the cost of exploration is part of the objective.</li>
+          <li>The conceptual basis of on-policy deep RL, such as SARSA-style critics inside PPO-like methods (Module 6).</li></ul>
+          <p><b>Pipeline view.</b> Stages: <i>interact</i>, then <i>estimate</i> and <i>improve</i> (ε-greedy). Stores: a Q-table with one entry per state–action pair. Cost per update: one action sample at S′ and one table entry.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the worked example, what changes if γ = 0.9 instead of 1?</summary><div class="ans">The SARSA target becomes −1 + 0.9·(−100) = −91 when the cliff move is sampled, so the new Q is −5 + 0.5(−91+5) = −48. The bootstrap is discounted, but the cliff still dominates.</div></details>
+        <details class="check"><summary>2. Why can SARSA choose a longer, safer path than Q-learning?</summary><div class="ans">Its values include the chance that exploration steps off the edge. A path along the edge is short but has many chances to fall, so its SARSA value is lower, and the greedy route is pushed away from the edge.</div></details>
+        <details class="check"><summary>3. What is the difference between the behaviour policy and the target policy in SARSA?</summary><div class="ans">In SARSA they are the same ε-greedy policy. That is what on-policy means. Q-learning (next lesson) separates them.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>SARSA learns Q(S,A) from (S,A,R,S′,A′), using the action actually chosen next.</li>
+          <li>It is on-policy: the learned values include the cost of exploration.</li>
+          <li>With decaying ε and step sizes it converges to the best ε-greedy policy; with fixed ε it prefers safer routes.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 ===================== -->
+    <section class="lesson" id="q-learning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.3</span><h2>Q-learning: off-policy TD control</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A courier learns routes while still trying out side streets to discover shortcuts. Later, the courier wants to know the fastest route from the depot, not the route that a noisy, exploring version of itself happened to take. Can we learn the value of the <i>best</i> behaviour while still behaving imperfectly?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>SARSA evaluates the moves it makes, exploration included. Q-learning asks a different question at each step: <i>if from the next state I acted as well as possible, what would this be worth?</i> It bootstraps from the best next action, not from the action that was sampled. Because the learning target does not depend on the exploring behaviour, Q-learning is <b>off-policy</b>: the policy it learns about (greedy) differs from the one it follows (ε-greedy).</p>
+
+        <h3 class="sec">Build it up: replacing the sample with the max</h3>
+        <p>Take the SARSA update and replace <span class="tex">Q(S',A')</span> by the best value available at <i>S′</i>:</p>
+        <div class="eq">Q(S,A) \leftarrow Q(S,A) + \alpha\Big[R + \gamma \max_{a'} Q(S',a') - Q(S,A)\Big]</div>
+        <p>The max makes the target independent of which action exploration happens to take next. Each update is a little optimistic when exploring has been unlucky, but the table converges to the optimal action values, <span class="tex">Q^*</span>, under standard conditions: every state–action pair is visited infinitely often, and the step sizes decay in the usual way.</p>
+
+        <div class="worked"><b>Worked example: the same transition, max instead of sample</b>
+          <p>Use the numbers from 4.2: <span class="tex">Q(S,A)=-5</span>, <span class="tex">R=-1</span>, <span class="tex">\gamma=1</span>, <span class="tex">\alpha=0.5</span>. At <i>S′</i> the values are <span class="tex">Q(S',\text{safe})=-1</span> and <span class="tex">Q(S',\text{cliff})=-100</span>.</p>
+          <p>Q-learning uses <span class="tex">\max = -1</span>, so the target is <span class="tex">-1 + (-1) = -2</span> and <span class="tex">Q(S,A)\leftarrow -5 + 0.5(-2+5) = -3.5</span>.</p>
+          <p>SARSA, had it sampled the cliff, would have used −101 and written −53. The Q-learning update does not care what exploration did next, which is exactly why it can learn the greedy route.</p>
+          <p><b>The price:</b> Q-learning ignores the cost of its own exploration when it updates. Its learned values describe a perfect courier, while its online return is the exploring courier’s. Both facts show up in the lab.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">Q(S_t,A_t)\leftarrow Q(S_t,A_t)+\alpha\Big[R_{t+1}+\gamma\max_{a}Q(S_{t+1},a)-Q(S_t,A_t)\Big]</div>
+        <table class="sym">
+          <tr><td>max<sub>a</sub> Q(s,a)</td><td>the largest action value at <i>s</i>; the best action according to current estimates</td></tr>
+          <tr><td>argmax<sub>a</sub> Q(s,a)</td><td>the <i>action</i> achieving that maximum (the greedy choice)</td></tr>
+          <tr><td>A<sub>t</sub></td><td>the action actually taken, chosen by an exploring behaviour policy</td></tr>
+        </table>
+        <p>Q-learning is the tabular ancestor of DQN (Module 5), which replaces the table with a neural network and the max with a network evaluated on sampled batches. Off-policy learning is also what makes replay buffers possible, and it is where the deadly triad (Module 5) comes from.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: the two routes, side by side</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Watch both agents from the same empty table with the same seed. Notice that Q-learning's greedy route runs along the row just above the cliff, while SARSA's runs further from it.</li>
+        <li>Compare the two average returns in the lower plot. Q-learning's learned greedy route is shorter, but its online return is lower, because exploring next to the cliff costs it falls.</li>
+        <li>Set ε to 0.02 and reset. Less exploration means fewer accidental falls, so compare how the two online returns change. Explain the difference in your own words.</li></ol></div>
+      <div data-lab="cliff-compare"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>“Off-policy” does not mean “learns from anything”.</b> It means the target policy (greedy) can differ from the behaviour policy (ε-greedy). Coverage still matters.</li>
+          <li><b>Comparing online return to the learned route is not like-for-like.</b> The learned greedy route is the policy without exploration; the online return includes exploration.</li>
+          <li><b>Max-based targets overestimate.</b> Taking a maximum over noisy estimates biases the target upward. This is the reason for Double Q-learning (Module 5).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>DQN and its descendants (Atari, Module 5): Q-learning with a neural network, a replay buffer and a target network.</li>
+          <li>Any setting where learning from logged or other-policy data is needed: the max lets the learner use data gathered by a different policy.</li></ul>
+          <p><b>Pipeline view.</b> Stages: <i>interact</i> (ε-greedy), <i>store</i> (one transition at a time here, a replay buffer in DQN), <i>estimate</i> (max target), <i>improve</i> (greedy policy). Stores: a Q-table. Cost per update: one max over the actions at S′, four table reads in this problem.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Q(S,A) = 0, R = 2, γ = 0.5, Q(S′,·) = (3, 7, −4) for three actions, α = 1. What is the new Q(S,A)?</summary><div class="ans">The max is 7, so the target is 2 + 0.5·7 = 5.5. With α = 1 the new value is 5.5.</div></details>
+        <details class="check"><summary>2. Why is Q-learning called off-policy?</summary><div class="ans">Its update targets the greedy action value, max Q(S′,·), whereas the agent behaves with an ε-greedy policy. The policy being learned (greedy) differs from the policy generating the data (ε-greedy).</div></details>
+        <details class="check"><summary>3. In the cliff example, why does Q-learning's online return end up lower even though its greedy route is shorter?</summary><div class="ans">Its updates assume the agent acts greedily from the next state, so it learns that walking along the edge is optimal. But the agent still takes random steps, and occasionally those steps fall off the edge, costing −100 each time.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Q-learning replaces the sampled next action with the maximum, learning Q* while exploring.</li>
+          <li>It is off-policy: its target policy is greedy, its behaviour policy is ε-greedy.</li>
+          <li>Learned values and online returns answer different questions; both matter in practice.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 ===================== -->
+    <section class="lesson" id="expected-sarsa" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.4</span><h2>Expected SARSA</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>SARSA is honest but noisy: its target changes with the single action sampled at the next state. Q-learning is stable but ignores exploration. Is there a middle path that keeps SARSA's honesty about exploration while removing the noise from the sampled action?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Instead of sampling the next action and using its value, take the <b>average</b> over all next actions, weighted by how likely the policy is to pick each one. If the policy picks the safe action 80% of the time and the cliff 10% of the time, the expected next value is 80% of the safe value plus 10% of the cliff value plus 10% of the other safe value. The expectation is the quantity that SARSA was trying to sample.</p>
+
+        <h3 class="sec">Build it up: averaging the next action</h3>
+        <p>Let <span class="tex">\pi(a\mid s)</span> be the probability that the behaviour policy picks action <i>a</i> in state <i>s</i>. The expected action value at <i>S′</i> is</p>
+        <div class="eq">\mathbb E_\pi[Q(S',A')\mid S'] = \sum_{a}\pi(a\mid S')\,Q(S',a)</div>
+        <p>Expected SARSA uses this in the target instead of the sampled value:</p>
+        <div class="eq">Q(S,A) \leftarrow Q(S,A) + \alpha\Big[R + \gamma\sum_{a}\pi(a\mid S')Q(S',a) - Q(S,A)\Big]</div>
+        <p>The target no longer depends on luck at <i>S′</i>. Its expectation is the same as SARSA's, so the two methods have the same target on average, but Expected SARSA has smaller variance.</p>
+
+        <div class="worked"><b>Worked example: one state, three actions</b>
+          <p>At <i>S′</i>: <span class="tex">Q = (-1,\,-2,\,-10)</span> for actions (safe, edge, cliff). Greedy action: safe. With <span class="tex">\varepsilon = 0.3</span> and three actions, the probabilities are <span class="tex">\pi = (1-0.3+0.1,\;0.1,\;0.1) = (0.8,\,0.1,\,0.1)</span>.</p>
+          <p><b>Expected value:</b> <span class="tex">\sum_a \pi(a)Q(a) = 0.8(-1)+0.1(-2)+0.1(-10) = -0.8-0.2-1.0 = -2.0</span>.</p>
+          <p><b>Sampled SARSA values:</b> −1 with probability 0.8, −2 with probability 0.1 and −10 with probability 0.1. Its variance is <span class="tex">0.8(1)+0.1(4)+0.1(100)-(-2)^2 = 11.2-4 = 7.2</span>.</p>
+          <p><b>Expected SARSA update</b> from <span class="tex">Q(S,A)=-5</span>, <span class="tex">R=-1</span>, <span class="tex">\gamma=1</span>, <span class="tex">\alpha=0.5</span>: target <span class="tex">-1 + (-2.0) = -3.0</span>, so <span class="tex">Q(S,A)\leftarrow -5 + 0.5(-3+5) = -4.0</span>. From the same starting value of −5, this update gives −4.0 every time, whereas the SARSA update from 4.2 gives −3.5 or −53 depending on which action exploration happened to sample.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">Q(S_t,A_t)\leftarrow Q(S_t,A_t)+\alpha\Big[R_{t+1}+\gamma\sum_{a}\pi(a\mid S_{t+1})\,Q(S_{t+1},a)-Q(S_t,A_t)\Big]</div>
+        <table class="sym">
+          <tr><td>π(a | s)</td><td>probability that the behaviour (ε-greedy) policy chooses <i>a</i> in <i>s</i></td></tr>
+          <tr><td>Σ<sub>a</sub></td><td>sum over every action available in <i>S′</i></td></tr>
+          <tr><td>𝔼<sub>π</sub>[·]</td><td>expectation under the policy π</td></tr>
+        </table>
+        <p>Expected SARSA is on-policy when π is the behaviour policy, and it becomes Q-learning when π is greedy (probability 1 on the max). This makes it a bridge between the two methods, not a third idea.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: sampled targets against their average</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press Play. Each dot is one SARSA bootstrap value; the solid blue line is their running mean. Watch it drift toward the green E line.</li>
+        <li>Raise the cliff value Q(s′, a₃ cliff) to −2. Now the spread shrinks and E moves. Compute E by hand from the bars to check the readout.</li>
+        <li>Set ε to 0. The policy becomes deterministic, every sample is the same, and the variance drops to 0; Expected SARSA and SARSA now coincide.</li></ol></div>
+      <div data-lab="target-spread"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The expectation uses the policy's probabilities, not uniform ones.</b> With a greedy-heavy ε-greedy policy the average is dominated by the greedy action.</li>
+          <li><b>Lower variance is not free.</b> It needs the probabilities π(a|s′), so the agent must know its own policy exactly, not just sample from it.</li>
+          <li><b>Expected SARSA is not always better.</b> It is more stable per update but costs a sum over actions per update, which matters when actions are many.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>The stable tabular control method of choice in many textbook and applied settings with small discrete actions.</li>
+          <li>The same expectation idea appears in policy-gradient baselines and in soft (entropy-regularised) RL, where the target averages the soft value over the policy.</li></ul>
+          <p><b>Pipeline view.</b> Stages: <i>interact</i>, <i>estimate</i> (expectation over actions), <i>improve</i>. Stores: a Q-table plus knowledge of π. Cost per update: one sum over |A| actions at S′ (three terms here).</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With ε = 0.3 and three actions, what probability does the greedy action get?</summary><div class="ans">1 − ε + ε/|A| = 1 − 0.3 + 0.1 = 0.8.</div></details>
+        <details class="check"><summary>2. Q(s′,·) = (2, 5) for two actions, ε = 0.2, greedy = action 2. What is the expected value at s′?</summary><div class="ans">Probabilities: action 2 gets 1 − 0.2 + 0.1 = 0.9, action 1 gets 0.1. Expected value = 0.1·2 + 0.9·5 = 0.2 + 4.5 = 4.7.</div></details>
+        <details class="check"><summary>3. Why does Expected SARSA have lower variance than SARSA?</summary><div class="ans">Its target averages over all next actions with their probabilities instead of using one sampled action, so the randomness of the single draw is removed. The remaining randomness comes only from S′ and R.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Expected SARSA replaces the sampled Q(S′,A′) with its expectation under the policy.</li>
+          <li>Same expected target as SARSA, lower variance; it reduces to Q-learning under a greedy policy.</li>
+          <li>It needs the next-state probabilities, and it costs a sum over actions per update.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 ===================== -->
+    <section class="lesson" id="n-step-td" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.5</span><h2>n-step returns</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>One-step TD learns fast but leans on a possibly wrong estimate of the next state. Monte Carlo waits for the whole episode, so its target is unbiased but noisy and slow to arrive. Can we choose how far to look ahead before we trust the estimate?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of predicting your monthly spending. You can extrapolate from this week alone (one step: quick but guessy), or you can wait for the full month and add everything up (Monte Carlo: accurate but late). Or you can add the first <i>n</i> weeks of real spending and then assume the rest will look like your usual average. More real data means less dependence on the guess, but more waiting and more variance from the random future.</p>
+
+        <h3 class="sec">Build it up: the n-step return</h3>
+        <p>Write the return from time <i>t</i> as a sum of real rewards, with discount <span class="tex">\gamma</span>. A one-step return uses one reward and bootstraps; an <i>n</i>-step return uses <i>n</i> rewards and bootstraps from the state reached after them:</p>
+        <div class="eq">G^{(n)}_t = R_{t+1} + \gamma R_{t+2} + \cdots + \gamma^{n-1}R_{t+n} + \gamma^{n}V(S_{t+n})</div>
+        <p>With <span class="tex">n=1</span> this is the TD(0) target from 4.1. If the episode ends before step <i>n</i>, the missing terms are zero, which makes <span class="tex">G^{(n)}_t</span> equal to the full Monte Carlo return. The update is <span class="tex">V(S_t)\leftarrow V(S_t)+\alpha\big[G^{(n)}_t - V(S_t)\big]</span>.</p>
+
+        <div class="worked"><b>Worked example: the three-step chain</b>
+          <p>Use the chain from 4.1 with rewards <span class="tex">R_1=0, R_2=0, R_3=1</span>, <span class="tex">\gamma=0.9</span>, and the estimates after two episodes: <span class="tex">V(S_2)=0.225</span>, <span class="tex">V(S_3)=0.75</span>. We compute the targets for <span class="tex">S_1</span>, whose true value is 0.81.</p>
+          <p><span class="tex">n=1:\quad G^{(1)} = 0 + 0.9\cdot0.225 = 0.2025</span></p>
+          <p><span class="tex">n=2:\quad G^{(2)} = 0 + 0.9\cdot0 + 0.81\cdot0.75 = 0.6075</span></p>
+          <p><span class="tex">n=3:\quad G^{(3)} = 0 + 0 + 0.81\cdot1 + 0.729\cdot V(\text{end}) = 0.81</span></p>
+          <p>The errors against the true 0.81 are −0.6075, −0.2025 and 0. Longer windows use more real reward and less of the guessed <span class="tex">V(S_2)</span> or <span class="tex">V(S_3)</span>. Here n = 3 reaches the Monte Carlo return, because the episode ends first.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">G^{(n)}_t=\sum_{k=0}^{n-1}\gamma^{k}R_{t+k+1}+\gamma^{n}V(S_{t+n}),\qquad V(S_{t+n})=0 \text{ if } S_{t+n}\text{ is terminal}</div>
+        <table class="sym">
+          <tr><td>G<sup>(n)</sup><sub>t</sub></td><td>the n-step return, the target for the state visited at time <i>t</i></td></tr>
+          <tr><td>n</td><td>the number of real rewards used before bootstrapping</td></tr>
+          <tr><td>R<sub>t+k+1</sub></td><td>the reward k+1 steps after time <i>t</i></td></tr>
+          <tr><td>γ<sup>k</sup></td><td>the discount applied to that reward</td></tr>
+        </table>
+        <p><b>Error reduction.</b> The expected n-step target is closer to the truth than the current estimates: <span class="tex">\max_s|\mathbb E[G^{(n)}_t\mid S_t=s]-V^\pi(s)|\le\gamma^{n}\max_s|V(s)-V^\pi(s)|</span>. Each extra step shrinks the worst-case error by a factor <span class="tex">\gamma^n</span>. Under the usual conditions, n-step TD converges as TD(0) does.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: building a target term by term</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Set n = 1. Watch the orange reward term and the blue bootstrap term; the target is 0.2025 and misses the truth by −0.6075.</li>
+        <li>Set n = 2 and press Play. The second reward term is zero, and the bootstrap from S₃ is 0.81 × 0.75 = 0.6075.</li>
+        <li>Set n = 3. The bootstrap disappears (the episode has ended), and the target is exactly the Monte Carlo return 0.81.</li></ol></div>
+      <div data-lab="nstep-target"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Off-by-one indices.</b> <span class="tex">G^{(n)}_t</span> uses rewards up to <span class="tex">R_{t+n}</span>, and bootstraps from <span class="tex">S_{t+n}</span>. Mixing these up is the most common bug.</li>
+          <li><b>Larger n is not always better.</b> The error shrinks in expectation, but the variance of a longer window grows with the number of random rewards it includes.</li>
+          <li><b>n-step methods need a delay.</b> The update for time <i>t</i> can only be applied after time <i>t+n</i> has been observed.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A standard way to trade bias against variance in value learning; A2C and PPO use n-step advantage estimates (Module 6).</li>
+          <li>Multi-step targets for Q-learning in Rainbow-style agents, where a fixed n is one of the tuned hyperparameters.</li></ul>
+          <p><b>Pipeline view.</b> Stages: <i>interact</i> (a window of n transitions), <i>store</i> (a short buffer of the last n rewards), <i>estimate</i> (n-step target), <i>improve</i>. Stores: V or Q plus an n-step buffer. Cost per update: n reward terms and one bootstrap.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. From the first state, rewards are 1, 0, 2 and then the episode ends. γ = 0.5. What are G⁽²⁾ and G⁽³⁾? (Assume the estimate of the state reached after two steps is V = 4.)</summary><div class="ans">G⁽²⁾ = 1 + 0.5·0 + 0.25·V(S₂ after two steps) = 1 + 0 + 0.25·4 = 2. G⁽³⁾ = 1 + 0 + 0.25·2 = 1.5, with no bootstrap, because the episode ends at step 3.</div></details>
+        <details class="check"><summary>2. Using the worked example, what is the target G⁽¹⁾ if V(S₂) were 0.9 instead of 0.225?</summary><div class="ans">G⁽¹⁾ = 0 + 0.9·0.9 = 0.81, which is exactly the true value. The one-step target is only as good as V(S₂).</div></details>
+        <details class="check"><summary>3. Why does G⁽ⁿ⁾ with n equal to the episode length equal the Monte Carlo return?</summary><div class="ans">Every reward is included, and the bootstrap term is multiplied by the value of the terminal state, which is zero. Nothing is estimated, only the realised rewards are used.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>G⁽ⁿ⁾ uses n real rewards and bootstraps from V(S<sub>t+n</sub>).</li>
+          <li>n = 1 is TD(0); n = episode length is Monte Carlo.</li>
+          <li>Longer windows reduce bias and increase variance; this trade-off is what TD(λ) blends.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.6 ===================== -->
+    <section class="lesson" id="td-lambda" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.6</span><h2>TD(λ) &amp; eligibility traces</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Choosing n in lesson 4.5 means committing to one window length. Could we average over all of them at once, giving short windows more weight and long ones less, and could we compute that average without storing the whole episode?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Give every window a weight that decays geometrically with its length. The one-step target gets the largest share, the two-step target a smaller one, and so on. The decay rate is <span class="tex">\lambda\in[0,1]</span>. With <span class="tex">\lambda=0</span> all weight goes to one step (pure TD(0)); with <span class="tex">\lambda=1</span> all weight goes to the full return (Monte Carlo). Everything in between is a blend.</p>
+        <p>The surprise is that this blend can be run <b>online</b>. Each state keeps an <b>eligibility trace</b>: a number that says how much credit it is still owed for recent TD errors. A state visited recently is "eligible", and its trace decays by <span class="tex">\gamma\lambda</span> each step.</p>
+
+        <h3 class="sec">Build it up: the λ-return</h3>
+        <p>The λ-return averages the n-step returns with geometric weights <span class="tex">(1-\lambda)\lambda^{n-1}</span>. For an episode that ends after <i>T</i> steps:</p>
+        <div class="eq">G^{\lambda}_t=(1-\lambda)\sum_{n=1}^{T-t-1}\lambda^{n-1}G^{(n)}_t+\lambda^{T-t-1}G_t</div>
+        <p>The weights sum to 1: <span class="tex">(1-\lambda)\sum_{n\ge1}\lambda^{n-1}=1</span>, with the final full return G<sub>t</sub> taking the remaining <span class="tex">\lambda^{T-t-1}</span>.</p>
+
+        <div class="worked"><b>Worked example: the λ-return on the chain</b>
+          <p>Same chain, <span class="tex">\gamma=0.9</span>, <span class="tex">\lambda=0.5</span>, <span class="tex">V=(0,0.225,0.75)</span>. The episode has <span class="tex">T=3</span> steps, so the windows are <span class="tex">n=1,2</span> plus the full return.</p>
+          <p>From 4.5: <span class="tex">G^{(1)}=0.2025</span>, <span class="tex">G^{(2)}=0.6075</span>, and <span class="tex">G=0.81</span>. Weights: <span class="tex">(1-\lambda)=0.5</span>, <span class="tex">(1-\lambda)\lambda=0.25</span>, <span class="tex">\lambda^{2}=0.25</span>; they sum to 1.</p>
+          <p><span class="tex">G^{\lambda}_0 = 0.5(0.2025)+0.25(0.6075)+0.25(0.81) = 0.45563</span>, to five decimals <span class="tex">0.455625</span>.</p>
+          <p><b>Backward view, same answer.</b> Start with <span class="tex">e=0</span>. Use <span class="tex">\gamma\lambda = 0.45</span>. TD errors with these fixed values: <span class="tex">\delta_0 = 0.2025</span>, <span class="tex">\delta_1 = 0.45</span>, <span class="tex">\delta_2 = 0.25</span>. The trace for S₁ is <span class="tex">1,\ 0.45,\ 0.2025</span> at the three steps. Summing <span class="tex">\delta_t e_t(S_1)</span>: <span class="tex">0.2025 + 0.2025 + 0.050625 = 0.455625</span>, which matches the forward λ-return.</p>
+          <p>With step size <span class="tex">\alpha=0.5</span>, both views give <span class="tex">\Delta V(S_1)=0.2278</span>.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">e_t(s) = \gamma\lambda\,e_{t-1}(s)+\mathbf 1[S_t=s],\qquad V(s)\leftarrow V(s)+\alpha\,\delta_t\,e_t(s)\ \ \forall s</div>
+        <table class="sym">
+          <tr><td>λ (lambda)</td><td>trace decay, <span class="tex">0\le\lambda\le1</span>; λ = 0 gives TD(0), λ = 1 gives Monte Carlo (for episodic tasks)</td></tr>
+          <tr><td>e<sub>t</sub>(s)</td><td>the eligibility of state <i>s</i> at time <i>t</i>: how much recent TD errors should update it</td></tr>
+          <tr><td>𝟙[S<sub>t</sub>=s]</td><td>1 if the agent is in <i>s</i> at time <i>t</i>, else 0</td></tr>
+          <tr><td>δ<sub>t</sub></td><td>the TD error from 4.1, applied to every state in proportion to its trace</td></tr>
+        </table>
+        <p>The forward view (the λ-return) and the backward view (traces) give identical total updates for offline updates; the backward view is the one that runs online. With λ = 0, <span class="tex">e_t(s)=\mathbf 1[S_t=s]</span> and the rule is TD(0). With λ = 1 and γ = 1 for episodic tasks, the total update over an episode equals the Monte Carlo update.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab: traces on the same episode</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Set λ = 0 and press Play. Only the current state's trace is non-zero, so the update is pure TD(0): ΔV(S₁) = 0.10125.</li>
+        <li>Set λ = 1. Traces decay only by γ, so S₁ keeps credit from all three steps. ΔV(S₁) is 0.405 at α = 0.5, which equals α times the Monte Carlo return 0.81.</li>
+        <li>Set λ = 0.5 and check the readout: the backward total for S₁ matches the forward λ-return α(G<sup>λ</sup> − V(S₁)) on the line below.</li></ol></div>
+      <div data-lab="lambda-traces"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The equivalence is offline.</b> The forward and backward totals match when V is held fixed during the episode. Online TD(λ) with changing V only approximates the λ-return.</li>
+          <li><b>Accumulating versus replacing traces.</b> Accumulating traces add 1 on each visit; replacing traces reset to 1. They differ when a state is revisited within an episode, and the lab uses accumulating traces.</li>
+          <li><b>λ is not a learning rate.</b> It sets how far credit spreads back; α sets how big each update is.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Fast credit assignment in tabular and linear RL, where a single reward should reach many earlier states quickly.</li>
+          <li>GAE (generalised advantage estimation) in PPO and other policy-gradient methods (Module 6) uses the same λ-weighted blend of multi-step advantages, with λ typically around 0.95.</li></ul>
+          <p><b>Pipeline view.</b> Stages: <i>interact</i>, <i>store</i> (a trace per state, or per parameter in neural nets), <i>estimate</i> (TD error times trace), <i>improve</i>. Stores: one trace per state (or per weight). Cost per update: a decay and an add for every state, which is cheap for tables and costly for large networks.</p></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is the λ-return weight on the one-step target when λ = 0.8?</summary><div class="ans">(1 − λ) = 0.2. The weights on n = 1, 2, 3, … are 0.2, 0.16, 0.128, …, which add up to 1 in the limit.</div></details>
+        <details class="check"><summary>2. With λ = 0.5, γ = 0.9, the trace of a state visited two steps ago is 0.45² times its trace from then. What is the trace factor after two steps?</summary><div class="ans">The trace decays by γλ = 0.45 each step. Two steps give 0.45² = 0.2025, which is the factor used for S₁ in the worked example at step 2.</div></details>
+        <details class="check"><summary>3. Why is TD(λ) useful on problems with long delays between action and reward?</summary><div class="ans">A single reward updates every recently visited state through its trace, so credit reaches back many states in one update rather than one state per episode, as in TD(0).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The λ-return blends all n-step returns with geometric weights; λ = 0 is TD(0), λ = 1 is Monte Carlo.</li>
+          <li>Eligibility traces compute the same blend online, decaying by γλ each step.</li>
+          <li>Forward and backward views agree for offline updates; traces are what make the method practical.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now learn from every step: TD(0) prediction, the on-policy and off-policy control rules SARSA and Q-learning, Expected SARSA, n-step returns and TD(λ) with eligibility traces. Next, <b><a href="rl-approximation.html">Module 5 · Function approximation &amp; deep Q-learning</a></b> replaces the table with a function that generalises, which is where the deadly triad appears.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

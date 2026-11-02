@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 · Function approximation &amp; deep Q-learning · Reinforcement Learning</title>
+<meta name="description" content="Linear function approximation, feature construction and tile coding, the deadly triad, experience replay, target networks and DQN, and overestimation with Double DQN.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-approximation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="5">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 5</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">5</div>
+      <div style="flex:1">
+        <h1>Module 5 · Function approximation &amp; deep Q-learning</h1>
+        <p>Tables work for a corridor of 5 cells. They fail for a game screen with millions of pixel patterns, or a robot joint angle that is continuous. This module replaces the table with a <b>function</b> that generalises from one state to its neighbours, and then shows the three problems that appear the moment you do: the <b>deadly triad</b> that can make learning diverge, the correlated data that <b>experience replay</b> and <b>target networks</b> were invented to tame, and the upward bias of a maximum that <b>Double DQN</b> corrects.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs TD learning and gradients</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>Where this sits in the loop.</b> Every lesson here changes the <b>estimate</b> stage of the learning loop: the value function is no longer a table, but a parametric model whose weights are updated from experience. The <b>store</b> stage changes too, from a table to a weight vector, a network and, in DQN, a replay buffer.</p>
+      <p><b>How the labs work.</b> Every lab is an <i>illustrative</i> toy: a linear model, a handful of tiles, or a single weight. None is a large experiment, and none is an Atari run. Each lab uses a fixed random seed, so the same settings reproduce the same picture. Change a slider and the numbers and the animation respond.</p>
+    </section>
+
+    <!-- ===================== 5.1 ===================== -->
+    <section class="lesson" id="linear-approximation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">5.1</span><h2>Linear function approximation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery robot's position is a continuous number between 0 and 10 metres, and the value of each position must be learned from experience. A table needs one entry per position, so it cannot cover every position, and it learns nothing about a position it has never visited. Can one small set of numbers describe the value of every position, so that visiting one place also teaches us about nearby places?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine fitting a straight line through a scatter of points. The line has two numbers, a slope and an intercept, but it gives an answer for every x, including x values you never measured. The line <i>generalises</i>. A table is the opposite: it stores one answer per x and is silent everywhere else.</p>
+        <p>The value function can be treated the same way. Choose a fixed <b>feature vector</b> <span class="tex">\mathbf x(s)</span> that describes state <i>s</i> with a few numbers, and make the value a weighted sum of those features. Learning then means adjusting the weights, so that one experience moves the values of many states at once.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a state becomes a feature vector.</b> Describe a position <i>s</i> by two numbers: a constant 1 and the position itself. Then <span class="tex">\mathbf x(s) = (1, s)</span>.</p>
+        <p><b>Step 2: the value is a weighted sum.</b> With weights <span class="tex">\mathbf w = (w_0, w_1)</span>, define <span class="tex">\hat v(s,\mathbf w)=\mathbf w^{\top}\mathbf x(s)=w_0+w_1 s</span>. The hat means "estimate": <span class="tex">\hat v</span> is what we have learned, and <span class="tex">v^\pi</span> is the true value.</p>
+        <p><b>Step 3: the TD update, with the gradient of a linear model.</b> Recall the TD error from Module 4: <span class="tex">\delta = R + \gamma\hat v(S',\mathbf w) - \hat v(S,\mathbf w)</span>. For a linear model the gradient of <span class="tex">\hat v(S,\mathbf w)</span> with respect to <span class="tex">\mathbf w</span> is just the feature vector <span class="tex">\mathbf x(S)</span>. The update is therefore</p>
+        <div class="eq">\mathbf w \leftarrow \mathbf w + \alpha\,\delta\,\mathbf x(S)</div>
+        <p>This is called a <b>semi-gradient</b> update. It is a gradient step on the squared error to the target, but the target <span class="tex">R+\gamma\hat v(S')</span> is treated as a fixed number, even though it depends on <span class="tex">\mathbf w</span>. The target is <i>bootstrapped</i>, and we do not differentiate through it. That shortcut is what makes it "semi".</p>
+
+        <div class="worked"><b>Worked example: two TD updates on a three-state walk</b>
+          <p>States A and B have features <span class="tex">\mathbf x(A)=(1,1)</span> and <span class="tex">\mathbf x(B)=(1,2)</span>. The terminal state has value 0. Take <span class="tex">\gamma=0.9</span>, <span class="tex">\alpha=0.1</span>, and start with <span class="tex">\mathbf w=(0,0)</span>.</p>
+          <p><b>Episode 1, step B → end, reward 1.</b> <span class="tex">\hat v(B)=0</span>, so <span class="tex">\delta = 1 + 0 - 0 = 1</span>. The update gives <span class="tex">\mathbf w = (0,0) + 0.1(1)(1,2) = (0.1,\ 0.2)</span>. Now <span class="tex">\hat v(B) = 0.1 + 0.4 = 0.5</span>. One experience has moved the value of B, and also the values of every state that shares its features.</p>
+          <p><b>Episode 2, step A → B, reward 0.</b> <span class="tex">\hat v(A) = 0.1 + 0.2 = 0.3</span> and the target is <span class="tex">0 + 0.9 \times 0.5 = 0.45</span>. So <span class="tex">\delta = 0.45 - 0.30 = 0.15</span>, and <span class="tex">\mathbf w = (0.1,0.2) + 0.1(0.15)(1,1) = (0.115,\ 0.215)</span>.</p>
+          <p>Check: <span class="tex">\hat v(A) = 0.330</span> and <span class="tex">\hat v(B)=0.545</span>. A had no reward of its own, but its value rose because it leads to B. That is bootstrapping, and the feature sharing is what spreads the change.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat v(s,\mathbf w)=\mathbf w^{\top}\mathbf x(s)=\sum_{i=1}^{d} w_i\,x_i(s)</div>
+        <div class="eq">\mathbf w \leftarrow \mathbf w+\alpha\big[R_{t+1}+\gamma\,\hat v(S_{t+1},\mathbf w)-\hat v(S_t,\mathbf w)\big]\,\mathbf x(S_t)</div>
+        <p>On-policy linear TD(0) with a suitable step size converges to a unique fixed point, under the conditions in Tsitsiklis and Van Roy (1997). That fixed point is generally not the value function that minimises the error; it is the solution of a projected Bellman equation. Read convergence claims with that condition attached.</p>
+        <table class="sym">
+          <tr><td><span class="tex">s, S_t</span></td><td>a state, and the state at time t</td></tr>
+          <tr><td><span class="tex">\mathbf x(s)</span></td><td>feature vector of state s, fixed in advance (the design choice)</td></tr>
+          <tr><td><span class="tex">\mathbf w</span></td><td>weight vector learned from experience; dimension d = number of features</td></tr>
+          <tr><td><span class="tex">\hat v(s,\mathbf w)</span></td><td>estimated value of state s under weights w</td></tr>
+          <tr><td><span class="tex">\delta</span></td><td>TD error: bootstrapped target minus current estimate</td></tr>
+          <tr><td><span class="tex">\alpha</span></td><td>step size (learning rate)</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>discount factor (here 1 in the lab: episodic and undiscounted)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a line fitted to a walk</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the features on "line". The true values of the random walk are v*(s) = s/11, a straight line, so the blue bars should settle onto the green dots.</li>
+          <li>Switch to "constant". One weight cannot tell the states apart, so every bar takes the same height. Notice that the RMSE stops improving at a non-zero value.</li>
+          <li>Switch to "pairs". Each pair of states shares one value, so the bars form a staircase that misses the slope.</li>
+          <li>Switch to "tabular". One weight per state reaches the true values exactly. Compare how many weights each choice uses with the error it leaves.</li></ol></div>
+        <div data-lab="rl-linear-fit"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The feature vector limits what can be learned.</b> No step size fixes a feature set that cannot represent the true values. Check the representation before tuning α.</li>
+            <li><b>Semi-gradient is not the gradient of anything in general.</b> The update does not descend the gradient of the squared Bellman error, so the usual gradient-descent guarantees do not carry over automatically.</li>
+            <li><b>The bias term is a feature too.</b> Forgetting the constant 1 in the feature vector silently forces the line through the origin.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Early reinforcement learning on large control problems used linear value functions over hand-chosen features, for example for pole-balancing and tile-coded robot control.</li>
+            <li>Every deep value network is a nonlinear generalisation of this model: the last layer is often linear in learned features, and the TD update still uses the same semi-gradient form.</li>
+            <li>Linear value models remain a useful baseline when a deep model is hard to debug.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Estimate stage: the TD update runs once per transition, costing one feature evaluation and one vector update, so O(d) work per step. Stores: a weight vector of length d and the feature function. Evaluate by the RMSE on a set of states with known or well-estimated values.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, the first update gave w = (0.1, 0.2). What is v̂ at state B after that, and what would it be with α = 0.2 instead?</summary><div class="ans">v̂(B) = 0.1 + 2(0.2) = 0.5 with α = 0.1. With α = 0.2 the update is w = (0.2, 0.4), so v̂(B) = 0.2 + 0.8 = 1.0. The TD error was 1, so the estimate moves exactly to the target when α = 1 and overshoots for larger α.</div></details>
+          <details class="check"><summary>2. Why is the update called "semi"-gradient?</summary><div class="ans">Because the target R + γv̂(S′,w) also depends on w, but the update treats it as a constant. A full gradient would differentiate through the target too, which the TD method does not do.</div></details>
+          <details class="check"><summary>3. A linear model with features (1, s) cannot represent a curved value function exactly. Does better tuning of α fix this?</summary><div class="ans">No. The limit is in the feature set, not the step size. A smaller α averages out noise but still converges to the best line-like fit. A richer feature set is needed, which is the subject of the next lesson.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A linear value function is a weighted sum of features, and one experience moves the values of every state that shares features.</li>
+            <li>The semi-gradient TD update is the TD error times the feature vector.</li>
+            <li>The feature design caps what can be learned; the step size cannot remove that cap.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.2 ===================== -->
+    <section class="lesson" id="features-tiles" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">5.2</span><h2>Feature construction and tile coding</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A line cannot bend, and a single polynomial behaves badly at the edges of its data. How do we build features that can represent a curved value function, while still changing the value of nearby states together and not the value of distant ones?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p><b>Coarse coding</b> is the idea that a state is described by which broad regions it lies in. Think of a map of a country drawn with many overlapping circles. A city inside three circles is described by "in circle 2, in circle 5, in circle 9". Nearby cities share most circles, so their descriptions overlap, and a learned value for one city moves its neighbours too. Its resolution comes from the overlaps, not from the size of any single circle.</p>
+        <p><b>Tile coding</b> makes this concrete. Lay several grids of square tiles over the state space, each one shifted by a fraction of a tile width. Each grid is a <b>tiling</b>. A state activates exactly one tile in each tiling. The feature vector is then a binary vector with one 1 per tiling. Few features are on at once, so each update is cheap, and the many offsets give a fine resolution that a single grid could not.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: one tiling, one feature per tile.</b> Divide <span class="tex">[0,1)</span> into tiles of width 0.5. A state <i>s</i> activates the tile whose interval contains it. The value is the weight of that tile. This is a staircase, and it is just a table with coarser cells.</p>
+        <p><b>Step 2: add a second tiling, shifted.</b> Shift the grid by 0.25. Now each state has two active tiles, one from each grid, and the value is the sum of their two weights. The staircases do not line up, so the sum is no longer a staircase with a single step size.</p>
+
+        <div class="worked"><b>Worked example: two tilings at s = 0.3</b>
+          <p>Tiling 0 has offset 0 and tiles of width 0.5, so the tile index is <span class="tex">\lfloor (0.3+0)/0.5\rfloor = \lfloor 0.6\rfloor = 0</span>, the interval [0, 0.5). Tiling 1 has offset 0.25, so the index is <span class="tex">\lfloor (0.3+0.25)/0.5\rfloor = \lfloor 1.1\rfloor = 1</span>, the interval [0.25, 0.75). Let the weights be tiling 0: (0.2, 0.5, −0.1) and tiling 1: (0.0, 0.4, 0.3).</p>
+          <p>The active weights are 0.2 (tiling 0, tile 0) and 0.4 (tiling 1, tile 1), so <span class="tex">\hat v(0.3) = 0.6</span>. Now let the target be 1.0 and the step size α = 0.2, shared across the two tilings. The TD error is <span class="tex">\delta = 1.0 - 0.6 = 0.4</span>, and each active weight moves by <span class="tex">\tfrac{\alpha}{2}\delta = 0.04</span>. The new value is <span class="tex">\hat v(0.3) = 0.6 + 2(0.04) = 0.68 = 0.6 + \alpha\delta</span>.</p></div>
+
+        <p><b>Step 3: radial basis features.</b> A different family uses smooth bumps instead of tiles: <span class="tex">\phi_c(s)=\exp\!\big(-(s-c)^2/(2\sigma^2)\big)</span> around centres <i>c</i>. For centres 0, 0.5 and 1 and width σ = 0.25, a state s = 0.3 gives the feature vector <span class="tex">(0.487,\ 0.726,\ 0.020)</span>. The bumps overlap and vary smoothly, so the approximation is smooth, but each update touches every feature a little.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat v(s,\mathbf w)=\sum_{j=1}^{m} w_{j,\,k_j(s)},\qquad k_j(s)=\Big\lfloor \frac{s+o_j}{\,1/n\,}\Big\rfloor,\qquad o_j=\frac{j}{m}\cdot\frac{1}{n}</div>
+        <p>Here there are m tilings, each with tiles of width 1/n, and the tiling j is shifted by its offset <i>o_j</i>. The update is the semi-gradient rule from lesson 5.1, with the active tile of each tiling as the feature. Dividing the step by m keeps the total change per update equal to α.</p>
+        <table class="sym">
+          <tr><td><span class="tex">m</span></td><td>number of tilings; each state activates m features</td></tr>
+          <tr><td><span class="tex">n</span></td><td>number of tiles per tiling along the state range (width 1/n)</td></tr>
+          <tr><td><span class="tex">o_j</span></td><td>offset of tiling j, a fraction j/m of a tile width</td></tr>
+          <tr><td><span class="tex">k_j(s)</span></td><td>index of the tile that state s activates in tiling j</td></tr>
+          <tr><td><span class="tex">\phi_c(s)</span></td><td>radial basis feature: a Gaussian bump centred at c with width σ</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: fit a curve with staircases</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep m = 1 and n = 4. You see one staircase. Increase n to 16: the steps get finer but the fit is still a single staircase.</li>
+          <li>Set m = 6 and n = 4. The sum of six shifted staircases is much smoother. Watch the highlighted tiles: one per tiling at the probe.</li>
+          <li>Enter a new target such as <code>s^2</code> or <code>abs(s-0.5)</code>, and watch the fit follow it.</li>
+          <li>Move the probe. The lit tiles change, and the readout shows which weights contribute to v̂.</li></ol></div>
+        <div data-lab="rl-tile-coding"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Tile resolution and generalisation trade off.</b> Large tiles generalise widely but cannot represent detail; small tiles represent detail but learn slowly and generalise little.</li>
+            <li><b>The number of features grows fast.</b> With m tilings of n + 1 tiles each in one dimension, you have m(n+1) weights. In many dimensions the count explodes, which is why tile coding is used in low dimensions.</li>
+            <li><b>Offsets must be spread out.</b> Tilings with the same offset are copies of one grid and add no resolution.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Tile coding was the standard feature method in classic control benchmarks such as mountain car and robot arm control, from the 1990s onward.</li>
+            <li>Radial basis networks are the same idea with learned centres and widths.</li>
+            <li>Deep networks replace hand-designed features with learned ones, but the representational question remains the same: which features make the value simple to represent?</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Estimate stage: each sample activates m tiles and updates m weights. Stores: the weight table of size m(n+1) per dimension, which is the design budget. Evaluate by the error on a grid of states, as the lab does.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, what is v̂(0.3) if the tiling-1 weight for tile 1 is 0.4 but the tiling-0 weight for tile 0 is changed to 0.5?</summary><div class="ans">The active weights are now 0.5 and 0.4, so v̂(0.3) = 0.9.</div></details>
+          <details class="check"><summary>2. Why does a second tiling shifted by a quarter of a tile help more than a second tiling with the same grid?</summary><div class="ans">A copy of the same grid activates the same tile and adds no new boundaries. A shifted grid puts its boundaries in different places, so the sum of the two can change direction at more points and represent finer detail.</div></details>
+          <details class="check"><summary>3. Why does each tiling use a weight of α/m rather than α?</summary><div class="ans">Each state activates m tiles, so without the division the total change in v̂ would be mα·δ. Dividing by m makes the total change per update equal to α·δ, so the step size keeps its meaning when m changes.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Coarse coding and tile coding describe a state by the regions it lies in; overlaps give the generalisation.</li>
+            <li>Several shifted tilings add resolution with few active features per state.</li>
+            <li>Feature design sets both what can be represented and how fast learning is.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.3 ===================== -->
+    <section class="lesson" id="deadly-triad" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">5.3</span><h2>The deadly triad</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Each ingredient in this module is sensible on its own: a linear model, bootstrapped targets, and learning from a state distribution that differs from the one the target policy would produce. Put the three together and the values can grow without bound. Which combination is dangerous, and why?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Sutton and Barto call the combination the <b>deadly triad</b>. Its three parts are: <b>function approximation</b>, where one parameter changes the values of many states; <b>bootstrapping</b>, where the target is built from the learner's own estimate; and <b>off-policy</b> learning, where the data come from a distribution that differs from the one the target policy would produce.</p>
+        <p>The danger is a feedback loop. Raising the value of one state through shared weights also raises the target for the states that lead to it. If those states are updated more heavily than the rest, the errors can feed back and grow, and nothing in the update pulls them back. Tabular learning cannot do this, because each state has its own entry and an update to one entry cannot change another.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a two-state system.</b> Let state s1 lead to s2 and s2 lead to itself, with reward 0 everywhere. The true value is 0 in both states. A shared feature gives <span class="tex">\phi(s_1)=1,\ \phi(s_2)=2</span>, so the value estimate is <span class="tex">\hat v(s_1)=w</span> and <span class="tex">\hat v(s_2)=2w</span>. The target for s1 is therefore <span class="tex">\gamma\cdot 2w</span>, and the estimate for s1 is <span class="tex">w</span>.</p>
+        <p><b>Step 2: the expected update.</b> Assume the learner updates state s1 with weight d(s1) and s2 with weight d(s2) = 1 − d(s1), with importance weights 1. The expected semi-gradient update is</p>
+        <div class="eq">w \leftarrow w + \alpha\Big[d_1(2\gamma-1)\cdot 1 + d_2(4\gamma-4)\Big]w</div>
+        <p>The term <span class="tex">(2\gamma-1)</span> comes from state s1: its target is <span class="tex">2\gamma w</span> and its estimate is <span class="tex">w</span>, multiplied by its feature 1. The term <span class="tex">(4\gamma-4)</span> comes from state s2, whose target is <span class="tex">2\gamma w</span> and estimate <span class="tex">2w</span>, multiplied by its feature 2.</p>
+
+        <div class="worked"><b>Worked example: γ = 0.9, α = 0.5, d(s1) = 0.5</b>
+          <p>The bracket is <span class="tex">0.5(0.8) + 0.5(-0.4) = 0.2</span>, so each iteration multiplies w by <span class="tex">1 + 0.5(0.2) = 1.1</span>. Starting from w = 1, the values are 1, 1.100, 1.210, 1.331, 1.464, and so on. The weight grows by 10% per iteration, which is divergence, even though the true value is 0 and the reward is 0 throughout.</p>
+          <p>Now the same system with a separate weight per state (tabular, θ₁ and θ₂, starting from (1, 2)). The update is θ₁ ← θ₁ + α·d₁(γθ₂ − θ₁) and θ₂ ← θ₂ + α·d₂(γθ₂ − θ₂). After one iteration θ = (1.2, 1.95), and θ shrinks towards 0 from then on. Tabular learning is stable here, and the only difference is the shared weight.</p></div>
+
+        <p><b>Step 3: where the threshold is.</b> Setting the bracket to zero gives <span class="tex">d_1(2\gamma-1)+(1-d_1)(4\gamma-4)=0</span>, so the shared weight grows when <span class="tex">d(s_1) > (4-4\gamma)/(3-2\gamma)</span>. For γ = 0.9 the threshold is 1/3. With the same α, the state distribution alone decides whether this toy diverges.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{expected update:}\quad \mathbf w \leftarrow \mathbf w+\alpha\sum_s d(s)\,\rho(s)\big[R+\gamma\,\hat v(s',\mathbf w)-\hat v(s,\mathbf w)\big]\mathbf x(s)</div>
+        <p>The sum runs over states weighted by the distribution <i>d</i> the updates are drawn from. The importance weight <span class="tex">\rho(s)=\pi(a\mid s)/b(a\mid s)</span> corrects for an off-policy mismatch when ρ is used; it equals 1 in this toy. The lab uses the expected form to show the dynamics cleanly. Sampled updates can behave differently for the same parameters.</p>
+        <table class="sym">
+          <tr><td><span class="tex">d(s)</span></td><td>the distribution of states the updates are drawn from</td></tr>
+          <tr><td><span class="tex">\rho(s)</span></td><td>importance weight correcting from the behaviour to the target policy (1 in the toy)</td></tr>
+          <tr><td><span class="tex">\gamma</span>, <span class="tex">\alpha</span></td><td>discount and step size, as before</td></tr>
+          <tr><td><span class="tex">\phi(s)</span></td><td>feature of state s: here φ(s₁)=1 and φ(s₂)=2</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: when does the shared weight grow?</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults (γ = 0.9, α = 0.5, d(s1) = 0.5). The orange shared-weight trace grows; the green tabular trace shrinks.</li>
+          <li>Set d(s1) to 0. Only state s2 is updated. The shared weight now shrinks, because the bracket is 4γ − 4 < 0.</li>
+          <li>Move d(s1) slowly through 1/3. The readout switches from "stable" to "grows" at the threshold printed on the readout.</li>
+          <li>Set γ to 0.5 and then 0.99. Find how the threshold moves and explain why a lower γ helps here.</li></ol></div>
+        <div data-lab="rl-divergence"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Divergence is not noise.</b> The weight grows steadily and predictably. A stable average with a noisy estimate is a different problem.</li>
+            <li><b>The triad is sufficient for trouble, not a guarantee.</b> Many function-approximation systems with all three ingredients train successfully. The triad says where divergence can happen, not where it must.</li>
+            <li><b>Removing one ingredient is a standard remedy.</b> Monte Carlo targets remove bootstrapping, tabular features remove approximation, and on-policy data remove the mismatch. Each has a cost in variance or sample efficiency.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Baird's counterexample (Baird, 1995) is a classic seven-state system where linear off-policy TD diverges. Its tiny size is the reason it is used to explain the phenomenon.</li>
+            <li>Deep Q-learning uses all three ingredients, which is why it needs replay buffers, target networks and careful step sizes.</li>
+            <li>Offline reinforcement learning from fixed datasets (Module 8) is hard for the same reason: the data are off-policy and the model is bootstrapped.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Estimate stage: the divergence arises in the update rule, so it is checked during training, through the values and the TD error, not at deployment. Stores: the weights and the training distribution. Monitor the magnitude of the weights and of the TD error as a basic health check.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Using the worked example, what growth factor does the shared weight have when d(s1) = 0.2 and γ = 0.9, α = 0.5?</summary><div class="ans">Bracket = 0.2(0.8) + 0.8(−0.4) = 0.16 − 0.32 = −0.16. Factor = 1 + 0.5(−0.16) = 0.92. The weight shrinks.</div></details>
+          <details class="check"><summary>2. Why does the tabular version of the same two-state system not diverge?</summary><div class="ans">Each state has its own weight. The update of θ₁ changes only θ₁ and the update of θ₂ changes only θ₂, through the d-weighted terms. The shared feature is what lets an update to one state change the value of the other.</div></details>
+          <details class="check"><summary>3. At γ = 0.9, which state distribution lies exactly at the threshold, and what does that tell you about the stability of the shared weight?</summary><div class="ans">d(s1) = 1/3, since (4 − 3.6)/(3 − 1.8) = 0.4/1.2 = 1/3. At this distribution the bracket is zero and the shared weight is neither growing nor shrinking to first order. It shows that stability depends on the distribution, not only on the step size.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Function approximation, bootstrapping and off-policy data together can make a semi-gradient method diverge.</li>
+            <li>In the two-state toy, divergence depends on the state distribution and on γ, not just on α.</li>
+            <li>Tabular learning is stable here; the shared feature is the source of the problem.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.4 ===================== -->
+    <section class="lesson" id="experience-replay" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">5.4</span><h2>Experience replay</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An agent learns from each step as it happens. Consecutive steps are strongly correlated: the next state is almost the same as the last one, and the same action is often repeated. A gradient update built only from the latest step pulls the weights towards whatever just happened. How can we learn from a stream of correlated experience without forgetting what came before?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A student who revises only the last page of a textbook will remember that page and forget the rest. A student who keeps all their notes and revises a random selection each day covers the whole course. <b>Experience replay</b> is the second student. The agent stores each transition <span class="tex">(s, a, r, s')</span> in a buffer, and each learning step draws a random mini-batch from that buffer rather than using only the latest transition.</p>
+        <p>Two things improve. The data become closer to independent and identically distributed, which the gradient-based learners in this module assume. And each transition can be reused many times, so experience is used more efficiently. The cost is memory, and the reused data are slightly older than the current policy, which is one more reason the off-policy caveats of lesson 5.3 matter.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a buffer of transitions.</b> Store every transition. When the buffer reaches its capacity <i>N</i>, the oldest transition is overwritten. This is a first-in, first-out buffer.</p>
+        <p><b>Step 2: sample a mini-batch.</b> At each learning step, draw <i>B</i> transitions uniformly at random from the buffer and apply the update to each one. The batch is random, so neighbouring steps in time rarely end up in the same batch.</p>
+
+        <div class="worked"><b>Worked example: a buffer of capacity 4</b>
+          <p>Transitions t1, t2, …, t6 arrive in order. The buffer has four slots, and transition t<sub>k</sub> goes into slot (k − 1) mod 4. After t1–t4, the slots hold t1, t2, t3, t4. Transition t5 overwrites slot 0 and t6 overwrites slot 1, so the buffer holds <span class="tex">[t_5, t_6, t_3, t_4]</span>.</p>
+          <p>Measure the age of each stored transition as the number of steps since it was created: t6 has age 0, t5 has age 1, t4 has age 2 and t3 has age 3. The ages in slot order are (1, 0, 3, 2), with mean 1.5. A uniform draw of two transitions from this buffer might return t3 and t5, which are two steps apart in time, instead of the two newest transitions t5 and t6, which are consecutive.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal D_t = \{(s_k,a_k,r_{k+1},s_{k+1})\}_{k=t-N+1}^{t},\qquad \mathcal B \sim \operatorname{Uniform}(\mathcal D_t)\ \text{with}\ |\mathcal B| = B</div>
+        <p>The learning step then averages the per-transition loss over the batch <span class="tex">\mathcal B</span>, using a target that is computed for each sample. The buffer and the sampling rule are the entire mechanism.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\mathcal D_t</span></td><td>the buffer at time t: the N most recent transitions</td></tr>
+          <tr><td><span class="tex">N</span></td><td>buffer capacity; older transitions are overwritten</td></tr>
+          <tr><td><span class="tex">\mathcal B</span></td><td>mini-batch sampled uniformly from the buffer</td></tr>
+          <tr><td><span class="tex">B</span></td><td>batch size: the number of transitions per learning step</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: what the learner sees</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the learner to "no replay". The histogram of ages piles up at the lowest bins: the learner keeps seeing the newest transitions, and the batch overlaps in time with the last one.</li>
+          <li>Switch to "uniform replay" with capacity 40 and batch 4. The histogram spreads across the buffer, and the mean age settles near the value printed in the readout.</li>
+          <li>Increase the capacity to 200. Samples come from a longer history, so the mean age grows, while the data stay representative of the walk.</li>
+          <li>Reduce the capacity to 5. The buffer forgets quickly, and the samples become almost as recent as with no replay.</li></ol></div>
+        <div data-lab="rl-replay"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Replay assumes that old transitions are still informative.</b> If the environment or the policy changed a lot, old transitions describe a world that no longer exists. A small buffer is the usual remedy.</li>
+            <li><b>Uniform sampling is not prioritised sampling.</b> Some transitions teach more than others. Prioritised replay samples them more often, but it biases the update, and corrections are needed.</li>
+            <li><b>Batch size and buffer size are both hyperparameters.</b> A large buffer with a tiny batch can still learn slowly, because each update uses few samples.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Experience replay was introduced in Lin's work on reinforcement learning for robots (1992) and became central to the deep Q-network of Mnih and colleagues (2015), which used a buffer of about one million transitions.</li>
+            <li>Off-policy actor–critic methods such as SAC and TD3 keep a replay buffer for the same reason.</li>
+            <li>Language-model fine-tuning on logged generations uses a similar idea: the training batch is drawn from stored data, not from the latest sample only.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Store stage: the buffer holds N transitions, each a tuple of state, action, reward and next state. Interact stage: transitions are written at every step. Estimate stage: each learning step reads B samples. Cost: O(B) per update plus the memory of the buffer.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Using the worked example, what are the ages in the buffer after t7 arrives?</summary><div class="ans">t7 overwrites slot 2, which held t3, so the buffer is [t5, t6, t7, t4]. Ages: t5 = 2, t6 = 1, t7 = 0, t4 = 3, giving the slot-order ages (2, 1, 0, 3).</div></details>
+          <details class="check"><summary>2. Why does replay not make the sampled transitions fully independent?</summary><div class="ans">The transitions are drawn from one trajectory, so they share history, and an old transition was generated by an older policy. Replay reduces the correlation between consecutive updates, but it does not make the data i.i.d.</div></details>
+          <details class="check"><summary>3. A batch of size 1 with no replay learns from the last transition only. What is the mean age of its samples?</summary><div class="ans">Zero: the batch is the newest transition, so its age is 0 at every step.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Replay stores transitions and learns from random mini-batches, which breaks the correlation between consecutive updates.</li>
+            <li>The buffer capacity sets how old the data may be; the batch size sets how much each update uses.</li>
+            <li>Replay makes off-policy learning possible in deep Q-learning, and it inherits the off-policy caveats.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.5 ===================== -->
+    <section class="lesson" id="target-networks" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">5.5</span><h2>Target networks and DQN</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>In Q-learning the target <span class="tex">r+\gamma\max_{a'}Q(s',a')</span> is computed with the same network we are training. Every update therefore moves the target, and the regression is chasing its own tail. With a deep network the effect is strong enough to make learning unstable. How can we make the regression target stay still long enough to learn?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a student trying to hit a target that moves every time they throw. The shot is always aimed at the target's current position, so the student never settles. The fix is to freeze the target for a while: the student throws many times at one fixed position, then the target is moved once and the process repeats.</p>
+        <p>A <b>target network</b> is a second copy of the Q-network, with parameters <span class="tex">\theta^-</span>. The targets are computed with <span class="tex">\theta^-</span>, and the training network with parameters <span class="tex">\theta</span> is updated towards them. Every <i>K</i> updates, the frozen copy is replaced by the current parameters. Between replacements the regression problem is fixed.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the DQN target.</b> For a transition <span class="tex">(s,a,r,s')</span>, the target is <span class="tex">y = r + \gamma\max_{a'}Q(s',a';\theta^-)</span>. The max is taken over the actions of the frozen network.</p>
+        <p><b>Step 2: the loss.</b> The loss is the squared difference between the online prediction and the target: <span class="tex">L(\theta)=\tfrac12\big(Q(s,a;\theta)-y\big)^2</span>. Only the online network is differentiated; the target is treated as a constant, as in the semi-gradient update.</p>
+
+        <div class="worked"><b>Worked example: one DQN update</b>
+          <p>Take <span class="tex">r = 1</span>, <span class="tex">\gamma = 0.9</span>, and frozen next-state values <span class="tex">Q^-(s',\cdot) = (2.0,\ 3.5,\ 1.2)</span>. The max is 3.5, so <span class="tex">y = 1 + 0.9 \times 3.5 = 4.15</span>. The online network predicts <span class="tex">Q(s,a)=3.0</span>, so the TD error is <span class="tex">y - Q = 1.15</span>, and the loss is <span class="tex">\tfrac12(1.15)^2 = 0.661</span>.</p>
+          <p>A gradient step with learning rate α = 0.1 on the output moves the prediction by <span class="tex">\alpha(y-Q)=0.1 \times 1.15 = 0.115</span>, so the new prediction is <span class="tex">3.115</span>. The target stayed at 4.15 for this step and for every step until the next copy.</p></div>
+
+        <p><b>Step 3: the training loop.</b> Each learning step samples a batch from the replay buffer (lesson 5.4), computes the targets with the frozen network, takes a gradient step on the online network, and every K steps copies the online parameters to the frozen network. An exploration rule such as ε-greedy chooses the actions that fill the buffer.</p>
+        <p><b>Atari-style inputs.</b> The 2015 DQN paper used the screen of an Atari game, converted to 84 × 84 greyscale, with the last four frames stacked so the network can see motion. A convolutional network maps this stack to one Q value per action. In that work the frozen copy was replaced only about every ten thousand parameter updates, which is what keeps the targets still.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">y=r+\gamma\max_{a'}Q(s',a';\theta^-),\qquad L(\theta)=\mathbb E_{(s,a,r,s')\sim\mathcal B}\Big[\tfrac12\big(Q(s,a;\theta)-y\big)^2\Big],\qquad \theta^-\leftarrow\theta\ \text{every }K\text{ updates}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\theta</span>, <span class="tex">\theta^-</span></td><td>online parameters (trained) and frozen target parameters (copied every K updates)</td></tr>
+          <tr><td><span class="tex">Q(s,a;\theta)</span></td><td>predicted action value from the online network</td></tr>
+          <tr><td><span class="tex">y</span></td><td>the regression target, computed with the frozen network</td></tr>
+          <tr><td><span class="tex">K</span></td><td>target sync period, in updates</td></tr>
+          <tr><td><span class="tex">\mathcal B</span></td><td>a mini-batch drawn from the replay buffer</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a frozen copy chasing a fixed point</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set K = 1, which copies the weight after every update. The blue trace climbs smoothly towards 10 with no visible frozen steps.</li>
+          <li>Set K = 10. The orange frozen copy now rises in steps, and the blue weight moves towards it, then the copy jumps. Read the readout at update 10 and 20.</li>
+          <li>Set K = 50 and watch the trace take many updates to catch up with the fixed point. The price of a stable target is lag.</li>
+          <li>Change the step size α and note that the lab is illustrative: it shows the mechanics of freezing, not the benefit DQN obtains.</li></ol></div>
+        <div data-lab="rl-target-sync"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A target network is not a guarantee.</b> It makes the regression target stable for a while. It does not remove the divergence risk of the deadly triad.</li>
+            <li><b>Syncing too rarely slows learning.</b> The frozen target can be far from the current estimate, and the update then uses stale information.</li>
+            <li><b>Forgetting the max is over the frozen network.</b> Using the online network for the max reintroduces the moving target that the copy was meant to remove.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Deep Q-networks (Mnih and colleagues, 2015) used a replay buffer and a target network to learn Atari games from pixels, with one agent and fixed hyperparameters across games.</li>
+            <li>Most deep off-policy methods, including DDPG, TD3 and SAC, use slowly moving target networks, implemented as a Polyak average rather than a hard copy.</li>
+            <li>The same freezing idea underlies fitted value iteration in offline and batch settings.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Estimate stage: the target network is evaluated once per sample, and the copy is performed every K updates. Stores: two copies of the network weights, so memory doubles for the value model. Cost per update: one forward pass through the target and one through the online network per sample, plus the backward pass on the online network.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, what would the TD error be if the online prediction were 4.0 instead of 3.0?</summary><div class="ans">y − Q = 4.15 − 4.0 = 0.15.</div></details>
+          <details class="check"><summary>2. Why is the max in the target taken over the frozen network and not the online network?</summary><div class="ans">The frozen network is the target, so it should not move during the period between copies. Using the online network for the max would make the target depend on the parameters being trained, the moving-target problem the copy is meant to solve.</div></details>
+          <details class="check"><summary>3. In the scalar lab with K = 1, why does the trace move smoothly, while with K = 10 it moves in steps?</summary><div class="ans">With K = 1 the frozen copy equals the weight after the previous update, so the target changes at every step. With K = 10 the target is constant for ten updates, so the weight moves towards one fixed number, and only then does the target change.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>DQN regresses Q towards a target computed with a frozen copy of the network.</li>
+            <li>The sync period K trades stability of the target against lag.</li>
+            <li>A target network stabilises the regression; it does not guarantee convergence.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.6 ===================== -->
+    <section class="lesson" id="double-dqn" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--red)">5.6</span><h2>Overestimation and Double DQN</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Suppose every action in a state is equally good, with true value 1.0. Our estimates are noisy, so one action looks better than the others by chance. If the target always takes the largest estimate, does the learned value drift upwards, and how can we stop it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine three friends each guessing the weight of the same parcel, with honest but noisy guesses. If you ask each guess and then report the highest, you are reporting the most optimistic error, not the average. The maximum of noisy numbers is biased upwards, even when every number is unbiased. Q-learning's target <span class="tex">\max_{a'}Q(s',a')</span> is exactly such a maximum, taken over noisy estimates, so it systematically overestimates.</p>
+        <p>The fix separates the two jobs the max does. One network <i>selects</i> the action with the largest value, and a different network <i>evaluates</i> that action. If the selection error and the evaluation error are independent, the optimistic bias of picking the largest value is not copied into the value you read.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the max is biased.</b> For <i>K</i> actions with independent standard normal noise and true values 0, the expected maximum is <span class="tex">E[\max] = 0.564</span> for K = 2, <span class="tex">0.846</span> for K = 3 and <span class="tex">1.029</span> for K = 4. The bias grows with the number of actions and with the noise.</p>
+        <p><b>Step 2: the DQN target uses one noisy table for both jobs.</b> The DQN target <span class="tex">y=r+\gamma\max_{a'}Q(s',a';\theta^-)</span> selects and evaluates with the same frozen network, so the selection bias is carried into the target.</p>
+        <p><b>Step 3: Double DQN separates them.</b> Select with the online network, evaluate with the frozen one: <span class="tex">y=r+\gamma\,Q(s',\arg\max_{a'}Q(s',a';\theta);\,\theta^-)</span>.</p>
+
+        <div class="worked"><b>Worked example: three actions, true value 1.0</b>
+          <p>Let <span class="tex">r=0</span> and <span class="tex">\gamma=0.9</span>, so the true target is <span class="tex">0.9 \times 1.0 = 0.90</span>. Online values in s′: <span class="tex">(1.3,\ 0.8,\ 1.1)</span>. Frozen target values: <span class="tex">(1.1,\ 1.4,\ 0.7)</span>.</p>
+          <p><b>DQN:</b> the max of the frozen values is 1.4 (action 2), so <span class="tex">y = 0.9 \times 1.4 = 1.26</span>. That is 0.36 above the truth, and the frozen network's noise is being taken at its largest.</p>
+          <p><b>Double DQN:</b> the online network selects the largest value, action 1 (1.3). The frozen network evaluates action 1 at 1.1, so <span class="tex">y = 0.9 \times 1.1 = 0.99</span>, which is 0.09 above the truth. The selection error no longer picks the target value.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{DQN:}\ \ y=r+\gamma\max_{a'}Q(s',a';\theta^-)\qquad\text{Double DQN:}\ \ y=r+\gamma\,Q\big(s',\arg\max_{a'}Q(s',a';\theta);\,\theta^-\big)</div>
+        <p>The two estimators differ only in which network chooses the action. Double Q-learning (van Hasselt, 2010) applies the same split to two tabular tables; Double DQN (van Hasselt, Guez and Silver, 2016) uses the online and target networks that DQN already has, so it costs almost nothing extra.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\arg\max_{a'}</span></td><td>the action with the largest value in the online network: the selection step</td></tr>
+          <tr><td><span class="tex">Q(\cdot;\theta^-)</span></td><td>the frozen network, used only to read the value of the selected action: the evaluation step</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>discount factor (0.9 in the worked example)</td></tr>
+          <tr><td><span class="tex">r</span></td><td>immediate reward (0 in the example)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: the max of noisy estimates</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep K = 4 and σ = 1. The orange DQN-style mean sits near 1.03, close to the theoretical value printed in the readout, while the blue double mean sits near zero.</li>
+          <li>Increase K to 10. The orange bias grows; the blue estimator still averages to zero.</li>
+          <li>Set σ to 0.5. Both biases scale with the noise, because the bias is proportional to σ.</li>
+          <li>Set K = 2 and compare the orange mean with 0.564. With two actions the bias is smaller, but it is still there.</li></ol></div>
+        <div data-lab="rl-max-bias"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Double DQN does not remove all bias.</b> It removes the selection bias when the two networks have independent errors. It can still underestimate in some cases.</li>
+            <li><b>Overestimation is not always harmful.</b> A large overestimate can drive exploration, but it can also let a bad action look good for a long time. Measure the true return, not the estimate alone.</li>
+            <li><b>The online and target networks must differ.</b> If they are identical, as with a target network that has just been copied, the two estimators coincide and the correction is lost.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Double DQN is a standard component of value-based agents, and it is one of the six extensions combined in the Rainbow agent (Hessel and colleagues, 2018).</li>
+            <li>The same overestimation appears in actor–critic methods, where TD3 uses two critics and takes the minimum, a related idea.</li>
+            <li>Max over noisy scores is everywhere in AI, from beam search to hyperparameter selection, and the same selection bias needs checking there.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Estimate stage: the target uses two forward passes through the same networks that DQN already needs, so the cost per update is almost unchanged. Stores: the online and frozen networks, as before. Evaluate by the true return of the greedy policy, not only by the estimated values.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, what is the DQN target if the frozen values were (1.1, 1.0, 0.7) instead?</summary><div class="ans">The max is 1.1, so y = 0.9 × 1.1 = 0.99. It equals the Double DQN value in the example, because the largest frozen value now happens to be the action the online network selects.</div></details>
+          <details class="check"><summary>2. Why does the double estimator average to zero in the lab when the true values are equal?</summary><div class="ans">The action is selected with one independent set of noisy estimates and its value is read from another. The selected action's frozen-network value has expectation equal to its true value, which is 0 for every action.</div></details>
+          <details class="check"><summary>3. With K actions and σ = 1, the expected DQN-style bias is about 0.846 at K = 3. What is it at K = 4, and why does it grow with K?</summary><div class="ans">About 1.029. The maximum of more independent noisy values is more likely to be an unusually large one, so its expectation grows with the number of values.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A maximum over noisy estimates is biased upwards, and the bias grows with the number of actions and the noise.</li>
+            <li>Double DQN selects the action with the online network and evaluates it with the frozen network.</li>
+            <li>The correction costs almost nothing extra and removes most of the selection bias.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say why a function approximator generalises, how tile coding builds its features, how bootstrapping and off-policy data can make learning diverge, why replay and target networks stabilise deep Q-learning, and why the max in the target is biased upward. Next, <b>Module 6</b> learns policies directly, with policy gradients, actor–critic methods and PPO: <a href="rl-policy-gradient.html">Module 6 · Policy-gradient &amp; actor–critic methods</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

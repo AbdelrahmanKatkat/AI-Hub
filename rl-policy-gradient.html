@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 6 · Policy gradients and actor–critic · Reinforcement Learning</title>
+<meta name="description" content="Parameterising policies, the policy gradient theorem, REINFORCE, baselines and advantages, actor–critic methods, and proximal policy optimisation with its clipped ratio. Hand-worked examples and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-rl-policy-gradient.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="rl" data-module="6">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="reinforcement-learning.html">Reinforcement Learning</a> › Module 6</div>
+    <div class="hero">
+      <div class="big" style="background:#f8514926">6</div>
+      <div style="flex:1">
+        <h1>Module 6 · Policy-gradient &amp; actor–critic methods</h1>
+        <p>Value-based methods learn how good each action is, then pick the best one. Policy-gradient methods skip that step and adjust the <b>policy</b> itself: they raise the probability of actions that led to good outcomes and lower the probability of those that led to bad ones. This module builds the idea from a single softmax choice up to <b>PPO</b>, the method behind most practical policy learning, including robot locomotion and language-model fine-tuning.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 4 hours</span><span class="chip">Needs expectations and gradients</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>The running setup.</b> An agent sees a state <span class="tex">s</span>, chooses an action <span class="tex">a</span> from a policy <span class="tex">\pi_\theta(a\mid s)</span> with parameters <span class="tex">\theta</span>, receives a reward, and moves on. Its goal is to maximise the expected discounted return <span class="tex">J(\theta)=\mathbb{E}_{\pi_\theta}[G_0]</span>, where <span class="tex">G_0=\sum_{t\ge 0}\gamma^t r_{t+1}</span> and the discount is <span class="tex">\gamma\in[0,1)</span>.</p>
+      <p><b>How to read the labs.</b> Every lab is an <i>illustrative</i> toy with a fixed seed, so runs are reproducible. Each one states its simplifications in its caption. The numbers in the text were computed by hand and checked in code; the labs recompute them live when you change a slider or a formula.</p>
+    </section>
+
+    <!-- ===================== 6.1 ===================== -->
+    <section class="lesson" id="policy-parameterisation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.1</span><h2>Parameterising policies</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot arm must choose how hard to push a box, a continuous number. A game agent must choose between three moves, and in one game the best strategy is to be unpredictable. A value table cannot represent either. How do we write down a policy that we can adjust with a gradient, and that can be random on purpose?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a policy as a dial for each situation. For a state, the policy says "action 1 with 60% chance, action 2 with 30%, action 3 with 10%". A policy is <b>stochastic</b> when it spreads its probability over several actions, and <b>deterministic</b> when it puts all of it on one. Stochastic policies are not a nuisance. A rock-paper-scissors player who always plays rock loses to anyone who notices. The best strategy is to play each move one third of the time, and no deterministic policy can do that.</p>
+        <p>A policy-gradient method needs the policy to be a smooth function of its parameters <span class="tex">\theta</span>. If a small change in <span class="tex">\theta</span> changes the action probabilities a little, then we can ask which direction of change makes good outcomes more likely. The two standard constructions are a <b>softmax</b> over a finite set of actions and a <b>Gaussian</b> over a continuous action.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: scores become probabilities.</b> Suppose that in state <span class="tex">s</span> each action <span class="tex">a</span> has a real-valued score, a <b>logit</b> <span class="tex">\theta_a</span>. Scores can be negative or large, so we pass them through the exponential, which is always positive, and divide by the total so the probabilities sum to one. That is the softmax.</p>
+        <p><b>Step 2: why softmax is a good parameterisation.</b> Every probability is strictly between 0 and 1, so no action is ever ruled out completely. Adding the same number to every logit changes nothing, so only differences between logits matter. And the result is differentiable everywhere, which is what gradient methods need.</p>
+        <p><b>Step 3: a temperature controls how sharp the policy is.</b> Dividing the logits by a temperature <span class="tex">\tau&gt;0</span> makes the policy close to uniform when <span class="tex">\tau</span> is large and close to "pick the largest logit" when <span class="tex">\tau</span> is small.</p>
+        <p><b>Step 4: a continuous action needs a density.</b> A steering angle or a torque is a real number, so a policy must be a probability density. The usual choice is a Gaussian with a mean that depends on the state and a fixed or learned spread: <span class="tex">a\sim\mathcal N(\mu_\theta(s),\sigma^2)</span>. Sampling from it is simple, and its log-density has a clean gradient.</p>
+
+        <div class="worked"><b>Worked example: a softmax over three actions</b>
+          <p>Take logits <span class="tex">\theta=(2,\,1,\,0)</span> in one state and temperature <span class="tex">\tau=1</span>. The scores exponentiate to <span class="tex">e^2=7.38906</span>, <span class="tex">e^1=2.71828</span>, <span class="tex">e^0=1</span>, which sum to <span class="tex">11.10734</span>. So</p>
+          <div class="eq">\pi(\cdot\mid s)=\left(\frac{7.38906}{11.10734},\ \frac{2.71828}{11.10734},\ \frac{1}{11.10734}\right)=(0.66524,\ 0.24473,\ 0.09003)</div>
+          <p>The probabilities sum to 1.00000 and the first action is the most likely. Now set <span class="tex">\tau=2</span>. The scores become <span class="tex">e^{1}, e^{0.5}, e^{0}</span> = 2.71828, 1.64872, 1, with sum 5.36700, so the policy is flatter: <span class="tex">(0.50648,\ 0.30720,\ 0.18632)</span>. Halving the sharpness moved the first action from 67% to 51%.</p>
+          <p>For a Gaussian take mean <span class="tex">\mu=0.8</span>, spread <span class="tex">\sigma=0.5</span> and the sampled action <span class="tex">a=1.2</span>. The standardised distance is <span class="tex">z=(a-\mu)/\sigma=0.4/0.5=0.8</span>, and the log-density is</p>
+          <div class="eq">\log\pi(a\mid s)=-\tfrac12\log(2\pi)-\log\sigma-\tfrac12 z^2=-0.91894+0.69315-0.32=-0.54579,</div>
+          <p>so the density itself is <span class="tex">e^{-0.54579}=0.57938</span>. A density is not a probability, but it is the quantity the gradient will use.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <div class="eq">\pi_\theta(a\mid s)=\frac{\exp\!\big(\theta_{s,a}/\tau\big)}{\sum_{b}\exp\!\big(\theta_{s,b}/\tau\big)}\qquad\qquad \pi_\theta(a\mid s)=\frac{1}{\sigma\sqrt{2\pi}}\exp\!\Big(-\frac{(a-\mu_\theta(s))^2}{2\sigma^2}\Big)</div>
+        <table class="sym">
+          <tr><td><span class="tex">s, a</span></td><td>state and action</td></tr>
+          <tr><td><span class="tex">\theta</span></td><td>all learnable parameters; here the logits or the mean and spread</td></tr>
+          <tr><td><span class="tex">\theta_{s,a}</span></td><td>the logit (score) of action <span class="tex">a</span> in state <span class="tex">s</span></td></tr>
+          <tr><td><span class="tex">\tau</span></td><td>temperature, a positive number that flattens the softmax when it is large</td></tr>
+          <tr><td><span class="tex">\mu_\theta(s),\ \sigma</span></td><td>mean of the Gaussian for state <span class="tex">s</span> and its standard deviation</td></tr>
+          <tr><td><span class="tex">z</span></td><td>the standardised action <span class="tex">(a-\mu)/\sigma</span></td></tr>
+        </table>
+
+        <h3 class="sec">Lab: a softmax policy that depends on a state feature</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the logits as <span class="tex">2-x,\ x,\ 0</span>. Move the state feature <span class="tex">x</span> from −2 to 2. Watch action 1 dominate on the left, and action 2 take over on the right: the policy is a function of the state, not a fixed table.</li>
+          <li>Set <span class="tex">\tau</span> to 0.2 and then to 3 at <span class="tex">x=0.5</span>. Small temperature gives almost all probability to the largest logit; large temperature flattens the bars towards one third each.</li>
+          <li>Edit the logit of action 3 to <span class="tex">x^2-1</span> and see the third curve dip and rise. Any formula of <span class="tex">x</span> is a valid parameterisation, which is why the same idea works for images or sequences later on.</li>
+          <li>Choose a sampled action with the buttons. The readout gives <span class="tex">\nabla_\theta\log\pi(a\mid x)=(e_a-\pi)/\tau</span>. Notice that the entry for the sampled action is positive and the others are negative, and that they sum to zero.</li></ol></div>
+        <div data-lab="pg-softmax"></div>
+
+        <h3 class="sec">Lab: a Gaussian policy over a continuous action</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep <span class="tex">\mu(x)=0.8+0.5x</span>, <span class="tex">\sigma=0.5</span> and <span class="tex">a=1.2</span> at <span class="tex">x=0</span>. The readout reproduces the worked example: <span class="tex">\log\pi=-0.546</span>.</li>
+          <li>Increase <span class="tex">\sigma</span>. The bell widens, the green samples spread out, and the log-density of the chosen action falls. A wide policy explores more.</li>
+          <li>Move <span class="tex">x</span>. The whole bell and all 40 green samples move together, because the samples are <span class="tex">\mu+\sigma z</span> with fixed draws <span class="tex">z</span>. This shift-and-scale is the reparameterisation trick used in deep policies.</li>
+          <li>Read the spread's score. It is positive when the chosen action lies more than σ from the mean, which means a wider policy would make such an action more likely; it is negative when the action lies closer than σ. Move <span class="tex">a</span> to check both cases.</li></ol></div>
+        <div data-lab="pg-gauss"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A probability is not a density.</b> A Gaussian density can exceed 1 (for a small spread it does). Only the density over an interval gives a probability.</li>
+            <li><b>Logits are not probabilities.</b> Increasing a logit by 1 does not add 1 to a probability. Its effect depends on all the other logits.</li>
+            <li><b>Stochastic does not mean random.</b> The policy is a precise distribution; the randomness is in which action is drawn from it.</li>
+            <li><b>Always store the policy's parameters and the sampling rule together.</b> A learned policy with a different temperature at test time is a different policy.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b>
+            <p>The softmax policy is the output layer of discrete-action agents, for example the move choice of game agents and the next-token distribution of a language model, which is a policy over a vocabulary. The Gaussian policy is the usual choice for continuous control of robot joints and vehicles; PPO implementations for MuJoCo locomotion typically output a mean and a learned log-standard-deviation for each joint.</p></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage for training the parameters; act stage at every control step, where the policy is sampled. Stores: the network or table of parameters (θ) and, for continuous control, the spread or its log.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, why does halving the sharpness (going from τ = 1 to τ = 2) reduce the first action's probability from 0.665 to 0.506?</summary><div class="ans">Dividing the logits by τ = 2 halves the differences between them. The scores become e^1, e^0.5, e^0 rather than e^2, e^1, e^0, so the first action's share of the total falls to 2.71828 / 5.36700 = 0.50648.</div></details>
+          <details class="check"><summary>2. For a Gaussian with σ = 0.5, what is z when the action is a = 0.3 and the mean is μ = 0.8, and which way does the log-density move compared with a = 1.2?</summary><div class="ans">z = (0.3 − 0.8)/0.5 = −1.0. The log-density is −½log(2π) − log(0.5) − ½(1)² = −0.91894 + 0.69315 − 0.5 = −0.72579, which is lower than −0.54579 at a = 1.2, because the action lies one spread from the mean rather than 0.8 spreads.</div></details>
+          <details class="check"><summary>3. Why is a deterministic policy a poor choice in rock-paper-scissors, even if it is the best single move against a fixed opponent?</summary><div class="ans">Any fixed move can be countered by an opponent who notices it. The optimal strategy against an adaptive opponent is to randomise uniformly, and a deterministic policy cannot represent a uniform distribution over the three moves.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A policy is a distribution over actions, written with parameters θ so that a gradient can change it.</li>
+            <li>Softmax handles finitely many actions; a Gaussian handles continuous actions. Both are differentiable in θ.</li>
+            <li>Stochastic policies are sometimes optimal and always give exploration. The temperature or spread sets how much.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.2 ===================== -->
+    <section class="lesson" id="policy-gradient-theorem" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.2</span><h2>The policy gradient theorem</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We want to raise the expected return <span class="tex">J(\theta)</span> by gradient ascent. But the return depends on which actions were sampled, and sampling is a random process that we cannot differentiate through directly. How can we compute <span class="tex">\nabla_\theta J</span> from samples at all, and why does it not require knowing how the environment works?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a lottery whose prize depends on which ticket you draw, and whose ticket probabilities you can adjust. To improve your expected prize you do not need to know how the lottery machine works. You only need to know how each ticket's probability changes when you adjust the machine, and how much each ticket is worth. Multiply those two things, add them up over tickets, and you have the direction that improves your expected prize.</p>
+        <p>Policy gradients use the same logic. The unknown part is the environment, which turns actions into rewards and next states. The part we control is the policy's probabilities for the actions. The theorem tells us that the gradient needs only those two pieces: the policy's score function and an estimate of how good each action is.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the score-function identity.</b> For any probability distribution <span class="tex">p_\theta</span>, the derivative of a probability is the probability times the derivative of its logarithm:</p>
+        <div class="eq">\nabla_\theta p_\theta(x)=p_\theta(x)\,\nabla_\theta\log p_\theta(x)</div>
+        <p>This is just the chain rule applied to <span class="tex">\log</span>. Apply it inside an expectation and the derivative moves onto the distribution's log:</p>
+        <div class="eq">\nabla_\theta\,\mathbb E_{x\sim p_\theta}[f(x)]=\sum_x f(x)\,p_\theta(x)\,\nabla_\theta\log p_\theta(x)=\mathbb E_{x\sim p_\theta}\big[f(x)\,\nabla_\theta\log p_\theta(x)\big]</div>
+        <p>The right-hand side is an expectation we can estimate by sampling, because it needs only samples <span class="tex">x</span> and the score <span class="tex">\nabla\log p</span>, which we can compute from the policy's own formula. This is the <b>score-function trick</b> (also called the likelihood-ratio trick).</p>
+        <p><b>Step 2: the one-step case.</b> Let the episode last one step, so <span class="tex">J(\theta)=\sum_a\pi_\theta(a)\,Q(a)</span> where <span class="tex">Q(a)</span> is the expected reward of action <span class="tex">a</span>. The identity gives <span class="tex">\nabla J=\sum_a Q(a)\,\pi(a)\nabla\log\pi(a)</span>, which is exactly the expectation above with <span class="tex">f=Q</span>.</p>
+        <p><b>Step 3: many steps.</b> In a multi-step problem the same argument over whole trajectories gives the policy gradient theorem. Its clean form, from Sutton et al. (2000), replaces the trajectory sum with states and actions. For a policy <span class="tex">\pi_\theta</span>, a state distribution <span class="tex">\mu</span> that the policy visits, and the action-value <span class="tex">Q^\pi</span>:</p>
+        <div class="eq">\nabla_\theta J(\theta)\ \propto\ \sum_s \mu(s)\sum_a Q^\pi(s,a)\,\nabla_\theta\pi_\theta(a\mid s)\ =\ \mathbb E_{s\sim\mu,\ a\sim\pi_\theta}\big[Q^\pi(s,a)\,\nabla_\theta\log\pi_\theta(a\mid s)\big]</div>
+        <p>The sign "∝" means equal up to a positive constant that depends on the discount and the horizon. That constant only rescales the step size, so the <i>direction</i> is what matters. The crucial feature is that the environment's transition probabilities do not appear. They shape which states and actions are visited, and <span class="tex">\mu</span> and <span class="tex">Q^\pi</span> are whatever the environment produces; no model of the environment is differentiated.</p>
+
+        <div class="worked"><b>Worked example: a one-step gradient by hand</b>
+          <p>One state, two actions, logits <span class="tex">\theta=(0,0)</span> so <span class="tex">\pi=(0.5,\,0.5)</span>, and action values <span class="tex">Q=(1,\,3)</span>. The score of action <span class="tex">a</span> with respect to logit <span class="tex">\theta_b</span> is <span class="tex">\mathbf 1[a=b]-\pi_b</span>. For <span class="tex">b=1</span>:</p>
+          <div class="eq">\nabla_{\theta_1}J=\sum_a \pi(a)\,Q(a)\,(\mathbf 1[a=1]-\pi_1)=0.5(1)(0.5)+0.5(3)(-0.5)=0.25-0.75=-0.50</div>
+          <p>For <span class="tex">b=2</span>, the same sum gives <span class="tex">0.5(1)(-0.5)+0.5(3)(0.5)=0.50</span>. The gradient is <span class="tex">(-0.5,\ 0.5)</span>: gradient ascent lowers the logit of the poor action and raises the logit of the good one. Check with the direct derivative: <span class="tex">J=\pi_1\cdot 1+(1-\pi_1)\cdot 3=3-2\pi_1</span> and <span class="tex">\pi_1=\sigma(\theta_1-\theta_2)</span>, so <span class="tex">\partial J/\partial\theta_1=-2\,\pi_1(1-\pi_1)=-0.5</span>, which agrees.</p>
+          <p>The sampled estimate is noisy. If action 2 is drawn, the single-sample estimate is <span class="tex">Q(2)\,(\mathbf 1[a=b]-\pi_b)=3\,(-0.5,\,0.5)=(-1.5,\,1.5)</span>, three times the true gradient in magnitude. The average of many such samples approaches <span class="tex">(-0.5,\,0.5)</span>.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <div class="eq">J(\theta)=\mathbb E_{\pi_\theta}\Big[\sum_{t\ge 0}\gamma^t r_{t+1}\Big],\qquad \nabla_\theta J(\theta)\ \propto\ \mathbb E_{s\sim\mu,\ a\sim\pi_\theta}\big[Q^{\pi_\theta}(s,a)\,\nabla_\theta\log\pi_\theta(a\mid s)\big]</div>
+        <table class="sym">
+          <tr><td><span class="tex">J(\theta)</span></td><td>expected discounted return from the start state under policy <span class="tex">\pi_\theta</span></td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>discount factor, <span class="tex">0\le\gamma&lt;1</span> here, so later rewards count less</td></tr>
+          <tr><td><span class="tex">r_{t+1}</span></td><td>reward received after the action taken at time <span class="tex">t</span></td></tr>
+          <tr><td><span class="tex">\mu(s)</span></td><td>the (discounted or average) distribution of states visited under <span class="tex">\pi_\theta</span></td></tr>
+          <tr><td><span class="tex">Q^\pi(s,a)</span></td><td>expected discounted return after taking <span class="tex">a</span> in <span class="tex">s</span> and then following <span class="tex">\pi</span></td></tr>
+          <tr><td><span class="tex">\nabla_\theta\log\pi_\theta(a\mid s)</span></td><td>the score: which way to move θ to make <span class="tex">a</span> more likely in <span class="tex">s</span></td></tr>
+        </table>
+        <p>Conditions: the theorem assumes <span class="tex">\pi_\theta</span> is differentiable in <span class="tex">\theta</span> and that the expectations exist. The exact constant in "∝" depends on whether the problem is episodic or continuing; it does not change the direction of the gradient.</p>
+
+        <h3 class="sec">Lab: the score-function estimate converges to the exact gradient</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults (<span class="tex">Q=(1,3)</span>, <span class="tex">\theta=0</span>), press Play and watch the blue running mean settle onto the green dashed exact value <span class="tex">-0.5</span>. Individual samples are far from it; the average is not.</li>
+          <li>Set the logit to <span class="tex">\theta=2</span>. The exact gradient shrinks because the policy is now nearly certain to pick action 1, and the probability of the bad action is small, so there is little to learn.</li>
+          <li>Set <span class="tex">Q(1)=Q(2)=2</span>. The exact gradient is zero at every θ: when all actions are equally good, nothing changes the expected return, and the running mean hovers around zero.</li>
+          <li>Press Step a few times and read the "last sample g" line. Check one value by hand with the formula <span class="tex">Q(a)(\mathbf 1[a=1]-\pi_1)</span>.</li></ol></div>
+        <div data-lab="pg-estimate"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Differentiating the rewards.</b> The reward function usually is not differentiable and need not be. The theorem only differentiates the policy.</li>
+            <li><b>Forgetting the sign.</b> The update is ascent: <span class="tex">\theta\leftarrow\theta+\alpha\nabla J</span>. Gradient descent on <span class="tex">-J</span> is the same thing written differently.</li>
+            <li><b>Using Q as a sample.</b> The expectation is over actions and states, so one sampled return is an unbiased but very noisy estimate. The estimator is not the expectation.</li>
+            <li><b>Assuming the state distribution is fixed.</b> Changing θ changes which states are visited. The theorem handles this; naive "fix the states" arguments do not.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b>
+            <p>Every policy-gradient method, from REINFORCE through A2C to PPO and the RL fine-tuning of language models, is a sample-based estimate of this expression. In RLHF, the "action" is a sampled response, the "reward" comes from a learned preference model, and the score is the gradient of the log-probability the language model assigns to the response.</p></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (samples are drawn by running the policy), then learn stage (the score-weighted sum is computed on a batch and θ is updated). Stores: the sampled states, actions and returns for one batch, and the policy parameters.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With π = (0.5, 0.5) and Q = (1, 3), compute ∇θ₂J for the one-step problem. (Use the formula, not the figure above.)</summary><div class="ans">∇θ₂J = Σ_a π(a) Q(a)(1[a=2] − π₂) = 0.5(1)(0 − 0.5) + 0.5(3)(1 − 0.5) = −0.25 + 0.75 = 0.50.</div></details>
+          <details class="check"><summary>2. Why does the policy gradient not need the transition probabilities of the environment?</summary><div class="ans">The gradient differentiates only the policy's probabilities through the score ∇log π. The environment appears only through the expectation, which is estimated by sampling it. Its dynamics shape which states and returns occur, but they are not differentiated.</div></details>
+          <details class="check"><summary>3. Suppose you draw one action a = 2 with the same numbers. What is the single-sample estimate for θ₁, and why is a single sample a poor guide?</summary><div class="ans">g = Q(2)(1[a=1] − π₁) = 3(0 − 0.5) = −1.5. The true gradient for θ₁ is −0.5, so this sample overshoots by a factor of three in the opposite direction from the average behaviour. Many samples are needed to average out this noise.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>The score-function identity turns the gradient of an expectation into an expectation of score times value.</li>
+            <li>The policy gradient needs only samples, the score of the policy, and an estimate of how good each action is.</li>
+            <li>The result is a direction, up to a positive constant; single samples are very noisy, so practical methods average and reduce variance.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.3 ===================== -->
+    <section class="lesson" id="reinforce" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.3</span><h2>REINFORCE</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The theorem gives us a gradient in expectation. Can we turn it into an algorithm that an agent runs, with nothing but the ability to act and observe rewards? And once it runs, why does it learn so slowly and so erratically?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a student who tries a strategy on a test, scores 80, and then makes the strategy more likely to be used again. If the score was 20, the strategy becomes less likely. REINFORCE (Williams, 1992) is exactly this: play one episode with the current policy, compute the return that followed each action, and move each action's probability in proportion to that return. Actions that were followed by high returns become more likely, and actions followed by low returns become less likely.</p>
+        <p>The method is called Monte Carlo because it waits for the episode to finish and uses the actual observed return. No value is estimated yet, so it is simple, unbiased and very noisy. Both facts follow from that one design choice.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the return from each step.</b> For each time <span class="tex">t</span> in an episode, the <b>reward-to-go</b> is the discounted sum of rewards from there on: <span class="tex">G_t=\sum_{k\ge 0}\gamma^k r_{t+k+1}</span>. Only rewards after an action can depend on it, so this is the right quantity to weight that action's score with.</p>
+        <p><b>Step 2: the update.</b> Collect an episode <span class="tex">(s_0,a_0,r_1,\dots,s_T)</span>. Then for each step take a gradient step on the score weighted by the return:</p>
+        <div class="eq">\theta\ \leftarrow\ \theta+\alpha\sum_{t=0}^{T-1}\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,G_t</div>
+        <p>Each term is an unbiased sample of the policy gradient from the previous lesson, because <span class="tex">G_t</span> has the expected value of <span class="tex">Q^\pi(s_t,a_t)</span> given the state and action at time <span class="tex">t</span>.</p>
+        <p><b>Step 3: the algorithm in code form.</b></p>
+        <pre><code>init theta
+repeat for each episode:
+    generate episode s0, a0, r1, s1, a1, r2, ..., s_{T-1}, a_{T-1}, r_T
+        using pi_theta
+    for t = 0 .. T-1:
+        G = sum over k >= t of gamma^(k-t) * r_{k+1}   # computed backwards
+        theta = theta + alpha * grad(log pi_theta(a_t | s_t)) * G</code></pre>
+        <p><b>Step 4: why it is slow and erratic.</b> A single episode is one random draw. A different draw can change the return by a lot, and a large return on an action that was merely lucky pushes its probability up strongly. The variance of the estimate grows with the length of the episode and with the spread of the rewards. The fix is the subject of the next lesson.</p>
+
+        <div class="worked"><b>Worked example: one episode, three steps</b>
+          <p>Rewards after each action are <span class="tex">r_1=0,\ r_2=1,\ r_3=2</span>, discount <span class="tex">\gamma=0.9</span>, the sampled actions are <span class="tex">(a_0,a_1,a_2)=(1,2,1)</span>, and the policy starts uniform: <span class="tex">\theta=(0,0)</span>, <span class="tex">\pi=(0.5,0.5)</span>. Learning rate <span class="tex">\alpha=0.1</span>.</p>
+          <p>The reward-to-go values, computed backwards from the end, are</p>
+          <div class="eq">G_2=r_3=2,\qquad G_1=r_2+\gamma r_3=1+1.8=2.8,\qquad G_0=r_1+\gamma r_2+\gamma^2 r_3=0+0.9+1.62=2.52</div>
+          <p>The score of the sampled action in the two-action softmax is <span class="tex">\nabla\log\pi(a)=(\mathbf 1[a=1]-\pi_1,\ \mathbf 1[a=2]-\pi_2)</span>, which gives <span class="tex">(0.5,-0.5)</span> for action 1 and <span class="tex">(-0.5,0.5)</span> for action 2. The three contributions are</p>
+          <div class="eq">t{=}0:\ (0.5,-0.5)(2.52)=(1.26,-1.26)\qquad t{=}1:\ (-0.5,0.5)(2.8)=(-1.40,1.40)\qquad t{=}2:\ (0.5,-0.5)(2)=(1.00,-1.00)</div>
+          <p>They sum to <span class="tex">(0.86,-0.86)</span>. The update is <span class="tex">\theta\leftarrow(0,0)+0.1(0.86,-0.86)=(0.086,-0.086)</span>. The new probability of action 1 is <span class="tex">\sigma(0.086-(-0.086))=\sigma(0.172)=0.54289</span>, up from 0.5. The episode's actions led to positive returns on balance, so action 1 became more likely.</p>
+          <p>Notice what would happen if the episode had given returns of −2 instead: every term would flip sign and action 1 would become less likely. The same episode can push either way depending only on the sign of the return. That is why the next lesson worries about the sign and the size of the return.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <div class="eq">G_t=\sum_{k=0}^{T-t-1}\gamma^k r_{t+k+1},\qquad \theta_{\text{new}}=\theta+\alpha\sum_{t=0}^{T-1}G_t\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)</div>
+        <table class="sym">
+          <tr><td><span class="tex">G_t</span></td><td>the discounted return from time <span class="tex">t</span> onward (the reward-to-go)</td></tr>
+          <tr><td><span class="tex">T</span></td><td>the length of the episode, after which the episode ends</td></tr>
+          <tr><td><span class="tex">\alpha</span></td><td>the learning rate (step size)</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>discount factor, here 0.9 in the worked example</td></tr>
+          <tr><td><span class="tex">r_{t+1}</span></td><td>reward after the action at time <span class="tex">t</span></td></tr>
+        </table>
+        <p>Conditions: the episode must terminate (or the return must be truncated), the policy must be differentiable, and <span class="tex">\alpha</span> must be small enough for the update to be a gradient step. Convergence to a local optimum holds under standard stochastic-approximation conditions on <span class="tex">\alpha</span>; it is not a guarantee of finding the best policy.</p>
+
+        <h3 class="sec">Lab: many runs of REINFORCE on the same bandit</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with the defaults. Each thin orange line is one run with its own seed; all 12 start from the same uniform policy and face the same bandit. The spread between them is the variance of the method.</li>
+          <li>Set the reward noise σ to 0 and then to 1.5. With no noise the runs tend to look more alike; with large noise, some runs reach a high P(best arm) quickly while others are slow to move for a long time.</li>
+          <li>Lower the learning rate to 0.02. Every run is slower, and at a fixed episode count the runs are usually closer together, because each update moves the policy less.</li>
+          <li>Move the mean of arm 3 up to 2.5, so arm 3 becomes the best arm and the readout names it. All rewards are now positive, so early on every sampled arm is reinforced, and the learning is slower and less clean than before.</li></ol></div>
+        <div data-lab="pg-reinforce"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Using the full episode return for every step.</b> It is unbiased but adds noise from rewards that happened before the action. Use the reward-to-go <span class="tex">G_t</span>.</li>
+            <li><b>Updating during the episode with the discounted return.</b> The update needs the return, which is known only once the episode ends, so REINFORCE is an end-of-episode method.</li>
+            <li><b>Positive rewards with no baseline.</b> If all rewards are positive, every sampled action is reinforced, and the most frequently sampled actions gain the most. This is correct in expectation but slows learning, as the lab shows.</li>
+            <li><b>Calling it "stable".</b> Its unbiasedness does not give stability; one lucky return can move the policy far in one step.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b>
+            <p>REINFORCE is the simplest policy-learning algorithm and the basis of later methods. It is used as a teaching baseline and in small problems, and its update is the core of policy-gradient fine-tuning in RLHF pipelines, where the reward is given at the end of a sampled response and the score is the log-probability of its tokens.</p></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (one full episode per update); learn stage (the return-weighted score sum over the episode, then an update). Cost: one episode of environment steps per update, and one backward pass over the episode. Stores: the episode's states, actions and rewards, and the policy parameters.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, what is G₁ if γ is 0.5 instead of 0.9?</summary><div class="ans">G₁ = r₂ + γr₃ = 1 + 0.5(2) = 2.0. The discount reduces the weight of the later reward, so the return from time 1 is smaller than the 2.8 obtained with γ = 0.9.</div></details>
+          <details class="check"><summary>2. If the same episode had produced returns G₀ = −2.52, G₁ = −2.8, G₂ = −2 (rewards all negative), what would the update to θ be?</summary><div class="ans">Every term flips sign, so the sum is (−0.86, 0.86) and θ becomes (−0.086, 0.086). Action 1 becomes less likely, with π₁ = σ(−0.172) = 0.45711. A bad episode lowers the probability of the actions it used.</div></details>
+          <details class="check"><summary>3. Why is REINFORCE unbiased but noisy, and which single change reduces the noise most in practice?</summary><div class="ans">It is unbiased because each G_t, given (s_t, a_t), has expectation Q^π(s_t, a_t), so the average update equals the policy gradient. It is noisy because the return depends on the whole random future, not just on the action. Subtracting a state-dependent baseline from G_t reduces the noise without changing the expected update; that is the next lesson.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>REINFORCE turns the policy gradient into a practical update: act for an episode, weight each action's score by its reward-to-go, and step.</li>
+            <li>It is unbiased, but the return is a noisy measure, so single updates can be large and erratic.</li>
+            <li>The remedy is to subtract a baseline, which keeps the expected update the same and removes much of the noise.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.4 ===================== -->
+    <section class="lesson" id="baselines-advantage" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.4</span><h2>Baselines and the advantage function</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>REINFORCE is unbiased, but its updates swing wildly from episode to episode. Suppose every action in a game is worth between 10 and 11 points. Should a policy whose returns are all near 10 be pushed hard by every single return? Can we subtract something from the returns without changing where the learning goes?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Suppose you are grading a class where every answer scores between 90 and 100. If you reward each student by their raw score, the grades carry almost no information about who did better than usual; everyone gets a big positive push. If you reward each student by how far they were above the class average, the signal is sharp: a student at 98 is above average and one at 91 is below. The average itself does not change who is better. It only changes the size of the push.</p>
+        <p>A <b>baseline</b> is that class average for the policy gradient. We subtract a number <span class="tex">b(s)</span> that depends on the state but not on the action. The expected update is unchanged, because the subtracted part averages to zero, but each sampled update is much smaller and more informative.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: why the subtracted term averages to zero.</b> Take the policy gradient with a baseline, <span class="tex">\mathbb E[(G-b(s))\nabla\log\pi(a\mid s)]</span>. The extra piece is <span class="tex">\mathbb E[b(s)\nabla\log\pi(a\mid s)]=b(s)\sum_a\pi(a\mid s)\nabla\log\pi(a\mid s)</span>. The sum is <span class="tex">\sum_a\nabla\pi(a\mid s)=\nabla\sum_a\pi(a\mid s)=\nabla 1=0</span>. So the expectation is unchanged, provided <span class="tex">b</span> does not depend on the sampled action <span class="tex">a</span>. It may depend on the state, and it may be a learned function of the state.</p>
+        <p><b>Step 2: the natural baseline is the value.</b> The state value <span class="tex">V^\pi(s)=\mathbb E_{a\sim\pi}[Q^\pi(s,a)]</span> is the average return of the policy from <span class="tex">s</span>. Subtracting it gives the <b>advantage</b>:</p>
+        <div class="eq">A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s)</div>
+        <p>The advantage is positive when an action is better than what the policy would do on average in that state, and negative when worse. Its average over the policy's own actions is zero. That is why it is such a clean signal: it measures the <i>difference</i> an action makes.</p>
+        <p><b>Step 3: why variance drops.</b> The variance of the sampled update is governed by the spread of the weights multiplying the scores. Replacing <span class="tex">Q</span> by <span class="tex">Q-V</span> removes the part of the weight that is common to every action in the state, so the weights cluster around zero. In the extreme case where all actions are equally good, the advantage is exactly zero and the update is zero too, rather than a large push in a random direction.</p>
+
+        <div class="worked"><b>Worked example: a baseline that removes all the noise</b>
+          <p>Two actions with deterministic rewards <span class="tex">r(1)=10</span> and <span class="tex">r(2)=11</span>, uniform policy <span class="tex">\pi=(0.5,0.5)</span>. The value is <span class="tex">V=0.5(10)+0.5(11)=10.5</span>, and the advantages are <span class="tex">A(1)=10-10.5=-0.5</span> and <span class="tex">A(2)=11-10.5=0.5</span>. The true gradient of the first logit is</p>
+          <div class="eq">\nabla_{\theta_1}J=\sum_a\pi(a)\,r(a)\,(\mathbf 1[a=1]-\pi_1)=0.5(10)(0.5)+0.5(11)(-0.5)=2.5-2.75=-0.25</div>
+          <p><b>Without a baseline</b>, each sample is <span class="tex">r(a)\,(\mathbf 1[a=1]-\pi_1)</span>. If action 1 is drawn it is <span class="tex">10(0.5)=5</span>; if action 2 is drawn it is <span class="tex">11(-0.5)=-5.5</span>. The two values average to <span class="tex">0.5(5)+0.5(-5.5)=-0.25</span>, which is correct, but each sample is large and the variance is <span class="tex">0.5(5^2)+0.5(5.5^2)-(-0.25)^2=27.5625</span>.</p>
+          <p><b>With the baseline</b> <span class="tex">b=10.5</span>, the weights are the advantages. Action 1 gives <span class="tex">(-0.5)(0.5)=-0.25</span> and action 2 gives <span class="tex">(0.5)(-0.5)=-0.25</span>. Both samples are exactly <span class="tex">-0.25</span>. The mean is still <span class="tex">-0.25</span>, and the variance is <span class="tex">0</span>. This is a special case, since the two actions have equal probability and the rewards differ by a constant shift of the advantage. In general the baseline reduces the variance but does not remove it.</p>
+          <p>The lesson is the same in both: the expected update is <span class="tex">-0.25</span> with or without the baseline, but the baseline makes each sampled update far more accurate.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <div class="eq">\nabla_\theta J(\theta)\propto\mathbb E\big[(Q^\pi(s,a)-b(s))\,\nabla_\theta\log\pi_\theta(a\mid s)\big]=\mathbb E\big[A^\pi(s,a)\,\nabla_\theta\log\pi_\theta(a\mid s)\big]</div>
+        <table class="sym">
+          <tr><td><span class="tex">b(s)</span></td><td>a baseline: any function of the state that does not depend on the action</td></tr>
+          <tr><td><span class="tex">V^\pi(s)</span></td><td>the state value, <span class="tex">\mathbb E_{a\sim\pi}[Q^\pi(s,a)]</span>, the policy's average return from <span class="tex">s</span></td></tr>
+          <tr><td><span class="tex">A^\pi(s,a)</span></td><td>the advantage, how much better action <span class="tex">a</span> is than the policy's average in <span class="tex">s</span></td></tr>
+          <tr><td><span class="tex">\mathbb E_{a\sim\pi}[A^\pi(s,a)]</span></td><td>equals zero for every state (a useful check on any advantage estimate)</td></tr>
+        </table>
+        <p>Conditions: the baseline must not depend on the action being scored; a baseline that depends on the action is biased. In practice <span class="tex">V</span> is not known exactly and is learned, so the advantage is an estimate, and that introduces the bias–variance trade-off of the next lesson.</p>
+
+        <h3 class="sec">Lab: the baseline keeps the mean and changes the spread</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the baseline at 0 (no baseline), look at the orange histogram. Its centre is the green dashed line, and it is wide. Note the variance printed in the readout.</li>
+          <li>Press "Set b = V(θ) (exact)". The blue histogram narrows around the same green line. The mean does not move, but the variance falls. This is the lesson in one picture.</li>
+          <li>Drag the baseline to values far from V, such as 0 or 3. The mean stays put for every b, but the variance grows again. A baseline near the expected reward is a sensible choice; the variance is not unchanged by b.</li>
+          <li>Set the reward noise σ to 0. Part of the spread now comes only from which arm is drawn, and the baseline still changes it. Compare b = 0 with b = V(θ) to see the difference that remains.</li></ol></div>
+        <div data-lab="pg-baseline"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>A baseline that depends on the action.</b> Then the subtracted term no longer averages to zero, and the gradient is biased. Keep <span class="tex">b</span> a function of the state only.</li>
+            <li><b>Confusing advantage with reward.</b> A positive reward does not mean an action was good; it must be better than the state's average.</li>
+            <li><b>Thinking a baseline makes the update exact.</b> It reduces variance; the sampled update is still noisy unless the advantage is almost constant.</li>
+            <li><b>Using the return of the whole episode as Q.</b> That estimate is noisy. The next lesson uses a learned value and bootstrapping to reduce it.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b>
+            <p>Almost every modern policy-gradient method uses an advantage. A2C and PPO both estimate <span class="tex">A</span> from a learned value network. In language-model RL, a per-batch mean reward is a common baseline, which is why reward models are often normalised by batch statistics before the update.</p></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage: a value estimate is computed for each state in the batch and the advantage is formed before the update. The value network is trained in the same stage. Stores: the batch of states, actions, returns and the value estimates, and the value network's weights.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With rewards 10 and 11 and π = (0.5, 0.5), what is the advantage of action 2 if the policy is changed to π = (0.25, 0.75)?</summary><div class="ans">V = 0.25(10) + 0.75(11) = 10.75, so A(2) = 11 − 10.75 = 0.25. The advantage of action 2 shrinks as the policy puts more probability on it, because the average return moves toward its value.</div></details>
+          <details class="check"><summary>2. Prove that subtracting a state-dependent baseline does not change the expected gradient.</summary><div class="ans">The subtracted term is E[b(s)∇log π(a|s)] = b(s) Σ_a π(a|s) ∇log π(a|s) = b(s) Σ_a ∇π(a|s) = b(s) ∇Σ_a π(a|s) = b(s) ∇1 = 0. The step uses ∇π = π∇log π and the fact that b(s) does not depend on a.</div></details>
+          <details class="check"><summary>3. In the worked example, why does the baseline make the two per-sample updates identical?</summary><div class="ans">The advantages are −0.5 for action 1 and +0.5 for action 2. Their score vectors are (0.5, −0.5) and (−0.5, 0.5), so the products are (−0.25, 0.25) and (−0.25, 0.25). The advantage and the score both flip sign between the two actions, so their products coincide.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A state-dependent baseline leaves the expected policy gradient unchanged, so it is free variance reduction.</li>
+            <li>The advantage A = Q − V measures how much better an action is than the policy's average in its state.</li>
+            <li>The baseline should be close to the expected return; the advantage is then the signal that drives the update.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.5 ===================== -->
+    <section class="lesson" id="actor-critic" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.5</span><h2>Actor–critic methods</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A baseline needs the value <span class="tex">V(s)</span>, but we do not know it. REINFORCE waits for whole episodes to estimate returns. Could the policy learn while the episode is still running, by learning a value estimate at the same time and using it to score each step?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a sports team. The <b>actor</b> chooses the plays. The <b>critic</b> watches each play and says whether it went better or worse than expected. The critic does not choose anything; it only keeps an honest running estimate of how good each situation is. After every play, the critic's surprise (how far the outcome was from its expectation) tells the actor which choices to repeat, and it also corrects the critic's own expectations.</p>
+        <p>Actor–critic methods do this with two learned functions. The actor is the policy <span class="tex">\pi_\theta</span>. The critic is a value estimate <span class="tex">V_w(s)</span>. Their surprise is the <b>TD error</b>, which we met in the temporal-difference modules: the reward just received plus the discounted value of the next state, minus the value that was expected.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the TD error.</b> After taking action <span class="tex">a_t</span> in <span class="tex">s_t</span>, we observe <span class="tex">r_{t+1}</span> and <span class="tex">s_{t+1}</span>. The one-step target for the value of <span class="tex">s_t</span> is <span class="tex">r_{t+1}+\gamma V(s_{t+1})</span>, so the TD error is</p>
+        <div class="eq">\delta_t=r_{t+1}+\gamma V(s_{t+1})-V(s_t)\qquad(\text{with }V(\text{terminal})=0)</div>
+        <p><b>Step 2: the TD error estimates the advantage.</b> Taking the expectation given <span class="tex">(s_t,a_t)</span>: <span class="tex">\mathbb E[\delta_t\mid s_t,a_t]=\mathbb E[r_{t+1}+\gamma V(s_{t+1})\mid s_t,a_t]-V(s_t)=Q^\pi(s_t,a_t)-V^\pi(s_t)=A^\pi(s_t,a_t)</span> when <span class="tex">V=V^\pi</span>. So the TD error is a one-sample advantage, with no need to wait for the episode to end. This is the link to the baseline lesson.</p>
+        <p><b>Step 3: the two updates.</b> The actor moves its probability in the direction the advantage suggests, and the critic moves its estimate towards the target:</p>
+        <div class="eq">\theta\leftarrow\theta+\alpha_a\,\delta_t\,\nabla_\theta\log\pi_\theta(a_t\mid s_t),\qquad w\leftarrow w+\alpha_c\,\delta_t\,\nabla_w V_w(s_t)</div>
+        <p>In the tabular case <span class="tex">V_w(s)</span> is simply a table, and the critic's update is <span class="tex">V(s_t)\leftarrow V(s_t)+\alpha_c\delta_t</span>. The two updates run after every step, so learning does not wait for the episode to finish.</p>
+        <p><b>Step 4: the price of bootstrapping.</b> Replacing the true return by <span class="tex">r+\gamma V(s')</span> reduces variance, because it depends only on one step of randomness. But it is biased while <span class="tex">V</span> is wrong, since the critic's own errors feed into the target. Multi-step versions interpolate: the n-step advantage uses <span class="tex">n</span> real rewards and then bootstraps, and generalised advantage estimation (GAE) averages the TD errors with a weight <span class="tex">\lambda</span> that trades bias for variance.</p>
+
+        <div class="worked"><b>Worked example: one step at S, then one at M</b>
+          <p>A two-step task: from S choose Up (to M, reward 0) or Down (to a terminal state). From M one step gives reward +1 and ends. Take <span class="tex">\gamma=0.9</span>, step sizes <span class="tex">\alpha_c=\alpha_a=0.3</span>, initial critic values <span class="tex">V(S)=0.2</span>, <span class="tex">V(M)=0.5</span>, and an actor with logits <span class="tex">z=(0,0)</span>, so <span class="tex">\pi(\text{Up}\mid S)=0.5</span>. Suppose the agent samples Up.</p>
+          <p><b>At S.</b> The reward is 0 and the next state is M:</p>
+          <div class="eq">\delta_S=0+0.9\,V(M)-V(S)=0.9(0.5)-0.2=0.25</div>
+          <p>The critic moves: <span class="tex">V(S)\leftarrow0.2+0.3(0.25)=0.275</span>. The actor's score for Up is <span class="tex">\nabla_z\log\pi(\text{Up})=(1-0.5,\ -0.5)=(0.5,-0.5)</span>, so <span class="tex">\Delta z=0.3(0.25)(0.5,-0.5)=(0.0375,-0.0375)</span>. The new probability is <span class="tex">\pi(\text{Up}\mid S)=\sigma(0.075)=0.51874</span>. Up was better than expected, so it became more likely.</p>
+          <p><b>At M.</b> The reward is +1 and the episode ends, so the target is 1:</p>
+          <div class="eq">\delta_M=1+0-V(M)=1-0.5=0.5,\qquad V(M)\leftarrow0.5+0.3(0.5)=0.65</div>
+          <p>M has only one action, so the score is zero and only the critic moves. The critic is now closer to the true values <span class="tex">V(M)=1</span> and <span class="tex">V(S)=\gamma V^\pi(M)=0.9</span> under the policy that picks Up.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <div class="eq">\delta_t=r_{t+1}+\gamma V_w(s_{t+1})-V_w(s_t),\qquad \theta\leftarrow\theta+\alpha_a\,\delta_t\,\nabla_\theta\log\pi_\theta(a_t\mid s_t),\qquad w\leftarrow w+\alpha_c\,\delta_t\,\nabla_w V_w(s_t)</div>
+        <table class="sym">
+          <tr><td><span class="tex">\pi_\theta</span></td><td>the actor: the policy that chooses actions</td></tr>
+          <tr><td><span class="tex">V_w</span></td><td>the critic: a value estimate with parameters <span class="tex">w</span></td></tr>
+          <tr><td><span class="tex">\delta_t</span></td><td>the TD error, a one-sample estimate of the advantage at step <span class="tex">t</span></td></tr>
+          <tr><td><span class="tex">\alpha_a,\ \alpha_c</span></td><td>the actor and critic step sizes; the critic is often set larger so it tracks the policy</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>discount factor</td></tr>
+        </table>
+        <p>Conditions: convergence of actor–critic to a local optimum requires the critic to learn on a faster time scale than the actor (or to be accurate enough), and the usual step-size conditions. These are not guaranteed in deep networks, which is one reason for the stabilisers in the next lesson.</p>
+
+        <h3 class="sec">Lab: one-step actor–critic on a two-step decision</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with the defaults. Each episode has up to five events: choose, TD error, critic and actor update, then the TD error at M. The caption names each one, and the diagram lights up the edge being used.</li>
+          <li>Set the reward for Down to 1.0. Down now pays more than Up can return (γ·1 = 0.9), so the blue curve π(Up|S) should fall toward 0, which the dashed target shows.</li>
+          <li>Set γ = 0. Up is now worth 0, so the greedy choice is Down at r_D = 0.3, and the dashed target drops to 0.</li>
+          <li>Set the critic step to 0.01 and the actor step to 0.3. The critic lags, the TD errors stay large, and the policy's changes are driven by a poor value estimate. Compare with the defaults.</li></ol></div>
+        <div data-lab="pg-actor-critic"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Forgetting the terminal value.</b> At the end of an episode the next value is zero. Bootstrapping from a terminal state's learned value is a bug.</li>
+            <li><b>Two critics that disagree.</b> Actor and critic share the same environment; if the critic is learned with a different target, the advantage can be meaningless.</li>
+            <li><b>Thinking the TD error is the reward.</b> δ is the surprise: reward plus next value minus current value. A large reward can still give a small δ when it was expected.</li>
+            <li><b>Ignoring the time scale.</b> If the actor moves much faster than the critic, the advantage describes an old policy and the update points the wrong way.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b>
+            <p>A2C (advantage actor–critic) runs many environments in parallel and uses n-step advantages with a shared network for actor and critic. A3C (asynchronous advantage actor–critic) does the same with asynchronous workers. Most continuous-control and game-playing agents, and the value heads of language-model RL, are actor–critic in this sense.</p></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (one step or a few steps per environment), learn stage (the TD error and both updates, every few steps rather than per episode). Cost: one critic forward pass per step plus one actor update per batch. Stores: the actor's parameters, the critic's parameters or table, and a short buffer of recent transitions.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, what would δ_S be if the agent had sampled Down instead, with r_D = 0.3 and the terminal value zero?</summary><div class="ans">δ_S = r_D + γ·0 − V(S) = 0.3 + 0 − 0.2 = 0.1. The actor would then lower the logit of Up, because a positive TD error on Down raises Down's probability.</div></details>
+          <details class="check"><summary>2. Why is E[δ_t | s_t, a_t] equal to the advantage when V is exact?</summary><div class="ans">E[δ | s, a] = E[r + γV(s′) | s, a] − V(s) = Q^π(s, a) − V^π(s), because Q^π(s, a) is by definition the expected reward plus the discounted value of the next state. Subtracting V^π(s) gives the advantage.</div></details>
+          <details class="check"><summary>3. What does the critic gain over REINFORCE, and what does it lose?</summary><div class="ans">It gains updates after every step, without waiting for episode ends, and lower variance because the target depends on one step of randomness. It loses unbiasedness, since its target uses the critic's own (possibly wrong) estimates.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>An actor chooses and a critic evaluates; the critic's TD error is a one-step advantage estimate.</li>
+            <li>Learning happens after every step, which makes actor–critic faster than REINFORCE, at the cost of bias from bootstrapping.</li>
+            <li>The step sizes of the two parts must be set so that the critic keeps up with the actor.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.6 ===================== -->
+    <section class="lesson" id="ppo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.6</span><h2>Proximal policy optimisation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Our advantage estimates say which actions to reinforce, but how far should one update move the policy? A step that is too large can destroy a good policy in one batch. A step that is too small wastes the data we collected. How do we reuse a batch of experience for several updates while keeping each new policy close to the one that collected the data?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine adjusting a wobbly table by turning one leg. A large turn may tip it over; many small turns are safe but slow. The classic remedy is a trust region: only move within a radius where the local map is still accurate. The policy's data were collected by the old policy, so the gradient is only trustworthy near the old policy. Trust regions (TRPO) enforce this with a hard constraint on the KL divergence. <b>PPO</b> (Schulman et al., 2017) gets most of the benefit with a much simpler device: it clips the objective so that there is no reward for moving the probability ratio too far.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: the probability ratio.</b> Let <span class="tex">\pi_{\text{old}}</span> be the policy that collected the batch and <span class="tex">\pi_\theta</span> the policy we are optimising. For each sampled action define</p>
+        <div class="eq">r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\text{old}}(a_t\mid s_t)}</div>
+        <p>At the start of the update <span class="tex">r_t=1</span>. A ratio of 1.3 means the new policy makes that action 30% more likely than the old one did.</p>
+        <p><b>Step 2: the surrogate objective.</b> The importance-weighted advantage <span class="tex">\mathbb E[r_t(\theta)A_t]</span> has the same gradient as the policy gradient at <span class="tex">\theta_{\text{old}}</span>, so we can optimise it on the old batch. But nothing stops <span class="tex">r_t</span> from growing without limit. The clipped objective fixes that:</p>
+        <div class="eq">L^{\text{CLIP}}(\theta)=\mathbb E_t\Big[\min\big(r_t(\theta)A_t,\ \operatorname{clip}(r_t(\theta),\,1-\varepsilon,\,1+\varepsilon)\,A_t\big)\Big]</div>
+        <p><b>Step 3: read the minimum case by case.</b> If <span class="tex">A>0</span> and the ratio exceeds <span class="tex">1+\varepsilon</span>, the clipped term is smaller, so the objective stops rewarding a further increase: the gradient is zero. If <span class="tex">A>0</span> and the ratio is below <span class="tex">1-\varepsilon</span>, the unclipped term is smaller and still gives a gradient, so the policy is free to make a good action more likely. The mirror image holds for <span class="tex">A&lt;0</span>: pushing the ratio below <span class="tex">1-\varepsilon</span> earns nothing more, but pushing it up is still penalised. In every case the clip removes the incentive to move far, and it never adds a reward for moving in the wrong direction.</p>
+        <p><b>Step 4: several epochs on one batch.</b> Because the clip limits how far the policy is rewarded for moving, the same batch can be used for several gradient steps (epochs and minibatches). That reuse is most of PPO's efficiency gain over vanilla policy gradients.</p>
+
+        <div class="worked"><b>Worked example: four ratios and their advantages</b>
+          <p>Use <span class="tex">\varepsilon=0.2</span>, so the band is <span class="tex">[0.8,\,1.2]</span>. Compute the two terms and their minimum:</p>
+          <table class="tbl">
+            <tr><th>ratio r</th><th>advantage A</th><th>r·A</th><th>clip(r)·A</th><th>min</th><th>gradient flows?</th></tr>
+            <tr><td>1.3</td><td>2</td><td>2.6</td><td>2.4 (clip at 1.2)</td><td>2.4</td><td>no: the clipped term is the minimum</td></tr>
+            <tr><td>0.9</td><td>2</td><td>1.8</td><td>1.8</td><td>1.8</td><td>yes: inside the band</td></tr>
+            <tr><td>0.7</td><td>−1.5</td><td>−1.05</td><td>−1.2 (clip at 0.8)</td><td>−1.2</td><td>no: the clipped term is the minimum</td></tr>
+            <tr><td>0.9</td><td>−1.5</td><td>−1.35</td><td>−1.35</td><td>−1.35</td><td>yes: inside the band</td></tr>
+          </table>
+          <p>Row 1 is the case the clip is designed for: the action is good, the policy has already made it 30% more likely, and the objective gives no further reward. Row 3 is the mirror case, where a bad action has already been made 30% less likely and the objective stops pushing it down. Rows 2 and 4 are inside the band, and they behave like ordinary policy gradients.</p></div>
+
+        <h3 class="sec">Formal definition</h3>
+        <div class="eq">L^{\text{CLIP}}(\theta)=\mathbb E_t\big[\min(r_tA_t,\ \operatorname{clip}(r_t,1-\varepsilon,1+\varepsilon)A_t)\big],\qquad r_t=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\text{old}}}(a_t\mid s_t)}</div>
+        <table class="sym">
+          <tr><td><span class="tex">r_t(\theta)</span></td><td>probability ratio of the new to the old policy for the action taken at step <span class="tex">t</span></td></tr>
+          <tr><td><span class="tex">A_t</span></td><td>advantage estimate at step <span class="tex">t</span> (for example from GAE, computed with the critic)</td></tr>
+          <tr><td><span class="tex">\varepsilon</span></td><td>clip range, typically 0.1 to 0.2; it sets the band <span class="tex">[1-\varepsilon,1+\varepsilon]</span></td></tr>
+          <tr><td><span class="tex">\operatorname{clip}(x,a,b)</span></td><td>x limited to the interval [a, b]</td></tr>
+          <tr><td><span class="tex">\theta_{\text{old}}</span></td><td>the parameters that collected the batch, fixed during the update</td></tr>
+        </table>
+        <p>Full PPO usually optimises <span class="tex">L^{\text{CLIP}}-c_1L^{\text{VF}}+c_2\,\mathcal S[\pi_\theta]</span>, adding a value-function loss for the critic and an entropy bonus that keeps the policy from collapsing too early. The clip is not a hard constraint: a single gradient step can still overshoot the band, and different samples can move the ratio in different directions. PPO is therefore an approximate trust region, and implementations often monitor the KL divergence between the old and new policy and stop the epochs early if it grows too large.</p>
+
+        <h3 class="sec">Lab: the clip stops one action's ratio</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with the defaults (A = 2, ε = 0.2, lr = 0.25, K = 12 steps). The grey unclipped curve keeps rising towards 1, while the blue clipped curve flattens once the ratio passes 1.2 (the upper edge of the green band).</li>
+          <li>Set the advantage to −2. Now the clip acts on the lower edge: the ratio is pushed down until it passes 0.8, and the blue curve stops there (near 0.76 after one overshooting step) while the grey one keeps falling.</li>
+          <li>Increase the step size lr to 1. The unclipped curve overshoots the band in a single step, and the clipped one stalls at a larger ratio than the band, which shows that the clip limits the reward for moving rather than the step itself.</li>
+          <li>Set K to 4 and then to 30. With these settings the clip engages at step 3, so the clipped run is flat for the rest of the batch, while the unclipped run keeps moving. Reusing a batch many times cannot push the ratio much further once it is past the band.</li></ol></div>
+        <div data-lab="pg-ppo"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Thinking the clip is a trust region.</b> It removes the incentive to move far, but it does not bound the KL divergence. Monitor the KL in practice.</li>
+            <li><b>Forgetting the sign of the advantage.</b> The clip is one-sided for each sign. Clipping the wrong side makes the objective reward the wrong direction.</li>
+            <li><b>Stale ratios.</b> <span class="tex">\pi_{\text{old}}</span> must be the policy that collected the data, and the log-probabilities must be stored at collection time, not recomputed from the current weights.</li>
+            <li><b>Believing PPO is always stable.</b> Its results depend on the advantage estimates, normalisation, value-loss weight and clip range, and on the seed. Run several seeds before drawing conclusions.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b>
+            <p>PPO is the default policy-gradient method in many research and industry settings. It trains locomotion policies for simulated and real legged robots, and it is the algorithm behind RLHF in several language-model systems, where the reward model scores sampled responses and a KL penalty to a reference model is added to the objective.</p></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Interact stage (collect a batch with the current policy and store log-probabilities), learn stage (several epochs of minibatch updates on the clipped objective and a value loss), then evaluate and deploy stage (the trained policy runs at the control rate). Stores: the rollout buffer (states, actions, old log-probabilities, advantages, returns), and the policy and value weights.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With ε = 0.2, what is L^CLIP for r = 1.5 and A = 2?</summary><div class="ans">r·A = 3.0 and clip(1.5)·A = 1.2 × 2 = 2.4. The minimum is 2.4, the clipped term. The gradient with respect to θ is zero for this sample, because the ratio is above 1 + ε and the advantage is positive.</div></details>
+          <details class="check"><summary>2. Why does PPO store the old log-probabilities at collection time rather than recomputing them during the epochs?</summary><div class="ans">The ratio is defined against the policy that collected the batch, π_old. If the old probabilities were recomputed with the current weights, the ratio would be 1 at every epoch and the clip would never act. Storing them keeps the reference fixed across the epochs.</div></details>
+          <details class="check"><summary>3. With A &lt; 0 and r = 0.7, ε = 0.2, why is the gradient zero, and what would happen if the ratio were 0.9 instead?</summary><div class="ans">The unclipped term is −1.05 and the clipped term is 0.8 × (−1.5) = −1.2; the minimum is −1.2, the clipped one, so the gradient is zero. The action has already been made 30% less likely, and the objective stops rewarding further decrease. At r = 0.9 both terms are −1.35 and the gradient flows, since the ratio is still inside the band.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>The probability ratio lets one batch of experience train a new policy, as long as that policy is close to the one that collected the batch.</li>
+            <li>PPO's clipped objective removes the reward for moving the ratio beyond 1 ± ε in the favourable direction, which limits the step without a constrained optimiser.</li>
+            <li>The clip is an approximate trust region: it helps a lot, but it does not guarantee small KL divergence, so monitor it.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say how a stochastic policy is parameterised, why the policy gradient needs only samples, how REINFORCE turns it into an update, why a baseline and an advantage reduce variance without bias, how an actor and a critic learn together through the TD error, and how PPO's clipped ratio keeps each batch update close to the policy that collected it. Next, <b>Module 7</b> covers model-based reinforcement learning, where the agent learns a model of the environment and plans with it: <a href="rl-model-based.html">Module 7 · Model-based reinforcement learning</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

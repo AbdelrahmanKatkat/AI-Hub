@@ -7,7 +7,7 @@ Live: https://abdelrahmankatkat.github.io/AI-Hub/ · repo: AbdelrahmanKatkat/AI-
 ## Topic order (sidebar, home grid) — do not reorder without being asked
 Mathematics → Machine Learning → Data Science → Computer Vision → NLP → Voice → Generative AI → Governing AI →
 Reinforcement Learning → Domains (GeoAI, Robotics, Healthcare & Bio, Climate & Earth, Finance, Other — each a sub-topic).
-Live now: Mathematics (9 modules / 58 lessons), Machine Learning (10 modules / 63 lessons), Computer Vision (10 modules / 70 lessons), GeoAI (10 modules / 63 lessons, a sub-topic of Domains, includes STAC and STAC MLM), Robotics (10 modules / 59 lessons, a sub-topic of Domains). Others: `status: 'soon'`.
+Live now: Mathematics (9 modules / 58 lessons), Machine Learning (10 modules / 63 lessons), Computer Vision (10 modules / 70 lessons), GeoAI (10 modules / 63 lessons, a sub-topic of Domains, includes STAC and STAC MLM), Robotics (10 modules / 59 lessons, a sub-topic of Domains), Reinforcement Learning (10 modules / 56 lessons). Others: `status: 'soon'`.
 
 ## Layout
 ```
@@ -73,5 +73,6 @@ A page is not done until labs render, equations typeset (no raw `\frac`), and th
   Many lab simulations are labelled *illustrative*; worked numbers were computed in code.
 - **GeoAI**: live (sub-topic of Domains). Hub `geoai.html` + modules `geo-*.html`. Spec `curriculum/geoai.md`; addendum `curriculum/AUTHORING-GEO.md` (verified STAC MLM v1.6.0 fields). Labs in `assets/labs-geo-<module>.js`.
 - **Robotics**: live (sub-topic of Domains). Hub `robotics.html` + modules `robo-*.html`, 59 lessons. Spec `curriculum/robotics.md`; addendum `curriculum/AUTHORING-ROBOTICS.md`. Labs in `assets/labs-robo-<module>.js`. Most lab simulations are labelled *illustrative*; no hardware was tested.
-- Next topics in order: Data Science, NLP, Voice, Generative AI, Governing AI, Reinforcement Learning, Domains (GeoAI, Robotics, Healthcare & Bio, ...).
+- **Reinforcement Learning**: live. Hub `reinforcement-learning.html` + modules `rl-*.html`, 56 lessons. Spec `curriculum/reinforcement-learning.md`; addendum `curriculum/AUTHORING-RL.md`. Labs in `assets/labs-rl-<module>.js`. Most lab simulations are labelled *illustrative*; deep-RL labs are small plain-JS models, not real training runs.
+- Next topics in order: Data Science, NLP, Voice, Generative AI, Governing AI, then Domains (GeoAI, Robotics, Healthcare & Bio, ...).
 - Agent runs can hit the session rate limit: when that happens, resume the agents (SendMessage) — their files are saved on disk.
