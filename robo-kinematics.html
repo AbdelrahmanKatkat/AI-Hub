@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Kinematics &amp; dynamics · Robotics</title>
+<meta name="description" content="Forward and inverse kinematics of a planar arm, the Jacobian and force mapping, manipulator dynamics with a worked one-link and two-link example, differential-drive odometry, and simulating robots with numerical integration.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-robo-kinematics.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Kinematics &amp; dynamics</h1>
+        <p>A robot is a chain of rigid links joined by motors. Kinematics asks where the parts are and how fast they move, without caring why. Dynamics asks what torques are needed to make them move that way. By the end you will chain link transforms by hand, solve for the joint angles that reach a target, map joint speeds and forces through the Jacobian, write the equations of motion of a two-link arm, model a wheeled base, and simulate all of it without the numbers blowing up.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs Module 0 (frames) and Mathematics (matrices, derivatives)</span></div>
+      </div>
+    </div>
+
+    <div class="intro prose">
+      <p><b>Where this module sits in the loop.</b> Kinematics and dynamics run inside the <i>think</i> stage of the sense–think–act loop. A joint controller reads encoders (sense) at 1 kHz, computes the torque the motor must make (think), and sends the command to the motor driver (act). Forward kinematics is computed at the estimator rate, often 100 Hz to 1 kHz. Inverse kinematics runs when a planner asks for a pose, usually at 10 to 100 Hz.</p>
+      <p><b>Units.</b> Angles are in radians inside the equations and in degrees in the readouts; each lab says which. Lengths are metres, times are seconds, torques are newton-metres (N·m), and gravity is g = 9.81 m/s².</p>
+    </div>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="forward-kinematics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">2.1</span><h2>Forward kinematics</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A two-link arm has encoders on both joints. They read 30° at the shoulder and 45° at the elbow. Where is the gripper tip, in metres, relative to the shoulder? You need that answer thousands of times a second to know whether the hand is about to hit the table.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine two rigid sticks, one pinned to a wall and the other pinned to the end of the first. Each joint is a hinge. Once you know the two hinge angles, the whole arm is fixed, so the position of the tip must be a function of those two numbers alone. Forward kinematics is that function. It is a bookkeeping exercise: start at the base, move along the first stick, turn at the elbow, move along the second stick. Where you end up is the tip.</p>
+        <p>The one subtle point is the word <i>relative</i>. The elbow encoder measures how far the forearm has turned <b>relative to the upper arm</b>, not relative to the floor. The forearm's true direction in the world is the shoulder angle plus the elbow angle. Most mistakes in robot code come from mixing these two conventions.</p>
+
+        <h3 class="sec">Build it up: one link, then two</h3>
+        <p><b>Step 1: one link.</b> A stick of length <span class="tex">l</span> that makes angle <span class="tex">\theta</span> with the x-axis ends at <span class="tex">(l\cos\theta,\ l\sin\theta)</span>. This is just the definition of cosine and sine: the stick is the hypotenuse, its horizontal projection is the cosine and its vertical projection is the sine.</p>
+        <p><b>Step 2: two links, absolute angles.</b> Put the second stick at the end of the first. Its tip offset from the elbow is <span class="tex">(l_2\cos\phi,\ l_2\sin\phi)</span>, where <span class="tex">\phi</span> is its absolute direction. Adding the two offsets gives the tip.</p>
+        <p><b>Step 3: switch to relative angles.</b> The encoder gives <span class="tex">\theta_2</span>, the turn at the elbow. The absolute direction of the forearm is <span class="tex">\phi=\theta_1+\theta_2</span>. Substituting gives the familiar form <span class="tex">x=l_1\cos\theta_1+l_2\cos(\theta_1+\theta_2)</span>.</p>
+        <p><b>Step 4: chain the frames.</b> Each link gets its own coordinate frame, a rotation followed by a translation along the link. The composition of the frames is one matrix product, and the tip position is its last column. This is how a robot with 6 or 7 joints is handled with the same code.</p>
+
+        <div class="worked"><b>Worked example: the two-link arm at 30° and 45°</b>
+          <p>Take <span class="tex">l_1=1.00\text{ m}</span>, <span class="tex">l_2=0.50\text{ m}</span>, <span class="tex">\theta_1=30^\circ</span>, <span class="tex">\theta_2=45^\circ</span>. Then the forearm's absolute direction is <span class="tex">\theta_1+\theta_2=75^\circ</span>.</p>
+          <p><b>Elbow.</b> <span class="tex">\cos 30^\circ=0.8660</span>, <span class="tex">\sin 30^\circ=0.5000</span>, so the elbow is at <span class="tex">(1.00\times0.8660,\ 1.00\times0.5000)=(0.8660,\ 0.5000)\text{ m}</span>.</p>
+          <p><b>Forearm offset.</b> <span class="tex">\cos 75^\circ=0.2588</span>, <span class="tex">\sin 75^\circ=0.9659</span>, so the offset is <span class="tex">(0.50\times0.2588,\ 0.50\times0.9659)=(0.1294,\ 0.4830)\text{ m}</span>.</p>
+          <p><b>Tip.</b> Adding: <span class="tex">x=0.8660+0.1294=0.9954\text{ m}</span> and <span class="tex">y=0.5000+0.4830=0.9830\text{ m}</span>. The tip sits about 1.4 m from the shoulder, up and out.</p>
+          <p><b>Check by the matrix chain.</b> Each link is a 3×3 homogeneous transform <span class="tex">T_i=\text{Rot}(\theta_i)\,\text{Trans}(l_i)</span>. Multiplying them gives a total transform whose rotation block is <span class="tex">\begin{pmatrix}0.2588 &amp; -0.9659\\0.9659 &amp; 0.2588\end{pmatrix}</span> (a rotation by 75°) and whose last column is <span class="tex">(0.9954,\ 0.9830,\ 1)</span>. The same numbers come out, now as one product.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For a planar arm with <span class="tex">n</span> revolute joints, the forward kinematics map takes the joint vector to the end-effector pose. For the two-link arm:</p>
+        <div class="eq">\mathbf{x}=f(\mathbf{q})=\begin{pmatrix} l_1\cos\theta_1+l_2\cos(\theta_1+\theta_2)\\ l_1\sin\theta_1+l_2\sin(\theta_1+\theta_2)\end{pmatrix}</div>
+        <p>The general tool is the <b>Denavit–Hartenberg (DH) convention</b>. Each joint gets four numbers, and the transform from frame <span class="tex">i-1</span> to frame <span class="tex">i</span> is</p>
+        <div class="eq">T_i=\text{Rot}_z(\theta_i)\,\text{Trans}_z(d_i)\,\text{Trans}_x(a_i)\,\text{Rot}_x(\alpha_i)</div>
+        <p>For the planar two-link arm, <span class="tex">\alpha=0</span> and <span class="tex">d=0</span> for both joints, so the DH table is short:</p>
+        <table class="tbl">
+          <tr><th>Joint</th><th><span class="tex">\theta_i</span> (variable)</th><th><span class="tex">d_i</span></th><th><span class="tex">a_i</span></th><th><span class="tex">\alpha_i</span></th></tr>
+          <tr><td>1</td><td><span class="tex">\theta_1</span></td><td>0</td><td><span class="tex">l_1=1.00</span> m</td><td>0</td></tr>
+          <tr><td>2</td><td><span class="tex">\theta_2</span></td><td>0</td><td><span class="tex">l_2=0.50</span> m</td><td>0</td></tr>
+        </table>
+        <p>The tip pose is <span class="tex">T_{\text{tip}}=T_1T_2</span>. Its translation part is the vector <span class="tex">\mathbf{x}</span> above.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\theta_1,\ \theta_2</span></td><td>shoulder and elbow angles (rad); <span class="tex">\theta_2</span> is relative to the upper arm</td></tr>
+          <tr><td><span class="tex">l_1,\ l_2</span></td><td>link lengths (m)</td></tr>
+          <tr><td><span class="tex">\mathbf{x}=(x,y)</span></td><td>tip position in the base frame (m)</td></tr>
+          <tr><td><span class="tex">\text{Rot}_z(\theta)</span>, <span class="tex">\text{Trans}_x(a)</span></td><td>3×3 homogeneous rotation about z and translation along x</td></tr>
+          <tr><td><span class="tex">a_i,\ d_i,\ \alpha_i,\ \theta_i</span></td><td>DH link length, offset, twist and joint angle of link <span class="tex">i</span></td></tr>
+        </table>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set both angles to 0°. The arm is straight along x, so the tip should be at (1.5, 0) m. Why is that the reach limit?</li>
+          <li>Set the elbow to 90° with the shoulder at 0°. Check the tip against the formula by hand: <span class="tex">(1,0)+(0,0.5)=(1,0.5)</span>.</li>
+          <li>Set the shoulder to 30° and the elbow to 45°. Compare the readout with the worked example above.</li>
+          <li>Edit the expression for the shoulder trajectory to <code>pi/3*sin(0.3*t)</code> and press play. The tip traces a curve; notice it is never more than 1.5 m from the shoulder.</li></ol></div>
+        <div data-lab="fk-arm"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Absolute versus relative.</b> Using the elbow reading as if it were the forearm's world direction gives a tip that is wrong by the shoulder angle. Check which convention your driver reports.</li>
+          <li><b>Degrees in a radian function.</b> <code>cos(45)</code> in most programming languages means 45 radians. Convert once, at the boundary.</li>
+          <li><b>Frames are not commutative.</b> <span class="tex">T_1T_2\neq T_2T_1</span> in general. Multiply in the order the links are attached, base first.</li>
+          <li><b>Forward kinematics is a function, inverse is not.</b> One set of angles gives one tip pose; a pose can come from several angle sets (Lesson 2.2).</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Learned manipulation policies receive joint readings, but their training data often stores end-effector poses. Forward kinematics converts between the two, so a policy can be trained in either space.</li>
+          <li>Pose estimation for grasping (Module 4) reports the object in the camera frame; forward kinematics of the arm, through the hand-eye transform, tells the planner where that object is in the base frame.</li>
+          <li>Simulators such as MuJoCo and Pinocchio evaluate the same chain of transforms, once per simulated step, for every robot in a batch.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A two-link arm has <span class="tex">l_1=0.8</span> m and <span class="tex">l_2=0.6</span> m. What is the largest distance the tip can reach from the shoulder?</summary><div class="ans">The arm is straightest when <span class="tex">\theta_2=0</span>, so the distance is <span class="tex">l_1+l_2=1.4</span> m. Any bend reduces it.</div></details>
+        <details class="check"><summary>2. With <span class="tex">l_1=1</span> m, <span class="tex">l_2=0.5</span> m, <span class="tex">\theta_1=0^\circ</span> and <span class="tex">\theta_2=90^\circ</span>, what is the tip position?</summary><div class="ans">The forearm's absolute direction is <span class="tex">90^\circ</span>, so the tip is the elbow <span class="tex">(1,0)</span> plus <span class="tex">(0,0.5)</span>, which gives <span class="tex">(1.0,\ 0.5)</span> m.</div></details>
+        <details class="check"><summary>3. Why do the rotation parts of the frames multiply, but the translations do not simply add?</summary><div class="ans">Each link's translation is expressed in its own rotated frame, so it must be rotated by everything upstream before it is added. The homogeneous product handles this automatically: the last column of <span class="tex">T_1T_2</span> is <span class="tex">(l_1\cos\theta_1,\ l_1\sin\theta_1)+\text{Rot}(\theta_1)(l_2\cos\theta_2,\ l_2\sin\theta_2)</span>, which is the formula with the relative angle, as derived in Step 3.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Forward kinematics maps joint angles to the tip pose by adding link vectors, each rotated by the sum of the angles before it.</li>
+          <li>Keep one convention for angles, and write the DH table before coding a chain of more than two links.</li>
+          <li>The tip pose is a single matrix product of link transforms; the last column is the position.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Estimate</i> (state of the arm) and stage 4, <i>Plan</i>. Forward kinematics reads the encoders and writes the end-effector pose, a small set of numbers stored per control tick.</div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="inverse-kinematics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">2.2</span><h2>Inverse kinematics</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The gripper must reach a cup at <span class="tex">(1.0,\ 0.8)</span> m from the shoulder. Which shoulder and elbow angles put the tip there? Is there more than one answer, and what if the cup is 2 m away?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Forward kinematics went from angles to a point. Inverse kinematics runs the other way. Picture the shoulder as a centre and the elbow as a point that must lie on a circle of radius <span class="tex">l_1</span>. The tip must lie on a circle of radius <span class="tex">l_2</span> around the elbow. The two circles intersect in at most two points, and each intersection is a valid elbow position. Those two points are the <b>elbow-up</b> and <b>elbow-down</b> solutions, the same hand reached with the elbow above or below the line from shoulder to target.</p>
+        <p>If the circles do not meet, the target is out of reach. If the target is exactly at the far edge of both circles, the arm is straight and there is one solution.</p>
+
+        <h3 class="sec">Build it up: the triangle</h3>
+        <p><b>Step 1: the reach.</b> The distance from shoulder to target is <span class="tex">r=\sqrt{x^2+y^2}</span>. Two links of lengths <span class="tex">l_1,l_2</span> can only span distances between <span class="tex">|l_1-l_2|</span> and <span class="tex">l_1+l_2</span>. Outside that band there is no solution.</p>
+        <p><b>Step 2: the elbow angle from the cosine rule.</b> The three sides <span class="tex">l_1,l_2,r</span> form a triangle. The angle between the two links is <span class="tex">\pi-\theta_2</span> at the elbow, and the cosine rule gives <span class="tex">\cos\theta_2=\dfrac{r^2-l_1^2-l_2^2}{2l_1l_2}</span>. The sign of <span class="tex">\sin\theta_2</span> chooses elbow up or down.</p>
+        <p><b>Step 3: the shoulder angle.</b> Let <span class="tex">\alpha=\operatorname{atan2}(y,x)</span> be the direction of the target, and <span class="tex">\beta=\operatorname{atan2}(l_2\sin\theta_2,\ l_1+l_2\cos\theta_2)</span> the offset caused by the bent elbow. Then <span class="tex">\theta_1=\alpha-\beta</span>.</p>
+
+        <div class="worked"><b>Worked example: reaching (1.0, 0.8) m</b>
+          <p>Links <span class="tex">l_1=1.00</span> m and <span class="tex">l_2=0.50</span> m. Distance: <span class="tex">r^2=1.0^2+0.8^2=1.64</span>, so <span class="tex">r=1.281</span> m. This is inside the reach band <span class="tex">[0.5,\ 1.5]</span>, so a solution exists.</p>
+          <p><b>Elbow.</b> <span class="tex">\cos\theta_2=\dfrac{1.64-1.00-0.25}{2\times1.00\times0.50}=\dfrac{0.39}{1.00}=0.390</span>. So <span class="tex">\theta_2=\pm67.05^\circ</span> (the two signs are the two elbows), and <span class="tex">\sin\theta_2=\pm0.9208</span>.</p>
+          <p><b>Shoulder, elbow up (<span class="tex">\theta_2=+67.05^\circ</span>).</b> <span class="tex">\alpha=\operatorname{atan2}(0.8,\,1.0)=38.66^\circ</span>. <span class="tex">\beta=\operatorname{atan2}(0.5\times0.9208,\ 1.0+0.5\times0.390)=\operatorname{atan2}(0.4604,\ 1.195)=21.07^\circ</span>. So <span class="tex">\theta_1=38.66-21.07=17.59^\circ</span>.</p>
+          <p><b>Shoulder, elbow down (<span class="tex">\theta_2=-67.05^\circ</span>).</b> The sine flips sign, so <span class="tex">\beta</span> becomes <span class="tex">-21.07^\circ</span> and <span class="tex">\theta_1=38.66+21.07=59.73^\circ</span>.</p>
+          <p><b>Check by forward kinematics.</b> Elbow up: <span class="tex">x=\cos17.59^\circ+0.5\cos(84.64^\circ)=0.9532+0.5\times0.0935=1.000</span> and <span class="tex">y=\sin17.59^\circ+0.5\sin84.64^\circ=0.3022+0.4978=0.800</span>. Elbow down gives the same tip, <span class="tex">(1.000,\ 0.800)</span>.</p>
+          <p><b>Out of reach.</b> Target <span class="tex">(2.0,\ 0)</span>: <span class="tex">r=2.0</span> is above <span class="tex">l_1+l_2=1.5</span>. The cosine formula gives <span class="tex">\cos\theta_2=(4.00-1.25)/1.00=2.75</span>, which is greater than 1, so there is no angle. Correctly, there is no solution.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Inverse kinematics solves <span class="tex">f(\mathbf{q})=\mathbf{x}^*</span> for <span class="tex">\mathbf{q}</span>, where <span class="tex">\mathbf{x}^*</span> is the desired pose. For the planar arm the closed-form solution is</p>
+        <div class="eq">\cos\theta_2=\frac{x^2+y^2-l_1^2-l_2^2}{2l_1l_2},\qquad \theta_1=\operatorname{atan2}(y,x)-\operatorname{atan2}\!\big(l_2\sin\theta_2,\ l_1+l_2\cos\theta_2\big)</div>
+        <p>A solution exists when <span class="tex">|\cos\theta_2|\le1</span>, that is when <span class="tex">|l_1-l_2|\le r\le l_1+l_2</span>.</p>
+        <table class="sym">
+          <tr><td><span class="tex">x^*,y^*</span> or <span class="tex">x,y</span></td><td>target position of the tip relative to the shoulder (m)</td></tr>
+          <tr><td><span class="tex">r</span></td><td>distance from the shoulder to the target, <span class="tex">\sqrt{x^2+y^2}</span> (m)</td></tr>
+          <tr><td><span class="tex">\operatorname{atan2}(y,x)</span></td><td>the angle of the point <span class="tex">(x,y)</span> from the positive x-axis, in the correct quadrant (rad)</td></tr>
+          <tr><td>elbow up / down</td><td>the two solutions, with <span class="tex">\theta_2&gt;0</span> and <span class="tex">\theta_2&lt;0</span></td></tr>
+        </table>
+        <p><b>Closed form versus numerical.</b> A closed-form solution like this exists for simple arms. A general arm with six or seven joints has no tidy formula. Then a <b>numerical solver</b> starts from a guess and repeats the update <span class="tex">\Delta\mathbf{q}=J^{+}(\mathbf{x}^*-f(\mathbf{q}))</span>, where <span class="tex">J^{+}</span> is a pseudo-inverse of the Jacobian (Lesson 2.3). The lab uses a damped version, which is more stable near singular poses.</p>
+        <p><b>Redundancy.</b> A seven-joint arm reaching a point in space has a whole family of joint solutions, because the extra joint lets the elbow swivel. This extra freedom is useful for avoiding obstacles, and it is handled by the null space of the Jacobian, which Module 5 uses for planning.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Drag the target into the middle of the reach band. Two arms appear: the solid one is elbow up, the dashed one elbow down. Both touch the target.</li>
+          <li>Drag the target out to the edge of the band (a distance of 1.5 m). Watch the two solutions merge into one straight arm.</li>
+          <li>Drag the target beyond 1.5 m. The target turns red and the solver reports no solution.</li>
+          <li>Press <b>Solve numerically</b> from the current pose. Count the iterations and watch the error fall. Then change the damping and see how fast the error falls at a close target.</li></ol></div>
+        <div data-lab="ik-arm"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Using <code>atan</code> instead of <code>atan2</code>.</b> <span class="tex">\arctan(y/x)</span> loses the quadrant: the target <span class="tex">(-1,-1)</span> and <span class="tex">(1,1)</span> give the same answer. Use <code>atan2</code> with both arguments.</li>
+          <li><b>Forgetting the second solution.</b> Code that returns only elbow up will fail when an obstacle sits on that side. Return both, and pick one with a rule.</li>
+          <li><b>Clipping an out-of-range cosine.</b> Rounding can give <span class="tex">\cos\theta_2=1.0000001</span>. Clamp it to <span class="tex">[-1,1]</span>, but only after you have checked that the target is reachable within a tolerance.</li>
+          <li><b>Singular poses.</b> Near a straight arm the solution is very sensitive: a tiny error in the target asks for a large change in the joints. Expect fast joint motion there.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Teleoperation and learned policies often output a desired tip pose. An inverse-kinematics layer turns it into joint targets that the motor controller can track.</li>
+          <li>Motion planners sample configurations and need the joint angles for each sampled pose (Module 5). Fast, reliable IK is a bottleneck for sampling-based planning.</li>
+          <li>Reinforcement learning with end-effector action spaces relies on an IK solver to produce the joint commands that the simulator executes.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Links are <span class="tex">l_1=1</span> m and <span class="tex">l_2=1</span> m. The target is at distance <span class="tex">r=1</span> m from the shoulder. What is <span class="tex">\cos\theta_2</span>, and how many elbow solutions are there?</summary><div class="ans"><span class="tex">\cos\theta_2=(1-1-1)/(2\cdot1\cdot1)=-0.5</span>, so <span class="tex">\theta_2=\pm120^\circ</span>. Two solutions, elbow up and down, both valid because <span class="tex">r</span> is strictly inside the band <span class="tex">[0,2]</span>.</div></details>
+        <details class="check"><summary>2. Why does the closed-form solver need <code>atan2</code> for <span class="tex">\theta_1</span>?</summary><div class="ans">The target can be in any of four quadrants, and <span class="tex">\arctan(y/x)</span> cannot tell <span class="tex">(x,y)</span> from <span class="tex">(-x,-y)</span>. <code>atan2(y,x)</code> returns the angle in the correct quadrant.</div></details>
+        <details class="check"><summary>3. A seven-joint arm has more joints than the task has degrees of freedom. Is inverse kinematics then easier or harder?</summary><div class="ans">Usually easier to make feasible, since many configurations reach the target and one can be chosen to avoid obstacles. It is harder to specify, because the answer is not unique and the solver must choose one, typically by an extra cost such as staying close to a rest pose.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Inverse kinematics finds joint angles for a target pose. A two-link arm has at most two solutions, and none outside its reach band.</li>
+          <li>Closed forms come from the cosine rule and <code>atan2</code>; general arms use iterative solvers built on the Jacobian.</li>
+          <li>Redundant arms have many solutions, and the choice among them is a planning decision.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 4, <i>Plan</i>. Inverse kinematics runs when a pose is requested, typically at 10 to 100 Hz, and returns joint targets for stage 5, <i>Control</i>.</div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="jacobian" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">2.3</span><h2>The Jacobian and velocity mapping</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The operator wants the gripper to slide 10 cm per second along the x-axis, from the arm pose of Lesson 2.1. How fast must each joint turn? And if the gripper pushes with 10 N in the x-direction, what torque must each motor supply to hold that push?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Zoom in on any point of the forward-kinematics map. Over a tiny range of joint angles, the curve from joints to tip looks like a straight line. The best straight line is the <b>Jacobian</b>, a matrix of slopes. It is the derivative of forward kinematics. If the joints move a little, the tip moves by the Jacobian times that little. If the arm is at a different pose, the Jacobian is different, so the Jacobian is a function of the configuration.</p>
+        <p>The same matrix also works in reverse for forces. A push at the tip is equivalent to a set of torques at the joints, and the rule that converts one into the other is the transpose of the Jacobian. That symmetry is the reason force control and velocity control share one object.</p>
+
+        <h3 class="sec">Build it up: slopes first</h3>
+        <p><b>Step 1: one joint.</b> If only <span class="tex">\theta_1</span> moves, with speed <span class="tex">\dot\theta_1</span>, the tip moves on a circle of radius <span class="tex">r</span> around the shoulder. The tip speed is <span class="tex">l\dot\theta_1</span> in the tangent direction, perpendicular to the arm. Linear speed equals radius times angular speed.</p>
+        <p><b>Step 2: two joints.</b> Each joint contributes its own tangent velocity, and the total is the sum. Writing the sum as a matrix product gives <span class="tex">\dot{\mathbf{x}}=J(\mathbf{q})\dot{\mathbf{q}}</span>.</p>
+        <p><b>Step 3: the columns of J.</b> Column <span class="tex">j</span> of <span class="tex">J</span> is the tip velocity produced by moving joint <span class="tex">j</span> alone at unit speed. The first column is the tangent direction at the shoulder, the second is the tangent at the elbow.</p>
+
+        <div class="worked"><b>Worked example: velocity and force at 30° and 45°</b>
+          <p>From Lesson 2.1: <span class="tex">l_1=1.00</span> m, <span class="tex">l_2=0.50</span> m, <span class="tex">\theta_1=30^\circ</span>, <span class="tex">\theta_2=45^\circ</span>, <span class="tex">\theta_1+\theta_2=75^\circ</span>. Differentiating the forward kinematics gives</p>
+          <div class="eq">J=\begin{pmatrix}-l_1\sin\theta_1-l_2\sin(\theta_1+\theta_2) &amp; -l_2\sin(\theta_1+\theta_2)\\ l_1\cos\theta_1+l_2\cos(\theta_1+\theta_2) &amp; l_2\cos(\theta_1+\theta_2)\end{pmatrix}</div>
+          <p>With the numbers: <span class="tex">-1.00(0.5000)-0.50(0.9659)=-0.9830</span>, <span class="tex">-0.50(0.9659)=-0.4830</span>, <span class="tex">0.9954</span>, <span class="tex">0.50(0.2588)=0.1294</span>. So</p>
+          <div class="eq">J=\begin{pmatrix}-0.9830 &amp; -0.4830\\ 0.9954 &amp; 0.1294\end{pmatrix}\ \text{m/rad}</div>
+          <p><b>Velocity.</b> Joint speeds <span class="tex">\dot{\mathbf{q}}=(0.10,\ 0)</span> rad/s (only the shoulder turns, at 0.10 rad/s) give <span class="tex">\dot{\mathbf{x}}=(-0.0983,\ 0.0995)</span> m/s. The tip moves up and left, perpendicular to the arm, as the circle picture predicts.</p>
+          <p><b>Joint speeds for a desired tip velocity.</b> For the operator's request <span class="tex">\dot{\mathbf{x}}=(0.10,\ 0)</span> m/s, we need <span class="tex">J\dot{\mathbf{q}}=(0.10,0)</span>. Here <span class="tex">\det J=(-0.9830)(0.1294)-(-0.4830)(0.9954)=-0.1272+0.4808=0.3536\ \text{m}^2</span>, which equals <span class="tex">l_1l_2\sin\theta_2=0.5\times0.7071=0.3536</span>. Inverting the 2×2 matrix gives <span class="tex">\dot{\mathbf{q}}=J^{-1}(0.10,0)^{\!\top}=(0.0366,\ -0.2816)\ \text{rad/s}</span>. The shoulder turns forward, the elbow backward.</p>
+          <p><b>Force.</b> A tip force of <span class="tex">\mathbf{F}=(10,0)</span> N in the x-direction needs joint torques <span class="tex">\boldsymbol\tau=J^{\top}\mathbf{F}=\begin{pmatrix}-9.83\\-4.83\end{pmatrix}\text{ N·m}</span>. Both motors must push back against the load, and the shoulder carries most of it.</p>
+          <p><b>Singularity.</b> <span class="tex">\det J=l_1l_2\sin\theta_2</span> is zero when the elbow is straight (<span class="tex">\theta_2=0</span>) or folded flat (<span class="tex">\theta_2=\pi</span>). At those poses the arm cannot move the tip in one direction at any joint speed.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\dot{\mathbf{x}}=J(\mathbf{q})\,\dot{\mathbf{q}},\qquad J_{ij}(\mathbf{q})=\frac{\partial x_i}{\partial q_j}\qquad\qquad \boldsymbol\tau=J(\mathbf{q})^{\top}\mathbf{F}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathbf{q},\ \dot{\mathbf{q}}</span></td><td>joint angles (rad) and joint velocities (rad/s)</td></tr>
+          <tr><td><span class="tex">\dot{\mathbf{x}}</span></td><td>tip velocity in the base frame (m/s)</td></tr>
+          <tr><td><span class="tex">J(\mathbf{q})</span></td><td>the Jacobian, a matrix of partial derivatives with units m/rad; its entries depend on the pose</td></tr>
+          <tr><td><span class="tex">\mathbf{F}</span></td><td>force applied at the tip (N)</td></tr>
+          <tr><td><span class="tex">\boldsymbol\tau</span></td><td>joint torques (N·m) that produce the force <span class="tex">\mathbf F</span> in static equilibrium</td></tr>
+          <tr><td><span class="tex">\det J</span></td><td>determinant; zero at a singularity</td></tr>
+        </table>
+        <p>The force relation comes from energy: the power delivered by the joints, <span class="tex">\boldsymbol\tau^{\top}\dot{\mathbf q}</span>, must equal the power at the tip, <span class="tex">\mathbf F^{\top}\dot{\mathbf x}</span>. Substituting <span class="tex">\dot{\mathbf x}=J\dot{\mathbf q}</span> gives <span class="tex">\boldsymbol\tau^{\top}=\mathbf F^{\top}J</span>, so <span class="tex">\boldsymbol\tau=J^{\top}\mathbf F</span>.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the elbow to 45°. Watch the grey parallelogram: it shows the tip velocities that unit joint speeds produce. Its area is <span class="tex">|\det J|</span>.</li>
+          <li>Slide the elbow toward 0°. The parallelogram flattens to a line and the readout of <span class="tex">\det J</span> falls to zero. That is the singularity.</li>
+          <li>Set the elbow to 0.5°. Press play: the joint velocities needed for a fixed tip velocity become very large. Caption: "near-singular, joint speeds explode".</li>
+          <li>Change the tip force in the readout to (10, 0) and then (0, 10). Compare which motor works hardest in each case.</li></ol></div>
+        <div data-lab="jac-map"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The Jacobian is local.</b> Its linear map is good only for small joint changes. Predicting a large motion by multiplying once is an approximation.</li>
+          <li><b>Transpose, not inverse.</b> Forces map through <span class="tex">J^{\top}</span>. Using <span class="tex">J^{-1}</span> for forces gives the wrong torques, and does not even exist at a singularity.</li>
+          <li><b>Position and orientation mix.</b> A 6-DoF Jacobian stacks linear and angular rows. Their units differ (m/s and rad/s), so scale them before you read a single "speed".</li>
+          <li><b>Singularity is a property of the pose, not the robot.</b> A singular pose is a place to avoid or to plan around, not a crash. Most controllers switch to damped solutions there.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Teleoperation converts a hand-controller velocity into joint velocities with the Jacobian, and feeds force feedback back through <span class="tex">J^{\top}</span>.</li>
+          <li>Visual servoing (Module 4) uses an image Jacobian, a close cousin of this one, to convert pixel error into camera motion.</li>
+          <li>Learned controllers sometimes predict task-space actions and rely on the Jacobian to map them to joints. Its conditioning is a diagnostic for poses where learning will be unstable.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At <span class="tex">\theta_1=0^\circ,\ \theta_2=90^\circ</span> with <span class="tex">l_1=1</span>, <span class="tex">l_2=0.5</span>, what is <span class="tex">\det J</span>?</summary><div class="ans"><span class="tex">\det J=l_1l_2\sin\theta_2=0.5\times1=0.5\ \text{m}^2</span>. The arm is far from singular.</div></details>
+        <details class="check"><summary>2. A tip force of (0, 10) N is applied with the arm at 30° and 45°. Find the torques.</summary><div class="ans"><span class="tex">\boldsymbol\tau=J^{\top}(0,10)^{\top}=(J_{21}\cdot10,\ J_{22}\cdot10)=(9.95,\ 1.29)\ \text{N·m}</span>. The shoulder works harder because it is farther from the tip.</div></details>
+        <details class="check"><summary>3. Why is the force mapping <span class="tex">J^{\top}</span> and not <span class="tex">J^{-1}</span>, even though joint speeds use the inverse?</summary><div class="ans">Velocities and forces live in different spaces. Power balance requires <span class="tex">\boldsymbol\tau^{\top}\dot{\mathbf q}=\mathbf F^{\top}\dot{\mathbf x}</span>, and substituting <span class="tex">\dot{\mathbf x}=J\dot{\mathbf q}</span> gives the transpose. The inverse is only needed when you want joint speeds for a given tip speed, and it exists only away from singularities.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The Jacobian is the local linear map from joint velocities to tip velocities, and its columns are the tip velocities of each joint.</li>
+          <li>Forces map through its transpose, by power balance; this is why one matrix serves both velocity and force control.</li>
+          <li>Where <span class="tex">\det J=0</span> the arm loses a direction of motion, and joint speeds diverge nearby.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 5, <i>Control</i>. The Jacobian is recomputed at the control rate (often 500 Hz to 1 kHz) and is a small 6×6 or smaller matrix for most arms.</div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="manipulator-dynamics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">2.4</span><h2>Manipulator dynamics</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A motor must hold a 2 kg link out horizontally, its centre of mass 0.25 m from the joint. What torque does the motor need? If the motor switches off, how fast does the link accelerate downward?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Kinematics describes motion; dynamics explains it. A link resists being accelerated: the heavier it is and the farther its mass sits from the joint, the more torque it takes to speed it up. This resistance is called <b>inertia</b>. Gravity adds a torque that depends on how far the centre of mass sticks out horizontally. When several links move together, the torque on one joint also depends on how fast the others are moving, which is the <b>Coriolis and centrifugal</b> effect. A spinning ice skater pulls in her arms to spin faster; the same physics couples the joints of an arm.</p>
+        <p>The full set of equations is a balance of torques: torque from the motor equals inertia times acceleration, plus the velocity-coupling terms, plus gravity. It is compact in matrix form, and the same form works for any number of joints.</p>
+
+        <h3 class="sec">Build it up: one link, then two</h3>
+        <p><b>Step 1: a single link about its joint.</b> Newton's second law for rotation says torque equals moment of inertia times angular acceleration: <span class="tex">\tau=I\ddot q</span>. The inertia about the joint is the sum of the link's own inertia about its centre (<span class="tex">I</span>) and the mass times the square of the distance to the centre (<span class="tex">mlc^2</span>). This is the parallel-axis theorem.</p>
+        <p><b>Step 2: gravity.</b> The weight <span class="tex">mg</span> acts at the centre of mass, a horizontal distance <span class="tex">lc\cos q</span> from the joint when the link is at angle <span class="tex">q</span> above horizontal. Its torque is <span class="tex">mg\,lc\cos q</span>.</p>
+        <p><b>Step 3: one link balance.</b> Putting the two together, the motor torque must balance inertia and gravity: <span class="tex">\tau=(mlc^2+I)\ddot q+mg\,lc\cos q</span>.</p>
+
+        <div class="worked"><b>Worked example: the one-link arm</b>
+          <p>Mass <span class="tex">m=2.00</span> kg, centre of mass at <span class="tex">lc=0.250</span> m from the joint, centroidal inertia <span class="tex">I=0.050</span> kg·m², <span class="tex">g=9.81</span> m/s².</p>
+          <p><b>Inertia about the joint.</b> <span class="tex">I_o=mlc^2+I=2.00\times0.0625+0.050=0.175\ \text{kg·m}^2</span>.</p>
+          <p><b>Holding torque.</b> Horizontal link, <span class="tex">q=0</span>, so <span class="tex">\cos q=1</span> and with <span class="tex">\ddot q=0</span>: <span class="tex">\tau=mg\,lc=2.00\times9.81\times0.250=4.905\ \text{N·m}</span>. A motor rated below about 5 N·m cannot hold the arm out horizontally.</p>
+          <p><b>Release.</b> The motor switches off (<span class="tex">\tau=0</span>) with the link horizontal and at rest. Then <span class="tex">\ddot q=\dfrac{\tau-mg\,lc\cos q}{I_o}=\dfrac{0-4.905}{0.175}=-28.03\ \text{rad/s}^2</span>. The angular acceleration is large and negative: the link drops quickly, but more slowly than a point mass at the same radius would (<span class="tex">g\cos q/lc=39.2</span> rad/s²), because the link's own inertia resists the change.</p></div>
+
+        <p>The two-link arm has the same structure, but the torques are coupled and the inertia depends on the pose. Here is the complete equation of motion and one evaluated example.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">M(\mathbf q)\,\ddot{\mathbf q}+C(\mathbf q,\dot{\mathbf q})\,\dot{\mathbf q}+\mathbf g(\mathbf q)=\boldsymbol\tau</div>
+        <p>For the planar two-link arm, with link masses <span class="tex">m_1,m_2</span>, lengths <span class="tex">l_1,l_2</span>, centre-of-mass distances <span class="tex">lc_1,lc_2</span> and centroidal inertias <span class="tex">I_1,I_2</span>, let</p>
+        <div class="eq">a=m_1lc_1^2+I_1+m_2(l_1^2+lc_2^2)+I_2,\qquad b=m_2l_1lc_2,\qquad c=m_2lc_2^2+I_2</div>
+        <div class="eq">M=\begin{pmatrix}a+2b\cos\theta_2 &amp; c+b\cos\theta_2\\ c+b\cos\theta_2 &amp; c\end{pmatrix},\qquad C=\begin{pmatrix}-b\sin\theta_2\,\dot\theta_2 &amp; -b\sin\theta_2(\dot\theta_1+\dot\theta_2)\\ b\sin\theta_2\,\dot\theta_1 &amp; 0\end{pmatrix}</div>
+        <div class="eq">\mathbf g=\begin{pmatrix}(m_1lc_1+m_2l_1)\,g\cos\theta_1+m_2lc_2\,g\cos(\theta_1+\theta_2)\\ m_2lc_2\,g\cos(\theta_1+\theta_2)\end{pmatrix}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathbf q,\ \dot{\mathbf q},\ \ddot{\mathbf q}</span></td><td>joint angles (rad), velocities (rad/s), accelerations (rad/s²)</td></tr>
+          <tr><td><span class="tex">M(\mathbf q)</span></td><td>the inertia matrix, symmetric and positive definite; its entries depend on the pose</td></tr>
+          <tr><td><span class="tex">C(\mathbf q,\dot{\mathbf q})\dot{\mathbf q}</span></td><td>Coriolis and centrifugal torques (N·m), quadratic in velocities</td></tr>
+          <tr><td><span class="tex">\mathbf g(\mathbf q)</span></td><td>gravity torques (N·m) that the motors must hold against</td></tr>
+          <tr><td><span class="tex">\boldsymbol\tau</span></td><td>joint torques (N·m) applied by the motors</td></tr>
+          <tr><td><span class="tex">m_i,\ lc_i,\ I_i,\ l_i</span></td><td>mass (kg), centre distance from the joint (m), centroidal inertia (kg·m²), length (m)</td></tr>
+        </table>
+
+        <div class="worked"><b>Worked example: the two-link arm at <span class="tex">\theta_2=0</span></b>
+          <p>Parameters: <span class="tex">m_1=2</span> kg, <span class="tex">l_1=1</span> m, <span class="tex">lc_1=0.5</span> m, <span class="tex">I_1=0.10</span>; <span class="tex">m_2=1</span> kg, <span class="tex">lc_2=0.4</span> m, <span class="tex">I_2=0.02</span>. (Link 2 has length <span class="tex">l_2=0.8</span> m, which does not enter the equations here because only <span class="tex">lc_2</span> is needed.)</p>
+          <p><b>Constants.</b> <span class="tex">a=2(0.25)+0.10+1(1+0.16)+0.02=1.78</span>, <span class="tex">b=1(1)(0.4)=0.40</span>, <span class="tex">c=1(0.16)+0.02=0.18</span>.</p>
+          <p><b>Inertia matrix at <span class="tex">\theta_2=0</span>.</b> <span class="tex">\cos 0=1</span>, so <span class="tex">M=\begin{pmatrix}2.58 &amp; 0.58\\ 0.58 &amp; 0.18\end{pmatrix}</span>. Its determinant is <span class="tex">2.58\times0.18-0.58^2=0.128&gt;0</span>, so it is positive definite, as it must be for a physical system.</p>
+          <p><b>Gravity at rest, horizontal arms (<span class="tex">\theta_1=\theta_2=0</span>).</b> <span class="tex">\mathbf g=\big((2\times0.5+1\times1.0)\times9.81+1\times0.4\times9.81,\ 0.4\times9.81\big)=(23.54,\ 3.92)\ \text{N·m}</span>. Check the first entry: link 1's weight acts at 0.5 m and link 2's at 1.0 + 0.4 = 1.4 m from the shoulder, so the moment is <span class="tex">(2\times0.5+1\times1.4)\times9.81=23.54</span> N·m. The motors must supply these torques to hold the arm still.</p>
+          <p><b>Holding torque is the gravity term.</b> At rest, <span class="tex">\dot{\mathbf q}=\ddot{\mathbf q}=0</span> and the equation reduces to <span class="tex">\boldsymbol\tau=\mathbf g(\mathbf q)</span>.</p></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the one-link torque to 4.905 N·m and press play with the link held horizontal. It should stay still. Change the torque to 4.0 and watch it fall.</li>
+          <li>Edit the torque expression to <code>4.905*cos(t)</code>. The motor now oscillates. Find the time at which the link is at its highest and watch the angle follow the torque.</li>
+          <li>Change the centre-of-mass distance <span class="tex">lc</span> to 0.4 m. Note how the holding torque rises and the inertia rises faster.</li>
+          <li>Set the viscous friction b to 0.4 N·m·s and release the link from horizontal. It swings past the bottom and back before settling. Now set b to 1.85 N·m·s and release again: the link returns to hanging down with no overshoot. The term <span class="tex">-b\dot q</span> is an extension of the formula above; 1.85 is the critical value <span class="tex">2I_o\omega_n</span> with <span class="tex">\omega_n=\sqrt{mg\,lc/I_o}=5.29</span> rad/s.</li></ol></div>
+        <div data-lab="dyn-pendulum"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Centroid versus joint.</b> Use <span class="tex">I_o=mlc^2+I</span> when the link pivots about its end. Using the centroidal <span class="tex">I</span> alone underestimates the inertia and makes the controller too aggressive.</li>
+          <li><b>Gravity sign depends on the angle convention.</b> If <span class="tex">q</span> is measured downward from the vertical, the gravity term is <span class="tex">\sin</span> and not <span class="tex">\cos</span>. Write the convention beside the equation.</li>
+          <li><b>M depends on the pose.</b> A controller tuned for one configuration may be unstable in another; the inertia at the elbow-straight pose is larger than at the elbow-folded pose.</li>
+          <li><b>Torques, not forces.</b> Motor specifications give torque at the output shaft, after the gear ratio. Mixing motor-side and link-side torques is a common source of factor-of-gear-ratio errors.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Model-based control (computed torque, impedance control, Module 6) inverts this equation to compute the torque that gives a desired acceleration. Learned models are often trained to predict <span class="tex">M</span>, <span class="tex">C</span> and <span class="tex">\mathbf g</span> from data when the parameters are unknown.</li>
+          <li>Physics simulators (MuJoCo, Pinocchio, Isaac-based simulators) evaluate this equation thousands of times per second to step the robot forward. Reinforcement learning inherits its speed and accuracy.</li>
+          <li>Learned policies that output torques are easier to train when the gravity term is removed or predicted. Many controllers add a learned residual on top of the known <span class="tex">\mathbf g(\mathbf q)</span>.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The one-link arm with <span class="tex">m=2</span> kg, <span class="tex">lc=0.25</span> m and <span class="tex">I=0.05</span> kg·m² is held vertically up (<span class="tex">q=90^\circ</span>). How much torque does it need?</summary><div class="ans"><span class="tex">\cos 90^\circ=0</span>, so the gravity torque is zero. The arm is balanced at this pose and needs no holding torque, which is why a vertical arm is easy to hold and a horizontal one is hard.</div></details>
+        <details class="check"><summary>2. The two-link inertia matrix at <span class="tex">\theta_2=0</span> is <span class="tex">\begin{pmatrix}2.58&amp;0.58\\0.58&amp;0.18\end{pmatrix}</span>. At <span class="tex">\theta_2=90^\circ</span>, what is the off-diagonal entry?</summary><div class="ans"><span class="tex">c+b\cos 90^\circ=0.18+0.40\times0=0.18</span>. The coupling term is smaller when the elbow is folded, so the two joints interact less.</div></details>
+        <details class="check"><summary>3. Why is <span class="tex">M(\mathbf q)</span> positive definite?</summary><div class="ans">Its quadratic form is the kinetic energy: <span class="tex">\tfrac12\dot{\mathbf q}^{\top}M\dot{\mathbf q}&gt;0</span> for any nonzero joint velocity, since a moving mass always has positive kinetic energy. Hence the matrix has a positive determinant (here 0.128) and can always be inverted.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Torque balances inertia, Coriolis and gravity: <span class="tex">M\ddot q+C\dot q+g=\tau</span>.</li>
+          <li>Inertia about the joint is <span class="tex">mlc^2+I</span>; the one-link worked example gives 4.905 N·m to hold horizontal and -28.0 rad/s² on release.</li>
+          <li>The inertia matrix depends on pose and is positive definite; a two-link example gives <span class="tex">M=\begin{pmatrix}2.58&amp;0.58\\0.58&amp;0.18\end{pmatrix}</span> at <span class="tex">\theta_2=0</span>.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 5, <i>Control</i>, and stage 6 for simulation. Evaluating <span class="tex">M</span>, <span class="tex">C</span> and <span class="tex">\mathbf g</span> runs at the control rate; the full forward dynamics runs in the simulator at a small time step (Lesson 2.6).</div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="mobile-kinematics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">2.5</span><h2>Mobile robot kinematics &amp; odometry</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A warehouse robot has two drive wheels and no GPS. Its wheel encoders say how far each wheel has turned. Where is the robot now, and which way is it facing? How wrong does the answer become if the wheel radius is off by a little?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A differential-drive base has two powered wheels on one axle and a caster for balance. Turn both wheels at the same speed and the robot drives straight. Turn them at different speeds and it curves, pivoting around a point on the axle line. Turn them in opposite directions and it spins in place. Every motion is a combination of a forward speed and a turning rate, so the whole base can be described by two numbers.</p>
+        <p>Wheel encoders integrate those numbers over time to estimate the pose. This is <b>odometry</b>, dead reckoning from motion alone. It is fast and smooth, but its errors accumulate, because each estimate starts from the last one.</p>
+
+        <h3 class="sec">Build it up: wheels to body motion</h3>
+        <p><b>Step 1: wheel speed.</b> A wheel of radius <span class="tex">r</span> turning at <span class="tex">\omega_R</span> rad/s has a rim speed <span class="tex">r\omega_R</span> m/s.</p>
+        <p><b>Step 2: body speed.</b> The robot's forward speed <span class="tex">v</span> is the average of the two rim speeds, <span class="tex">v=\tfrac{r}{2}(\omega_R+\omega_L)</span>. Its turning rate <span class="tex">\omega</span> comes from the difference divided by the track width <span class="tex">L</span> (the distance between the wheel contact points): <span class="tex">\omega=\tfrac{r}{L}(\omega_R-\omega_L)</span>.</p>
+        <p><b>Step 3: pose.</b> The state is <span class="tex">(x,y,\theta)</span>: position and heading. The body moves forward at speed <span class="tex">v</span> in its heading direction, and the heading changes at rate <span class="tex">\omega</span>.</p>
+        <p><b>Step 4: the constraint.</b> The wheels cannot slide sideways. This gives a rule that the velocity has no component perpendicular to the heading: <span class="tex">\dot x\sin\theta-\dot y\cos\theta=0</span>. A constraint on velocity that cannot be integrated into a constraint on position is called <b>non-holonomic</b>. The robot can reach any pose, but not by moving sideways, so parking requires a sequence of manoeuvres.</p>
+
+        <div class="worked"><b>Worked example: two seconds of driving</b>
+          <p>Wheel radius <span class="tex">r=0.050</span> m, track width <span class="tex">L=0.300</span> m, wheel speeds <span class="tex">\omega_R=10</span> rad/s and <span class="tex">\omega_L=8</span> rad/s. Start at <span class="tex">(0,0)</span> with heading 0.</p>
+          <p><b>Body motion.</b> <span class="tex">v=\tfrac{0.05}{2}(10+8)=0.450</span> m/s and <span class="tex">\omega=\tfrac{0.05}{0.30}(10-8)=0.3333</span> rad/s.</p>
+          <p><b>Exact after 2 s.</b> With constant <span class="tex">v</span> and <span class="tex">\omega</span> the robot moves on a circle of radius <span class="tex">R=v/\omega=1.350</span> m. The heading changes by <span class="tex">\Delta\theta=\omega T=0.6667</span> rad (38.20°). So <span class="tex">x=R\sin\Delta\theta=0.8348</span> m and <span class="tex">y=R(1-\cos\Delta\theta)=0.2891</span> m.</p>
+          <p><b>Approximate, 1-second steps.</b> Treat each second as straight-line motion in the current heading. Step 1: <span class="tex">(0.4500,\ 0)</span>, heading 0.3333 rad. Step 2: add <span class="tex">0.45\cos(0.3333)=0.4252</span> to x and <span class="tex">0.45\sin(0.3333)=0.1472</span> to y. Result <span class="tex">(0.8752,\ 0.1472)</span> m. The heading is the same, 0.6667 rad.</p>
+          <p><b>Error of the approximation.</b> Compared with the exact <span class="tex">(0.8348,\ 0.2891)</span>, the coarse steps are off by 0.040 m in x and by 0.142 m in y. Halving the step size reduces the error, which is the point of the next lesson on integration.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\dot x=v\cos\theta,\qquad \dot y=v\sin\theta,\qquad \dot\theta=\omega,\qquad v=\frac{r}{2}(\omega_R+\omega_L),\qquad \omega=\frac{r}{L}(\omega_R-\omega_L)</div>
+        <div class="eq">\text{non-holonomic constraint:}\quad \dot x\sin\theta-\dot y\cos\theta=0</div>
+        <table class="sym">
+          <tr><td><span class="tex">(x,y,\theta)</span></td><td>pose: position (m) and heading (rad) in the world frame</td></tr>
+          <tr><td><span class="tex">v,\ \omega</span></td><td>forward speed (m/s) and turning rate (rad/s), in the body frame</td></tr>
+          <tr><td><span class="tex">\omega_R,\ \omega_L</span></td><td>right and left wheel angular speeds (rad/s)</td></tr>
+          <tr><td><span class="tex">r</span></td><td>wheel radius (m)</td></tr>
+          <tr><td><span class="tex">L</span></td><td>track width, the distance between the two wheel contact points (m)</td></tr>
+        </table>
+        <p><b>Odometry.</b> The encoders give the wheel angles, so the wheel speeds are known from differences over the sample time. The pose is then updated by integrating the equations above. Integration error and wheel slip both accumulate, so odometry is always combined with other sensors (Module 3).</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set both wheel speeds to 10 rad/s. The robot drives straight. Read the distance travelled: it should be <span class="tex">r\omega T</span> after time <span class="tex">T</span>.</li>
+          <li>Set the right wheel to 10 and the left to 8. Watch the curve. Compare the readout with the exact pose in the worked example after 2 s.</li>
+          <li>Set the right wheel to 10 and the left to -10. The robot spins in place. Its position does not change.</li>
+          <li>Increase the odometry step (the coarse dead-reckoning curve). Watch the error between the two trails grow. Then add a 2 % wheel-radius error to the odometry only, and see how it drifts.</li></ol></div>
+        <div data-lab="odo-drive"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Track width is contact to contact.</b> A wide or squashed tyre changes the effective contact separation, so the value on the datasheet can be wrong. Calibrate it by driving in a measured circle and comparing the heading change with the encoder counts.</li>
+          <li><b>Odometry drifts.</b> A 1 % error in radius gives roughly a 1 % error in distance, and a small heading error sends the estimate sideways by an amount that grows with the distance travelled. Expect drift; do not treat odometry as ground truth.</li>
+          <li><b>Wheel slip.</b> Encoders count rotation, not motion. On wet floors or hard turns the wheels slip and the odometry thinks the robot went farther.</li>
+          <li><b>Non-holonomic does not mean stuck.</b> A car cannot drive sideways, but it can park in a bay by reversing and turning. The constraint shapes the path, not the reachable set.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Warehouse and delivery robots run odometry at 50 to 200 Hz and fuse it with lidar or camera localisation (Module 3, extended Kalman filter).</li>
+          <li>Learned navigation policies and simulators use this unicycle model, because it is accurate for wheeled bases and cheap to evaluate.</li>
+          <li>Odometry error is a major source of "sim-to-real" gaps in mobile robots; a simulator with perfect odometry trains policies that fail in the warehouse.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With <span class="tex">r=0.05</span> m and <span class="tex">L=0.30</span> m, the right wheel turns at 6 rad/s and the left at 6 rad/s. What is the robot's motion?</summary><div class="ans"><span class="tex">\omega=0</span> and <span class="tex">v=0.05\times6=0.30</span> m/s. The robot drives straight at 0.30 m/s.</div></details>
+        <details class="check"><summary>2. The right wheel is at 4 rad/s and the left wheel at 4 rad/s, but the radius is 1 % larger than the odometry assumes. Which way does the estimate err, and by how much?</summary><div class="ans">The odometry assumes <span class="tex">r</span>, but the true radius is <span class="tex">1.01r</span>. The true speed is 1 % higher, so the estimate under-counts distance by about 1 %. For a 10 m straight run, the error is about 0.1 m.</div></details>
+        <details class="check"><summary>3. Why can a differential-drive robot reach any pose, even though its velocity is constrained?</summary><div class="ans">The constraint is on the velocity, not the position. By combining forward motion with turning (or turning in place) the robot can reach any <span class="tex">(x,y,\theta)</span>, with manoeuvres such as parallel parking. The constraint is non-holonomic: it limits the path, not the set of reachable poses.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A differential drive has a forward speed <span class="tex">v=\tfrac r2(\omega_R+\omega_L)</span> and a turning rate <span class="tex">\omega=\tfrac rL(\omega_R-\omega_L)</span>.</li>
+          <li>Odometry integrates these speeds into a pose; it is smooth and fast, but its errors accumulate.</li>
+          <li>The wheels cannot slide sideways (non-holonomic), so motion is a sequence of forward and turning moves.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Estimate</i>. Wheel encoders are read at 100 to 200 Hz, and the odometry pose is stored as the first input to the localisation filter of Module 3.</div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.6 ===================== -->
+    <section class="lesson" id="simulation-physics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">2.6</span><h2>Simulating robots</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You want to simulate a 1 kg mass on a spring (stiffness 100 N/m) for 10 seconds, to test a controller. Computers only take small steps in time. How big must the step be? If the step is too big, the simulated energy will grow for no physical reason, so which integration method should you use, and how big a step does it allow?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A simulator is a clock and a rule. At each tick it asks, "given where everything is and how fast it moves, how fast is each thing accelerating?" Then it moves everything forward by a small time step <span class="tex">h</span>. The rule is the physics from Lesson 2.4. The clock is discrete, so the simulator is always an approximation. The art is keeping the approximation honest.</p>
+        <p>Think of walking a curved road by taking steps in straight lines. Each step cuts a corner. Short steps cut small corners; long steps cut big ones and you drift off the road. A good integrator is one that drifts in a controlled way, staying close to the road even over long walks.</p>
+
+        <h3 class="sec">Build it up: the spring, step by step</h3>
+        <p><b>Step 1: the state and the rule.</b> A spring with stiffness <span class="tex">k</span> and mass <span class="tex">m</span> has position <span class="tex">x</span> and velocity <span class="tex">v</span>. Newton's law gives <span class="tex">\dot x=v</span> and <span class="tex">\dot v=-\omega^2 x</span> with <span class="tex">\omega=\sqrt{k/m}</span>. For <span class="tex">k=100</span> N/m and <span class="tex">m=1</span> kg, <span class="tex">\omega=10</span> rad/s, so the true motion is a cosine with a period of <span class="tex">2\pi/10=0.628</span> s.</p>
+        <p><b>Step 2: explicit Euler.</b> The simplest step uses the current rates: <span class="tex">x_{n+1}=x_n+hv_n</span>, <span class="tex">v_{n+1}=v_n-h\omega^2x_n</span>. It looks right. Tested on a spring, it adds a little energy every step, so the motion grows.</p>
+        <p><b>Step 3: semi-implicit (symplectic) Euler.</b> Change one line: update the velocity first, then use the new velocity to move the position. <span class="tex">v_{n+1}=v_n-h\omega^2x_n</span>, then <span class="tex">x_{n+1}=x_n+hv_{n+1}</span>. The energy now wobbles within a fixed band instead of growing.</p>
+
+        <div class="worked"><b>Worked example: how much energy the explicit step adds</b>
+          <p>Start at <span class="tex">x_0=1</span> m, <span class="tex">v_0=0</span>, so the energy is <span class="tex">E_0=\tfrac12kx_0^2=50</span> J.</p>
+          <p><b>Growth per step.</b> Explicit Euler multiplies the energy by <span class="tex">1+\omega^2h^2</span> at each step (a short calculation from the two update rules). With <span class="tex">h=0.01</span> s, <span class="tex">\omega^2h^2=100\times0.0001=0.01</span>, so the factor is <span class="tex">1.01</span>.</p>
+          <p><b>After 10 s.</b> That is <span class="tex">n=10/0.01=1000</span> steps. The energy becomes <span class="tex">E=E_0(1.01)^{1000}=50\times20\,959=1.05\times10^6</span> J, about 21 000 times the start. The simulated spring is violently gaining energy.</p>
+          <p><b>Semi-implicit at the same step.</b> The simulated energy stays near 50 J, wobbling between 0.95 and 1.05 times <span class="tex">E_0</span>. Running the same 10 s with <span class="tex">h=0.05</span> s the wobble is wider, between 0.80 and 1.33 times <span class="tex">E_0</span>, but it does not grow: that is the bounded band, not thousands.</p>
+          <p><b>Stability limit.</b> The semi-implicit method is stable when <span class="tex">h&lt;2/\omega</span>. Here <span class="tex">2/\omega=0.2</span> s, so <span class="tex">h=0.05</span> s is safe and <span class="tex">h=0.25</span> s would blow up.</p></div>
+
+        <h3 class="sec">Contact and friction</h3>
+        <p>Robots touch things, and contact is where simulations most often fail. A simple model of dry friction, <b>Coulomb friction</b>, says the friction force is at most <span class="tex">\mu N</span>, where <span class="tex">\mu</span> is the friction coefficient and <span class="tex">N</span> the normal force pressing the surfaces together. If the applied force is smaller than that limit, the surfaces stick and friction matches the applied force. If it is larger, the object slides and friction is exactly <span class="tex">\mu N</span>.</p>
+        <div class="worked"><b>Worked example: a block on a table</b>
+          <p>Mass 1 kg, normal force <span class="tex">N=10</span> N, friction coefficient <span class="tex">\mu=0.5</span>. The friction limit is <span class="tex">\mu N=5.0</span> N.</p>
+          <p>Push with <span class="tex">F=4</span> N: <span class="tex">4&lt;5</span>, so the block sticks and the friction is 4 N. Net force is zero, and the block stays still.</p>
+          <p>Push with <span class="tex">F=6</span> N: <span class="tex">6&gt;5</span>, so the block slides and friction is 5 N. Net force is <span class="tex">6-5=1</span> N, and the acceleration is <span class="tex">1/1=1</span> m/s².</p></div>
+        <p>Friction is a discontinuous rule (stuck or slipping), which means a simulator with a large step can make the block chatter between the two states. Stiff contacts (a steel gripper on a steel part) need even smaller steps. A contact stiffness of <span class="tex">10^5</span> N/m on a 1 kg object gives <span class="tex">\omega=\sqrt{10^5}=316</span> rad/s, so the semi-implicit step must satisfy <span class="tex">h&lt;2/316=6.3\times10^{-3}</span> s.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\dot{\mathbf s}=f(\mathbf s,t)\qquad\Rightarrow\qquad \mathbf s_{n+1}=\mathbf s_n+h\,f(\mathbf s_n,t_n)\quad\text{(explicit Euler)}</div>
+        <div class="eq">\text{semi-implicit Euler (spring):}\quad v_{n+1}=v_n-h\omega^2x_n,\qquad x_{n+1}=x_n+h\,v_{n+1}</div>
+        <div class="eq">\text{Coulomb friction:}\quad |F_f|\le\mu N\quad\text{(sticking)},\qquad F_f=-\mu N\,\operatorname{sign}(\dot x)\quad\text{(sliding)}</div>
+        <table class="sym">
+          <tr><td><span class="tex">\mathbf s=(x,v)</span></td><td>state: position and velocity (m, m/s)</td></tr>
+          <tr><td><span class="tex">h</span></td><td>time step (s); it must be smaller than the fastest time scale</td></tr>
+          <tr><td><span class="tex">\omega=\sqrt{k/m}</span></td><td>natural angular frequency of the spring (rad/s)</td></tr>
+          <tr><td><span class="tex">E=\tfrac12mv^2+\tfrac12kx^2</span></td><td>total mechanical energy (J); conserved in the true motion</td></tr>
+          <tr><td><span class="tex">\mu,\ N,\ F_f</span></td><td>friction coefficient (dimensionless), normal force (N), friction force (N)</td></tr>
+        </table>
+        <p><b>Fidelity versus speed.</b> Smaller steps and more accurate contact models cost more compute. Robot learning often runs thousands of simulators in parallel, so teams choose the coarsest model that still reproduces the behaviour they care about, and then close the gap with real data.</p>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Select <b>explicit Euler</b> and set the step to 0.01 s. Press play. The energy readout grows, and the amplitude of the mass grows with it. Caption: "energy added by the scheme, not by physics".</li>
+          <li>Switch to <b>semi-implicit</b> with the same step. The energy wobbles inside a band. Watch the phase plot: the orbit stays closed.</li>
+          <li>Set the step to 0.25 s with semi-implicit. Watch it blow up, and compare with the stability limit <span class="tex">2/\omega=0.2</span> s.</li>
+          <li>Use the block lab below. Set the applied force to 4 N, then 6 N. Watch the stuck and sliding states, and read the friction force in each case.</li></ol></div>
+        <div data-lab="sim-integrators"></div>
+        <div data-lab="stick-slip"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Energy drift is a bug, not a feature.</b> A simulation that gains energy steadily is wrong, even if its picture looks plausible.</li>
+          <li><b>A smaller step is not always enough.</b> Explicit Euler diverges for any step on an oscillator. Changing the method matters more than shrinking the step.</li>
+          <li><b>Friction is a switch.</b> Friction with a stiff rule and a large step produces chatter. Use a smoothed approximation or a small step near contact.</li>
+          <li><b>Fixed time step versus real time.</b> If the simulator cannot finish a step in real time, a controller tested in simulation will see different delays from the real robot. Log the step timing.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Reinforcement learning for locomotion trains policies in simulators (MuJoCo and similar engines) that run millions of steps. The choice of integrator and time step is part of the environment definition.</li>
+          <li>Sim-to-real transfer (Module 7) depends on matching friction, contact and latency. A policy that works only at one friction value has learned the simulator, not the robot.</li>
+          <li>Learned dynamics models, which predict the next state from the current state and action, are trained on data produced by simulators or logs, and inherit their integration errors.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Explicit Euler, <span class="tex">\omega=10</span> rad/s, step <span class="tex">h=0.02</span> s. How much does the energy grow per step?</summary><div class="ans">The factor is <span class="tex">1+\omega^2h^2=1+100\times0.0004=1.04</span>, so 4 % per step. In 100 steps (2 s) that is about <span class="tex">1.04^{100}=50.5</span> times the energy.</div></details>
+        <details class="check"><summary>2. A block of mass 2 kg is pressed with <span class="tex">N=20</span> N and <span class="tex">\mu=0.3</span>. An applied force of 5 N acts. Does it slide, and what is the friction force?</summary><div class="ans">The limit is <span class="tex">\mu N=0.3\times20=6</span> N. Since <span class="tex">5&lt;6</span>, the block sticks and the friction is 5 N. The net force is zero.</div></details>
+        <details class="check"><summary>3. A contact spring of stiffness <span class="tex">10^4</span> N/m acts on a 0.5 kg part. What is the largest stable step for semi-implicit Euler?</summary><div class="ans"><span class="tex">\omega=\sqrt{10^4/0.5}=141.4</span> rad/s, so <span class="tex">h&lt;2/141.4=0.0141</span> s. A step of 10 ms is stable; 20 ms is not.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A simulator advances the state by small steps; explicit Euler adds energy to an oscillator, and semi-implicit Euler keeps it bounded.</li>
+          <li>Stability needs <span class="tex">h</span> well below <span class="tex">2/\omega</span>, the period of the fastest dynamic, including stiff contacts.</li>
+          <li>Coulomb friction is a stick-or-slip rule; a stiff contact in a simulator forces small steps, so fidelity and speed trade off directly.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 6, <i>Deploy &amp; monitor</i>, as a test environment, and stage 5 when a model runs inside the controller. Simulation steps run as fast as the hardware allows, often in parallel across many copies.</div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now chain link transforms, solve for reaching joint angles, map velocities and forces through the Jacobian, write the equations of motion of a manipulator, model a wheeled base's odometry, and simulate robots without energy drift. Next, <b>Module 3</b> (<a href="robo-estimation.html">State estimation &amp; mapping</a>) estimates where the robot really is when odometry and kinematics drift: Bayes filters, Kalman filters, particle filters, occupancy maps and SLAM.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

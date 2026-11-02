@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 · Safety, deployment &amp; operations · Robotics</title>
+<meta name="description" content="Safety standards and risk assessment, runtime monitoring and watchdogs, safety filters for learned policies, hardware-in-the-loop testing, latency budgets on edge compute, and fleet operations with calibration drift and staged updates.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-robo-production.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="9">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 9</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">9</div>
+      <div style="flex:1">
+        <h1>Module 9 · Safety, deployment &amp; operations</h1>
+        <p>A robot that works in a demo is not yet a robot that people can trust next to them. This module is about the last mile: deciding what can go wrong and how bad it would be, watching the machine while it runs, limiting what a learned policy is allowed to do, testing changes before they reach hardware, fitting the control loop into its time budget, and keeping a fleet calibrated and updated. By the end you will compute a stopping distance by hand, size a watchdog, filter an unsafe command, read a test gate honestly, check a latency budget and plan a calibration interval.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Modules 0–8</span><span class="chip">Safety is stated, not certified</span></div>
+      </div>
+    </div>
+
+    <div class="callout warn intro" style="max-width:780px"><b>Read this first</b>Nothing on this page makes a robot safe to deploy. Safety comes from a documented risk assessment, a validated design, independent checks and the people who sign off on them. The simulations here are <b>illustrative</b>: a point on a rail, one joint, a synthetic fleet. Real certification needs a qualified assessor, and the standards named here (ISO 10218 for industrial robots, ISO 13482 for personal care robots) must be read in their current editions, not from this page.</div>
+
+    <!-- ===================== 9.1 ===================== -->
+    <section class="lesson" id="safety-standards" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">9.1</span><h2>Safety standards &amp; risk assessment</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An arm in a shared workcell moves its gripper at 1.0 m/s toward a shelf. A person steps into the arm's path. How far does the arm travel before it is fully stopped, and does its sensor notice the person early enough for the arm to stop short of them?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Start with the chain of events, not with the robot. Something causes a situation (a person steps into the path). That situation becomes a <b>hazardous event</b> (the person is inside the arm's reach while the arm is moving). The event can lead to <b>harm</b> (a pinch or a blow). Every link in that chain is a place where you can intervene: remove the cause, separate the people from the motion, slow the motion, or stop it.</p>
+        <p><b>Risk assessment</b> is the habit of walking that chain for every task and asking two questions: how bad could the harm be (its <i>severity</i>), and how often will someone be exposed to the hazard (its <i>likelihood</i>)? A common teaching device multiplies a severity score and a likelihood score. It is a way to rank problems, not a legal test, and the standards define their own methods.</p>
+        <p><b>Protective stop</b> is the simplest safety function on most robots. When a sensor sees a person in a zone, the robot halts its motion. The hard part is not the decision to stop. It is making sure the robot is <i>already</i> stopped before it reaches the person. A robot cannot stop instantly, so the sensor has to see the person early enough.</p>
+        <p><b>Standards</b> are shared, agreed recipes for doing this well. <b>ISO 10218</b> covers the safety of industrial robots, the arms in factories. <b>ISO 13482</b> covers personal care robots, the machines that work near or with people in homes and care settings. A team that designs to a standard still needs an independent assessment before it can say it complies.</p>
+
+        <h3 class="sec">Build it up: how far does the arm travel?</h3>
+        <p><b>Step 1: the arm does not stop at once.</b> When the stop command is issued, the robot first keeps moving for a short <i>reaction time</i> <span class="tex">t_r</span> (the controller, the drives and the brakes all take time to respond). During that time it covers <span class="tex">v\,t_r</span> metres, where <span class="tex">v</span> is its speed.</p>
+        <p><b>Step 2: then it brakes.</b> Braking at a constant deceleration <span class="tex">a</span> starts at speed <span class="tex">v</span> and ends at zero. From the standard kinematics formula <span class="tex">v_f^2 = v_0^2 - 2a\,\Delta x</span> with <span class="tex">v_f=0</span>, the braking distance is <span class="tex">v^2/(2a)</span>.</p>
+        <p><b>Step 3: add the two.</b> The total stopping distance is the reaction part plus the braking part. The faster the arm moves, the longer both parts become, and the braking part grows with the square of the speed.</p>
+        <p><b>Step 4: place it against the hazard.</b> Let the sensor trip at a distance <span class="tex">D</span> in front of the arm's starting point and the hazard zone begin at a distance <span class="tex">H</span>. The arm stops at <span class="tex">D + v\,t_r + v^2/(2a)</span>, and this must be less than <span class="tex">H</span>.</p>
+
+        <div class="worked"><b>Worked example: the shelf and the person</b>
+          <p>Speed <span class="tex">v = 1.0\text{ m/s}</span>, reaction time <span class="tex">t_r = 0.10\text{ s}</span>, braking <span class="tex">a = 2.0\text{ m/s}^2</span>.</p>
+          <p>Reaction part: <span class="tex">v\,t_r = 1.0 \times 0.10 = 0.10\text{ m}</span>. Braking part: <span class="tex">v^2/(2a) = 1.0^2/(2 \times 2.0) = 0.25\text{ m}</span>. Stopping distance from the trip point: <span class="tex">0.10 + 0.25 = 0.35\text{ m}</span>.</p>
+          <p>Sensor trips at <span class="tex">D = 0.60\text{ m}</span>; the hazard starts at <span class="tex">H = 1.00\text{ m}</span>. The arm stops at <span class="tex">0.60 + 0.35 = 0.95\text{ m}</span>, which is <span class="tex">0.05\text{ m}</span> short of the hazard. The margin is small, so the design is fragile: a slower sensor or a longer reaction time would break it.</p>
+          <p>Now double the speed to <span class="tex">1.5\text{ m/s}</span>. The reaction part is <span class="tex">0.15\text{ m}</span> and the braking part is <span class="tex">2.25/4 = 0.5625\text{ m}</span>, so the stop from the trip point is <span class="tex">0.7125\text{ m}</span>. The arm now stops at <span class="tex">1.31\text{ m}</span> and enters the hazard. Speed is the lever that breaks a design fastest.</p></div>
+
+        <p>A <b>risk matrix</b> ranks what you found. Here a teaching version scores severity <span class="tex">S</span> from 1 (slight) to 3 (severe) and likelihood <span class="tex">L</span> from 1 (rare) to 3 (frequent), and multiplies them. The pinch at the gripper, with severe harm and occasional exposure, scores <span class="tex">3 \times 2 = 6</span> out of 9, so it needs a design change, not only a warning sign.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">d_{\text{stop}} = v\,t_r + \frac{v^2}{2a}</div>
+        <div class="eq">x_{\text{stop}} = D + d_{\text{stop}} < H \qquad \text{(safe if the stop lies short of the hazard)}</div>
+        <div class="eq">R = S \times L</div>
+        <table class="sym">
+          <tr><td><span class="tex">v</span></td><td>speed at the moment the stop is triggered, in m/s</td></tr>
+          <tr><td><span class="tex">t_r</span></td><td>reaction time from trigger to braking, in s (controller, drives, brake engagement)</td></tr>
+          <tr><td><span class="tex">a</span></td><td>constant braking deceleration, in m/s² (must be a value the brakes can really deliver)</td></tr>
+          <tr><td><span class="tex">D</span></td><td>distance from the start point to the sensor trip line, in m</td></tr>
+          <tr><td><span class="tex">H</span></td><td>distance from the start point to the near edge of the hazard zone, in m</td></tr>
+          <tr><td><span class="tex">x_stop</span></td><td>position where the robot comes to rest, measured from the start point, in m</td></tr>
+          <tr><td><span class="tex">S, L, R</span></td><td>teaching-device severity (1–3), likelihood (1–3) and risk score (product, 1–9)</td></tr>
+        </table>
+
+        <div class="callout"><b>Pipeline position</b>Stage 6, <i>Deploy &amp; monitor</i>. The stop function sits in the safety path, which must run at a fixed rate on its own checked path, separate from the planning code. It stores the trip events and the risk assessment that justify the design.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play at the default settings (D = 0.6 m, H = 1.0 m, v = 1.0 m/s, t<sub>r</sub> = 0.10 s, a = 2.0 m/s²). The stop lands at 0.95 m. Check it against the worked example.</li>
+        <li>Raise the speed to 1.5 m/s. Watch the robot enter the red zone. Which part of the stop got longer, the reaction part or the braking part?</li>
+        <li>Keep t<sub>r</sub> = 0.10 s and raise braking to 4.0 m/s². The braking part halves (0.25 m to 0.125 m) but the reaction part stays at 0.10 m. Which part now limits the design, and why can braking alone never fix a long reaction time?</li>
+        <li>Set t<sub>r</sub> to 0.30 s. What single change would make the design safe again without changing the speed?</li></ol></div>
+      <div data-lab="stopdist"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Stopping distance is not a constant.</b> It depends on speed, load, payload inertia, the braking capacity and the reaction time, and all of these can change with wear. A stop measured once on a new arm is only a starting point.</li>
+          <li><b>A simulation that stops is not a safety case.</b> The lab stops because its equations say so. A real system has sensor latency, dropouts and friction that the simulation leaves out.</li>
+          <li><b>Average speed hides the worst case.</b> Design for the highest speed the robot can reach in that zone, including the speed it reaches on a path that is not the planned one.</li>
+          <li><b>A risk score is not a verdict.</b> The 1 to 9 matrix ranks problems. The standards and an assessor decide what is acceptable.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A learned policy (Module 7 and 8) can produce speeds the designers never tested, so the stopping budget must be checked against the actions the policy can actually command, not only the ones a human planned.</li>
+          <li>Human-robot collaboration is a perception problem as well as a control problem. The person must be detected reliably, which links to the detectors of Module 4 and to the safety filters of the next lesson.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A robot moves at 0.8 m/s with t<sub>r</sub> = 0.12 s and a = 2.5 m/s². How far does it travel after the trip before it stops?</summary><div class="ans">Reaction part: 0.8 × 0.12 = 0.096 m. Braking part: 0.8² / (2 × 2.5) = 0.64 / 5 = 0.128 m. Total d<sub>stop</sub> = 0.224 m.</div></details>
+        <details class="check"><summary>2. Why does doubling the speed more than double the braking distance?</summary><div class="ans">Braking distance is v²/(2a), which grows with the square of v. Doubling v multiplies it by 4. The reaction part v·t<sub>r</sub> only doubles.</div></details>
+        <details class="check"><summary>3. A severe injury (S = 3) happens about once a week in a shared cell (L = 2). What does the teaching matrix give, and what does it tell you to do?</summary><div class="ans">R = 3 × 2 = 6 out of 9. It is a high ranking, so the design must reduce the hazard (separation, speed limits, guarding), not just warn people. The matrix ranks; the standards and an assessor decide acceptability.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Walk the chain cause → hazardous event → harm, and act at the link that is cheapest to change.</li>
+          <li>Stopping distance is v·t<sub>r</sub> + v²/(2a); the sensor trip must leave room for it.</li>
+          <li>Standards (ISO 10218 for industry, ISO 13482 for personal care) set the rules. Compliance needs a qualified assessor, not a simulation.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.2 ===================== -->
+    <section class="lesson" id="runtime-monitoring" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">9.2</span><h2>Runtime monitoring &amp; fault handling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot arm is moving at 0.5 m/s. Its controller hangs for a moment, or a cable to a camera comes loose and the camera freezes on its last frame. Nothing crashes, and the arm keeps going. How does the robot notice that something is wrong, and what does it do during the first few tens of milliseconds after it notices?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a train driver's <b>dead-man's switch</b>. The driver must keep pressing a button; if the button is released, or the driver stops pressing it for too long, the train brakes. The absence of a signal is itself the alarm. A <b>watchdog timer</b> does exactly this in software: the controller must send a <b>heartbeat</b> at a regular period <span class="tex">P</span>, and if the watchdog hears nothing for longer than its <b>timeout</b> <span class="tex">T</span>, it assumes the worst and trips.</p>
+        <p>A watchdog catches silence. It does not catch <i>wrong</i> data. A frozen camera or a sensor stuck at a plausible value keeps sending messages, so the heartbeat stays alive. For that you need a second idea: a <b>residual check</b>. The robot has a model of what it expects to measure, for example the distance to a wall it knows is 1.20 m away. The residual is the difference between what the sensor reports and what the model predicts. If the residual is much bigger than the sensor noise, something is wrong.</p>
+        <p>Once a fault is detected, the robot should not jump straight from full speed to emergency stop every time. Robots use <b>graceful degradation</b>: a ladder of states, for example nominal, reduced speed, hold position, and controlled stop. Each rung trades a little performance for safety, and the robot climbs down only as far as the fault requires.</p>
+
+        <h3 class="sec">Build it up: the watchdog in time</h3>
+        <p><b>Step 1: heartbeats arrive every P.</b> With <span class="tex">P = 10\text{ ms}</span>, the controller sends beats at 0, 10, 20, … ms. The last beat before any moment is the last multiple of <span class="tex">P</span> that has passed.</p>
+        <p><b>Step 2: the silence grows.</b> The watchdog measures how long it has been since the last beat. Even with a healthy stream, the silence swings from 0 up to just under <span class="tex">P</span> between beats. So the timeout must be <b>larger than the period</b>, or the watchdog trips on a healthy system.</p>
+        <p><b>Step 3: the trip.</b> If the heartbeat stops at time <span class="tex">t_f</span>, the last beat was at <span class="tex">\lfloor t_f/P \rfloor P</span>, and the watchdog trips at that beat plus <span class="tex">T</span>.</p>
+        <p><b>Step 4: the coast.</b> Between the fault and the trip the robot keeps moving, so the distance it covers before braking begins is the speed times that delay.</p>
+
+        <div class="worked"><b>Worked example: a fault at 52 ms</b>
+          <p>Heartbeat period <span class="tex">P = 10\text{ ms}</span>, timeout <span class="tex">T = 30\text{ ms}</span>, speed <span class="tex">v = 0.5\text{ m/s}</span>, heartbeats stop at <span class="tex">t_f = 52\text{ ms}</span>.</p>
+          <p>Last beat before the fault: <span class="tex">\lfloor 52/10 \rfloor \times 10 = 50\text{ ms}</span>. Trip time: <span class="tex">50 + 30 = 80\text{ ms}</span>. Delay from fault to trip: <span class="tex">80 - 52 = 28\text{ ms}</span>.</p>
+          <p>Coast distance: <span class="tex">v \times 0.028\text{ s} = 0.5 \times 0.028 = 0.014\text{ m}</span> (14 mm) before the brakes act.</p>
+          <p><b>The residual check.</b> The model predicts <span class="tex">\hat z = 1.20\text{ m}</span>. The sensor reports <span class="tex">z = 1.85\text{ m}</span>, and the sensor noise is <span class="tex">\sigma = 0.05\text{ m}</span>. With a gate multiplier <span class="tex">k = 3</span>, the residual is <span class="tex">r = z - \hat z = 0.65\text{ m}</span>, while the gate is <span class="tex">k\sigma = 0.15\text{ m}</span>. Since <span class="tex">|r| > k\sigma</span>, the reading is flagged. A single flag can be a noise spike, so a real monitor requires several flags in a row.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{trip if } t - t_{\text{last}}(t) > T, \qquad t_{\text{last}}(t) = \left\lfloor \frac{\min(t,\,t_f)}{P} \right\rfloor P</div>
+        <div class="eq">\text{flag if } |z_k - \hat z_k| > k\,\sigma \text{ for } N \text{ consecutive samples}</div>
+        <div class="eq">d_{\text{coast}} = v\,(t_{\text{trip}} - t_f)</div>
+        <table class="sym">
+          <tr><td><span class="tex">P</span></td><td>heartbeat period (ms)</td></tr>
+          <tr><td><span class="tex">T</span></td><td>watchdog timeout, which must exceed P (ms)</td></tr>
+          <tr><td><span class="tex">t_f</span></td><td>time at which heartbeats stop (ms)</td></tr>
+          <tr><td><span class="tex">t_{\text{last}}(t)</span></td><td>time of the most recent heartbeat seen by time t (ms)</td></tr>
+          <tr><td><span class="tex">z_k, \hat z_k</span></td><td>measured and predicted value at sample k (m, or any unit)</td></tr>
+          <tr><td><span class="tex">\sigma</span></td><td>standard deviation of normal sensor noise (same unit as z)</td></tr>
+          <tr><td><span class="tex">k, N</span></td><td>gate multiplier (dimensionless) and the number of consecutive flags required</td></tr>
+          <tr><td><span class="tex">d_{\text{coast}}</span></td><td>distance covered between the fault and the trip (m, for v in m/s and times in s)</td></tr>
+        </table>
+
+        <div class="callout"><b>Pipeline position</b>Stage 6, <i>Deploy &amp; monitor</i>, with inputs from every stage. The watchdog runs on the most dependable compute available, on its own timer, and it writes a timestamped fault record that feeds incident review (lesson 9.6). Its loop rate is set by the shortest reaction the robot needs, here of the order of milliseconds.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play with the default settings (P = 10 ms, T = 30 ms, t<sub>f</sub> = 52 ms). Watch the beats stop, the timer bar grow, and the trip at 80 ms. Check the coast distance against the worked example: 14 mm.</li>
+        <li>Set the timeout to 8 ms, which is shorter than the period. With no fault the watchdog still trips. Why?</li>
+        <li>Drag t<sub>f</sub> to 200 ms (no fault) and set the timeout to 40 ms. Nothing trips. Now set the period to 45 ms and leave the timeout at 40 ms. Predict what happens before you press play, then check it.</li>
+        <li>In the residual panel, raise the measured value slowly from 1.20 m. Predict where the flag appears: the gate is 1.20 + k·σ = 1.20 + 3 × 0.05 = 1.35 m. Then set k to 5 and predict the new threshold (1.45 m).</li></ol></div>
+      <div data-lab="watchdog"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A timeout shorter than the period.</b> Healthy silence is always between 0 and P, so T ≤ P trips a working system (lab, step 2).</li>
+          <li><b>A watchdog on the thing that hangs.</b> If the watchdog runs on the same processor as the controller and that processor freezes, the watchdog freezes too. It needs an independent timer.</li>
+          <li><b>A stuck sensor passes a heartbeat test.</b> A camera that repeats its last frame sends perfectly regular messages. Only a model-based or content check notices it.</li>
+          <li><b>One flag stops the robot every time.</b> Without a persistence rule (N consecutive samples), ordinary noise causes nuisance stops, and operators learn to ignore the alarm.</li>
+          <li><b>Degradation without a test.</b> Each rung of the ladder must be tested on hardware. An untested fallback is a fault waiting to happen.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Perception models can fail silently, returning confident wrong answers. Monitors compare the model's outputs with cheaper physical checks such as a range reading or joint encoders, then trigger the same ladder as any other fault.</li>
+          <li>Learned controllers need an out-of-distribution monitor as well: when the input looks unlike anything in training, the robot should slow down rather than extrapolate.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. P = 20 ms and T = 50 ms. The heartbeat stops at 133 ms. When does the watchdog trip, and how long after the fault?</summary><div class="ans">Last beat: ⌊133/20⌋ × 20 = 6 × 20 = 120 ms. Trip: 120 + 50 = 170 ms. Delay from the fault: 170 − 133 = 37 ms.</div></details>
+        <details class="check"><summary>2. Why is a residual check needed in addition to a heartbeat watchdog?</summary><div class="ans">A heartbeat only proves that a message was sent. A frozen or stuck sensor can keep sending regular messages with wrong values. The residual compares the reading with what the model predicts, so it catches wrong data that the heartbeat misses.</div></details>
+        <details class="check"><summary>3. Why require N consecutive flags rather than one?</summary><div class="ans">Noise occasionally produces a large value by chance. Requiring several flags in a row keeps the false-alarm rate low while a real fault persists and so is still caught a few samples later.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A watchdog turns silence into a fault; its timeout must exceed the heartbeat period.</li>
+          <li>The coast distance v·(t<sub>trip</sub> − t<sub>f</sub>) is what the braking must absorb after the fault.</li>
+          <li>Pair heartbeats (is it alive?) with residuals (is it right?), and degrade in steps rather than only stopping.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.3 ===================== -->
+    <section class="lesson" id="safe-control-filters" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">9.3</span><h2>Safety filters &amp; constraint enforcement</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A learned policy, trained on demonstrations, says &ldquo;move the wrist at 0.9 rad/s&rdquo;. The wrist is 0.3 rad away from its mechanical limit. Retraining the policy takes weeks. How do you guarantee, today, that the joint never passes its limit, and that the motion slows down sensibly as it approaches?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Put a <b>filter</b> between the policy and the motors. The policy proposes a command; the filter checks it against the robot's safety rules and passes on only what is allowed. This is the same role a speed governor plays on an engine. The policy can be as clever or as clumsy as it likes; the filter enforces the rules whatever it proposes.</p>
+        <p>The simplest rule is a <b>clamp</b>: never exceed a maximum speed. That is easy, but it does not stop a joint from driving into its limit at full speed and then stopping dead. A better rule uses a <b>barrier</b>. Define a number <span class="tex">h</span> that is positive when the robot is safe and reaches zero at the boundary, for example the distance to the joint limit. Then require that the robot slows down in proportion to how much room is left. A joint far from its limit can move quickly; one just short of it can barely move. This is the intuition behind <b>control barrier functions</b>, which are used in safety-critical control.</p>
+
+        <h3 class="sec">Build it up: three limits, one command</h3>
+        <p><b>Step 1: the speed limit.</b> The motor has a maximum safe speed <span class="tex">v_{\max}</span>. Any command above it is cut to that value.</p>
+        <p><b>Step 2: the room to the limit.</b> Let <span class="tex">q</span> be the joint angle and <span class="tex">q_{\max}</span> its upper limit. The room left is <span class="tex">h = q_{\max} - q</span>. When <span class="tex">h</span> is large, the barrier allows anything up to <span class="tex">v_{\max}</span>. When <span class="tex">h</span> is small, the barrier allows only a slow speed.</p>
+        <p><b>Step 3: the barrier condition.</b> Require <span class="tex">\dot h \ge -\gamma h</span>, which says the room shrinks no faster than a fraction <span class="tex">\gamma</span> of the room left each second. Since <span class="tex">\dot h = -\dot q</span>, this gives <span class="tex">\dot q \le \gamma (q_{\max} - q)</span>.</p>
+        <p><b>Step 4: combine.</b> The filter applies the most cautious of the proposed speed, the speed limit and the barrier limit. The lower limit works the same way, mirrored.</p>
+
+        <div class="worked"><b>Worked example: the wrist near its limit</b>
+          <p>Limits <span class="tex">q_{\max} = 1.5\text{ rad}</span>, <span class="tex">v_{\max} = 0.5\text{ rad/s}</span>, barrier gain <span class="tex">\gamma = 2\text{ s}^{-1}</span>. The policy proposes <span class="tex">\dot q_{\text{prop}} = 0.9\text{ rad/s}</span>.</p>
+          <table class="tbl">
+            <tr><th>q (rad)</th><th>h = q<sub>max</sub> − q (rad)</th><th>γh (rad/s)</th><th>v<sub>safe</sub> = min(0.9, 0.5, γh) (rad/s)</th></tr>
+            <tr><td>1.20</td><td>0.30</td><td>0.60</td><td>0.50 (speed limit binds)</td></tr>
+            <tr><td>1.40</td><td>0.10</td><td>0.20</td><td>0.20 (barrier binds)</td></tr>
+            <tr><td>1.45</td><td>0.05</td><td>0.10</td><td>0.10</td></tr>
+            <tr><td>1.49</td><td>0.01</td><td>0.02</td><td>0.02</td></tr>
+          </table>
+          <p>At <span class="tex">q = 1.20</span> the policy's 0.9 rad/s is cut to the speed limit 0.5 rad/s. Near the limit the barrier takes over and the allowed speed falls to 0.02 rad/s at 1.49 rad, so the joint creeps up to its limit and never crosses it.</p>
+          <p><b>A check in discrete time.</b> The rule is continuous, but the controller acts every 10 ms. At <span class="tex">q = 1.20</span>, a step of <span class="tex">\Delta t = 0.1\text{ s}</span> with 0.5 rad/s moves the joint to 1.25 rad, safely inside the limit. A filter must also check the <i>next</i> step, not only the instant: if a step would cross the limit, cut the speed to <span class="tex">(q_{\max} - q)/\Delta t</span>, here <span class="tex">0.3/0.1 = 3\text{ rad/s}</span>, which is not the binding limit at this point.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\dot q_{\text{safe}} = \operatorname{clamp}\!\Big(\dot q_{\text{prop}},\; \max\big(-v_{\max},\,-\gamma(q - q_{\min})\big),\; \min\big(v_{\max},\,\gamma(q_{\max} - q)\big)\Big)</div>
+        <div class="eq">h(q) = q_{\max} - q \ge 0, \qquad \dot h \ge -\gamma\,h(q)</div>
+        <table class="sym">
+          <tr><td><span class="tex">\dot q_{\text{prop}}</span></td><td>joint speed proposed by the learned policy (rad/s)</td></tr>
+          <tr><td><span class="tex">\dot q_{\text{safe}}</span></td><td>joint speed actually sent to the motor after filtering (rad/s)</td></tr>
+          <tr><td><span class="tex">q, q_{\max}, q_{\min}</span></td><td>joint angle and its upper and lower limits (rad)</td></tr>
+          <tr><td><span class="tex">v_{\max}</span></td><td>maximum allowed speed magnitude (rad/s)</td></tr>
+          <tr><td><span class="tex">h(q)</span></td><td>barrier function: the room left before the upper limit (rad); the safe set is h ≥ 0</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>barrier gain (1/s): how quickly the room may shrink; larger γ allows faster motion near the limit</td></tr>
+          <tr><td><span class="tex">\operatorname{clamp}(x, a, b)</span></td><td>x limited to the interval from a to b</td></tr>
+        </table>
+
+        <div class="callout"><b>Pipeline position</b>Stage 4 to 6: the filter sits between <i>control</i> and the actuators, and it runs in the same fast loop as the joint controller (typically 1 kHz for a joint). It stores nothing but its limits and a log of every clipped command, which is evidence for the test process (lesson 9.4).</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Watch the orange dashed proposal swing between about 0.3 and 1.5 rad/s, while the green applied speed stays under the limit line. Note the readout's &ldquo;clipped&rdquo; flag.</li>
+        <li>Edit the policy to <code>1.2</code> (a constant). Which limit takes over as the joint approaches 1.5 rad, and what is the applied speed at q = 1.49?</li>
+        <li>Set the barrier gain γ to 0.5 and then to 5. Describe how the slowdown near the limit changes. What happens to the speed at the same q when γ is very large?</li>
+        <li>Change the policy to <code>-1.2</code>. The joint now heads toward −1.5 rad. Does the filter use the lower limit in the same way?</li></ol></div>
+      <div data-lab="safefilter"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A filter is only as good as its model.</b> The barrier uses the joint limit you typed in. If the real limit is at 1.45 rad because of wear or a collision, the filter is wrong, and the safety margin is an assumption, not a fact.</li>
+          <li><b>Continuous rules need discrete checks.</b> A rule that holds at every instant can still be crossed between two 10 ms updates at high speed. Check the next step explicitly (worked example).</li>
+          <li><b>Filtering is not a plan.</b> A filter can slow a motion to zero near a limit, and the task may then stall or deadlock. The policy must learn to avoid those states, and the monitor must catch a stall.</li>
+          <li><b>Clamping hides the bug.</b> If the filter clips constantly, the policy is badly trained. Log the clipped fraction and treat a high rate as a signal to retrain, not as success.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Safe reinforcement learning uses a <i>shield</i>: a filter that overrides unsafe actions chosen by a learned policy, which is the same architecture as this lesson applied to a whole policy (Module 7).</li>
+          <li>Foundation-model robots (Module 8) output action chunks that can be large. A safety filter sits between the chunk and the motors, so the learned part can be replaced without changing the safety rules.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. q = 1.30 rad, q<sub>max</sub> = 1.5, γ = 2 s⁻¹, v<sub>max</sub> = 0.5 rad/s, proposal 0.9 rad/s. What is the applied speed?</summary><div class="ans">h = 0.20, γh = 0.40. Applied = min(0.9, 0.5, 0.40) = 0.40 rad/s. The barrier binds.</div></details>
+        <details class="check"><summary>2. Why does the barrier condition give a smooth slowdown, while a plain speed clamp does not?</summary><div class="ans">The barrier makes the allowed speed γ·h shrink to zero as h shrinks to zero, so the joint decelerates as it approaches the limit. A speed clamp allows v<sub>max</sub> right up to the limit and then cannot prevent a sudden stop there.</div></details>
+        <details class="check"><summary>3. A learned policy's commands are clipped on 40 % of steps. Is the filter working or is something wrong?</summary><div class="ans">The filter is enforcing its rules, but a 40 % clip rate means the policy keeps asking for unsafe motions. Treat it as a training problem to investigate, not as a success, and check whether the task still completes.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Put a filter between any learned policy and the motors; it enforces rules whatever the policy proposes.</li>
+          <li>Use a barrier h(q) ≥ 0 so the allowed speed shrinks smoothly toward a limit: v<sub>safe</sub> ≤ γ·h.</li>
+          <li>Check the next discrete step, log every clipped command, and never trust a filter whose limits are wrong.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.4 ===================== -->
+    <section class="lesson" id="hardware-in-loop" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">9.4</span><h2>Testing: simulation, hardware-in-the-loop &amp; logs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your team has changed the grasp policy. In its last 50 trials on the real arm it succeeded 46 times, so it looks like 92 % and better than before. Can you release it? Testing every change on the physical arm is slow and risky, yet trusting a simulator blindly is worse. What evidence is enough, and how sure can you be from 50 trials?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Testing is a set of trade-offs between cost and realism. Cheap tests run in seconds and cover many small pieces. Realistic tests take hours and cover the whole system. The <b>test pyramid</b> says to build many cheap tests at the bottom, fewer scenario tests above them, and only a handful of expensive tests on real hardware at the top. Each layer catches what the layer below cannot: a unit test cannot tell you the arm will drop an object, and a field trial is too late to learn that a function returns the wrong sign.</p>
+        <p>Three kinds of test matter most for robots. A <b>unit test</b> checks one function, such as the inverse-kinematics solver on a set of known poses. A <b>simulation test</b> runs the whole software against a model of the world. A <b>hardware-in-the-loop (HIL)</b> test runs the real controller board or computer against a simulated plant, so the timing and the drivers are real even though the arm is not moving. A <b>log replay</b> feeds yesterday's recorded sensor data into today's software and compares the commands it would have sent with the ones that were sent. Replay is the cheapest way to test on real data, because the world does not need to be set up again.</p>
+        <p>The key idea for evaluation is that a success rate measured from a few trials is an estimate with uncertainty. You must report the uncertainty before you can compare two policies honestly.</p>
+
+        <div class="callout"><b>The test pyramid, with illustrative counts</b>
+          <table class="tbl">
+            <tr><th>Layer</th><th>What it checks</th><th>Illustrative count per release</th><th>Typical time</th></tr>
+            <tr><td>Unit tests</td><td>single functions, coordinate transforms, limits</td><td>2 000</td><td>seconds each</td></tr>
+            <tr><td>Simulation scenarios</td><td>whole software in a virtual world, many random seeds</td><td>300</td><td>minutes each</td></tr>
+            <tr><td>Log replay</td><td>new software against recorded real sensor data</td><td>all logs from the last week</td><td>hours in total</td></tr>
+            <tr><td>Hardware-in-the-loop</td><td>real controller and timing, simulated plant</td><td>20</td><td>an hour each</td></tr>
+            <tr><td>Field trials</td><td>real robot, real cell, supervised</td><td>5</td><td>a day each</td></tr>
+          </table></div>
+
+        <h3 class="sec">Build it up: how sure is 46 out of 50?</h3>
+        <p><b>Step 1: the point estimate.</b> 46 successes in 50 trials gives <span class="tex">\hat p = 46/50 = 0.92</span>. This is the best single guess, but it is not certain. Repeat the 50 trials and you would probably get 44 or 48 instead.</p>
+        <p><b>Step 2: the interval.</b> A <b>95 % confidence interval</b> is a range that, over many repeated experiments, contains the true success rate 95 % of the time. The Wilson score interval is a good choice for success rates, especially with few trials or rates near 0 or 1, where the simple ±1.96·√(p(1−p)/n) formula misbehaves.</p>
+        <p><b>Step 3: the decision rule.</b> Do not compare the point estimate with a threshold. Compare the <i>lower bound</i> of the interval with the threshold you require. Then you release only when you are confident the rate is above it.</p>
+
+        <div class="worked"><b>Worked example: 46 of 50, and 1 of 10</b>
+          <p>For <span class="tex">n = 50</span>, <span class="tex">s = 46</span>, <span class="tex">z = 1.96</span>, the Wilson interval is</p>
+          <div class="eq">\frac{\hat p + \dfrac{z^2}{2n} \pm z\sqrt{\dfrac{\hat p(1-\hat p)}{n} + \dfrac{z^2}{4n^2}}}{1 + \dfrac{z^2}{n}}</div>
+          <p>With <span class="tex">z^2 = 3.8416</span>, the denominator is <span class="tex">1 + z^2/n = 1.0768</span>. The centre is <span class="tex">(0.92 + 0.0384)/1.0768 \approx 0.8900</span>. Inside the square root, <span class="tex">0.92 \times 0.08/50 + 3.8416/10000 \approx 0.00186</span>, whose root is <span class="tex">0.0431</span>, so the half-width is <span class="tex">1.96 \times 0.0431/1.0768 \approx 0.0784</span>. The interval is <b>[0.8116, 0.9685]</b>, or about [0.81, 0.97].</p>
+          <p>Suppose you require a lower bound of at least 0.85. The point estimate 0.92 passes, but the lower bound 0.8116 does not. The honest verdict is <b>not yet</b>: run more trials, or accept a lower threshold.</p>
+          <p>Now compare with 1 success in 10 trials. The point estimate is 0.10, but the 95 % interval is <b>[0.018, 0.404]</b>. The data cannot tell a 2 % policy from a 40 % one. Ten trials are a smoke test, not a measurement.</p></div>
+
+        <p><b>Replay.</b> A 1-D controller in the log approaches a unit step as <span class="tex">1 - e^{-2s}</span>, where <span class="tex">s</span> is seconds after the step. The new build, with gain <span class="tex">k = 2.5</span>, approaches it as <span class="tex">1 - e^{-2.5s}</span>. Replaying the same step through both gives two positions, and their difference is <span class="tex">D(s) = e^{-2s} - e^{-2.5s}</span>. At <span class="tex">s = 0.5\text{ s}</span> the log is at 0.632 and the new build at 0.714, a difference of <span class="tex">0.081</span>. The difference peaks at <span class="tex">s = \ln(k/2)/(k-2) \approx 0.446\text{ s}</span>, where it is about <span class="tex">0.082</span>. A regression gate compares that peak with its tolerance.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat p = \frac{s}{n}, \qquad \text{Wilson 95 \% interval } [L, U] \text{ as above}</div>
+        <div class="eq">\text{release if } L \ge p_{\text{req}}, \qquad \text{regression gate: } \max_t \lvert x_{\text{new}}(t) - x_{\text{log}}(t)\rvert \le \varepsilon</div>
+        <table class="sym">
+          <tr><td><span class="tex">n, s</span></td><td>number of trials, and number of successes among them</td></tr>
+          <tr><td><span class="tex">\hat p</span></td><td>observed success rate, s / n</td></tr>
+          <tr><td><span class="tex">z</span></td><td>normal quantile for the confidence level; z = 1.96 gives 95 % (two-sided)</td></tr>
+          <tr><td><span class="tex">L, U</span></td><td>lower and upper ends of the Wilson interval</td></tr>
+          <tr><td><span class="tex">p_{\text{req}}</span></td><td>the success rate the release must exceed with confidence</td></tr>
+          <tr><td><span class="tex">x_{\text{new}}, x_{\text{log}}</span></td><td>state from the new software and from the recorded log at time t (same units)</td></tr>
+          <tr><td><span class="tex">\varepsilon</span></td><td>tolerance for the replay deviation, in the same units as x</td></tr>
+        </table>
+
+        <div class="callout"><b>Pipeline position</b>Stage 5, <i>Learn</i>, feeding Stage 6, <i>Deploy &amp; monitor</i>. Test runs read recorded logs and write results to a release record. Hardware-in-the-loop uses the production loop rate, so timing bugs appear there and not in simulation.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>In the first panel, the curve is the replay difference e<sup>−2s</sup> − e<sup>−ks</sup> and the flat line is the tolerance ε (the tol slider). Set ε to 0.05. Read the two times where the curve crosses it: the difference is outside tolerance between them.</li>
+        <li>Set k to 2.1, then 4.0. Which gain gives the largest replay deviation? Why does a near-match to the log not mean a good new build?</li>
+        <li>In the second panel, set s = 46 and n = 50, then change n to 200 keeping the same rate (s = 184). Does the interval get narrower, and by how much?</li>
+        <li>With 0 failures in n trials, the 95 % Wilson upper bound on the failure rate is z²/(n + z²) = 3.8416/(n + 3.8416). Estimate the smallest n that brings it below 5 % using the rule of three (3/n), then evaluate the exact formula by hand for n = 72 and n = 73. Which one passes?</li></ol></div>
+      <div data-lab="fplot" data-f="exp(-2*max(x-1,0)) - exp(-k*max(x-1,0)); tol" data-params="k=2.5:2.1..4:0.1; tol=0.05:0.01..0.2:0.01" data-view="0,5,-0.02,0.3" data-roots data-names="replay difference D(s);tolerance ε" data-title="Replay deviation against a tolerance (illustrative)" data-sub="edit k (new gain, log gain 2) and ε; the crossings are where the deviation leaves tolerance" data-height="260"></div>
+      <div data-lab="calc" data-params="s=46:0..50:1; n=50:10..200:1" data-rows="p = s/n; lower = (s/n + 3.8416/(2*n) - 1.96*sqrt(s/n*(1-s/n)/n + 3.8416/(4*n^2))) / (1 + 3.8416/n); upper = (s/n + 3.8416/(2*n) + 1.96*sqrt(s/n*(1-s/n)/n + 3.8416/(4*n^2))) / (1 + 3.8416/n)" data-title="Wilson 95 % interval for a success rate" data-sub="drag s (successes, keep s ≤ n) and n (trials)" data-note="Read the lower bound, not the point estimate, when you decide to release. Set s ≤ n. (illustrative: the same formula applies to any pass/fail test)"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reporting the point estimate alone.</b> 92 % from 50 trials is an interval of about 81 % to 97 %. Quote the interval.</li>
+          <li><b>Testing on the trials that you used to tune.</b> A policy checked on the scenes it was tuned on will look better than it is. Keep held-out scenes, as in Module 8.</li>
+          <li><b>A passing simulator is not a passing robot.</b> The simulator omits friction, latency and sensor noise. Use HIL and field trials to find what it misses.</li>
+          <li><b>Replay that matches exactly proves little.</b> If the new build reproduces the log exactly, the test checks the logging. The question is what changed, and whether the change is intended.</li>
+          <li><b>Fixing a seed to make a test pass.</b> A scenario that passes for one random seed only is a lucky run. Run many seeds and report the failures.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Embodied evaluation (Module 8) uses the same interval logic: success rates on held-out scenes with confidence intervals, and simulation results checked against real benchmarks.</li>
+          <li>Offline evaluation of a learned policy on logged demonstrations is cheap, and it is a form of replay. Its results must still be confirmed on hardware, since a policy can score well offline and fail when it changes the world it observes.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A policy succeeds 9 times in 10 trials. Is a release threshold of 0.85 on the lower bound met? (Wilson 95 %: about [0.60, 0.98].)</summary><div class="ans">No. The point estimate is 0.90, but the lower bound is about 0.60, far below 0.85. Ten trials cannot demonstrate a success rate above 0.85 at 95 % confidence.</div></details>
+        <details class="check"><summary>2. Why does a unit test not replace a hardware-in-the-loop test?</summary><div class="ans">A unit test checks one function in isolation, with fixed inputs. It cannot see timing, driver behaviour, the real controller's scheduling, or the interactions between modules. HIL runs the real controller at its real rate against a simulated plant, which exposes those issues.</div></details>
+        <details class="check"><summary>3. In the replay example, why is the largest deviation not at s = 0?</summary><div class="ans">At s = 0 both trajectories are at the step (their difference is e<sup>0</sup> − e<sup>0</sup> = 0). The two responses separate as time passes, and the difference rises to a maximum near s ≈ 0.446 s and then decays because both go to zero.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Use a test pyramid: many cheap tests, few expensive ones, each layer catching what the one below cannot.</li>
+          <li>Report success rates with intervals (Wilson 95 %), and release on the lower bound.</li>
+          <li>Replay recorded logs through new software, compare the outputs with a tolerance, and confirm the important cases on hardware.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.5 ===================== -->
+    <section class="lesson" id="edge-compute" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">9.5</span><h2>Onboard compute &amp; latency budgets</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A grasp camera feeds a perception model every 100 ms (10 Hz), while the motor torque loop must run every 1 ms (1 kHz). Where should each computation run? And how do you know that every cycle finishes before the next one is due, rather than most of the time?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Every control loop has a <b>period</b>: the interval at which it must run. The period is the robot's <i>budget</i>. Inside one cycle the robot must sense, compute and act, and every stage takes time: a camera has an exposure, a model takes time to run, a message takes time to cross a network, and a motor command takes time to reach the drive. The stage times add up. If they add up to more than the period, the cycle <b>misses its deadline</b>, and the command goes out late, from a stale picture of the world.</p>
+        <p>A <b>real-time</b> system guarantees its deadlines, or at least bounds how often it misses them. A <b>best-effort</b> system usually meets them but makes no promise. Most robots need both: a fast real-time loop for motors, which must never be late, and a slower best-effort loop for perception and planning, which can be late occasionally if its results are handled safely.</p>
+        <p>Finally, a fixed average is not enough. Each cycle takes a slightly different time because of <b>jitter</b> (scheduling, cache misses, network queues, thermal throttling). The question is not what the average cycle takes, but how often a cycle exceeds the period.</p>
+
+        <h3 class="sec">Build it up: the numbers for two loops</h3>
+        <p><b>Step 1: the period.</b> A loop at rate <span class="tex">f</span> has period <span class="tex">T = 1/f</span>. At 1 kHz that is 1 ms; at 10 Hz it is 100 ms; at 30 Hz it is 33.3 ms.</p>
+        <p><b>Step 2: add the stages.</b> List every stage on the path from sensor to actuator, with its time.</p>
+        <p><b>Step 3: compare with the budget.</b> The margin is <span class="tex">T - \sum d_i</span>. A negative margin is a guaranteed miss; a small positive margin is a miss waiting for jitter.</p>
+
+        <div class="worked"><b>Worked example: the grasp loop at 10 Hz</b>
+          <p>Budget <span class="tex">T = 1000/10 = 100\text{ ms}</span>. Stages: camera capture 33 ms, perception 40 ms, planning 12 ms, network hop 8 ms, actuation command 2 ms.</p>
+          <p>Total <span class="tex">33 + 40 + 12 + 8 + 2 = 95\text{ ms}</span>. Margin <span class="tex">100 - 95 = 5\text{ ms}</span>.</p>
+          <p>That 5 ms margin is thin. With 10 % jitter on each stage, a typical cycle is about 95 ms but some cycles exceed 100 ms. The lab shows how often.</p></div>
+        <div class="worked"><b>Worked example: the torque loop at 1 kHz</b>
+          <p>Budget <span class="tex">T = 1\text{ ms}</span>. Stages on the local bus: sense 0.05 ms, estimate 0.20 ms, control 0.30 ms, actuate 0.10 ms. Total <span class="tex">0.65\text{ ms}</span>, margin <span class="tex">0.35\text{ ms}</span>.</p>
+          <p>Now route the same loop through a network hop of 0.4 ms. Total <span class="tex">1.05\text{ ms}</span>, which misses the deadline on every cycle. The fix is architectural: keep the 1 kHz loop on the local bus, and send only setpoints or slow commands across the network.</p></div>
+
+        <p><b>Where to compute.</b> A GPU gives very high throughput for perception models, but its scheduling and memory transfers add variable delay, so it is a poor place for a 1 kHz servo loop. A microcontroller or real-time processor runs short, fixed-time loops deterministically but has little compute. Most robots therefore split the work: fast servo loops on a deterministic controller, perception on a GPU module, and the boundary between them designed with explicit latency numbers.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">T = \frac{1}{f}, \qquad \tau_k = \sum_{i} d_i\,(1 + \varepsilon_{ik}), \qquad \text{deadline met in cycle } k \iff \tau_k \le T</div>
+        <div class="eq">\text{miss rate} = \frac{\#\{k : \tau_k > T\}}{\#\{k\}}</div>
+        <table class="sym">
+          <tr><td><span class="tex">f</span></td><td>loop rate (Hz)</td></tr>
+          <tr><td><span class="tex">T</span></td><td>period, or budget per cycle (ms when f is in Hz: T = 1000/f)</td></tr>
+          <tr><td><span class="tex">d_i</span></td><td>nominal time of stage i, such as capture, perception, planning, network, actuation (ms)</td></tr>
+          <tr><td><span class="tex">\varepsilon_{ik}</span></td><td>random fractional jitter of stage i in cycle k (dimensionless, typically a few percent to tens of percent)</td></tr>
+          <tr><td><span class="tex">\tau_k</span></td><td>actual total time of cycle k (ms)</td></tr>
+        </table>
+
+        <div class="callout"><b>Pipeline position</b>Stages 1 to 6 all meet here. The loop rate sets the budget, and each stage writes its time into the log. It stores timing histograms per stage, which show where the budget goes.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play at the default settings (10 Hz, stages totalling 95 ms, jitter 10 %). Read the margin in the first cycle, then watch the history strip for red cycles. Roughly how many of the last 60 cycles miss?</li>
+        <li>Set jitter to 0 %. Do any cycles still miss? What does that tell you about the difference between nominal and actual timing?</li>
+        <li>Raise perception to 50 ms, so the total is 105 ms. Predict the miss rate before you press play, then check it.</li>
+        <li>Set the loop to 1000 Hz with capture 0, perception 0, planning 0.5, network 0, actuation 0.1 and jitter 10 % (total 0.6 ms). Then raise network to 0.5 ms (total 1.1 ms). Which cycles miss, and what does this say about where a 1 kHz loop may run?</li></ol></div>
+      <div data-lab="latency"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Forgetting the sensor.</b> Camera exposure and readout are latency. A 33 ms capture delays the picture before any model sees it.</li>
+          <li><b>Judging by the average.</b> A mean of 95 ms with a 100 ms deadline sounds safe, but a 5 ms margin with jitter means real misses. Report the tail (the 99th percentile or the miss rate).</li>
+          <li><b>Putting a hard loop behind a network.</b> Network queues vary. Keep deadline-critical loops on the local bus.</li>
+          <li><b>Stale data that looks fresh.</b> A late perception result may be used as if it were current. Stamp every message with its capture time and reject old ones.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Vision-language-action models (Module 8) may take hundreds of milliseconds per inference. Action chunks let the robot execute several steps while the next chunk is computed, so the slow model runs asynchronously and the fast loop never waits for it.</li>
+          <li>Quantising or distilling a policy is often driven by this budget: a smaller model that meets the deadline on the robot's own compute can be more useful than a larger one that misses it.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 500 Hz loop has stages totalling 1.6 ms. Does it meet its deadline? What is the margin?</summary><div class="ans">The period is 1000/500 = 2 ms. The margin is 2 − 1.6 = 0.4 ms. It meets the nominal deadline, but a 25 % jitter on the 1.6 ms (0.4 ms) would use up all the margin.</div></details>
+        <details class="check"><summary>2. Why is the mean cycle time not enough to certify a loop?</summary><div class="ans">A deadline is missed by the cycles in the tail of the distribution. Two loops with the same mean can have very different tails, and only the proportion of cycles above T tells you how often the robot acts on stale data.</div></details>
+        <details class="check"><summary>3. Where should a 1 kHz joint servo run, and why?</summary><div class="ans">On a deterministic real-time controller or on the local bus, close to the drives. It needs fixed, short timing that a GPU or a network hop cannot guarantee. Perception and planning can run on the GPU at a slower rate.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The period T = 1/f is the budget; the stage times must sum to less than T with room for jitter.</li>
+          <li>Judge a loop by its miss rate in the tail, not its average.</li>
+          <li>Split the work: deterministic loops for control, GPU or cloud for heavy perception, with explicit latency numbers at each boundary.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.6 ===================== -->
+    <section class="lesson" id="fleet-operations" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">9.6</span><h2>Fleet operations &amp; maintenance</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your company runs 1 000 robots in twelve warehouses. The force sensor in one kind of gripper drifts a little every day, so grips slowly get weaker or harder than designed. You also have a new policy to send to all of them. How do you know when each robot needs recalibrating, and how do you send an update to a thousand machines without betting the fleet on a single test?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Once a robot works in the field, the job changes. You stop asking &ldquo;does it work?&rdquo; and start asking &ldquo;is it still working as well as it did, and what will break next?&rdquo; <b>Telemetry</b> is the stream of measurements that answers this: sensor offsets, motor currents, cycle times, fault codes, and the time and place each one came from. Telemetry is only useful with units, timestamps and a robot identity attached to every reading.</p>
+        <p><b>Drift</b> is a slow change in a sensor or a mechanism. Gears wear, belts stretch, and sensors warm up and shift. Drift is usually close to a straight line over short periods, which makes it predictable. A simple rule, recalibrate when the predicted offset reaches a tolerance, is often enough to keep grips and positions within spec.</p>
+        <p><b>Staged rollouts</b> send a change to a small group first and widen it only if the group behaves. The first group is a <b>canary</b>, named after the canary in a mine. A rollout also needs a <b>rollback</b> path, so a bad update can be reversed on every robot that took it.</p>
+
+        <h3 class="sec">Build it up: drift, then rollout</h3>
+        <p><b>Step 1: the drift line.</b> Suppose the offset grows by <span class="tex">r</span> newtons per day after calibration. The offset after <span class="tex">t</span> days is <span class="tex">r\,t</span>.</p>
+        <p><b>Step 2: the recalibration interval.</b> If the tolerance is <span class="tex">\text{tol}</span>, the offset reaches it after <span class="tex">\text{tol}/r</span> days. Recalibrate at that interval, then the offset resets to zero.</p>
+        <p><b>Step 3: the canary.</b> Send the update to a few robots. Count their failures. The observed failure rate from a small group is uncertain, so use the Wilson interval from lesson 9.4 before deciding.</p>
+        <p><b>Step 4: widen in stages.</b> Move from the canary to a larger group, then to everyone, halting if the interval shows the failure rate is clearly above the limit.</p>
+
+        <div class="worked"><b>Worked example: the drifting gripper</b>
+          <p>Drift <span class="tex">r = 0.02\text{ N/day}</span>, tolerance <span class="tex">\text{tol} = 0.5\text{ N}</span>. Recalibration interval <span class="tex">0.5/0.02 = 25\text{ days}</span>.</p>
+          <p>Twenty days after calibration the offset is <span class="tex">0.02 \times 20 = 0.40\text{ N}</span>, which is 80 % of the tolerance. On day 25 the offset reaches 0.50 N and the robot is recalibrated.</p>
+          <p><b>The canary.</b> Suppose 10 canary robots run the new policy and 1 fails. The point estimate is 10 %, but the 95 % Wilson interval is about <b>[1.8 %, 40.4 %]</b>. That cannot distinguish a 2 % failure rate from a 40 % one, so the canary is undecided at a 5 % limit. Suppose instead 100 robots run it and 3 fail. The interval is about <b>[1.0 %, 8.5 %]</b>. It still straddles 5 %, so the decision is still open, but the picture is far sharper. Small canaries cannot promote an update, however clean they look.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{offset}(t) = r\,(t - t_{\text{cal}}), \qquad \text{recalibrate when } \text{offset} \ge \text{tol}, \qquad \Delta t_{\text{cal}} = \frac{\text{tol}}{r}</div>
+        <div class="eq">\text{promote a stage if } U < p_{\text{limit}}, \qquad \text{halt if } L > p_{\text{limit}}</div>
+        <table class="sym">
+          <tr><td><span class="tex">r</span></td><td>drift rate of the sensor offset (N per day in the example)</td></tr>
+          <tr><td><span class="tex">t, t_{\text{cal}}</span></td><td>current time and time of the last calibration (days)</td></tr>
+          <tr><td><span class="tex">\text{tol}</span></td><td>acceptable offset before recalibration (same unit as the offset)</td></tr>
+          <tr><td><span class="tex">\Delta t_{\text{cal}}</span></td><td>interval between recalibrations (days), assuming linear drift</td></tr>
+          <tr><td><span class="tex">L, U</span></td><td>lower and upper bounds of the 95 % Wilson interval for the canary failure rate</td></tr>
+          <tr><td><span class="tex">p_{\text{limit}}</span></td><td>the failure rate that the rollout must not exceed</td></tr>
+        </table>
+
+        <div class="callout"><b>Pipeline position</b>Stage 6, <i>Deploy &amp; monitor</i>, which closes the loop back to Stage 5: telemetry from the field becomes new training data and new evaluation sets, and each release goes out through a staged rollout. Records include the calibration history and every incident review.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play at the default drift (0.02 N/day, tolerance 0.5 N). Watch the offset climb and reset near day 25. Read the readout to confirm the interval.</li>
+        <li>Set the drift to 0.05 N/day. How often must the gripper be recalibrated now? Predict the day of the first recalibration, then check it.</li>
+        <li>Keep the drift at 0.02 N/day and set the tolerance to 1.0 N. What do you trade off when you loosen the tolerance?</li>
+        <li>Set canary robots to 10 and failures to 0, then to 100 robots with 3 failures. Read the 95 % interval and the rule each time. Why does the same failure rate lead to a different rule?</li></ol></div>
+      <div data-lab="fleet"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Averages hide the robot that is failing.</b> A fleet mean looks fine while three robots drift out of spec. Monitor the worst robots, not only the mean.</li>
+          <li><b>Telemetry without units or timestamps.</b> A reading of &ldquo;12&rdquo; means nothing across firmware versions. Log units, time and identity.</li>
+          <li><b>Drift assumed linear forever.</b> Linear drift is a good short-term model. Check the residuals, because temperature, wear and a changed payload can bend the line.</li>
+          <li><b>An update with no rollback.</b> If you cannot undo an update on the robots that received it, a staged rollout only limits the harm, it does not remove it.</li>
+          <li><b>Calibrating to the wrong reference.</b> A recalibration against a jig that has itself drifted resets every robot to a wrong zero.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>A fleet is a data source. Logs from failures and near misses are the most valuable training data a deployed robot produces, which is why the monitoring of Module 9 and the learning of Module 7 are one loop.</li>
+          <li>Learned models drift too. A policy trained last year can be less accurate when the lighting, the products or the shelves change, so it needs the same telemetry, canary and rollback discipline as a mechanical part.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Drift is 0.03 N/day and tolerance is 0.6 N. How often must the sensor be recalibrated, and what is the offset 15 days after calibration?</summary><div class="ans">Interval = 0.6 / 0.03 = 20 days. Offset after 15 days = 0.03 × 15 = 0.45 N, which is still under the tolerance.</div></details>
+        <details class="check"><summary>2. A canary of 5 robots has no failures. Can you promote the update?</summary><div class="ans">Not on that evidence. With 0 of 5, the 95 % Wilson interval is roughly [0 %, 43 %], which is wide enough to hide a failure rate far above any sensible limit. A larger canary is needed.</div></details>
+        <details class="check"><summary>3. Why is a staged rollout not enough on its own?</summary><div class="ans">It limits how many robots a bad update reaches before someone notices, but it does not undo the damage on the robots that already have it. A tested rollback path, and a monitor that halts the rollout, are needed as well.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Log telemetry with units, timestamps and robot identity, and watch the worst robots, not only the mean.</li>
+          <li>Recalibrate at Δt = tol / r for linear drift, and check the residuals so the model does not go stale.</li>
+          <li>Roll out in stages, decide with confidence intervals, and always keep a tested rollback.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now reason about a robot after it leaves the lab: how far it travels before it stops, how a watchdog and a residual check catch faults, how a safety filter keeps a learned policy inside its limits, how to test a change honestly, how to fit a loop into its budget, and how to keep a fleet calibrated and updated. This is the final module of the Robotics track. For the wider picture, see <a href="geoai.html">GeoAI</a> for putting models to work on satellite and field data at scale, and <a href="machine-learning.html">Machine Learning</a> for the evaluation and monitoring foundations behind the Module 9 tests. Return to the <a href="robotics.html">Robotics hub</a> to review the whole track.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

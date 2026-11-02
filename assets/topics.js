@@ -26,18 +26,33 @@ window.HUB = {
     { id: 'gov', title: 'Governing AI', icon: '⚖️', color: '#d29922', status: 'soon', desc: 'How AI is kept safe, fair and accountable: risk, ethics, regulation, auditing and responsible deployment.' },
     { id: 'rl', title: 'Reinforcement Learning', icon: '🎮', color: '#f85149', status: 'soon', desc: 'Agents, rewards, policies and learning by interaction.' },
     { id: 'domains', title: 'Domains', icon: '🌍', color: '#56d364', status: 'soon', children: [
-        { title: 'Robotics', icon: '🤖' }, { title: 'Healthcare & Bio', icon: '🧬' }, { title: 'Climate & Earth', icon: '🌦️' }, { title: 'Finance', icon: '💹' }, { title: 'Other domains', icon: '➕' },
+        { title: 'Healthcare & Bio', icon: '🧬' }, { title: 'Climate & Earth', icon: '🌦️' }, { title: 'Finance', icon: '💹' }, { title: 'Other domains', icon: '➕' },
       ], desc: 'Applied AI, one page per field: GeoAI, Robotics, Healthcare, Climate, Finance and more.' },
     {
       id: 'geoai', title: 'GeoAI', icon: '🛰️', color: '#56d364', status: 'live', href: 'geoai.html', curriculum: 'assets/curriculum-geoai.js', sub: 'Domains', next: 'domains',
       desc: 'AI on Earth observation: find data with STAC, prepare rasters without leakage, train segmentation and detection models, and describe them with the STAC MLM extension.',
       tags: ['STAC', 'STAC MLM', 'Satellite imagery', 'Segmentation', 'Cloud-native formats'],
     },
+    {
+      id: 'robotics', title: 'Robotics', icon: '🤖', color: '#f0883e', status: 'live', href: 'robotics.html', curriculum: 'assets/curriculum-robotics.js', sub: 'Domains', next: 'domains',
+      desc: 'Robots that sense, estimate, plan, control and learn: frames and kinematics, filters and SLAM, motion planning, PID and MPC, imitation and reinforcement learning, vision-language-action models and safe deployment.',
+      tags: ['Kinematics', 'Kalman filter', 'SLAM', 'Motion planning', 'Control', 'Imitation learning', 'VLA'],
+    },
   ],
 };
 
 /* Each page's pipeline: stages animate left→right. Edit text here, not in the lab code. */
 window.PIPELINES = {
+  robotics: {
+    stages: [
+      { name: 'Sense', color: '#2f81f7', items: ['Encoders & IMU', 'Camera & LiDAR', 'Timestamps'], out: 'synchronised sensor frames', compute: 'Real-time drivers, microcontroller and CPU', storage: 'Rosbag / log files', desc: 'Joint encoders, inertial and range sensors are read at fixed rates and time-stamped so that every later step uses the same moment.' },
+      { name: 'Estimate', color: '#39c5cf', items: ['Filter / SLAM', 'Point registration', 'Pose'], out: 'state & map estimate', compute: 'CPU, small matrix maths at control rate', storage: 'Map, pose graph', desc: 'A filter fuses noisy sensors into one belief about the robot pose and the surroundings, with an uncertainty for every estimate.' },
+      { name: 'Plan', color: '#a371f7', items: ['Collision check', 'Search / sampling', 'Smooth path'], out: 'collision-free trajectory', compute: 'CPU planning, seconds or less', storage: 'Planned trajectory', desc: 'A planner finds a path through free space in configuration or task space, then time-scales it into a smooth trajectory within speed and acceleration limits.' },
+      { name: 'Control', color: '#db6d28', items: ['Tracking error', 'PID / MPC / policy', 'Torque limits'], out: 'motor commands', compute: 'Hard real-time loop, 100 Hz to 1 kHz', storage: 'Controller gains, logs', desc: 'A controller compares the measured state to the setpoint and commands torques or velocities, bounded by the actuators and the safety limits.' },
+      { name: 'Learn', color: '#db61a2', items: ['Demonstrations', 'Policy network', 'Simulation'], out: 'action chunk', compute: 'GPU training, edge inference', storage: 'Datasets, policy weights', desc: 'Learned policies map observations to actions, trained from demonstrations or simulated experience and then run on the robot.' },
+      { name: 'Deploy & monitor', color: '#3fb950', items: ['Safety monitor', 'Telemetry', 'Fleet updates'], out: 'running fleet', compute: 'Onboard watchdogs, cloud analytics', storage: 'Telemetry store, model registry', desc: 'Safety monitors stop the robot when something is wrong; telemetry and logs feed incident review, calibration and updates.' },
+    ],
+  },
   geoai: {
     stages: [
       { name: 'Acquire', color: '#2f81f7', items: ['STAC search', 'Select assets', 'Read windows'], out: 'bands × H × W', compute: 'I/O: range reads from cloud archive', storage: 'STAC catalogue (metadata), COG archive', desc: 'Find imagery by place, time and cloud cover with STAC, then read only the windows and bands you need from cloud-optimised files.' },

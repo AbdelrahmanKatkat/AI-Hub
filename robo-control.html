@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 6 · Control · Robotics</title>
+<meta name="description" content="Feedback and stability intuition, PID with windup and anti-windup, state-space control and LQR, Lyapunov stability, model predictive control, and force and impedance control, with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-robo-control.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="6">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 6</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">6</div>
+      <div style="flex:1">
+        <h1>Module 6 · Control</h1>
+        <p>Making a robot do what you asked, even when the world pushes back. You will start with a single feedback loop and why it can oscillate, learn the three PID terms and how an actuator limit breaks them, move to state feedback and LQR, prove that a pendulum settles with an energy function, plan a few steps ahead with model predictive control, and finally make a robot soft on contact with impedance control.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Module 2 (dynamics) and Module 0</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="intro prose" style="max-width:780px">
+      <p>Control sits in the <b>Control</b> stage of the robot pipeline. An estimator tells the controller where the robot is; the controller compares that with where it should be and sends a command to a motor, many times a second. Every lesson below says what the loop rate is and what gets stored.</p>
+      <p>Units are given everywhere: metres (m), seconds (s), radians (rad), newtons (N). Each lab is a small illustrative model, not a robot. Its numbers come from the same equations as the lesson, so the readouts can be checked by hand.</p>
+    </div>
+
+    <!-- ===================== 6.1 ===================== -->
+    <section class="lesson" id="feedback-basics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.1</span><h2>Feedback control &amp; stability intuition</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A wheel motor must turn at a setpoint speed of 1 rad/s. Its speed responds slowly to the voltage you send, and a load can push it off target at any time. What voltage should you send, and how do you keep the speed at 1 rad/s when you cannot predict the load?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of adjusting a shower tap. You do not work out the right tap angle in advance. You feel the water, compare it with the temperature you want, and turn the tap a little in the direction of the difference. When the water is too cold you turn it up; when it is too hot you turn it down. You keep watching and correcting. That loop, <i>measure, compare, act</i>, is <b>feedback</b>.</p>
+        <p>The loop has four named parts. The <b>setpoint</b> <span class="tex">r</span> is what you want. The <b>output</b> <span class="tex">y</span> is what you measure. The <b>error</b> <span class="tex">e = r - y</span> is the gap between them. The <b>controller</b> turns the error into a command <span class="tex">u</span>, and the <b>plant</b> is the thing being controlled: the motor, the joint or the wheel.</p>
+        <p>Compare this with <b>open loop</b>: you pick the voltage from a model and never look at the result. Open loop works only if the model is exact. Real motors are never exact. Their resistance changes with temperature, and the load changes without warning. Feedback does not need the model to be exact, because it reads the answer and corrects it.</p>
+
+        <h3 class="sec">Build it up: from open loop to feedback</h3>
+        <p><b>Step 1: a plant.</b> Take a simple motor whose speed <span class="tex">y</span> follows the command <span class="tex">u</span> with a lag. A first-order model says</p>
+        <div class="eq">\tau\,\dot y = -y + b\,u</div>
+        <p>Here <span class="tex">\tau</span> is the time constant: how long the speed takes to get most of the way to its new value. With <span class="tex">\tau = 2</span> s, a step in <span class="tex">u</span> takes a few seconds to show up in <span class="tex">y</span>. The gain <span class="tex">b</span> says how much output one unit of input produces at steady state. Here <span class="tex">b = 1</span>, so <span class="tex">u</span> and <span class="tex">y</span> share units.</p>
+        <p><b>Step 2: open loop fails.</b> Suppose the true motor gain is <span class="tex">b = 0.8</span>, not 1, and we send <span class="tex">u = r = 1</span>. The steady speed settles at <span class="tex">0.8 \cdot 1 = 0.8</span>, which is 20% short. Nothing in the controller knows this, so nothing corrects it.</p>
+        <p><b>Step 3: proportional feedback.</b> Instead of sending <span class="tex">r</span>, send a command proportional to the error: <span class="tex">u = K e = K(r - y)</span>. If the speed is low, the error is large and the command grows. As <span class="tex">y</span> approaches <span class="tex">r</span>, the command shrinks. This is called <b>proportional (P) control</b>, and <span class="tex">K</span> is its gain.</p>
+
+        <div class="worked"><b>Worked example: P control on the motor</b>
+          <p>Use <span class="tex">\tau = 2</span> s, <span class="tex">b = 1</span>, <span class="tex">r = 1</span> and <span class="tex">K = 3</span>. Substitute <span class="tex">u = 3(1 - y)</span> into the plant:</p>
+          <div class="eq">2\dot y = -y + 3(1-y) = -4y + 3 \quad\Rightarrow\quad \dot y = -2y + 1.5</div>
+          <p>The steady state is where <span class="tex">\dot y = 0</span>: <span class="tex">y_\infty = 1.5/2 = 0.75</span>. The error that never goes away is <span class="tex">1 - 0.75 = 0.25</span>. The speed rises with time constant <span class="tex">1/2 = 0.5</span> s, so at <span class="tex">t = 0.5</span> s the output is <span class="tex">0.75\,(1 - e^{-1}) \approx 0.474</span>.</p>
+          <p>Now the disturbance. Add a load so that <span class="tex">\tau\dot y = -y + u + d</span> with <span class="tex">d = 0.2</span>. With no feedback and <span class="tex">u = 1</span>, the steady speed is <span class="tex">1 + 0.2 = 1.2</span>: the load moves the output by 0.2. With feedback, the steady speed is <span class="tex">(3 + 0.2)/4 = 0.80</span>. The load now moves the output by only <span class="tex">0.80 - 0.75 = 0.05</span>, four times less. The factor is <span class="tex">1 + Kb = 4</span>.</p></div>
+
+        <p>There is a catch. The error never reaches zero: <span class="tex">e_\infty = 1/(1+Kb)</span> shrinks as <span class="tex">K</span> grows but never vanishes for a finite gain. Lesson 6.2 fixes this with an integral term. There is a second catch as well, and it is more serious: feedback acts on a reading that arrives late.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\tau\,\dot y = -y + b\,K\,(r - y)\quad\Longrightarrow\quad \tau\,\dot y = -(1 + bK)\,y + bK\,r</div>
+        <table class="sym">
+          <tr><td>y(t)</td><td>output (measured), for example speed in rad/s</td></tr>
+          <tr><td>r</td><td>setpoint, in the same units as y</td></tr>
+          <tr><td>e = r − y</td><td>error: how far the output is from the setpoint</td></tr>
+          <tr><td>u = K e</td><td>proportional command; K is the gain (units of u per unit of y)</td></tr>
+          <tr><td>τ</td><td>plant time constant, seconds</td></tr>
+          <tr><td>b</td><td>plant gain: steady output per unit input (b = 1 here)</td></tr>
+          <tr><td>y∞ = bK r/(1 + bK)</td><td>steady state of the closed loop</td></tr>
+          <tr><td>τ/(1 + bK)</td><td>closed-loop time constant, seconds: smaller than τ, so feedback is faster</td></tr>
+        </table>
+        <p>Two things hold for any plant of this form. Feedback shrinks the effect of disturbances by the factor <span class="tex">1 + bK</span>. Its time constant is shorter, so the system responds faster. The price is the steady error <span class="tex">1/(1+bK)</span>, and the risk of delay, described next.</p>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set <i>K</i> = 1 with no delay. The curve settles at 0.5, and the readout gives <span class="tex">K/(1+K) = 0.5</span>. Error 0.5.</li>
+          <li>Move <i>K</i> to 3, then 8. The steady state rises towards 1 (0.75, then 0.89), but never reaches it. Notice that the time constant gets shorter.</li>
+          <li>Set the delay <i>L</i> to 1 s with <i>K</i> = 1. The curve still settles. Now raise <i>K</i> to 3. The output overshoots and keeps ringing: the controller keeps correcting a reading that is already old.</li>
+          <li>Set <i>L</i> = 2 s with <i>K</i> = 3. The loop becomes unstable and the output grows. Raising gain can make a loop worse, not better.</li></ol></div>
+      <div data-lab="fb-step"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>“Feedback removes all error.”</b> Not with proportional control alone. The steady error is <span class="tex">1/(1+bK)</span>, which is only small when <span class="tex">K</span> is large.</li>
+            <li><b>“More gain is always better.”</b> Gain shortens the time constant but amplifies delay and noise. Past a limit the loop rings or diverges, as the lab shows.</li>
+            <li><b>Mixing units.</b> If <span class="tex">u</span> is in volts and <span class="tex">y</span> in rad/s, the gain <span class="tex">K</span> has units of V per rad/s. Write the units down before you read a number off a plot.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every joint of a robot arm runs a feedback loop: encoder in, torque or velocity command out, at a rate of hundreds of hertz.</li>
+          <li>Learned policies do not replace this loop. They usually send target joint positions to a lower-level feedback controller, which tracks them.</li>
+          <li>The same idea, measure the error and act on it, is the reason gradient descent works in training. There the “plant” is the loss function.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A plant has τ = 2 s and b = 1. You use P control with K = 1 and r = 1. What is the steady-state output and the steady error?</summary><div class="ans">y∞ = bK r/(1 + bK) = 1·1/(1+1) = 0.5. The steady error is 1 − 0.5 = 0.5. Doubling the gain to K = 3 would reduce it to 0.25.</div></details>
+        <details class="check"><summary>2. Open loop with u = 1 and a true gain b = 0.8 gives what steady output? Would feedback with K = 3 fix this?</summary><div class="ans">Open loop gives 0.8. With feedback, y∞ = bK/(1 + bK) = 2.4/3.4 ≈ 0.706. The gain 0.8 is still wrong, but the error is now set by K, so raising K shrinks it. The controller corrects a model error it never saw directly.</div></details>
+        <details class="check"><summary>3. Why does a large gain make a delayed loop oscillate?</summary><div class="ans">The controller reacts to the output as it was L seconds ago. A big correction is applied while the output is still on its way, so the system overshoots, and the next correction overshoots the other way. If the gain is high enough, each overshoot is bigger than the last.</div></details>
+
+        <div class="callout"><b>Pipeline view</b>Stage: <b>Control</b>. Loop rate: a motor or joint loop typically runs at about 100 Hz to 1 kHz, so a delay of a few milliseconds matters. Stored: the gain K and the time constant used for tuning, and logs of the setpoint and output.</div>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Feedback measures the output, compares it with the setpoint and acts on the error, so it does not need an exact model.</li>
+          <li>For a first-order plant with P control the steady state is bK r/(1+bK), so an offset remains; the disturbance effect shrinks by 1 + bK.</li>
+          <li>Delay makes large gains dangerous. Stability is a property of the whole loop, not of the controller alone.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.2 ===================== -->
+    <section class="lesson" id="pid" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.2</span><h2>PID control</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot joint must hold a position, and it must also cancel a constant gravity load. Proportional control leaves a steady error (lesson 6.1). How do we remove that error and still keep the joint from overshooting, when the motor can only supply a limited torque?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Steering a boat toward a harbour uses three quantities at once. You turn the tiller <b>in proportion to how far off course you are now</b>. If a steady cross-current keeps pushing you sideways, you add a little extra turn for as long as the error has been building up: that is the <b>integral</b>, a memory of past error. And as you get close to the harbour you ease off the tiller because you are closing in fast: that is the <b>derivative</b>, which responds to how quickly the error is changing.</p>
+        <p>These three ideas give the <b>PID</b> controller: <b>P</b> for now, <b>I</b> for the past, <b>D</b> for the trend. Most industrial motor and joint loops run a PID, often with the derivative term switched off or filtered.</p>
+
+        <h3 class="sec">Build it up: one step by hand</h3>
+        <p>Continuous time gives the formula</p>
+        <div class="eq">u(t) = K_p\,e(t) + K_i\!\int_0^t e(s)\,ds + K_d\,\frac{de}{dt}</div>
+        <p>A computer works in samples. Take a sample time <span class="tex">\Delta t</span>, and replace the integral by a running sum and the derivative by a difference. The discrete form is:</p>
+        <div class="eq">e_k = r - y_k,\qquad I_k = I_{k-1} + e_k\,\Delta t,\qquad D_k = \frac{e_k - e_{k-1}}{\Delta t},\qquad u_k = K_p e_k + K_i I_k + K_d D_k</div>
+        <p>To see every term at work, use a made-up discrete plant that moves the output <span class="tex">y</span> towards the command <span class="tex">u</span> each sample: <span class="tex">y_{k+1} = 0.9\,y_k + 0.1\,u_k</span>. Set <span class="tex">r = 1</span>, <span class="tex">y_0 = 0</span>, <span class="tex">K_p = 2</span>, <span class="tex">K_i = 0.5</span>, <span class="tex">K_d = 0.2</span> and <span class="tex">\Delta t = 0.5</span> s. At the first sample there is no previous error, so <span class="tex">D_0 = 0</span>.</p>
+
+        <div class="worked"><b>Worked example: three PID steps</b>
+          <table class="tbl">
+            <tr><th>k</th><th>y_k</th><th>e_k</th><th>I_k</th><th>K_p e_k</th><th>K_i I_k</th><th>D_k</th><th>K_d D_k</th><th>u_k</th><th>y_{k+1}</th></tr>
+            <tr><td>0</td><td>0</td><td>1</td><td>0.5</td><td>2.000</td><td>0.250</td><td>0</td><td>0</td><td>2.250</td><td>0.225</td></tr>
+            <tr><td>1</td><td>0.225</td><td>0.775</td><td>0.8875</td><td>1.550</td><td>0.444</td><td>−0.450</td><td>−0.090</td><td>1.904</td><td>0.393</td></tr>
+            <tr><td>2</td><td>0.393</td><td>0.607</td><td>1.191</td><td>1.214</td><td>0.596</td><td>−0.336</td><td>−0.067</td><td>1.743</td><td>0.528</td></tr>
+          </table>
+          <p>Look at the first row. The proportional term gives <span class="tex">2 \cdot 1 = 2</span>. The integral has accumulated <span class="tex">1 \cdot 0.5 = 0.5</span> and contributes <span class="tex">0.5 \cdot 0.5 = 0.25</span>. The command is <span class="tex">u_0 = 2.25</span>, which moves the output to <span class="tex">0.9\cdot 0 + 0.1\cdot 2.25 = 0.225</span>.</p>
+          <p>In row 1, the error fell from 1 to 0.775, so <span class="tex">D_1 = (0.775 - 1)/0.5 = -0.45</span>. The derivative is negative: the output is catching up. It reduces the command by <span class="tex">0.2\cdot 0.45 = 0.09</span>. The integral is still growing, so its contribution is up to 0.444. The sum of the three terms is <span class="tex">u_1 = 1.550 + 0.444 - 0.090 = 1.904</span>. Each row reuses the previous <span class="tex">I</span> and <span class="tex">e</span>, which is why the controller needs only a little memory.</p></div>
+
+        <p>Notice that the integral keeps the command above the proportional value even as the error shrinks. That is what removes the steady error of lesson 6.1. Over a long run the integral holds the torque needed to cancel a constant load.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <table class="sym">
+          <tr><td>e(t) = r − y(t)</td><td>error, in the units of the output</td></tr>
+          <tr><td>K_p</td><td>proportional gain, units of u per unit of e</td></tr>
+          <tr><td>K_i</td><td>integral gain, units of u per (unit of e × second), i.e. 1/s when u and y share units</td></tr>
+          <tr><td>K_d</td><td>derivative gain, seconds (units of u per unit of e/s)</td></tr>
+          <tr><td>I_k</td><td>running sum of the error: the controller's memory</td></tr>
+          <tr><td>Δt</td><td>sample time, seconds (here 0.5 s)</td></tr>
+          <tr><td>u_sat = clip(u, −u_max, u_max)</td><td>the actuator can supply at most u_max; the command above the limit is lost</td></tr>
+        </table>
+        <p><b>Windup.</b> If the actuator saturates, the command you apply is smaller than the command the controller asked for, but the integral keeps adding up the error. When the error finally reverses, the integral is huge, and the output overshoots badly. The fix is <b>anti-windup</b>: when the applied command differs from the computed one, feed the difference back into the integral so that it stops growing. The lab adds a back-calculation term <span class="tex">K_{aw}(u_{sat} - u)</span> to the integrator's rate.</p>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set <i>K_i</i> = 0 and <i>K_d</i> = 0 with the limit at 5. The output settles below the setpoint: this is the offset of proportional control.</li>
+          <li>Raise <i>K_i</i> to 0.6 with the limit at 5. The offset disappears. Notice the integral term rising in the bars.</li>
+          <li>Set <i>K_i</i> = 2 with the limit at 1.5 and anti-windup off. The output overshoots by about 17%: the integral wound up while the actuator was clipped. Switch anti-windup on and the overshoot falls to about 6%.</li>
+          <li>With <i>K_i</i> = 2, the limit at 5 and anti-windup off, the overshoot is about 8%. Raise <i>K_d</i> to 1: it rises to about 15%. Watch the derivative bar: it is negative while the output rises, so it opposes motion, but on this lagging plant it lets the integral act for longer. Derivative action is not a cure-all; it also amplifies noise.</li></ol></div>
+      <div data-lab="pid-terms"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Derivative on noisy signals.</b> The derivative of an encoder that jumps by one count every few samples is a spike. Real controllers filter the derivative or use a low-pass filter.</li>
+            <li><b>Derivative kick.</b> If the derivative acts on the setpoint, a step change in the target gives a huge spike. Acting on the measured output instead avoids it.</li>
+            <li><b>Windup.</b> Any actuator with a limit needs anti-windup, or a long saturation will cause a large overshoot.</li>
+            <li><b>Units of the gains.</b> <span class="tex">K_i</span> is per second and <span class="tex">K_d</span> is in seconds; mixing them up changes the controller completely.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Motor speed and joint position loops in almost every robot run PID, often on a microcontroller at 1 kHz.</li>
+          <li>Legged and humanoid robots frequently send joint position targets to PD controllers (proportional plus derivative) at high rates. Learned locomotion policies output those targets, and the PD loop tracks them.</li>
+          <li>Learned controllers are trained against simulators that model windup, saturation and delay, so that what they learn survives the real actuator.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With K_p = 2, K_i = 0 and K_d = 0, what is the command when the error is 0.5?</summary><div class="ans">u = K_p e = 2 · 0.5 = 1.0. With only proportional action, the command is zero when the error is zero, which is why an offset remains when a steady load is present.</div></details>
+        <details class="check"><summary>2. The actuator limit is 1.5 and the controller asks for 2.25. What is applied, and what goes wrong if the integral keeps growing?</summary><div class="ans">1.5 is applied. The integral keeps summing the error, so when the error changes sign the integral is large and the output overshoots. Anti-windup stops the integral from growing while the actuator is clipped.</div></details>
+        <details class="check"><summary>3. Why is the derivative usually taken on the measured output rather than on the error when the setpoint can jump?</summary><div class="ans">A step in the setpoint produces an instantaneous change in the error, so the derivative of the error is a spike, called a kick. The derivative of the measured output does not jump with the setpoint, so the command stays smooth.</div></details>
+
+        <div class="callout"><b>Pipeline view</b>Stage: <b>Control</b>, the inner loop under the planner. Loop rate: typically 200 Hz to 1 kHz on a microcontroller or real-time CPU. Stored: the gains K<sub>p</sub>, K<sub>i</sub>, K<sub>d</sub>, the actuator limits, and logs of error and command for tuning.</div>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>P reacts to the error now, I to the error accumulated so far, D to how fast the error changes.</li>
+          <li>The integral removes a steady offset but can wind up when the actuator saturates; anti-windup stops this.</li>
+          <li>Tune by hand in order: raise K<sub>p</sub> until the response is fast but starts to oscillate, add K<sub>i</sub> to remove the offset, and use K<sub>d</sub> only if it helps, since it also amplifies noise.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.3 ===================== -->
+    <section class="lesson" id="state-space-control" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.3</span><h2>State-space models &amp; LQR</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A cart on a rail has a position <span class="tex">x</span> and a velocity <span class="tex">v</span>, and a motor can push it with a force <span class="tex">u</span>. Position and velocity are linked: velocity changes position, and the push changes velocity. How do we choose the push as a function of both <span class="tex">x</span> and <span class="tex">v</span> so that the cart returns to zero quickly without pushing too hard?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>To predict what a system will do next, you need its <b>state</b>: the smallest list of numbers that, together with the input, determines the future. For the cart that list is <span class="tex">(x, v)</span>. Knowing only the position is not enough, because a cart at the origin moving fast will not stay there. A controller that looks only at <span class="tex">x</span> would be blind to the momentum.</p>
+        <p>A <b>state feedback</b> law pushes back on both numbers. A term proportional to <span class="tex">x</span> is like a spring pulling towards zero. A term proportional to <span class="tex">v</span> is like a brake that opposes motion. Choosing the two gains by hand is possible for one cart, but it becomes guesswork for an arm with six joints. <b>LQR</b> (linear quadratic regulator) chooses them for you, by minimising a cost that adds up how far the state is from zero and how much push you spend.</p>
+
+        <h3 class="sec">Build it up: the double integrator</h3>
+        <p><b>Step 1: the equations.</b> With unit mass, the cart obeys <span class="tex">\ddot x = u</span>. Write the state as <span class="tex">\mathbf x = (x, v)^\top</span>. Then the state changes as</p>
+        <div class="eq">\dot{\mathbf x} = A\mathbf x + B u,\qquad A=\begin{pmatrix}0&1\\0&0\end{pmatrix},\quad B=\begin{pmatrix}0\\1\end{pmatrix}</div>
+        <p>The first row says the position changes at the velocity; the second says the velocity changes at the input. This is a <b>double integrator</b>, the simplest model of a moving body with a force input.</p>
+        <p><b>Step 2: state feedback.</b> Choose <span class="tex">u = -K\mathbf x = -(k_1 x + k_2 v)</span>. Substituting, the closed loop is <span class="tex">\dot{\mathbf x} = (A - BK)\mathbf x</span>. For this cart the characteristic equation is <span class="tex">s^2 + k_2 s + k_1 = 0</span>. Any choice with <span class="tex">k_1 > 0</span> and <span class="tex">k_2 > 0</span> gives a stable cart, and the two numbers set the natural frequency and damping.</p>
+        <p><b>Step 3: the cost.</b> LQR minimises</p>
+        <div class="eq">J = \int_0^\infty \left(\mathbf x^\top Q\,\mathbf x + r\,u^2\right)dt,\qquad Q=\begin{pmatrix}q_1&0\\0&q_2\end{pmatrix}</div>
+        <p>Large <span class="tex">q_1</span> punishes position error, large <span class="tex">q_2</span> punishes speed, and large <span class="tex">r</span> punishes effort. The optimal gain is <span class="tex">K = R^{-1}B^\top P</span>, where <span class="tex">P</span> solves the algebraic Riccati equation <span class="tex">A^\top P + PA - PBR^{-1}B^\top P + Q = 0</span>.</p>
+
+        <div class="worked"><b>Worked example: q₁ = q₂ = r = 1</b>
+          <p>Guess <span class="tex">P = \begin{pmatrix}\sqrt3&1\\1&\sqrt3\end{pmatrix}</span> and check the Riccati equation. Compute <span class="tex">A^\top P = \begin{pmatrix}0&0\\\sqrt3&1\end{pmatrix}</span> and <span class="tex">PA = \begin{pmatrix}0&\sqrt3\\0&1\end{pmatrix}</span>. The sum is <span class="tex">\begin{pmatrix}0&\sqrt3\\\sqrt3&2\end{pmatrix}</span>. Next <span class="tex">PB = (1, \sqrt3)^\top</span>, so <span class="tex">PBB^\top P = \begin{pmatrix}1&\sqrt3\\\sqrt3&3\end{pmatrix}</span>. Adding <span class="tex">Q = I</span>:</p>
+          <div class="eq">\begin{pmatrix}0&\sqrt3\\\sqrt3&2\end{pmatrix} - \begin{pmatrix}1&\sqrt3\\\sqrt3&3\end{pmatrix} + \begin{pmatrix}1&0\\0&1\end{pmatrix} = \begin{pmatrix}0&0\\0&0\end{pmatrix}</div>
+          <p>So <span class="tex">P</span> is correct, and the gain is <span class="tex">K = B^\top P = (1, \sqrt3)</span>, i.e. <span class="tex">k_1 = 1</span> and <span class="tex">k_2 = \sqrt3 \approx 1.732</span>. The closed-loop equation is <span class="tex">s^2 + \sqrt3\,s + 1 = 0</span>: the natural frequency is <span class="tex">\omega_n = 1</span> rad/s and the damping ratio is <span class="tex">\zeta = \sqrt3/2 \approx 0.866</span>. The cart returns with a very small overshoot. Starting at <span class="tex">x = 1</span> m, the position at 1 s is about 0.72 m, and it is near 0 by about 5 s.</p></div>
+
+        <p>For this particular double integrator there is a closed form: with <span class="tex">q_1, q_2, r</span> general, <span class="tex">k_1 = \sqrt{q_1/r}</span> and <span class="tex">k_2 = \sqrt{(q_2 + 2\sqrt{q_1 r})/r}</span>. The lab uses it. For a general system with many states you solve the Riccati equation numerically with a library routine; the structure stays the same.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\dot{\mathbf x} = A\mathbf x + Bu,\qquad u = -K\mathbf x,\qquad K = R^{-1}B^\top P,\qquad A^\top P + PA - PBR^{-1}B^\top P + Q = 0</div>
+        <table class="sym">
+          <tr><td>x = (x, v)ᵀ</td><td>state: position (m) and velocity (m/s)</td></tr>
+          <tr><td>u</td><td>input: force divided by mass, here m/s²</td></tr>
+          <tr><td>A, B</td><td>system matrices: how the state and input enter the dynamics</td></tr>
+          <tr><td>K</td><td>state-feedback gain (row vector), chosen by LQR</td></tr>
+          <tr><td>Q, R</td><td>cost weights: Q is positive semi-definite, R positive definite</td></tr>
+          <tr><td>P</td><td>solution of the Riccati equation; its quadratic form xᵀPx is the optimal cost-to-go</td></tr>
+          <tr><td>ωn, ζ</td><td>natural frequency (rad/s) and damping ratio (dimensionless) of the closed loop</td></tr>
+        </table>
+        <p>Two conditions matter. The pair <span class="tex">(A, B)</span> must be <b>controllable</b>, meaning the input can reach every state; here that holds because <span class="tex">B</span> pushes the velocity, which then moves the position. The solution <span class="tex">P</span> is the one that makes the closed loop stable, and it is unique under those conditions.</p>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults. Notice the small overshoot and the readout ζ = 0.866. Raise <i>q₁</i> to 5: the cart returns faster, and the spring gain k₁ grows.</li>
+          <li>Set <i>r</i> to 10. The effort is expensive, so the gains shrink, the push is gentler and the cart returns more slowly. Check the trace of u (purple) against the position.</li>
+          <li>Set <i>q₂</i> to 8 and watch the damping: the cart brakes harder and the overshoot disappears (ζ rises above 1).</li>
+          <li>Move the start position to −2 m and compare the peak push with 1 m. The push is proportional to the state, so it grows with the starting distance.</li></ol></div>
+      <div data-lab="lqr-cart"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>“LQR is optimal, so it is safe.”</b> It is optimal only for the cost you wrote. It ignores actuator limits and any obstacle, so it can ask for a push the motor cannot give.</li>
+            <li><b>Measuring the full state.</b> <span class="tex">u = -K\mathbf x</span> needs every state. If you only measure position, you must estimate the velocity first (Module 3).</li>
+            <li><b>Using a linear model far from its operating point.</b> A and B describe the system near one configuration. Far from it the gain can be wrong.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Balancing robots, quadrotor hover and inverted pendulums use LQR or its close relatives as the inner stabiliser.</li>
+          <li>A linear state-feedback law is a policy: a map from state to action. Reinforcement learning generalises LQR to nonlinear policies and unknown models, with the same idea of a cost to minimise.</li>
+          <li>Learned policies for legged robots are often trained around a nominal controller of this kind, so that the network learns a correction rather than the whole balance.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the closed form, what are k₁ and k₂ for q₁ = 4, q₂ = 1 and r = 1?</summary><div class="ans">k₁ = √(q₁/r) = √4 = 2. k₂ = √((q₂ + 2√(q₁ r))/r) = √((1 + 2·2)/1) = √5 ≈ 2.236.</div></details>
+        <details class="check"><summary>2. With q₁ = q₂ = 1 and r = 4, what are the gains and the damping ratio?</summary><div class="ans">k₁ = √(1/4) = 0.5. k₂ = √((1 + 2√4)/4) = √(5/4) ≈ 1.118. ζ = k₂/(2√k₁) = 1.118/(2·0.707) ≈ 0.79. A larger r makes the gains smaller, so the response is gentler and slower.</div></details>
+        <details class="check"><summary>3. Why must the position and velocity both enter the feedback law rather than position alone?</summary><div class="ans">Position alone gives no information about momentum. A cart moving quickly through the origin would be treated as at rest, and it would overshoot. The velocity term acts as damping, and without it the closed loop oscillates or is less stable.</div></details>
+
+        <div class="callout"><b>Pipeline view</b>Stages: <b>Estimate</b> provides the state (x, v), and <b>Control</b> computes u = −Kx. Loop rate: typically 100 Hz to 1 kHz for a real cart or quadrotor. Stored: the matrices A and B from identification, the weights Q and R, and the gain K.</div>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The state is the smallest set of numbers that determines the future; for a cart it is position and velocity.</li>
+          <li>State feedback u = −Kx gives one gain per state. LQR chooses K by minimising a quadratic cost with weights Q and R.</li>
+          <li>The weights are design choices: they trade speed against effort. LQR assumes a linear model and ignores limits.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.4 ===================== -->
+    <section class="lesson" id="lyapunov-stability" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.4</span><h2>Stability &amp; Lyapunov functions</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A controller brings a pendulum back to the bottom in your simulation from one starting angle. A robot must work from every starting angle it could be in, and nobody can simulate them all. How can we prove, for every start in a region, that the state settles to the target?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture a marble in a bowl. The bottom of the bowl is a point where the marble can rest. Wherever you release it, the marble rolls down, loses height and eventually settles at the bottom. Height never increases, so the marble can never climb back out on its own. The bottom is <b>stable</b>.</p>
+        <p>Aleksandr Lyapunov (1892) turned this picture into a method. Find a function <span class="tex">V(x)</span> that measures "height" above the target: it is zero at the target and positive everywhere else, like energy. If <span class="tex">V</span> never increases along any trajectory, the state cannot escape to a larger "height", and it must settle. You do not need to solve the equations at all. You only need to check the sign of how <span class="tex">V</span> changes.</p>
+
+        <h3 class="sec">Build it up: a damped pendulum</h3>
+        <p><b>Step 1: the model.</b> A pendulum of unit length, with gravity scaled so that <span class="tex">g/L = 1</span>, angle <span class="tex">\theta</span> measured from the hanging position, and angular speed <span class="tex">\omega = \dot\theta</span> in rad/s. Friction slows it with a damping coefficient <span class="tex">c</span>:</p>
+        <div class="eq">\dot\theta = \omega,\qquad \dot\omega = -\sin\theta - c\,\omega</div>
+        <p>The state <span class="tex">(\theta, \omega) = (0, 0)</span> is the hanging position, where the pendulum rests. The upright position <span class="tex">(\pi, 0)</span> is also a rest point, but it is unstable: a pendulum balanced on top falls off if nudged.</p>
+        <p><b>Step 2: energy.</b> Pick <span class="tex">V(\theta,\omega) = (1 - \cos\theta) + \tfrac12\omega^2</span>. The first term is the potential energy (height) and the second is the kinetic energy. <span class="tex">V</span> is zero at the hanging position and positive elsewhere in a band around it, which is what a Lyapunov function must do.</p>
+        <p><b>Step 3: how V changes.</b> Along a trajectory, <span class="tex">\dot V = \frac{\partial V}{\partial\theta}\dot\theta + \frac{\partial V}{\partial\omega}\dot\omega</span>. Here <span class="tex">\partial V/\partial\theta = \sin\theta</span> and <span class="tex">\partial V/\partial\omega = \omega</span>, so</p>
+        <div class="eq">\dot V = \sin\theta\cdot\omega + \omega\,(-\sin\theta - c\,\omega) = -c\,\omega^2</div>
+        <p>The gravity terms cancel exactly. What is left is the friction, which only removes energy. For <span class="tex">c \ge 0</span>, <span class="tex">\dot V \le 0</span> everywhere: energy never grows.</p>
+
+        <div class="worked"><b>Worked example: energy at two points</b>
+          <p>Start at <span class="tex">\theta = 1</span> rad, <span class="tex">\omega = 0</span>, with <span class="tex">c = 0.3</span>. Then <span class="tex">V = 1 - \cos 1 = 0.4597</span>, and <span class="tex">\dot V = -0.3\cdot 0 = 0</span>. The pendulum is at rest at its highest point, so energy is not yet leaving; it starts to leave as soon as it moves.</p>
+          <p>Now take <span class="tex">\theta = 0.5</span> rad and <span class="tex">\omega = 0.5</span> rad/s. <span class="tex">V = (1 - \cos 0.5) + \tfrac12(0.25) = 0.1224 + 0.1250 = 0.2474</span>, and <span class="tex">\dot V = -0.3\cdot 0.25 = -0.075</span> per second. Energy is falling at 0.075 units per second, as expected from friction.</p></div>
+
+        <p><b>Step 4: from "V decreases" to "the pendulum settles".</b> The argument so far gives <span class="tex">\dot V \le 0</span>, which is not quite enough: <span class="tex">\dot V = 0</span> whenever <span class="tex">\omega = 0</span>, even away from the bottom. The missing step is <b>LaSalle's invariance principle</b>. A trajectory that stays with <span class="tex">\dot V = 0</span> for all time must have <span class="tex">\omega \equiv 0</span>, and then <span class="tex">\dot\omega = -\sin\theta = 0</span>, which forces <span class="tex">\theta</span> to be 0 or <span class="tex">\pi</span>. Only the hanging position can be a trajectory that stays put, so every trajectory must eventually reach it.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\dot x = f(x),\quad x^*=0 \text{ with } f(0)=0;\qquad V(0)=0,\ V(x)>0 \text{ for } x\ne 0,\ \dot V(x) = \nabla V(x)\cdot f(x)\le 0 \;\Rightarrow\; \text{stable}</div>
+        <table class="sym">
+          <tr><td>ẋ = f(x)</td><td>the system: the rate of change of the state x</td></tr>
+          <tr><td>x*</td><td>an equilibrium: a state where the system does not move</td></tr>
+          <tr><td>V(x)</td><td>Lyapunov function: zero at the equilibrium, positive elsewhere (a generalised energy)</td></tr>
+          <tr><td>V̇ = ∇V·f</td><td>how V changes along trajectories; ∇V is the vector of partial derivatives</td></tr>
+          <tr><td>stable / asymptotically stable</td><td>V̇ ≤ 0 gives stability; V̇ < 0 away from x* (or LaSalle's argument) gives convergence</td></tr>
+        </table>
+        <p>The method is <b>sufficient, not necessary</b>. If you find a Lyapunov function, the system is stable. If you do not, nothing has been proved either way: another function might work. For linear systems <span class="tex">\dot x = Ax</span>, the search is systematic. Choose a positive definite <span class="tex">Q</span> and solve <span class="tex">A^\top P + PA = -Q</span> for <span class="tex">P</span>; then <span class="tex">V = x^\top P x</span> works whenever <span class="tex">P</span> is positive definite.</p>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep <i>c</i> = 0.3 and start at 1 rad. Watch V(t) fall: the readout shows V̇ = −c·ω², which is zero at the turning points and largest at the bottom.</li>
+          <li>Set <i>c</i> = 0. Energy is conserved: V stays flat and the pendulum swings forever. Stable, but not convergent. This is the difference between V̇ ≤ 0 and V̇ &lt; 0.</li>
+          <li>Set <i>c</i> to −0.1. Now V̇ = −c·ω² is positive: energy is pumped in, V rises and the swing grows. The hanging position is unstable.</li>
+          <li>Start at 3 rad (almost upright) with <i>c</i> = 0.3. The energy starts high, so the pendulum takes longer to settle, but it still does.</li></ol></div>
+      <div data-lab="lyap"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Forgetting positivity.</b> V must be positive away from the equilibrium. A function that is zero at the target and negative somewhere else proves nothing.</li>
+            <li><b>Stopping at V̇ ≤ 0.</b> That proves stability, not convergence. Add LaSalle or show V̇ &lt; 0 except at the target.</li>
+            <li><b>Local versus global.</b> The pendulum result holds in a region around the bottom (up to just below the top). A Lyapunov argument gives a region of attraction, not necessarily the whole space.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Safe control of robots uses Lyapunov functions to certify that a controller keeps the state inside a safe set.</li>
+          <li>Control Lyapunov functions are used to design controllers: choose a V and build the input so that V̇ is negative.</li>
+          <li>Learned controllers are checked against Lyapunov-style conditions; learning the function itself with neural networks is an active research area, not a finished toolbox.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With c = 0, what is V̇ and what does the pendulum do?</summary><div class="ans">V̇ = −c ω² = 0. Energy is constant. The pendulum swings with constant amplitude forever: stable in the sense of never growing, but it does not converge to the bottom. This is why V̇ ≤ 0 is not enough on its own.</div></details>
+        <details class="check"><summary>2. With c = −0.1 and ω = 1 rad/s, what is the sign of V̇, and what happens to the swing?</summary><div class="ans">V̇ = −(−0.1)(1)² = +0.1 > 0. Energy grows at 0.1 units per second and the swing gets larger. Negative damping makes the hanging position unstable.</div></details>
+        <details class="check"><summary>3. Why does failing to find a Lyapunov function not prove that a system is unstable?</summary><div class="ans">The method is sufficient, not necessary. A stable system may have no simple energy-like function that the search happened to find. Instability needs its own argument, such as linearisation or a counterexample.</div></details>
+
+        <div class="callout"><b>Pipeline view</b>Stages: <b>Control</b> (design of the law) and <b>Deploy &amp; monitor</b> (a runtime check on V). Loop rate: the design is done offline; a monitor evaluates V at the control rate, typically 100 Hz to 1 kHz. Stored: the chosen V, the safe-set bound and the logs of V for review.</div>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A Lyapunov function is an energy-like measure that is zero at the target, positive elsewhere, and never increases along trajectories.</li>
+          <li>For the damped pendulum, V = 1 − cos θ + ω²/2 gives V̇ = −c ω², so V decreases for c &gt; 0.</li>
+          <li>V̇ ≤ 0 gives stability; LaSalle's argument gives convergence. Finding no V proves nothing.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.5 ===================== -->
+    <section class="lesson" id="mpc" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.5</span><h2>Model predictive control</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An autonomous car must stop at a line 3 s ahead, and it must never accelerate harder than its tyres allow. A PID loop reacts only to the error now and cannot see the braking distance it will need. How can the controller plan several steps ahead, respect the limits, and still correct for surprises?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A chess player does not pick a move by looking only at the current board. She imagines the next several moves, chooses the first move of the best sequence, and then looks again after her opponent replies. The plan is always re-made from the new position. Model predictive control (MPC) does exactly this for a robot. It predicts the next <i>N</i> steps with a model, chooses the whole sequence of inputs that gives the best result within the limits, applies only the first input, and then re-plans from the new measurement.</p>
+        <p>The word <b>receding horizon</b> names the window: it always spans the next <i>N</i> steps and moves forward with time. Because the plan is made again at every step, the controller reacts to surprises, even though each plan assumed the model was right.</p>
+
+        <h3 class="sec">Build it up: a two-step plan by hand</h3>
+        <p><b>Step 1: the model.</b> A point mass has position <span class="tex">p</span> (m) and velocity <span class="tex">v</span> (m/s). The input <span class="tex">u</span> is an acceleration (m/s²). With a sample time <span class="tex">T_s</span>, the exact discrete model is</p>
+        <div class="eq">p_{k+1} = p_k + T_s v_k + \tfrac12 T_s^2 u_k,\qquad v_{k+1} = v_k + T_s u_k</div>
+        <p><b>Step 2: the cost.</b> We want the position to reach a target <span class="tex">r</span> and we want to avoid large accelerations. Over a horizon of <span class="tex">N</span> steps:</p>
+        <div class="eq">J = \sum_{k=1}^{N}(p_k - r)^2 + \rho\sum_{k=0}^{N-1}u_k^2,\qquad |u_k|\le u_{\max}</div>
+
+        <div class="worked"><b>Worked example: N = 2, T_s = 1 s, r = 1 m, ρ = 0.1</b>
+          <p>Start at rest at the origin: <span class="tex">p_0 = 0</span>, <span class="tex">v_0 = 0</span>. Roll the model forward with the two inputs <span class="tex">u_0, u_1</span> (<span class="tex">T_s = 1</span> s):</p>
+          <div class="eq">p_1 = 0.5\,u_0,\quad v_1 = u_0,\quad p_2 = p_1 + v_1 + 0.5\,u_1 = 1.5\,u_0 + 0.5\,u_1</div>
+          <p>So <span class="tex">J(u_0,u_1) = (0.5u_0 - 1)^2 + (1.5u_0 + 0.5u_1 - 1)^2 + 0.1(u_0^2 + u_1^2)</span>. Set both partial derivatives to zero. For <span class="tex">u_0</span>: <span class="tex">5.2\,u_0 + 1.5\,u_1 = 4</span>. For <span class="tex">u_1</span>: <span class="tex">1.5\,u_0 + 0.7\,u_1 = 1</span>. Solving gives</p>
+          <div class="eq">u_0 = \frac{1.3}{1.39} \approx 0.935,\qquad u_1 = \frac{-0.8}{1.39} \approx -0.576,\qquad J \approx 0.417</div>
+          <p>The plan reaches <span class="tex">p_1 \approx 0.468</span> and <span class="tex">p_2 \approx 1.115</span> m. Now apply the limit <span class="tex">|u| \le 0.5</span>. The first input of the free plan (0.935) is not allowed. Fix <span class="tex">u_0 = 0.5</span> and minimise over <span class="tex">u_1</span> alone: <span class="tex">0.7\,u_1 = 1 - 0.75 = 0.25</span>, so <span class="tex">u_1 = 0.357</span>. The constrained plan is <span class="tex">(0.5,\ 0.357)</span> with <span class="tex">J = 0.605</span>. Only <span class="tex">u_0 = 0.5</span> is applied; at the next step the whole problem is solved again from the new state.</p></div>
+
+        <p>Notice what changed when the limit appeared. The best unconstrained plan needs a sharp push at first and then a brake; the constrained plan pushes at the limit and corrects later. The controller did not need a new rule for the limit: the constraint is part of the optimisation.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\min_{u_0,\dots,u_{N-1}} J \quad\text{s.t.}\quad x_{k+1} = f(x_k,u_k),\ |u_k|\le u_{\max};\qquad \text{apply } u_0,\ \text{then re-solve at } k+1</div>
+        <table class="sym">
+          <tr><td>p, v</td><td>position (m) and velocity (m/s); state x = (p, v)</td></tr>
+          <tr><td>u_k</td><td>input at step k: an acceleration in m/s²</td></tr>
+          <tr><td>T_s</td><td>sample time, seconds</td></tr>
+          <tr><td>N</td><td>prediction horizon, in steps (N·T_s seconds ahead)</td></tr>
+          <tr><td>r</td><td>target position, m</td></tr>
+          <tr><td>ρ</td><td>effort weight: how much an acceleration costs compared with a position error</td></tr>
+          <tr><td>u_max</td><td>input limit: the actuator's maximum acceleration, m/s²</td></tr>
+          <tr><td>J</td><td>cost of the whole plan; the solver minimises it over all N inputs at once</td></tr>
+        </table>
+        <p>Two practical rules follow. The optimisation must finish inside one sample period, so the number of inputs <i>N</i> and the solver's speed set the control rate. And the model must be good enough over the horizon: a plan that is correct for 3 s is wasted if the robot's model is wrong by 10% at 1 s, although re-planning limits the damage.</p>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults (N = 6, limit 1 m/s², target 1 m). Watch the purple predicted path bend towards the target and flatten at the end of the horizon. Only the first arrow is applied.</li>
+          <li>Set <i>N</i> to 1. The controller sees one step ahead and overshoots the target to about 1.5 m. Raise <i>N</i> to 12: the peak falls to about 1.03 m because the plan looks further ahead and brakes earlier.</li>
+          <li>Set the limit to 0.2 m/s². The arrows are capped at that limit and the cart takes about 4 s to settle on the target, against about 2 s with the limit at 1 m/s².</li>
+          <li>Set <i>ρ</i> to 0 and then 0.5. With no effort penalty the plan uses the largest allowed inputs; with ρ = 0.5 the cart moves more gently and settles at about 3 s instead of 2 s. Compare the arrow sizes.</li></ol></div>
+      <div data-lab="mpc"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>A horizon that is too short.</b> If the braking distance is longer than <i>N</i>·T<sub>s</sub>, the plan cannot see the stop and the controller overshoots.</li>
+            <li><b>Forgetting to re-plan.</b> Applying the whole plan without measuring again is open-loop control with extra steps.</li>
+            <li><b>A solve that is too slow.</b> If the optimiser takes longer than the sample period, the command arrives late. Real-time MPC is a computing problem as much as a control problem.</li>
+            <li><b>Assuming stability for free.</b> A finite horizon without a terminal cost or constraint can make the closed loop unstable. Stability guarantees need extra terms.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Autonomous driving planners solve a short-horizon optimisation of steering and acceleration many times a second, under comfort and collision constraints.</li>
+          <li>Legged robots use MPC over their centre-of-mass motion to keep balance while stepping, with constraints on contact forces.</li>
+          <li>Learned policies are sometimes trained to imitate an MPC expert, so that the network reproduces constrained behaviour without solving an optimisation on the robot.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the N = 2 example, what is the cost J for the plan u = (0, 0) with r = 1?</summary><div class="ans">p₁ = 0 and p₂ = 0, so J = (0 − 1)² + (0 − 1)² + 0.1(0 + 0) = 2. The free plan reaches J ≈ 0.417, much better, so a plan that pushes is worth its effort.</div></details>
+        <details class="check"><summary>2. Why apply only the first input and re-plan, rather than apply the whole plan?</summary><div class="ans">The model is imperfect and disturbances occur. Measuring again and re-solving corrects the plan with real information. Applying the whole sequence would be open loop over the horizon.</div></details>
+        <details class="check"><summary>3. In the N = 2 example with the limit |u| ≤ 0.5, why is u₀ = 0.935 not allowed, and what is applied instead?</summary><div class="ans">It exceeds the actuator limit of 0.5. The constrained optimum sets u₀ = 0.5 (at the limit) and chooses u₁ = 0.357 for the rest of the plan. Only u₀ = 0.5 is applied; the rest is recomputed at the next step.</div></details>
+
+        <div class="callout"><b>Pipeline view</b>Stages: <b>Plan</b> (the optimisation over a short horizon) and <b>Control</b> (the first input sent to the actuator). Loop rate: the solve typically runs at about 10 Hz to 100 Hz for vehicles and legged robots, with the actuator loop running faster underneath. Stored: the model, the horizon, the weights and limits, and the planned trajectory for logging.</div>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>MPC predicts N steps with a model, optimises the whole input sequence under limits, applies only the first input and re-plans.</li>
+          <li>Constraints are part of the optimisation, so the controller respects limits without a special rule for them.</li>
+          <li>The horizon, the model accuracy and the solve time together decide whether MPC works on a real robot.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.6 ===================== -->
+    <section class="lesson" id="force-impedance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.6</span><h2>Force &amp; impedance control</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot arm must push a peg into a hole, or a person can bump into it at any moment. If the arm holds a position very firmly, a small error in where the wall is becomes a large force. How can the robot be firm enough to do its task and soft enough that contact never makes a dangerous force?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>There are two ways to control a robot in contact. <b>Position control</b> says: go to this point, and push as hard as needed to get there. That is ideal in free space, but it is dangerous at a wall, because the harder the wall resists, the harder the robot pushes. <b>Impedance control</b> says something else: make the robot behave like a spring and damper attached to a target point. Its response to a push is then part of the design. A car's suspension is a useful picture: it does not make the car rigid, it makes the car's response to bumps predictable and bounded.</p>
+        <p>The word <b>impedance</b> means the relation between motion and force. An impedance controller sets that relation to a chosen mass, damping and stiffness. The robot then pushes with a force that depends on how far it is from the target, not with an unlimited force.</p>
+
+        <h3 class="sec">Build it up: a spring-damper and a wall</h3>
+        <p><b>Step 1: the desired behaviour.</b> Choose an effective mass <span class="tex">M</span> (kg), a damping <span class="tex">B</span> (N·s/m) and a stiffness <span class="tex">K</span> (N/m) around a target <span class="tex">x_d</span> (m). In free space the end effector obeys</p>
+        <div class="eq">M\ddot x + B\dot x + K(x - x_d) = F_{\text{ext}}</div>
+        <p>Here <span class="tex">F_{\text{ext}}</span> is the force from the environment. With no contact it is zero, and the robot settles at <span class="tex">x_d</span>.</p>
+        <p><b>Step 2: the natural behaviour.</b> With <span class="tex">M = 1</span> kg, <span class="tex">B = 20</span> N·s/m and <span class="tex">K = 100</span> N/m, the natural frequency is <span class="tex">\omega_n = \sqrt{K/M} = 10</span> rad/s and the damping ratio is <span class="tex">\zeta = B/(2\sqrt{KM}) = 20/20 = 1.0</span>. A ratio of 1 is <b>critical damping</b>: the robot reaches the target as fast as possible without overshoot.</p>
+        <p><b>Step 3: a wall.</b> Put a wall at <span class="tex">x_w = 0</span>, modelled as a spring that only pushes when the robot is inside it: <span class="tex">F_{\text{ext}} = -k_e\max(0,\,x - x_w)</span>. The target <span class="tex">x_d = 0.1</span> m lies beyond the wall, so the robot can never reach it. It will press against the wall, and the force balances at the point where the two springs cancel.</p>
+
+        <div class="worked"><b>Worked example: pressing a stiff wall</b>
+          <p>Take <span class="tex">K = 100</span> N/m, <span class="tex">k_e = 2000</span> N/m and <span class="tex">x_d = 0.1</span> m. At rest the forces balance: <span class="tex">K(x - x_d) + k_e x = 0</span>, so</p>
+          <div class="eq">x = \frac{K x_d}{K + k_e} = \frac{100\cdot 0.1}{2100} \approx 0.00476\text{ m},\qquad F = k_e x \approx 2000\cdot 0.00476 = 9.52\text{ N}</div>
+          <p>The robot pushes with 9.5 N. Now make the controller stiff, <span class="tex">K = 10\,000</span> N/m, which is what a rigid position controller effectively does: <span class="tex">x = 10\,000\cdot 0.1/12\,000 = 0.0833</span> m and <span class="tex">F = 2000 \cdot 0.0833 = 166.7</span> N. The same target gives about 17 times the force. As <span class="tex">K</span> grows without limit, the force tends to <span class="tex">k_e x_d = 200</span> N: the wall, not the controller, sets the limit.</p>
+          <p>The transient is also worth a number. Start the robot at <span class="tex">x = -0.2</span> m with zero speed and the default settings in the lab. The robot slides to the wall, and the peak contact force is about 30 N before it settles at the 9.5 N equilibrium.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">M\ddot x + B\dot x + K(x - x_d) = -F_{\text{wall}},\qquad F_{\text{wall}} = k_e\,\max(0,\,x - x_w),\qquad \omega_n = \sqrt{K/M},\qquad \zeta = \frac{B}{2\sqrt{KM}}</div>
+        <table class="sym">
+          <tr><td>x, ẋ, ẍ</td><td>position (m), velocity (m/s), acceleration (m/s²) of the end effector</td></tr>
+          <tr><td>M</td><td>effective mass, kg: how the controller makes the robot feel heavy</td></tr>
+          <tr><td>B</td><td>damping, N·s/m: resistance to speed</td></tr>
+          <tr><td>K</td><td>stiffness, N/m: how strongly the robot is pulled to x_d</td></tr>
+          <tr><td>x_d</td><td>desired position, m; may lie beyond a surface</td></tr>
+          <tr><td>k_e, x_w</td><td>stiffness (N/m) and position (m) of the environment; the wall here is at 0</td></tr>
+          <tr><td>F_wall</td><td>contact force the wall exerts on the robot, N; zero when there is no contact</td></tr>
+          <tr><td>ω_n, ζ</td><td>natural frequency (rad/s) and damping ratio (dimensionless) of the desired behaviour</td></tr>
+        </table>
+        <p>The controller does not measure force in this basic form. It only makes the robot follow the equation above, which requires the motors to be torque-controlled. Adding a force sensor lets the controller know when it is in contact and what force it is actually applying.</p>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults. Note the peak contact force and the equilibrium 9.52 N in the readout. Then raise <i>K</i> to 400 N/m: the equilibrium force rises.</li>
+          <li>Set <i>B</i> to 0. The robot rings against the wall and the force oscillates. Add damping back and watch ζ rise towards 1.</li>
+          <li>Set <i>M</i> to 5 kg. With the same K and B the response is slower and the impact is harder: inertia carries momentum into the wall.</li>
+          <li>Untick <i>wall present</i>. The robot now reaches x<sub>d</sub> with no force at all. The difference between the two runs is the contact.</li></ol></div>
+      <div data-lab="impedance"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>“Impedance control is compliance by itself.”</b> The stiffness and damping are whatever you set in software. Real compliance needs torque-controlled actuators and good models, or a force sensor.</li>
+            <li><b>Too soft to work.</b> A very low K lets the robot drift away from the target, so the task fails even though the contact is safe. Compliance is a trade-off with accuracy.</li>
+            <li><b>Ignoring inertia.</b> A heavy effective mass carries large momentum into a contact, so the peak force can be high even with a soft controller.</li>
+            <li><b>Confusing impedance with admittance.</b> Impedance control takes motion and produces force. Admittance control takes measured force and produces motion. They are dual views, and the choice depends on the hardware.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Assembly tasks such as peg-in-hole and connector insertion rely on compliant control so that a small misalignment does not break the part.</li>
+          <li>Robots that work beside people use impedance control to keep contact forces below safety limits, which connects to the standards of Module 9.</li>
+          <li>Learned manipulation policies for contact-rich tasks often run under a compliant low-level layer, so that the learned part never has to output large forces directly.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With M = 1 kg, B = 20 N·s/m and K = 100 N/m, what is the damping ratio, and what does it mean?</summary><div class="ans">ζ = B/(2√(KM)) = 20/(2·10) = 1.0. The system is critically damped: it reaches the target as quickly as possible without overshooting.</div></details>
+        <details class="check"><summary>2. With K = 100 N/m, k_e = 2000 N/m and x_d = 0.1 m beyond a wall at 0, what is the steady contact force?</summary><div class="ans">x = K x_d/(K + k_e) = 10/2100 ≈ 0.00476 m, and F = k_e x ≈ 9.52 N.</div></details>
+        <details class="check"><summary>3. Why does a position controller with very high stiffness push harder into a wall than an impedance controller with a modest stiffness, for the same target?</summary><div class="ans">The steady force is F = k_e K x_d/(K + k_e). With large K this approaches k_e x_d, which is the largest force the wall can receive for that target. With a modest K the robot yields earlier, so the force is smaller. The controller's stiffness decides how hard the robot presses; the target sets the limit.</div></details>
+
+        <div class="callout"><b>Pipeline view</b>Stages: <b>Sense</b> (encoders and, where present, a force or torque sensor) and <b>Control</b> (the impedance law on the torques). Loop rate: typically 500 Hz to 1 kHz, because contact dynamics are fast. Stored: the impedance parameters M, B, K, the contact stiffness estimate and the logs of force and position.</div>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Impedance control makes the robot behave like a mass-spring-damper towards a target, so contact forces are bounded by the chosen stiffness.</li>
+          <li>At a wall the steady force is k_e K x_d/(K + k_e), which is far smaller than the rigid-position force for a soft K.</li>
+          <li>Stiffness trades safety against accuracy; damping sets how the robot settles; mass sets how hard an impact is.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout intro" style="max-width:780px"><b>Module complete!</b>You can now close a feedback loop and reason about its stability, tune a PID with anti-windup, design state feedback with LQR, prove that a system settles with a Lyapunov function, plan a short horizon with MPC, and make a robot soft on contact. Next, <a href="robo-learning.html"><b>Module 7 · Learning for robots</b></a> takes these loops and learns the policies that drive them from demonstrations, simulation and reward.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

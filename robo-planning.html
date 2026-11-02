@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 · Planning &amp; motion · Robotics</title>
+<meta name="description" content="Planning as search in configuration space, Dijkstra and A*, sampling planners PRM and RRT, polynomial and spline trajectories with velocity and acceleration limits, trajectory optimisation, and STRIPS-style task planning.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-robo-planning.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="5">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 5</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">5</div>
+      <div style="flex:1">
+        <h1>Module 5 · Planning &amp; motion</h1>
+        <p>A robot that knows where it is still has to decide where to go. Planning turns a goal into a motion that avoids obstacles and respects the robot's limits. You will see planning as a search through configurations, watch A* and RRT explore a space, shape a trajectory with velocity and acceleration limits, bend a path away from obstacles by optimisation, and finally plan a sequence of symbolic actions such as <i>pick, move, place</i>.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs Module 0 (frames, configuration space) and Module 2 (kinematics)</span></div>
+      </div>
+    </div>
+
+    <div class="intro prose">
+      <p>Every lesson sits in the <b>Plan</b> stage of the sense–estimate–plan–control loop. Planners are usually run at a few hertz, or only when the goal or the map changes, while the controller that tracks the plan runs at hundreds of hertz. Each lesson says which of the two it belongs to. Angles are in <b>radians</b> unless a lesson says degrees, lengths are in <b>metres</b>, times in <b>seconds</b>.</p>
+    </div>
+
+    <!-- ===================== 5.1 ===================== -->
+    <section class="lesson" id="configuration-planning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.1</span><h2>Planning as search in configuration space</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A two-link arm must move its gripper from a cup on the left to a shelf on the right. Somewhere in the middle, the forearm would sweep through a post. Which joint angles are safe, which are not, and how does a program search for a route that only passes through the safe ones?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Plan in the space the robot actually moves in. The arm has two joint angles, <span class="tex">\theta_1</span> and <span class="tex">\theta_2</span>. Every pair of angles is one <b>configuration</b>, and the set of all pairs is the <b>configuration space</b>. Inside that space the arm is just a point. Moving the arm means moving the point.</p>
+        <p>The obstacle is what changes shape. In the workspace (the plane where the gripper actually goes) the post is a small disc, but the arm is a bent rod, so the set of forbidden configurations is a strange region with curved edges. In configuration space the picture reverses: the arm is a point and the forbidden set is simply a region you must avoid. Planning becomes: find a path for a point that stays out of the region.</p>
+
+        <h3 class="sec">Build it up: from one pose to a whole map</h3>
+        <p><b>Step 1: a pose is a configuration.</b> Take an arm with two links of length <span class="tex">L_1 = L_2 = 1</span> m. Its joint angles <span class="tex">q = (\theta_1, \theta_2)</span> determine the elbow and the tip:</p>
+        <div class="eq">e(q) = \big(L_1\cos\theta_1,\; L_1\sin\theta_1\big), \qquad p(q) = e(q) + \big(L_2\cos(\theta_1+\theta_2),\; L_2\sin(\theta_1+\theta_2)\big)</div>
+        <p><b>Step 2: a configuration is valid if no link touches the obstacle.</b> For one configuration we compute the two links as line segments: the first from the origin to the elbow, the second from the elbow to the tip. The configuration is <i>in collision</i> if either segment passes within the obstacle radius <span class="tex">R</span> of the obstacle centre <span class="tex">C</span>.</p>
+        <p><b>Step 3: a map of all configurations.</b> If we test every pair of angles on a grid, say 90 values of <span class="tex">\theta_1</span> times 90 values of <span class="tex">\theta_2</span>, each cell is either free (white) or blocked (dark). That grid is a picture of the configuration space, and the obstacle has become a blob in it. This is the "discretised configuration grid" that the rest of the module searches.</p>
+        <p><b>Step 4: a path is a chain of free cells.</b> A plan is a sequence of configurations from the start to the goal in which every configuration is free and every step between neighbouring configurations is also free. In practice the step between two configurations is checked by testing a few intermediate configurations, because a path can jump over a thin obstacle between two samples.</p>
+
+        <div class="worked"><b>Worked example: four configurations by hand</b>
+          <p>Let the obstacle be a disc with centre <span class="tex">C=(0.5,\,1.2)</span> m and radius <span class="tex">R=0.3</span> m. The distance from the disc centre to a segment is the distance to the nearest point of that segment; a configuration is free if both links stay more than <span class="tex">R</span> away.</p>
+          <table class="tbl">
+            <tr><th>q = (θ₁, θ₂)</th><th>elbow e(q)</th><th>tip p(q)</th><th>closest approach to C</th><th>result</th></tr>
+            <tr><td>(0, 0)</td><td>(1.000, 0.000)</td><td>(2.000, 0.000)</td><td>1.200 m (to link 1)</td><td>free</td></tr>
+            <tr><td>(π/2, 0)</td><td>(0.000, 1.000)</td><td>(0.000, 2.000)</td><td>0.500 m (to link 2)</td><td>free, since 0.500 &gt; 0.300</td></tr>
+            <tr><td>(π/4, 0)</td><td>(0.707, 0.707)</td><td>(1.414, 1.414)</td><td>0.495 m</td><td>free</td></tr>
+            <tr><td>(π/3, π/6)</td><td>(0.500, 0.866)</td><td>(0.500, 1.866)</td><td>0.000 m (the tip link passes through C)</td><td>collision</td></tr>
+          </table>
+          <p>Check the last row by hand. The second link runs from <span class="tex">(0.5, 0.866)</span> to <span class="tex">(0.5, 1.866)</span>, a vertical segment at <span class="tex">x=0.5</span>. The centre <span class="tex">(0.5, 1.2)</span> lies on it, so the distance is zero, far less than <span class="tex">R=0.3</span> m. The arm is in collision in that configuration even though its tip is a long way from the post.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">\mathcal{Q}</span> be the set of all configurations allowed by the joint limits, and let <span class="tex">\mathcal{O}</span> be the set of configurations in which some part of the robot touches an obstacle. The <b>free space</b> is <span class="tex">\mathcal{Q}_{\text{free}} = \mathcal{Q} \setminus \mathcal{O}</span>. A <b>motion plan</b> is a continuous path <span class="tex">q:[0,1]\to\mathcal{Q}_{\text{free}}</span> with <span class="tex">q(0)=q_{\text{start}}</span> and <span class="tex">q(1)=q_{\text{goal}}</span>.</p>
+        <table class="sym">
+          <tr><td><span class="tex">q=(\theta_1,\theta_2)</span></td><td>a configuration: the two joint angles in radians</td></tr>
+          <tr><td><span class="tex">L_1, L_2</span></td><td>link lengths in metres (here both 1 m)</td></tr>
+          <tr><td><span class="tex">e(q), p(q)</span></td><td>elbow and tip positions in the plane, in metres</td></tr>
+          <tr><td><span class="tex">C, R</span></td><td>centre (metres) and radius (metres) of a disc obstacle</td></tr>
+          <tr><td><span class="tex">\mathcal{Q}_{\text{free}}</span></td><td>the configurations in which no link is in collision</td></tr>
+          <tr><td><span class="tex">q(s)</span></td><td>a path parametrised by <span class="tex">s\in[0,1]</span>, not yet by time</td></tr>
+        </table>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Plan</i>. Collision checking is called thousands of times inside a planner, so it must be cheap. Typical planning runs at 1–10 Hz or on demand, while the controller tracks the resulting path at hundreds of hertz.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Drag the θ₁ and θ₂ sliders. Watch the arm in the left view and the marker in the configuration map on the right. Find a configuration where the marker sits in a dark cell and the readout says <b>collision</b>.</li>
+        <li>Move the obstacle (Cx, Cy) and its radius R. Notice that the dark blob in configuration space changes shape even though you never moved the arm. The map is the obstacle seen in joint angles.</li>
+        <li>Press <b>Sweep θ₁</b>. The arm rotates slowly at 0.4 rad/s while θ₂ is fixed. The trail on the map is the path a planner would have to find. Where the trail crosses a dark region, the arm hits the obstacle.</li>
+        <li>Note the minimum distance readout. The worked example predicted 0.000 m at θ = (π/3, π/6). Set the sliders there to check it.</li></ol></div>
+      <div data-lab="plan-cspace"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Checking only the tip.</b> The worked example collided through a link whose tip was far away. Check every link, and the joints too.</li>
+          <li><b>Coarse grids that skip thin obstacles.</b> A 10-degree grid can step over a 5 cm post. Either refine the grid or check the segment between neighbours.</li>
+          <li><b>Mixing degrees and radians.</b> Most maths code expects radians. A joint at "90" in a degree field is a full extra turn in radians.</li>
+          <li><b>Forgetting joint limits.</b> The free space is the allowed configurations <i>and</i> the collision-free ones. A valid path can still be impossible for the motor.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Motion planners in MoveIt and OMPL search configuration space for industrial and research arms. Their collision checkers test links against the scene exactly as the lab does, only for six or seven joints.</li>
+          <li>Learned policies (Module 7) act in the same space. A policy that outputs joint targets is only useful if the targets are collision-free, which is why planners and safety filters (Module 9) are often kept as a layer around the learner.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The arm has L₁ = L₂ = 1 m. At q = (0, π/2), where is the tip, and is the arm free against a disc at C = (2.0, 0.0) m with R = 0.3 m?</summary><div class="ans">The elbow is (1, 0) and the tip is (1 + cos(π/2), sin(π/2)) = (1, 1). Link 1 runs from (0,0) to (1,0). The closest point of link 1 to C is (1,0), at distance 1.0 m. Link 2 runs from (1,0) to (1,1); its closest point to C is again (1,0), at 1.0 m. Both exceed 0.3 m, so the configuration is free.</div></details>
+        <details class="check"><summary>2. Why is the configuration space usually easier to plan in than the workspace?</summary><div class="ans">In configuration space the robot is a point, so planning is a search for a path of a point around forbidden regions. The awkward link geometry is absorbed into the shape of the forbidden region, which the collision checker computes once per configuration.</div></details>
+        <details class="check"><summary>3. A planner tests a straight move between two free configurations only at its two endpoints. Why can the move still be unsafe?</summary><div class="ans">The arm can sweep through an obstacle between the endpoints and come back out. Checking intermediate configurations along the move, at a spacing small enough that no obstacle fits between checks, is the standard fix.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A configuration is one vector of joint angles; the configuration space holds all of them, and the arm is a point inside it.</li>
+          <li>An obstacle is a forbidden region in configuration space. A valid plan is a path of free configurations from start to goal.</li>
+          <li>Planning is search, and the search needs a collision check for every configuration it touches.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.2 ===================== -->
+    <section class="lesson" id="graph-search" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.2</span><h2>Graph search: Dijkstra and A*</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A warehouse robot must drive from its charging dock to a pallet on a grid of aisles. Some cells are shelves, and turning or driving over a rough patch costs more time. How does it find the cheapest route, and how can it avoid exploring the whole warehouse to do so?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine dropping a stone in a pond. The ripples spread out evenly in every direction, and the first ring to reach a point is the shortest distance from the stone. That is <b>Dijkstra's algorithm</b>: it expands the cheapest known node first, so the set of explored nodes grows like ripples, correct but wide. It explores the whole pond before it reaches a far bank.</p>
+        <p><b>A*</b> adds a sense of direction. If you can estimate how far each node still is from the goal, you can let the ripples lean toward the goal. A node that is cheap to reach but far from the goal is visited later. The estimate must never be too optimistic, or A* could ignore the true best route.</p>
+
+        <h3 class="sec">Build it up: costs, then estimates</h3>
+        <p><b>Step 1: cost so far.</b> Let <span class="tex">g(n)</span> be the cheapest cost found so far from the start to node <span class="tex">n</span>. Dijkstra always expands the open node with the smallest <span class="tex">g</span>.</p>
+        <p><b>Step 2: an estimate of cost to go.</b> Let <span class="tex">h(n)</span> be a guess of the remaining cost from <span class="tex">n</span> to the goal. On a grid where a step costs 1 and moves are up, down, left or right, the <b>Manhattan distance</b> <span class="tex">|x_n - x_G| + |y_n - y_G|</span> is such a guess.</p>
+        <p><b>Step 3: rank by the sum.</b> A* expands the open node with the smallest <span class="tex">f(n)=g(n)+h(n)</span>, the estimated cost of the best path through <span class="tex">n</span>.</p>
+        <p><b>Step 4: when is the answer right?</b> If <span class="tex">h</span> never overestimates the true remaining cost, A* finds a cheapest path when the goal is first taken from the open set. We state the condition precisely in the definition below.</p>
+
+        <div class="worked"><b>Worked example: A* on a four-node graph</b>
+          <p>Nodes <span class="tex">S, A, B, G</span> with directed edges: <span class="tex">S\to A</span> cost 1, <span class="tex">S\to B</span> cost 4, <span class="tex">A\to B</span> cost 2, <span class="tex">A\to G</span> cost 5, <span class="tex">B\to G</span> cost 1. The true remaining costs are <span class="tex">h^*(S)=4</span>, <span class="tex">h^*(A)=3</span>, <span class="tex">h^*(B)=1</span>, <span class="tex">h^*(G)=0</span>. We use the estimates <span class="tex">h(S)=4</span>, <span class="tex">h(A)=3</span>, <span class="tex">h(B)=1</span>, <span class="tex">h(G)=0</span>, which never overestimate.</p>
+          <table class="tbl">
+            <tr><th>step</th><th>expand</th><th>g</th><th>f = g + h</th><th>new or improved nodes</th></tr>
+            <tr><td>1</td><td>S</td><td>0</td><td>4</td><td>A: g=1, f=4; B: g=4, f=5</td></tr>
+            <tr><td>2</td><td>A</td><td>1</td><td>4</td><td>B improved: g=3, f=4 (through A, 1+2); G: g=6, f=6</td></tr>
+            <tr><td>3</td><td>B</td><td>3</td><td>4</td><td>G improved: g=4, f=4 (through B, 3+1)</td></tr>
+            <tr><td>4</td><td>G</td><td>4</td><td>4</td><td>goal reached: path S→A→B→G, cost 4</td></tr>
+          </table>
+          <p>Notice what happened to G. It was first reached at cost 6 through A, but B still had <span class="tex">f=4</span> in the open set, which is cheaper, so B was expanded next and gave G a cost of 4. A* keeps going until the goal is the cheapest open node; only then is its cost known to be optimal. Dijkstra visits the same four nodes here because these estimates happen to be exact. On a large grid, A* with a good estimate expands far fewer nodes.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">c(n,m)\ge 0</span> be the cost of an edge from <span class="tex">n</span> to <span class="tex">m</span>, and <span class="tex">h^*(n)</span> the true cheapest cost from <span class="tex">n</span> to the goal. A heuristic <span class="tex">h</span> is <b>admissible</b> when <span class="tex">0\le h(n)\le h^*(n)</span> for every node. It is <b>consistent</b> when <span class="tex">h(n)\le c(n,m)+h(m)</span> for every edge. Consistency implies admissibility. With an admissible heuristic, A* returns an optimal path.</p>
+        <div class="eq">f(n) = g(n) + h(n), \qquad \text{expand the open node with smallest } f(n)</div>
+        <div class="eq">\text{weighted A*: } f_w(n) = g(n) + w\,h(n), \quad w\ge 1 \;\Rightarrow\; \text{cost} \le w \cdot \text{optimal cost}</div>
+        <table class="sym">
+          <tr><td><span class="tex">g(n)</span></td><td>cheapest cost found so far from the start to <span class="tex">n</span></td></tr>
+          <tr><td><span class="tex">h(n)</span></td><td>heuristic estimate of the remaining cost from <span class="tex">n</span> to the goal</td></tr>
+          <tr><td><span class="tex">h^*(n)</span></td><td>true cheapest remaining cost (unknown in practice; used only in the condition)</td></tr>
+          <tr><td><span class="tex">f(n)</span></td><td>estimated cost of the best path through <span class="tex">n</span></td></tr>
+          <tr><td><span class="tex">w</span></td><td>weight on the heuristic; <span class="tex">w=1</span> is A*, <span class="tex">w&gt;1</span> is faster but not always optimal</td></tr>
+        </table>
+        <p>Dijkstra is the special case <span class="tex">h(n)=0</span> for every node. It is optimal for any non-negative edge costs but expands the most nodes.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Plan</i>. A grid search of a few thousand cells takes milliseconds, so it can run whenever the map changes. Recomputing a route at 1–5 Hz is typical for mobile robots.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play with <b>Dijkstra</b> selected. Watch the blue (explored) region spread evenly from the start in every direction.</li>
+        <li>Switch to <b>A*</b> and play again at the same speed. The search now leans toward the goal in the top right. Count how many cells it expands compared with Dijkstra, and read the counter.</li>
+        <li>Set the mode to <b>weighted A*</b> and raise w to 2 or 3. The search expands fewer cells on hard maps. Read the path cost in the readout: on some maps it rises above the optimum, but it never exceeds w times the optimal cost.</li>
+        <li>Click cells to add or remove shelves, then press reset. Notice that A* still finds a route whenever one exists, and reports when none does.</li></ol></div>
+      <div data-lab="plan-astar"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>An overestimating heuristic.</b> Straight-line distance is admissible when diagonal moves cost <span class="tex">\sqrt 2</span>. If diagonal moves cost 1, the straight-line distance overestimates nothing only if you use the Chebyshev distance <span class="tex">\max(|\Delta x|,|\Delta y|)</span>, and Manhattan distance then overestimates. A heuristic that overestimates can return a longer route with no warning.</li>
+          <li><b>Forgetting that g can improve.</b> A node can be reached first by an expensive route. The search must update its <span class="tex">g</span> when a cheaper route appears, as in step 2 of the worked example.</li>
+          <li><b>Calling the search "optimal" when w &gt; 1.</b> Weighted A* trades optimality for speed on purpose. Say which one you use.</li>
+          <li><b>Using grids for everything.</b> A grid is cheap for a 2-D floor but explodes in higher dimensions; the next lesson shows the alternative.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Route planners in mapping services and mobile robot stacks run A* or its variants on road or occupancy graphs, with the straight-line distance as the heuristic.</li>
+          <li>The same search reappears in AI as beam search and best-first search over token sequences, with a learned value estimate playing the role of <span class="tex">h</span>.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. On a 4-connected grid with unit step costs, a robot is at (2, 3) and the goal is at (6, 1). What is the Manhattan heuristic, and is it admissible?</summary><div class="ans">h = |2−6| + |3−1| = 4 + 2 = 6. It is admissible, because a 4-connected path must take at least 6 unit steps to change x by 4 and y by 2.</div></details>
+        <details class="check"><summary>2. In the worked example, G is first reached at cost 6 (through A). Why does the search keep going instead of accepting it?</summary><div class="ans">Because B still sits in the open set with f = 4, which is smaller than G's f = 6. A cheaper route through B might exist, and it does (cost 4). The goal is accepted only when it is the cheapest open node, at which point its cost is optimal.</div></details>
+        <details class="check"><summary>3. Suppose h(A) were set to 5 in the worked example, while h*(A) is still 3. What could go wrong?</summary><div class="ans">The heuristic would be inadmissible. A's f would be 1 + 5 = 6, so A would be expanded late. The search could then accept a more expensive route to G before the cheaper one through A is explored, so the path may not be optimal.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Dijkstra expands by cost so far; A* expands by cost so far plus an estimate of cost to go.</li>
+          <li>An admissible heuristic (never overestimating) keeps A* optimal; a weight above 1 makes it faster but only approximately optimal.</li>
+          <li>A search needs the graph's edge costs and a way to update the best cost of each node.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.3 ===================== -->
+    <section class="lesson" id="sampling-planners" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.3</span><h2>Sampling-based planning: PRM and RRT</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A six-joint arm has six configuration coordinates. If each joint is split into 100 values, the grid has <span class="tex">100^6 = 10^{12}</span> cells. Checking each one for collision would take far too long, and the grid of the previous lesson no longer fits in memory. How can a planner find a path while looking at only a tiny fraction of the space?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine searching a dark house for a way from the front door to the kitchen. You do not map every cubic centimetre. You take a few steps in random directions, keep the spots you could reach without bumping into anything, and remember which spots connect to which. Sooner or later a chain of remembered spots reaches the kitchen.</p>
+        <p>Sampling planners do exactly that. They draw random configurations, test each one for collision, and connect the free ones. Two popular forms differ in how they connect. A <b>PRM</b> (probabilistic roadmap) builds a graph of free samples first and searches it afterwards. An <b>RRT</b> (rapidly exploring random tree) grows a single tree outward from the start, steered toward random targets, and stops when the tree reaches the goal.</p>
+
+        <h3 class="sec">Build it up: growing a tree</h3>
+        <p><b>Step 1: sample a target.</b> Draw a random configuration <span class="tex">x_{\text{rand}}</span>. Sometimes, say one time in twenty, use the goal itself as the target. This goal bias pulls the tree toward the goal.</p>
+        <p><b>Step 2: find the nearest node.</b> Among the nodes already in the tree, find the one closest to <span class="tex">x_{\text{rand}}</span>. Call it <span class="tex">x_{\text{near}}</span>.</p>
+        <p><b>Step 3: take one limited step.</b> Move from <span class="tex">x_{\text{near}}</span> toward <span class="tex">x_{\text{rand}}</span> by at most a step size <span class="tex">\eta</span>. The new node <span class="tex">x_{\text{new}}</span> is added only if the segment between the two is collision-free.</p>
+        <p><b>Step 4: repeat until the goal is reached.</b> The tree spreads into the free space and eventually connects to the goal region. Following the parent links back from the goal gives the path.</p>
+
+        <div class="worked"><b>Worked example: two extensions by hand</b>
+          <p>The tree starts with one node at the origin <span class="tex">(0,0)</span>. Step size <span class="tex">\eta = 1</span> m, and no obstacles lie nearby.</p>
+          <p><b>Extension 1.</b> Sample <span class="tex">x_{\text{rand}}=(3,4)</span>. The only node is <span class="tex">(0,0)</span>, so it is the nearest. The distance is <span class="tex">d=\sqrt{3^2+4^2}=5</span> m, which is larger than <span class="tex">\eta</span>. The unit direction is <span class="tex">(3,4)/5 = (0.6,\,0.8)</span>, so</p>
+          <div class="eq">x_{\text{new}} = (0,0) + 1\cdot(0.6,\,0.8) = (0.6,\,0.8)</div>
+          <p><b>Extension 2.</b> Sample <span class="tex">x_{\text{rand}}=(1,0)</span>. The nearest node is now <span class="tex">(0.6,\,0.8)</span>, at distance <span class="tex">\sqrt{0.4^2+0.8^2}=\sqrt{0.8}\approx 0.894</span> m from the sample. That is less than <span class="tex">\eta=1</span> m, so the step reaches the sample exactly and <span class="tex">x_{\text{new}}=(1,0)</span>.</p>
+          <p>The tree now has three nodes, <span class="tex">(0,0)\to(0.6,0.8)\to(1,0)</span>. The second node was added only because the target was closer than one step.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">T=(V,E)</span> be the tree, initialised with the start configuration. The RRT loop is:</p>
+        <div class="eq">\begin{aligned}&x_{\text{rand}} \leftarrow \text{sample}(\mathcal{Q}), \quad x_{\text{near}} \leftarrow \arg\min_{v\in V}\lVert v - x_{\text{rand}}\rVert\\ &x_{\text{new}} \leftarrow x_{\text{near}} + \min\!\big(\eta,\ \lVert x_{\text{rand}}-x_{\text{near}}\rVert\big)\,\frac{x_{\text{rand}}-x_{\text{near}}}{\lVert x_{\text{rand}}-x_{\text{near}}\rVert}\\ &\text{if the segment } [x_{\text{near}},x_{\text{new}}] \text{ is free: } V\leftarrow V\cup\{x_{\text{new}}\},\ E\leftarrow E\cup\{(x_{\text{near}},x_{\text{new}})\}\end{aligned}</div>
+        <p>A <b>PRM</b> instead samples <span class="tex">N</span> free configurations, connects each to its nearby neighbours when the connecting segment is free, and then runs graph search (Lesson 5.2) from start to goal.</p>
+        <table class="sym">
+          <tr><td><span class="tex">\mathcal{Q}</span></td><td>the configuration space (joint limits included)</td></tr>
+          <tr><td><span class="tex">x_{\text{rand}}, x_{\text{near}}, x_{\text{new}}</span></td><td>a random sample, the nearest tree node, and the node added this step; each a vector of joint angles (radians)</td></tr>
+          <tr><td><span class="tex">\eta</span></td><td>step size, the largest move per extension (in configuration units, here metres in the worked example)</td></tr>
+          <tr><td><span class="tex">\lVert\cdot\rVert</span></td><td>Euclidean distance in configuration space</td></tr>
+          <tr><td><span class="tex">N</span></td><td>number of roadmap samples in a PRM</td></tr>
+        </table>
+        <p>RRT is <b>probabilistically complete</b>: if a collision-free path exists, the chance that the planner finds one tends to 1 as the number of samples grows. It does not say how long that takes. Its paths are usually jagged. <b>RRT*</b> adds a rewiring step that reconnects nearby nodes through cheaper routes, which makes the path approach the optimum as samples grow (asymptotic optimality).</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Plan</i>. A sampling planner for a six-joint arm typically runs in tens of milliseconds to a few seconds, and its output is then smoothed (Lesson 5.5) before control.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Each time a random sample is drawn, the lab shows a dashed line to it and then grows the tree by one step toward it. Read the caption; the seed is fixed so every run repeats.</li>
+        <li>Drag the step size η up and down. A small η gives a fine tree that grows slowly; a large η grows fast but may fail to squeeze between obstacles.</li>
+        <li>Raise the goal bias. The tree reaches the goal sooner, but it explores less of the map. Note the trade-off.</li>
+        <li>Press <b>New seed</b> several times. The number of nodes needed to connect varies a lot: that is the random part of probabilistic completeness.</li></ol></div>
+      <div data-lab="plan-rrt"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"RRT is optimal."</b> Plain RRT returns the first path it finds, which is usually much longer than the best one. Use RRT* or smooth the path afterwards.</li>
+          <li><b>Forgetting the segment check.</b> Adding a node is safe only if the segment to its parent is free. Testing just the new point lets the tree tunnel through thin walls.</li>
+          <li><b>A non-uniform sampler.</b> If samples are only drawn in the easy part of the space, the tree never learns about the narrow passage. Narrow passages are the hard case for all sampling planners.</li>
+          <li><b>Reading a failure as proof.</b> If RRT does not find a path after a fixed budget, the problem may still be solvable. It is not a certificate of no path.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>OMPL, a widely used open library, implements RRT, RRT* and PRM, and MoveIt calls it to plan arm motions in factories and labs.</li>
+          <li>Sampled candidate motions are the same idea as sampling candidate action sequences in model-predictive and learned planners: generate many, score them, keep the best feasible one.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The tree holds (0,0) only, η = 0.5 m, and the sample is (3,4). What node is added?</summary><div class="ans">The distance is 5 m, which exceeds η, so the step is 0.5 m along (0.6, 0.8): x_new = (0.3, 0.4). The tree does not jump to the sample.</div></details>
+        <details class="check"><summary>2. Why does the extension in the worked example reach (1, 0) exactly, while the first did not?</summary><div class="ans">The first sample was 5 m away, more than the step size of 1 m, so the node moved one step only. The second sample was about 0.894 m from the nearest node, which is less than the step size, so the new node can equal the sample.</div></details>
+        <details class="check"><summary>3. What does probabilistic completeness promise, and what does it not promise?</summary><div class="ans">It promises that, if a collision-free path exists, the probability of finding one tends to 1 as samples increase. It does not promise a short path, nor a bound on the running time.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Sampling planners avoid mapping a huge configuration space by testing only the random samples they visit.</li>
+          <li>RRT grows one tree toward random targets in limited steps; PRM builds a roadmap and then searches it.</li>
+          <li>Plain RRT is complete in the probabilistic sense but not optimal; smoothing or RRT* is needed for good paths.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.4 ===================== -->
+    <section class="lesson" id="trajectory-generation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.4</span><h2>Trajectory generation &amp; time scaling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The planner gives a path: a list of joint configurations. The motors, however, need to know <i>when</i> to be where. If the arm jumps from one configuration to the next, the joints need infinite acceleration and the motors saturate. How do you turn a path into a motion that starts and stops smoothly and respects a maximum speed and a maximum acceleration?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A path says where to go; a <b>trajectory</b> says where to be at each moment. Think of a train on a fixed track. The track is the path, and the timetable is the trajectory. The same track can be run slowly and gently or fast and hard. Changing the timetable changes how fast and how hard the train moves, but never where it goes.</p>
+        <p>A good timetable starts from rest, speeds up smoothly, and slows down smoothly to a stop. That means the velocity is zero at the ends and changes continuously in the middle. The simplest smooth curve that does this is a polynomial in time.</p>
+
+        <h3 class="sec">Build it up: from a rest-to-rest move to limits</h3>
+        <p><b>Step 1: normalised time.</b> Let the move last <span class="tex">T</span> seconds, and let <span class="tex">s = t/T</span> run from 0 to 1. Then a shape function <span class="tex">\sigma(s)</span> goes from 0 to 1, and the joint moves by <span class="tex">\Delta q\,\sigma(s)</span> with <span class="tex">\Delta q = q_f - q_0</span>.</p>
+        <p><b>Step 2: the cubic.</b> The cubic <span class="tex">\sigma(s)=3s^2-2s^3</span> starts and ends at rest, because its slope is zero at <span class="tex">s=0</span> and <span class="tex">s=1</span>. But its acceleration jumps at the ends, so a motor is asked for a sudden torque change.</p>
+        <p><b>Step 3: the quintic.</b> The quintic <span class="tex">\sigma(s)=10s^3-15s^4+6s^5</span> is zero in velocity and acceleration at both ends. It is the smoothest polynomial that moves from rest to rest in a given time.</p>
+        <p><b>Step 4: derivatives give the limits.</b> Velocity and acceleration are <span class="tex">\dot q = \Delta q\,\sigma'(s)/T</span> and <span class="tex">\ddot q = \Delta q\,\sigma''(s)/T^2</span>. The peak values must stay under the joint limits, and that fixes the smallest allowed <span class="tex">T</span>.</p>
+
+        <div class="worked"><b>Worked example: a quintic move from 0 to 1 rad in 2 s</b>
+          <p>Take <span class="tex">q_0=0</span>, <span class="tex">q_f=1</span> rad, <span class="tex">T=2</span> s. At <span class="tex">t=0.5</span> s, <span class="tex">s=0.25</span>.</p>
+          <p>Position: <span class="tex">\sigma(0.25)=10(0.25)^3-15(0.25)^4+6(0.25)^5 = 0.15625-0.05859+0.00586 = 0.10352</span>, so <span class="tex">q = 0.1035</span> rad.</p>
+          <p>Velocity: <span class="tex">\sigma'(s)=30s^2-60s^3+30s^4</span> gives <span class="tex">\sigma'(0.25)=1.8750-0.9375+0.1172=1.0547</span>, so <span class="tex">\dot q = \Delta q\,\sigma'(s)/T = 1.0547/2 = 0.5273</span> rad/s.</p>
+          <p>Acceleration: <span class="tex">\sigma''(s)=60s-180s^2+120s^3</span> gives <span class="tex">\sigma''(0.25)=15-11.25+1.875=5.625</span>, so <span class="tex">\ddot q = 5.625/2^2 = 1.406</span> rad/s².</p>
+          <p>Peak values for this move: the velocity peaks at the midpoint, where <span class="tex">\sigma'(0.5)=1.875</span>, so <span class="tex">\dot q_{\max}=1.875/2 = 0.9375</span> rad/s. The acceleration peaks at <span class="tex">s\approx 0.211</span> with <span class="tex">|\sigma''|\approx 5.774</span>, so <span class="tex">|\ddot q|_{\max}=5.774/4 = 1.443</span> rad/s².</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">q(t) = q_0 + \Delta q\,\sigma\!\left(\tfrac{t}{T}\right), \qquad \sigma_{\text{quintic}}(s)=10s^3-15s^4+6s^5, \qquad \sigma_{\text{cubic}}(s)=3s^2-2s^3</div>
+        <div class="eq">\dot q_{\max} = \kappa_v\,\frac{|\Delta q|}{T}, \qquad |\ddot q|_{\max} = \kappa_a\,\frac{|\Delta q|}{T^2}, \qquad (\kappa_v,\kappa_a)_{\text{quintic}} = \big(1.875,\ 5.774\big)</div>
+        <table class="sym">
+          <tr><td><span class="tex">q_0, q_f</span></td><td>start and end joint angles (radians)</td></tr>
+          <tr><td><span class="tex">\Delta q</span></td><td>total joint change, <span class="tex">q_f-q_0</span> (radians)</td></tr>
+          <tr><td><span class="tex">T</span></td><td>duration of the move (seconds)</td></tr>
+          <tr><td><span class="tex">s=t/T</span></td><td>normalised time, dimensionless, from 0 to 1</td></tr>
+          <tr><td><span class="tex">\sigma(s)</span></td><td>the shape function, from 0 to 1, with zero slope and curvature at the ends for the quintic</td></tr>
+          <tr><td><span class="tex">\kappa_v,\kappa_a</span></td><td>peak factors of the shape: 1.875 for velocity and 5.774 = 10/√3 for acceleration (quintic)</td></tr>
+        </table>
+        <p><b>Time scaling.</b> The shape is fixed, so halving <span class="tex">T</span> doubles the peak velocity and quadruples the peak acceleration. This is why the duration of a move is chosen from the limits, not from a wish.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Plan</i>, feeding Stage 4, <i>Control</i>. A trajectory is computed once per move, in microseconds; the controller then samples it at the control rate, typically 100–1000 Hz.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The dot moves along the joint-angle curve in real time (one second of animation per second of motion). The three panels show position, velocity and acceleration at the same instant.</li>
+        <li>Set the shape to <b>cubic</b> and watch the acceleration panel. It jumps to a non-zero value at the start and end. Switch back to <b>quintic</b> and see the acceleration return to zero there.</li>
+        <li>Halve T. Read the peak velocity and peak acceleration readouts: velocity doubles, acceleration quadruples. Then check the limits: the readout says EXCEEDS when a peak is over its limit, and the red dashed lines show each bound.</li>
+        <li>Change q₀ and q_f. The shape of the curves in normalised time does not change; only the scale does.</li></ol></div>
+      <div data-lab="plan-poly"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Confusing position limits with speed limits.</b> A motor's rated speed and torque are separate constraints. Check the velocity and the acceleration (and, through the dynamics of Module 2, the torque).</li>
+          <li><b>Starting a move without a rest.</b> A trajectory that begins at speed jumps the controller's setpoint and produces a step in the motor command.</li>
+          <li><b>Assuming the duration is free.</b> Shorter moves look faster but scale peak values as 1/T and 1/T². Pick T from the limits.</li>
+          <li><b>Joining segments with mismatched velocity.</b> Two moves in a row must agree on position and velocity at the join, or the arm kicks at each waypoint.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Industrial and research arms run time-optimal or jerk-limited trajectory generators (for example, trapezoidal or S-curve profiles) on the same principle: a fixed path, a timing law, and limits on speed, acceleration and jerk.</li>
+          <li>Learned controllers that output joint targets at each step are usually followed by a trajectory filter, so that a sudden network output does not command an impossible acceleration (Module 9).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A quintic move from 0 to 0.5 rad lasts 1 s. What is its peak velocity?</summary><div class="ans">Peak velocity = 1.875 · |Δq| / T = 1.875 · 0.5 / 1 = 0.9375 rad/s.</div></details>
+        <details class="check"><summary>2. You need the same quintic move with the peak velocity halved. What T do you use, and what happens to the peak acceleration?</summary><div class="ans">Velocity scales as 1/T, so doubling T halves the peak velocity: T = 2 s for the move above. Acceleration scales as 1/T², so the peak acceleration falls to one quarter of its original value.</div></details>
+        <details class="check"><summary>3. Why is the quintic preferred over the cubic for a rest-to-rest move, even though both start and end at rest?</summary><div class="ans">The cubic has zero velocity at the ends but non-zero acceleration there, so the acceleration jumps when the move starts and stops. The quintic also has zero acceleration at both ends, so the commanded torque changes smoothly and the motors are not asked for a sudden change.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A trajectory is a path plus a timing law; the path fixes the shape, the timing fixes the speed and acceleration.</li>
+          <li>A quintic with zero velocity and acceleration at the ends gives a smooth rest-to-rest move.</li>
+          <li>Peak velocity scales as 1/T and peak acceleration as 1/T², so the duration is set by the limits.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.5 ===================== -->
+    <section class="lesson" id="trajectory-optimisation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.5</span><h2>Trajectory optimisation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The sampling planner returned a path that is collision-free but jagged, and it grazes a post by 2 cm. A sensor error of 3 cm would make the arm hit the post. How can a path be made smoother and kept comfortably away from obstacles, without throwing the whole planner away?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture a rubber band stretched between the start and the goal, with a row of beads on it. The band wants to be short and straight, so it pulls every bead toward its neighbours. Now place an obstacle near the band. Each bead that comes too close is pushed away from the obstacle. The final shape is where the pulling and the pushing balance. Nothing in the process "plans" the shape; it settles.</p>
+        <p>This is <b>trajectory optimisation</b>: write down a cost that measures how bad a path is, then move the path downhill on that cost. The cost has two parts. A <b>smoothness</b> term punishes sharp bends, and a <b>clearance</b> term punishes coming within a safety margin of an obstacle.</p>
+
+        <h3 class="sec">Build it up: pulls and pushes</h3>
+        <p><b>Step 1: a path is a list of points.</b> Write the path as <span class="tex">P_0, P_1, \dots, P_{N-1}</span>, points in the plane (metres). The first and last points are fixed at the start and goal.</p>
+        <p><b>Step 2: a bend costs more when it is sharp.</b> At an interior point, the second difference <span class="tex">P_{i+1}-2P_i+P_{i-1}</span> is zero when the three points lie on a straight line, and grows with the bend. Its squared length is the smoothness cost.</p>
+        <p><b>Step 3: a near miss costs more when it is closer.</b> Let the clearance gap of a point be its distance to the obstacle surface, <span class="tex">g_i = \lVert P_i - C\rVert - R</span>. If <span class="tex">g_i</span> is below a safety margin <span class="tex">d_{\text{safe}}</span>, a penalty grows with the shortfall.</p>
+        <p><b>Step 4: move downhill.</b> The gradient of the cost tells each point which way to move to lower the cost. Each iteration moves every interior point a small distance against its gradient, then checks again.</p>
+
+        <div class="worked"><b>Worked example: one gradient step on three points</b>
+          <p>Let <span class="tex">P_0=(0,0)</span>, <span class="tex">P_1=(2,1)</span>, <span class="tex">P_2=(4,0)</span> (metres), with the first and last fixed. Obstacle centre <span class="tex">C=(2,0.3)</span>, radius <span class="tex">R=0.2</span> m, margin <span class="tex">d_{\text{safe}}=0.4</span> m. Weights <span class="tex">w_s=w_c=1</span> and step size <span class="tex">\alpha=0.05</span>.</p>
+          <p><b>Smoothness.</b> The second difference at <span class="tex">P_1</span> is <span class="tex">P_0-2P_1+P_2=(0,0)-(4,2)+(4,0)=(0,-2)</span>. Its squared length is 4. The gradient of that term with respect to <span class="tex">P_1</span> is <span class="tex">-4(0,-2)=(0,8)</span>.</p>
+          <p><b>Clearance.</b> The gap is <span class="tex">g_1=\lVert(0,0.7)\rVert-0.2=0.5</span> m, which is larger than <span class="tex">d_{\text{safe}}=0.4</span> m. No penalty, so no clearance gradient.</p>
+          <p><b>Step.</b> <span class="tex">P_1 \leftarrow P_1-\alpha(0,8) = (2,\,1-0.4) = (2,\,0.6)</span>. The bend has flattened and the point has dropped toward the obstacle.</p>
+          <p><b>Next iteration.</b> The gap is now <span class="tex">\lVert(0,0.3)\rVert-0.2=0.1</span> m, so the penalty is active: <span class="tex">w_c(d_{\text{safe}}-g)^2=0.09</span>. Its gradient is <span class="tex">-2w_c(d_{\text{safe}}-g)\,(P_1-C)/\lVert P_1-C\rVert = -2(0.3)(0,1) = (0,-0.6)</span>, which pushes the point up. The smoothness gradient at <span class="tex">(2,0.6)</span> is <span class="tex">-4(0,-1.2)=(0,4.8)</span>. The total gradient is <span class="tex">(0,\,4.8-0.6)=(0,4.2)</span>, so the pull toward the straight line still wins at this weight. A larger clearance weight is needed to hold the point at the margin.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">J(P)=w_s\sum_{i=1}^{N-2}\big\lVert P_{i+1}-2P_i+P_{i-1}\big\rVert^2 \;+\; w_c\sum_{i=1}^{N-2}\max\!\big(0,\ d_{\text{safe}}-g_i(P_i)\big)^2, \qquad g_i(P)=\lVert P-C\rVert-R</div>
+        <div class="eq">P \leftarrow P - \alpha\,\nabla J(P)</div>
+        <table class="sym">
+          <tr><td><span class="tex">P_i</span></td><td>the i-th path point, in metres; <span class="tex">P_0</span> and <span class="tex">P_{N-1}</span> are fixed</td></tr>
+          <tr><td><span class="tex">N</span></td><td>number of points on the path</td></tr>
+          <tr><td><span class="tex">w_s, w_c</span></td><td>weights on smoothness and clearance; they trade one goal against the other</td></tr>
+          <tr><td><span class="tex">C, R</span></td><td>obstacle centre and radius, in metres (a disc)</td></tr>
+          <tr><td><span class="tex">g_i</span></td><td>clearance gap of point i, in metres: distance to the obstacle surface</td></tr>
+          <tr><td><span class="tex">d_{\text{safe}}</span></td><td>required safety margin, in metres</td></tr>
+          <tr><td><span class="tex">\alpha</span></td><td>step size of the gradient descent (dimensionless here, with points in metres)</td></tr>
+        </table>
+        <p>The gradient <span class="tex">\nabla J</span> is the vector of partial derivatives of <span class="tex">J</span> with respect to every coordinate of every interior point. With many points, the descent converges to a local minimum: the answer depends on the starting path. A start that already avoids the obstacle usually gives a good answer.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Plan</i>. Optimisation runs after a sampling planner, typically in tens to hundreds of milliseconds, before the trajectory of Lesson 5.4 is generated and tracked by the controller.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The straight path starts through the obstacle and is pushed out while it straightens. The caption shows the iteration count and the cost, both in plain units.</li>
+        <li>Set the clearance weight w_c to 0.2. Let the path settle and read the minimum clearance gap. It sits inside the safety margin. Now raise w_c to 4 and reset: the gap moves to the margin.</li>
+        <li>Raise the smoothness weight w_s. The path becomes straighter and hugs the obstacle more closely. Find the setting that gives smoothness and clearance together.</li>
+        <li>Set the step size α to its maximum and watch the backtracks counter. When a step would raise the cost, the lab halves α for that iteration and counts a backtrack. A large α therefore slows the descent through backtracks rather than making the path blow up.</li></ol></div>
+      <div data-lab="plan-trajopt"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Starting inside the obstacle without checking.</b> A gradient method can walk out of an obstacle, but a start deep inside one can settle into a bad local minimum.</li>
+          <li><b>Trusting the cost weights.</b> Weights are not physical units. A margin met only "on average" by the cost is not a guarantee; check the minimum gap on the final path.</li>
+          <li><b>Too large a step.</b> Gradient descent is stable only for a step small compared with the stiffness of the smoothness term. Shrink α when the cost rises.</li>
+          <li><b>Optimised paths are not dynamically feasible by default.</b> A smooth geometric path can still violate speed or torque limits. Pass it to the trajectory generator of Lesson 5.4.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>CHOMP and TrajOpt, two well-known trajectory optimisers, minimise a smoothness-plus-obstacle cost of this form, with gradients computed from the robot's geometry for arms and humanoids.</li>
+          <li>Diffusion and flow-based planners (Module 8) learn to generate paths directly; many systems still score their output with an optimisation-style cost to pick a safe one.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For P₀ = (0,0), P₁ = (1,1), P₂ = (2,0), what is the smoothness gradient with respect to P₁?</summary><div class="ans">P₀ − 2P₁ + P₂ = (0,0) − (2,2) + (2,0) = (0,−2). The gradient of its squared length is −4 times that vector, which is (0, 8).</div></details>
+        <details class="check"><summary>2. In the worked example, the point is 0.5 m from the obstacle surface with d_safe = 0.4 m. Why does the clearance term contribute nothing there?</summary><div class="ans">The penalty is max(0, d_safe − g). Because g = 0.5 is larger than d_safe = 0.4, the maximum is zero, and both the penalty and its gradient are zero.</div></details>
+        <details class="check"><summary>3. Why can a good smoothness weight still give a path that is unsafe?</summary><div class="ans">Smoothness pulls the path toward the straight line, which may pass closer to an obstacle. If the clearance weight is too small to balance the pull, the equilibrium lies inside the safety margin. The minimum gap of the final path must be checked, not assumed.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Trajectory optimisation writes the quality of a path as a cost and moves the path downhill on it.</li>
+          <li>Smoothness and clearance pull in different directions; their weights decide where the path settles.</li>
+          <li>A local method needs a sensible start and a checked result: the minimum gap and the step size both matter.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.6 ===================== -->
+    <section class="lesson" id="task-planning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.6</span><h2>Task and mission planning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A household robot is told "put the cup on the shelf." That sentence involves no joint angles. The robot must decide the order of actions: which place to visit, when to pick the cup up, and when to put it down, so that each action is possible when it runs. How can a planner reason about actions and states, rather than about geometry?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A motion planner answers "how do I get the arm there?" A task planner answers "what must I do, and in what order?" It works with facts that are either true or false, such as <i>the robot is at the table</i> or <i>the hand is empty</i>. An action can run only when its requirements hold, and it changes which facts are true.</p>
+        <p>Think of a recipe. "Add the eggs" needs the eggs to be out of the fridge and the bowl to be on the counter. After adding them, the eggs are in the bowl and no longer on the counter. A task planner works out the recipe steps that take you from the facts you have to the facts you want.</p>
+
+        <h3 class="sec">Build it up: states, actions and plans</h3>
+        <p><b>Step 1: a state is a set of true facts.</b> For the cup problem, the start state is <span class="tex">\{\text{at\_robot(table)},\ \text{at\_cup(table)},\ \text{handempty}\}</span>. Facts not in the set are false (the closed-world assumption).</p>
+        <p><b>Step 2: an action has three lists.</b> Its <b>preconditions</b> must all be true before it runs. Its <b>add</b> list becomes true afterwards, and its <b>delete</b> list becomes false afterwards.</p>
+        <p><b>Step 3: a plan is a sequence that reaches the goal.</b> Apply actions one at a time, checking the preconditions each time. The plan succeeds when every goal fact is true in the final state. Searching over sequences is a graph search (Lesson 5.2), where the nodes are states.</p>
+
+        <div class="worked"><b>Worked example: a three-action plan, checked state by state</b>
+          <p>Start: <span class="tex">s_0=\{\text{at\_robot(table)},\ \text{at\_cup(table)},\ \text{handempty}\}</span>. Goal: <span class="tex">\text{at\_cup(shelf)}</span>.</p>
+          <table class="tbl">
+            <tr><th>action</th><th>preconditions, all true?</th><th>deleted</th><th>added</th><th>state after</th></tr>
+            <tr><td>pick(cup, table)</td><td>at_robot(table) ✓, at_cup(table) ✓, handempty ✓</td><td>at_cup(table), handempty</td><td>holding_cup</td><td>{at_robot(table), holding_cup}</td></tr>
+            <tr><td>move(table, shelf)</td><td>at_robot(table) ✓</td><td>at_robot(table)</td><td>at_robot(shelf)</td><td>{at_robot(shelf), holding_cup}</td></tr>
+            <tr><td>place(cup, shelf)</td><td>at_robot(shelf) ✓, holding_cup ✓</td><td>holding_cup</td><td>at_cup(shelf), handempty</td><td>{at_robot(shelf), at_cup(shelf), handempty}</td></tr>
+          </table>
+          <p>The goal fact at_cup(shelf) is true, so the plan is <i>pick, move, place</i>: three actions. A breadth-first search over all states, which is guaranteed to find the shortest plan, finds this same three-action plan. The start with the robot at the shelf and the cup in the sink needs four actions: move to the sink, pick the cup up, move to the table, and place it there.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>A STRIPS-style planning problem is a tuple <span class="tex">(F, A, s_0, G)</span>. An action <span class="tex">a</span> has preconditions <span class="tex">\text{pre}(a)\subseteq F</span>, add effects <span class="tex">\text{add}(a)\subseteq F</span> and delete effects <span class="tex">\text{del}(a)\subseteq F</span>. Action <span class="tex">a</span> is applicable in state <span class="tex">s</span> when <span class="tex">\text{pre}(a)\subseteq s</span>, and then</p>
+        <div class="eq">\text{apply}(s,a) = \big(s \setminus \text{del}(a)\big)\cup\text{add}(a)</div>
+        <p>A plan <span class="tex">\pi=(a_1,\dots,a_n)</span> solves the problem when each action is applicable in turn and <span class="tex">G\subseteq s_n</span>, where <span class="tex">s_k=\text{apply}(s_{k-1},a_k)</span>.</p>
+        <table class="sym">
+          <tr><td><span class="tex">F</span></td><td>the set of all facts (propositions) the planner may use</td></tr>
+          <tr><td><span class="tex">s_0, s_k</span></td><td>the start state and the state after the k-th action; each is a subset of F</td></tr>
+          <tr><td><span class="tex">G</span></td><td>the goal: a set of facts that must all hold at the end</td></tr>
+          <tr><td><span class="tex">\text{pre}, \text{add}, \text{del}</span></td><td>the three lists of each action</td></tr>
+          <tr><td><span class="tex">\pi</span></td><td>a plan: an ordered sequence of actions</td></tr>
+        </table>
+        <p>Breadth-first search over states finds a shortest plan when all actions cost the same. Costs can be added with the graph search of Lesson 5.2, and learned or heuristic task planners use the same definition with a smarter search.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 3, <i>Plan</i>, at the top of the stack. A task plan is made once per mission, or again when a step fails. It runs in milliseconds for small domains and is followed by motion planners for each geometric step.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Keep the default start (robot and cup on the table) and the goal "cup on shelf". Press play. Watch the three actions run; the facts panel shows which facts become true and false after each one.</li>
+        <li>Choose the start "robot at shelf, cup in sink" and the goal "cup on table, robot at table". Count the actions in the plan. Does it match the four-action answer in the worked example?</li>
+        <li>Choose the goal "cup in sink" from the table start. Find the shortest plan. Then think about which action the domain would need to lack for the goal to become impossible. The lab reports "no plan" whenever the search finds none.</li>
+        <li>Change the speed. The lab steps one action every two seconds at 1×: slow enough to read each precondition check.</li></ol></div>
+      <div data-lab="plan-strips"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Forgetting a precondition.</b> "Place the cup" is not possible while the hand is empty. A plan that skips the pick is invalid, and the checker must refuse it.</li>
+          <li><b>Confusing the delete list with negation.</b> Deleting a fact means it is no longer listed in the state. Under the closed-world assumption that means false. Facts that should stay true must not be deleted.</li>
+          <li><b>Assuming actions always succeed.</b> The plan says <i>move(table, shelf)</i> makes the robot at the shelf. A real move can fail. A task planner needs execution monitoring and a re-plan from the actual state.</li>
+          <li><b>Planning without geometry.</b> The symbolic plan does not know whether the shelf is reachable. Each symbolic action must be grounded by a motion planner of Lessons 5.1 to 5.5.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>PDDL, the Planning Domain Definition Language, is the standard way to write domains of this kind, and classical planners solve them. Its STRIPS core is exactly the definition above.</li>
+          <li>Language models used as robot planners (Module 8) propose sequences of skills. Their output is checked against preconditions, the same way the lab does, before any motion is attempted.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The state is {at_robot(shelf), holding_cup}. Can place(cup, table) be applied? Why or why not?</summary><div class="ans">No. Its precondition at_robot(table) is not in the state, because the robot is at the shelf. The planner would first need move(shelf, table).</div></details>
+        <details class="check"><summary>2. Write the state after pick(cup, sink) from the state {at_robot(sink), at_cup(sink), handempty}.</summary><div class="ans">Delete at_cup(sink) and handempty, add holding_cup. The state becomes {at_robot(sink), holding_cup}.</div></details>
+        <details class="check"><summary>3. Why is a plan that is valid in the symbolic model not enough for a real robot?</summary><div class="ans">The model assumes each action succeeds and changes only the facts listed. A real move can fail, a grasp can slip, and a shelf can be unreachable. The symbolic plan must be grounded in motion plans and checked against sensors during execution.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Task planning reasons over true and false facts; each action has preconditions, add effects and delete effects.</li>
+          <li>A plan is valid when each action's preconditions hold in turn and the goal facts hold at the end.</li>
+          <li>Symbolic plans are only as good as the model: execution monitoring and geometric planning close the gap.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now search a configuration space for a collision-free route, plan with A* and RRT, turn a path into a timed trajectory with velocity and acceleration limits, smooth a path by optimisation, and sequence symbolic actions. Next, <b>Module 6 · Control</b> makes the robot follow these plans: feedback, PID, state-space control, stability, MPC and force control, in <a href="robo-control.html">robo-control.html</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

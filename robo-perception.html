@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · Perception for robots · Robotics</title>
+<meta name="description" content="Point clouds, registration with ICP, 2-D and 3-D object detection with a latency budget, 6-DoF pose from keypoints, antipodal grasp detection and image-based visual servoing.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-robo-perception.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · Perception for robots</h1>
+        <p>A robot does not see pixels; it needs <b>geometry</b>: where an object is, how it is turned, which surfaces are flat and where to put the fingers. This module turns raw 3-D points and camera images into poses and grasps. By the end you will align two scans by hand and with ICP, budget the latency of a detector, solve a six-number pose from keypoints, check a grasp against friction, and close a camera loop on image error.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs Module 1 (cameras, lidar) and Module 3 (estimation)</span></div>
+      </div>
+    </div>
+
+    <div class="intro prose">
+      <p><b>Where this sits.</b> Perception is mostly stage 2 of the robot pipeline (<i>estimate</i>): it turns sensor data into a model of the scene. Visual servoing (Lesson 4.6) is the exception: it closes the control loop directly on image features, so it lives in stage 4 (<i>control</i>). Each lesson says which stage it is in and how fast its loop must run.</p>
+      <p><b>Notation.</b> Poses are written as a rotation <span class="tex">R</span> and a translation <span class="tex">t</span>: a point <span class="tex">p</span> in one frame becomes <span class="tex">Rp + t</span> in another. Angles are in degrees unless a formula uses radians; lengths are in metres unless a pixel is stated; frequencies are in hertz (Hz).</p>
+    </div>
+
+    <!-- ===================== 4.1 ===================== -->
+    <section class="lesson" id="point-clouds" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.1</span><h2>Point clouds &amp; 3-D geometry</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A depth camera returns about 300 000 points for every frame. Your planner needs to know where the box is, which of its surfaces are flat and whether the gripper can reach it, all within about 50 ms. How do you store the scene so that it is small enough to process and still keeps the geometry?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a scanner that sprays a fine cloud of paint dots onto everything in front of it. Each dot records one position <i>(x, y, z)</i> in the scanner's frame. The result is a <b>point cloud</b>: a list of 3-D points with no connections, no surfaces and no colour required. It is the most direct picture of geometry a sensor can give, because it is what the sensor measured.</p>
+        <p>Two questions follow at once. First, a cloud is heavy, so how do we make it lighter without losing the shape? Second, a flat table and a curved bowl look the same as points, so how do we recover which way a surface faces? The answers are <b>voxel downsampling</b> and <b>surface normals</b>. Both use only the points near each other.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: moving a cloud.</b> A cloud is an array of <i>N</i> rows of <i>(x, y, z)</i>. When the robot moves, every point moves with the same rigid motion, <span class="tex">p' = Rp + t</span>. The order matters: rotate first, then translate.</p>
+        <div class="worked"><b>Worked example: one point, one pose</b>
+          <p>Take <span class="tex">R</span> as a 90° turn about the z axis, and <span class="tex">t = (1, 0, 0)</span> m. Then <span class="tex">R = \begin{bmatrix}0&amp;-1&amp;0\\1&amp;0&amp;0\\0&amp;0&amp;1\end{bmatrix}</span>. For <span class="tex">p = (0.3, 0.2, 0.4)</span> m:</p>
+          <div class="eq">Rp = (0\cdot0.3 - 1\cdot0.2,\; 1\cdot0.3 + 0\cdot0.2,\; 0.4) = (-0.2,\; 0.3,\; 0.4)</div>
+          <div class="eq">p' = Rp + t = (0.8,\; 0.3,\; 0.4)\text{ m}</div>
+        </div>
+
+        <p><b>Step 2: voxel downsampling.</b> Cut space into cubes of side <i>v</i> (a voxel, like a 3-D pixel). Give every point the index of the cube it falls in, <span class="tex">\lfloor x/v\rfloor, \lfloor y/v\rfloor, \lfloor z/v\rfloor</span>, and replace all points that share an index by their mean. A cloud of a million points might become a few thousand, and the shape survives because each cube keeps its centre of mass.</p>
+        <div class="worked"><b>Worked example: six points, voxel size 0.5 m</b>
+          <p>Points (in metres): A (0.10, 0.10, 0.10), B (0.30, 0.20, 0.40), C (0.45, 0.35, 0.20), D (0.70, 0.10, 0.10), E (0.80, 0.40, 0.30), F (1.20, 1.10, 0.90). Their voxel indices are:</p>
+          <ul>
+            <li>A, B, C all give <span class="tex">(0,0,0)</span> (for example <span class="tex">\lfloor 0.45/0.5\rfloor = 0</span>).</li>
+            <li>D and E give <span class="tex">(1,0,0)</span>, because <span class="tex">\lfloor 0.7/0.5\rfloor = \lfloor 0.8/0.5\rfloor = 1</span>.</li>
+            <li>F gives <span class="tex">(2,2,1)</span> alone.</li>
+          </ul>
+          <p>The centroids are: voxel (0,0,0) gives <span class="tex">\tfrac{1}{3}(0.85, 0.65, 0.70) = (0.283, 0.217, 0.233)</span>; voxel (1,0,0) gives <span class="tex">(0.750, 0.250, 0.200)</span>; F stays at (1.20, 1.10, 0.90). <b>Six points became three.</b></p>
+        </div>
+
+        <p><b>Step 3: normals from neighbours.</b> A flat patch is one where the neighbouring points barely spread in one direction. Take the <i>k</i> nearest points, compute their mean and their 3 × 3 covariance matrix, and find the eigenvector with the <i>smallest</i> eigenvalue. That direction is the normal: the neighbourhood has almost no extent along it.</p>
+        <div class="worked"><b>Worked example: the normal of a line of points (the 2-D version)</b>
+          <p>Points <span class="tex">(0,0), (2,1), (4,2), (6,3)</span> lie on the line <span class="tex">y = x/2</span>. Their mean is <span class="tex">(3, 1.5)</span>. The centred deviations are <span class="tex">(-3,-1.5), (-1,-0.5), (1,0.5), (3,1.5)</span>, so the covariance sums are <span class="tex">S_{xx}=20,\; S_{xy}=10,\; S_{yy}=5</span>:</p>
+          <div class="eq">C = \begin{bmatrix}20 &amp; 10\\ 10 &amp; 5\end{bmatrix}, \qquad \text{eigenvalues } 25 \text{ and } 0</div>
+          <p>The eigenvector for 0 is <span class="tex">(-1, 2)/\sqrt5 = (-0.447, 0.894)</span>. It is perpendicular to the line direction <span class="tex">(2,1)</span>, so it is the normal. In 3-D the same recipe uses a 3 × 3 matrix; a flat patch gives one near-zero eigenvalue, and its eigenvector is the surface normal.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P = \{\mathbf p_i\}_{i=1}^{N},\qquad \mathbf p_i\in\mathbb R^3 \qquad\qquad \mathbf p' = R\,\mathbf p + \mathbf t</div>
+        <div class="eq">k_i=\left(\lfloor x_i/v\rfloor,\lfloor y_i/v\rfloor,\lfloor z_i/v\rfloor\right),\qquad \bar{\mathbf c}_k=\frac{1}{n_k}\sum_{i:\,k_i=k}\mathbf p_i</div>
+        <div class="eq">C=\frac{1}{k}\sum_{j\in\mathcal N(i)}(\mathbf p_j-\bar{\mathbf p})(\mathbf p_j-\bar{\mathbf p})^{\top},\qquad C\,\mathbf n=\lambda_{\min}\mathbf n</div>
+        <table class="sym">
+          <tr><td>P, p<sub>i</sub></td><td>the cloud and its i-th point, each a 3-vector in metres</td></tr>
+          <tr><td>R, t</td><td>rotation (3 × 3, orthonormal, determinant +1) and translation (metres) of the rigid motion</td></tr>
+          <tr><td>v</td><td>voxel side length (m)</td></tr>
+          <tr><td>k<sub>i</sub>, n<sub>k</sub></td><td>voxel index of point i; number of points that fall in voxel k</td></tr>
+          <tr><td>N(i)</td><td>the neighbourhood of point i: its k nearest points (k is the neighbour count)</td></tr>
+          <tr><td>C, p̄</td><td>covariance matrix of the neighbourhood and its mean</td></tr>
+          <tr><td>λ<sub>min</sub>, n</td><td>smallest eigenvalue and its unit eigenvector; n is the estimated normal (its sign is not determined)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Let the box turn once. Notice that the cloud is 900 points, all on the six faces, not filling the volume: a depth sensor sees surfaces, not interiors.</li>
+          <li>Set the voxel size to 5 cm. Count the orange centroids. Compare with the readout: roughly how many raw points did each centroid replace?</li>
+          <li>Raise the voxel size to 10 cm and watch the faces thin into a few dots. This is the trade-off: smaller clouds are faster, but a 10 cm voxel cannot represent a wire 1 cm thick.</li>
+          <li>Set the voxel size back to off. Keep the cloud turning and think about what a normal computed from a 5-point neighbourhood would tell you on a face and on an edge.</li></ol></div>
+        <div data-lab="perc-cloud"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"More points is always better."</b> Points beyond the sensor's resolution add cost and noise, not detail. Downsample to the resolution your task needs.</li>
+          <li><b>Voxels that are too large erase small objects.</b> A grasp needs detail at the scale of the fingers, not of the room.</li>
+          <li><b>Normals have no inherent sign.</b> <span class="tex">n</span> and <span class="tex">-n</span> are both valid. Libraries orient normals toward the sensor by convention; if you forget this, lighting and inside/outside tests flip.</li>
+          <li><b>Frames and units.</b> A cloud is only meaningful with its frame (camera, lidar or robot base). Transforms are applied in the right order, and a scanner in millimetres fed to a planner in metres is off by a factor of 1000.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Grasp and scene-understanding pipelines take a cloud as input and downsample it first. Open3D and the Point Cloud Library (PCL) are the usual open-source tools for these steps.</li>
+          <li>The ROS 2 message <code>sensor_msgs/PointCloud2</code> carries a cloud between sensor and perception nodes, so the voxel size you choose sets the bandwidth of the whole stack.</li>
+          <li>Learned point-cloud networks (PointNet-style models) consume the same list of points, which is why downsampling choices also affect what a learned model can learn.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1 (<i>sense</i>) produces the raw cloud; stage 2 (<i>estimate</i>) downsamples it and computes normals. Typical lidar and depth sensors deliver 10–30 frames per second, so the whole step must fit in tens of milliseconds. The stored product is a downsampled cloud in one named frame.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A point is <span class="tex">p=(0,1,0)</span>. Apply R = 90° about z (as in the worked example) and t = (1, 0, 0). Where is it?</summary><div class="ans">Rp = (−1, 0, 0) because R(0,1,0) = (−1, 0, 0). Adding t gives <b>(0, 0, 0)</b>, the origin.</div></details>
+        <details class="check"><summary>2. Voxel size 0.2 m. Points at x = 0.39 and x = 0.41 (same y and z). How many voxels do they fall in?</summary><div class="ans">Two. <span class="tex">\lfloor 0.39/0.2\rfloor = 1</span> and <span class="tex">\lfloor 0.41/0.2\rfloor = 2</span>. A voxel boundary lies between them, even though they are only 2 cm apart.</div></details>
+        <details class="check"><summary>3. Why does the smallest eigenvector of the neighbourhood covariance give the normal?</summary><div class="ans">Its eigenvalue is the variance of the neighbours along that direction. On a flat patch the variance across the surface is large and the variance perpendicular to it is near zero, so the smallest eigenvector points out of the surface.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A point cloud is a list of 3-D points in one frame; moving it means <span class="tex">p' = Rp + t</span>, rotation first.</li>
+          <li>Voxel downsampling replaces each occupied cube by its centroid: fewer points, same shape, a cost set by the voxel size.</li>
+          <li>Normals come from the eigenvector with the smallest eigenvalue of a local covariance matrix; their sign is a convention.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 ===================== -->
+    <section class="lesson" id="registration-icp" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">4.2</span><h2>Registration &amp; ICP</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The robot holds a map scan of a shelf taken earlier, and a new scan taken now from an unknown position. Both scans show the same shelf, but in different frames. What rigid motion (rotation and translation) lines the new scan up with the map?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture two transparencies, each with the same drawing, placed at different angles on a desk. You slide one until the lines overlay. If you could say which dot on one sheet matches which dot on the other, lining them up would be a single calculation. If you cannot, you guess the matches, line up, look again at which dots now sit closest, and repeat. That loop is the <b>Iterative Closest Point (ICP)</b> algorithm, and the calculation at its heart is <b>registration</b>: finding <span class="tex">(R, t)</span> that best aligns two clouds.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: aligning when the matches are known.</b> Suppose each point <span class="tex">p_i</span> of the scan has a known partner <span class="tex">q_i</span> in the map, with <span class="tex">q_i \approx R p_i + t</span>. First remove the translation by centring both sets on their means, <span class="tex">\bar p</span> and <span class="tex">\bar q</span>. The centred points <span class="tex">a_i = p_i - \bar p</span> and <span class="tex">b_i = q_i - \bar q</span> then only need a rotation. The best rotation maximises the agreement <span class="tex">\sum_i (R a_i)\cdot b_i</span>, which has a closed-form answer through the singular value decomposition (SVD) of <span class="tex">H = \sum_i a_i b_i^{\top}</span>. The translation then follows as <span class="tex">t = \bar q - R\bar p</span>. In two dimensions the rotation is even simpler: <span class="tex">\theta = \operatorname{atan2}\left(\sum a\times b,\ \sum a\cdot b\right)</span>.</p>
+        <div class="worked"><b>Worked example: recover a known motion exactly</b>
+          <p>Let the scan be <span class="tex">p_1=(1,0)</span>, <span class="tex">p_2=(0,1)</span>, <span class="tex">p_3=(-1,-1)</span>, and let the map be the same points turned by 90° and shifted by <span class="tex">(2,1)</span>: <span class="tex">q_1=(2,2)</span>, <span class="tex">q_2=(1,1)</span>, <span class="tex">q_3=(3,0)</span>.</p>
+          <ul>
+            <li>Means: <span class="tex">\bar p = (0,0)</span>, <span class="tex">\bar q = (2,1)</span>. The centred points are the same as the raw points for the scan, and <span class="tex">b = (0,1), (-1,0), (1,-1)</span> for the map.</li>
+            <li><span class="tex">\sum a\cdot b = 0 + 0 + 0 = 0</span> and <span class="tex">\sum a\times b = 1 + 1 + 2 = 4</span>.</li>
+            <li><span class="tex">\theta = \operatorname{atan2}(4, 0) = 90^\circ</span>. Then <span class="tex">t = \bar q - R\bar p = (2,1)</span>.</li>
+          </ul>
+          <p>The motion is recovered exactly, which is what closed-form registration promises when the matches are right.</p>
+        </div>
+
+        <p><b>Step 2: guessing the matches.</b> When the partners are unknown, a reasonable first guess is the <b>nearest point</b> in the other cloud. Match, fit, move, and repeat. Each round can only make the fit at least as good for the current matches, so the sum of distances falls until nothing changes.</p>
+        <div class="worked"><b>Worked example: one matching round from the identity</b>
+          <p>Keep the same clouds, but start from no motion (identity). The nearest map point for each scan point is:</p>
+          <ul>
+            <li><span class="tex">p_1=(1,0)</span>: distances to <span class="tex">(2,2), (1,1), (3,0)</span> are <span class="tex">2.236, 1.000, 2.000</span>, so the match is <span class="tex">(1,1)</span>.</li>
+            <li><span class="tex">p_2=(0,1)</span>: nearest is <span class="tex">(1,1)</span> at distance 1.000.</li>
+            <li><span class="tex">p_3=(-1,-1)</span>: nearest is <span class="tex">(1,1)</span> at distance 2.828.</li>
+          </ul>
+          <p>All three scan points choose the <b>same</b> map point. The matches are many-to-one, the fit is therefore wrong, and the next round starts from a bad place. This is the typical failure of a poor first guess, and it is why the lab asks you to try different starting headings.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">E(R,\mathbf t)=\sum_{i=1}^{N}\left\lVert R\,\mathbf p_i+\mathbf t-\mathbf q_{\pi(i)}\right\rVert^{2},\qquad \pi(i)=\arg\min_j\lVert R\,\mathbf p_i+\mathbf t-\mathbf q_j\rVert</div>
+        <div class="eq">H=\sum_i a_i b_i^{\top}=U\Sigma V^{\top},\qquad R=V\,\mathrm{diag}\!\left(1,\,\det(VU^{\top})\right)U^{\top},\qquad \mathbf t=\bar{\mathbf q}-R\bar{\mathbf p}</div>
+        <table class="sym">
+          <tr><td>p<sub>i</sub>, q<sub>j</sub></td><td>points of the scan and of the map (metres)</td></tr>
+          <tr><td>R, t</td><td>the rigid motion being estimated (rotation and translation)</td></tr>
+          <tr><td>π(i)</td><td>index of the map point matched to scan point i (its nearest neighbour under the current guess)</td></tr>
+          <tr><td>E</td><td>sum of squared distances between matched pairs (m²)</td></tr>
+          <tr><td>a<sub>i</sub>, b<sub>i</sub></td><td>centred scan and map points</td></tr>
+          <tr><td>H, U, Σ, V</td><td>cross-covariance matrix and its singular value decomposition</td></tr>
+          <tr><td>det(VUᵀ)</td><td>a sign fix: it is −1 when the SVD would return a mirror image, and the correction keeps R a proper rotation</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the initial heading error at 20° and press play. Watch the blue scan move toward the orange map and find the grey matching lines of each step. Read the RMS readout and the plot.</li>
+          <li>Reset and set the error to 10°. The scan now converges to RMS near zero. Explain to yourself why the same algorithm succeeded here and stalled before.</li>
+          <li>Try 30° and 40°. Each stalls at a similar RMS, a different local minimum where the shapes look roughly aligned.</li>
+          <li>Slow the speed to 0.25×. Notice that the matches (grey lines) are computed first, and the points only glide to their new positions after the fit.</li></ol></div>
+        <div data-lab="perc-icp"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Trusting the first fit.</b> ICP reaches a local minimum; it has no way to know that a better alignment exists elsewhere. A good initial guess (from odometry or a previous pose) is part of the algorithm.</li>
+          <li><b>Symmetric shapes.</b> A cylinder can slide along its axis and a flat wall can slide along itself: the error barely changes, so the answer is not determined. This is a degeneracy, not a bug.</li>
+          <li><b>Outliers pull the fit.</b> A person walking through the scan adds points that have no partner. Reject matches farther than a gate distance before fitting.</li>
+          <li><b>Forgetting the reflection check.</b> The SVD can return a mirror image; the determinant correction in the formula removes it.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Lidar odometry and mapping methods (LOAM and later KISS-ICP-style systems) estimate the robot's motion by registering each new scan to recent ones.</li>
+          <li>Generalised ICP replaces point-to-point distances with distances to local surface planes, which makes flat walls and floors constrain the fit better.</li>
+          <li>Learned registration networks predict a good initial guess, so that classical refinement (ICP) only needs a few steps.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 2 (<i>estimate</i>). Lidar scan matching typically runs at the sensor rate (about 10 Hz), so one ICP run has roughly 100 ms. It stores the robot pose in the map frame and a growing map cloud.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why is the rotation in the SVD solution forced to have determinant +1, and what happens if you skip the correction?</summary><div class="ans">A reflection (determinant −1) would match the points better in some cases but is not a physical motion. Without the correction the SVD can return a mirror image of the cloud. The factor <span class="tex">\det(VU^{\top})</span> flips the sign of the last singular direction when needed, so the result stays a rotation.</div></details>
+        <details class="check"><summary>2. A robot drives down a long, featureless corridor and scan-matches each frame. What can go wrong, and why?</summary><div class="ans">The fit can slide along the corridor. Moving the scan forward or back leaves almost every point's distance unchanged, so the error <span class="tex">E</span> has nearly no gradient along that direction. The estimate drifts, which is a degeneracy in the geometry, not a numerical error. Fuse the scan match with wheel or inertial odometry.</div></details>
+        <details class="check"><summary>3. In the worked example all three scan points matched (1,1). What would a one-to-one (mutual) rule do?</summary><div class="ans">It would keep only the pair where both points are each other's nearest neighbour. Here (1,1) is the nearest map point for all three, but only one scan point can be its partner, so most matches are rejected. The fit is then based on fewer, more trustworthy pairs.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>With known matches, rigid alignment has a closed form: centre both clouds, take an SVD of the cross-covariance, fix the determinant, and recover the translation from the means.</li>
+          <li>ICP alternates nearest-neighbour matching and that closed-form fit; each round reduces the error for its matches.</li>
+          <li>ICP needs a good starting pose. Symmetry and featureless scenes make the answer ambiguous; fuse with odometry.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 ===================== -->
+    <section class="lesson" id="object-detection-3d" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">4.3</span><h2>2-D and 3-D object detection for robots</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>In a bin of mixed parts, a 2-D detector finds a box in the image and draws a rectangle around it. The robot needs something different: a box in space, with a centre, a size and a heading, and it needs it within the time the arm takes to move. What changes when the detector must output 3-D boxes, and how fast can it run?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A 2-D box is a window: it says where the object is in the picture. A 3-D box is a real box in space: centre <span class="tex">(x,y,z)</span>, size <span class="tex">(\ell, w, h)</span> and a heading angle <span class="tex">\theta</span> around the vertical axis. Robots have two ways to get it. A camera gives a 2-D box and a depth value; a lidar gives points that are already 3-D. Many 3-D detectors reuse the ideas of 2-D detectors (features, anchors, a score per box) and simply add a depth dimension.</p>
+        <p>Detection also has a clock. A sensor that delivers 10 frames per second gives a new picture every 100 ms. If the detector needs 130 ms for each picture, it cannot keep up, and how it handles the frames it cannot process decides whether the robot acts on fresh or stale information.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: lifting a pixel to a point with depth.</b> In a pinhole camera with focal length <i>f</i> (in pixels) and principal point <span class="tex">(c_x, c_y)</span>, a pixel <span class="tex">(u,v)</span> with depth <i>Z</i> corresponds to the 3-D point <span class="tex">X = (u-c_x)Z/f</span>, <span class="tex">Y = (v-c_y)Z/f</span>. A stereo pair gets its depth from disparity, <span class="tex">Z = fB/d</span> (see <a href="robo-sensors.html#cameras-depth">Module 1, cameras and depth</a>).</p>
+        <div class="worked"><b>Worked example: lift one pixel</b>
+          <p>With <span class="tex">f = 800</span> px, <span class="tex">c_x = 320</span> px and depth <span class="tex">Z = 1.5</span> m, a pixel at <span class="tex">u = 360</span> px has</p>
+          <div class="eq">X = \frac{(360-320)\cdot 1.5}{800} = 0.075\ \text{m}</div>
+          <p>so the object sits 7.5 cm to the right of the optical axis. A detector that outputs a 2-D box plus a depth can be lifted this way to a 3-D centre.</p>
+        </div>
+
+        <p><b>Step 2: measuring overlap in 3-D.</b> Detections are scored against ground truth with <b>intersection over union</b> (IoU): the overlap volume divided by the combined volume. In a bird's-eye view (BEV, looking down from above) the boxes are flat rectangles, which is much simpler to compute.</p>
+        <div class="worked"><b>Worked example: two boxes, BEV and 3-D</b>
+          <p>Box A covers <span class="tex">x\in[0,4]</span>, <span class="tex">y\in[0,2]</span>, <span class="tex">z\in[0,1.5]</span> m. Box B covers <span class="tex">x\in[2,6]</span>, <span class="tex">y\in[1,3]</span>, <span class="tex">z\in[0.5,2]</span> m.</p>
+          <ul>
+            <li>BEV overlap: <span class="tex">(4-2)\times(2-1) = 2\ \text{m}^2</span>. Areas: 8 and 8. Union <span class="tex">8+8-2 = 14\ \text{m}^2</span>. BEV IoU <span class="tex">= 2/14 = 0.143</span>.</li>
+            <li>Height overlap: <span class="tex">\min(1.5,2)-\max(0,0.5) = 1.0</span> m. Volumes: A = 12 m³, B = 4 × 2 × 1.5 = 12 m³. Overlap <span class="tex">2 \times 1 \times 1 = 2\ \text{m}^3</span>.</li>
+            <li>3-D IoU <span class="tex">= 2 / (12 + 12 - 2) = 2/22 = 0.091</span>.</li>
+          </ul>
+          <p>The 3-D score is lower than the BEV score because the boxes also miss each other in height. Many benchmarks accept a match at IoU ≥ 0.5 or 0.7; the exact threshold is part of the evaluation rule, not a physical constant.</p>
+        </div>
+
+        <p><b>Step 3: the latency budget.</b> Let the sensor deliver a frame every <i>T</i> seconds, and let the detector take <i>L</i> seconds per frame. If <span class="tex">L \le T</span>, every frame can be processed. If <span class="tex">L > T</span> and every frame is queued, the backlog grows without bound. If only the newest frame is processed each time the detector is free, the output rate becomes <span class="tex">1/L</span> and the results are not growing older.</p>
+        <div class="worked"><b>Worked example: 10 Hz sensor, 130 ms detector</b>
+          <p>The frame period is <span class="tex">T = 100</span> ms and <span class="tex">L = 130</span> ms. Queueing every frame, frame <i>k</i> starts when frame <i>k−1</i> finishes, so its age at output grows by <span class="tex">L - T = 30</span> ms per frame: 130, 160, 190, 220, 250 ms, and so on.</p>
+          <p>Processing only the newest frame, the detector is busy for 130 ms each time. The steady output is <span class="tex">1/0.130 = 7.7</span> results per second, with ages between about 140 and 220 ms (mean about 170 ms). The rate is lower than the sensor's 10 Hz, but the answer never gets older than roughly one detector period plus one frame.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{IoU}(A,B)=\frac{|A\cap B|}{|A|+|B|-|A\cap B|},\qquad \mathrm{IoU}_{3D}=\frac{V(A\cap B)}{V_A+V_B-V(A\cap B)}</div>
+        <div class="eq">\text{age at output}=\text{capture-to-finish time}=\text{wait}+L,\qquad \text{output rate}=\min\!\left(\tfrac1T,\tfrac1L\right)\ \text{(newest-frame policy)}</div>
+        <table class="sym">
+          <tr><td>A, B</td><td>a detected box and a ground-truth box</td></tr>
+          <tr><td>|A|, V<sub>A</sub></td><td>area (m²) in BEV or volume (m³) of a box</td></tr>
+          <tr><td>f, c<sub>x</sub>, c<sub>y</sub></td><td>focal length and principal point of the camera, in pixels</td></tr>
+          <tr><td>Z, X</td><td>depth and lateral position of a lifted point (m)</td></tr>
+          <tr><td>T, L</td><td>frame period (s) and detector time per frame (s)</td></tr>
+          <tr><td>θ</td><td>heading of a 3-D box around the vertical axis (rad or degrees; state which)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>In the overlap lab, press <i>Drift B</i>. Watch the green intersection grow and shrink while the IoU readout tracks it. Set the threshold to 0.5 and note the frames where the verdict changes.</li>
+          <li>Make box B taller (raise its top) with the same footprint. The BEV IoU does not change, but the 3-D IoU does. This is why 3-D evaluation is stricter than BEV evaluation.</li>
+          <li>In the latency lab, set the sensor to 10 Hz and the detector to 130 ms, then switch between <i>latest frame only</i> and <i>queue every frame</i>. Read the age of the newest result in each case.</li>
+          <li>Lower the detector to 80 ms. Check that queueing now keeps up, and that the mean age is close to the detector time.</li></ol></div>
+        <div data-lab="perc-iou"></div>
+        <div data-lab="perc-latency"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Comparing a BEV score with a 3-D score.</b> They are different numbers with different thresholds. Always state which one you report.</li>
+          <li><b>Axis-aligned boxes for rotated objects.</b> The overlap formulas above assume boxes whose sides are parallel to the axes; a rotated box needs a polygon intersection.</li>
+          <li><b>Forgetting frames.</b> A detection is in the camera frame. Transform it to the robot base before planning, or the arm reaches for the wrong place.</li>
+          <li><b>Latency hides in the pipeline.</b> A fast model that waits for a slow stage is still slow. Measure the age of the result, not only the model's time.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>PointPillars and CenterPoint are well-known 3-D detectors for lidar point clouds; both are evaluated on driving datasets such as KITTI and nuScenes with BEV and 3-D IoU metrics.</li>
+          <li>Bin-picking and warehouse systems pair a 2-D or 3-D detector with a tracker, so that a detection from an earlier frame can be carried forward to the moment of grasping.</li>
+          <li>Latency budgets are a design input: a 30 Hz camera with a 200 ms model needs frame skipping, a smaller model or a faster accelerator, before any accuracy is considered.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 2 (<i>estimate</i>, the object layer), feeding stage 3 (<i>plan</i>). The loop rate is set by the sensor (often 10–30 Hz) and the detector latency together; the stored product is a list of boxes with class, pose, size and timestamp.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A pixel is at u = 400 px, depth Z = 2 m, with f = 800 px and c<sub>x</sub> = 320 px. What is its lateral position X?</summary><div class="ans">X = (400 − 320) × 2 / 800 = <b>0.2 m</b> to the right of the optical axis.</div></details>
+        <details class="check"><summary>2. Two BEV boxes C = [0,2] × [0,2] and D = [1,3] × [0,2] (metres). What is their IoU?</summary><div class="ans">Overlap = 1 × 2 = 2 m²; areas 4 and 4; union = 4 + 4 − 2 = 6 m². IoU = 2/6 = <b>0.333</b>.</div></details>
+        <details class="check"><summary>3. A 20 Hz sensor (50 ms period) feeds a detector that takes 80 ms per frame, and every frame is queued. What happens to the age of results over time, and what is the fix?</summary><div class="ans">Each frame waits 30 ms longer than the one before (80 − 50 = 30 ms), so the age grows without bound. Fix it by processing only the newest frame. The output then runs at 1 / 0.080 = <b>12.5 results per second</b>, with the age staying bounded.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A depth pixel lifts to a 3-D point with <span class="tex">X = (u-c_x)Z/f</span>; a 3-D box adds size and heading.</li>
+          <li>IoU is overlap over union. Compare BEV and 3-D scores only with their own thresholds.</li>
+          <li>The sensor rate and the detector latency together set how fresh a detection is; the newest-frame policy keeps the lag bounded.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 ===================== -->
+    <section class="lesson" id="pose-estimation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">4.4</span><h2>6-DoF object pose estimation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A tray holds a bolt whose CAD model the robot knows. From one camera image, where exactly is the bolt, and how is it turned? The gripper needs six numbers, three for position and three for orientation, and it needs to know how far to trust them.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A pose has six degrees of freedom (6-DoF): three to say where the object is and three to say which way it faces. A camera throws away depth when it makes an image, so one picture cannot give the six numbers by itself. What it does give is a set of <b>keypoints</b>: points on the object whose positions on the model are known and whose pixels are visible. Each keypoint says "this model point appears at this pixel". With enough such matches, the pose is the one that makes the model's projection land on the observed pixels. This is the <b>Perspective-n-Point (PnP)</b> problem.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a rotation has three numbers, in one of several forms.</b> A rotation matrix <i>R</i> has nine entries but only three degrees of freedom: its columns are unit vectors that are perpendicular, and its determinant is +1. Euler angles (yaw, pitch, roll) are three numbers that are easy to read, but they have a gimbal-lock problem at pitch = ±90°, and their meaning depends on the order of the turns. A <b>quaternion</b> <span class="tex">q = (w, x, y, z)</span> with <span class="tex">w^2+x^2+y^2+z^2=1</span> is the form most solvers use. For a turn by angle <span class="tex">\theta</span> about a unit axis <span class="tex">\mathbf u</span>: <span class="tex">q = (\cos\tfrac\theta2,\ \sin\tfrac\theta2\,\mathbf u)</span>.</p>
+        <div class="worked"><b>Worked example: a 90° turn about z as a quaternion</b>
+          <p><span class="tex">\theta = 90^\circ</span>, <span class="tex">\mathbf u = (0,0,1)</span>: <span class="tex">q = (\cos 45^\circ, 0, 0, \sin 45^\circ) = (0.7071, 0, 0, 0.7071)</span>. Its matrix is <span class="tex">\begin{bmatrix}0&amp;-1&amp;0\\1&amp;0&amp;0\\0&amp;0&amp;1\end{bmatrix}</span>, the same rotation as in Lesson 4.1. The quaternion <span class="tex">-q</span> gives the same rotation, so a solver must treat the two signs as one answer.</p>
+        </div>
+
+        <p><b>Step 2: projecting a keypoint.</b> Let the object's keypoint be <span class="tex">X</span> in the object frame. The camera sees it at <span class="tex">X_c = RX + t</span>, and the pinhole model projects it to <span class="tex">u = f\,X_c/Z_c + c_x</span>, <span class="tex">v = f\,Y_c/Z_c + c_y</span>. Pose estimation runs this in reverse: the observed <span class="tex">(u,v)</span> and the known <span class="tex">X</span> are given, and the solver searches for <span class="tex">(R,t)</span>.</p>
+        <div class="worked"><b>Worked example: project three keypoints</b>
+          <p>Camera: <span class="tex">f = 800</span> px, <span class="tex">(c_x, c_y) = (320, 240)</span>. Pose: the 90° turn about z from above, and <span class="tex">t = (0,0,2)</span> m. Recall that <span class="tex">R(x,y,z) = (-y, x, z)</span> for this turn.</p>
+          <ul>
+            <li><span class="tex">X = (0.10, 0, 0)</span>: <span class="tex">X_c = (0, 0.10, 2)</span>, so <span class="tex">u = 800\cdot 0/2 + 320 = 320</span>, <span class="tex">v = 800\cdot 0.10/2 + 240 = 280</span>. Pixel (320, 280).</li>
+            <li><span class="tex">X = (0, 0.05, 0)</span>: <span class="tex">X_c = (-0.05, 0, 2)</span>, so <span class="tex">u = 800\cdot(-0.05)/2 + 320 = 300</span>, <span class="tex">v = 240</span>. Pixel (300, 240).</li>
+            <li><span class="tex">X = (0.10, 0.05, 0)</span>: <span class="tex">X_c = (-0.05, 0.10, 2)</span>, pixel (300, 280).</li>
+          </ul>
+          <p>Moving the object farther away (<span class="tex">t_z = 3</span> m) shrinks every pixel offset to two-thirds of its size: a 0.10 m keypoint offset that spans 40 px at 2 m spans about 27 px at 3 m. Depth is the hardest of the six numbers to pin down.</p>
+        </div>
+
+        <p><b>Step 3: solving for the pose.</b> Each keypoint gives two equations (its <i>u</i> and <i>v</i>). Six unknowns need at least three keypoints in principle, and the exact three-point problem (P3P) can have up to four solutions. With four or more well-spread keypoints the solution is usually unique, and a robust solver (such as EPnP followed by refinement) starts from a closed-form guess. The refinement minimises the <b>reprojection error</b>, the sum of squared pixel differences, with a Levenberg–Marquardt iteration: a damped Gauss–Newton step that moves the six numbers toward lower error.</p>
+        <p><b>Step 4: how sure are we?</b> Near the solution, the residual Jacobian <i>J</i> tells how each pixel changes with each of the six numbers. The approximate pose covariance is <span class="tex">\sigma^2(J^{\top}J)^{-1}</span>. For a small object far away, the depth entries are large, so the depth is the least certain number. A grasp planner must add margin for that uncertainty.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\pi(X_c)=\begin{pmatrix} f\,X_c/Z_c + c_x\\ f\,Y_c/Z_c + c_y\end{pmatrix},\qquad X_c = RX+t</div>
+        <div class="eq">\min_{R,\,t}\ \sum_{i=1}^{n}\left\lVert \pi\!\left(R X_i + t\right)-u_i\right\rVert^{2}</div>
+        <table class="sym">
+          <tr><td>X<sub>i</sub>, u<sub>i</sub></td><td>keypoint i in the object frame (m) and its observed pixel (px)</td></tr>
+          <tr><td>R, t</td><td>object-to-camera rotation and translation: the pose, <span class="tex">T = [R\,|\,t]</span></td></tr>
+          <tr><td>X<sub>c</sub> = (X<sub>c</sub>, Y<sub>c</sub>, Z<sub>c</sub>)</td><td>the keypoint in camera coordinates (m); Z<sub>c</sub> is the depth</td></tr>
+          <tr><td>f</td><td>focal length in pixels</td></tr>
+          <tr><td>(c<sub>x</sub>, c<sub>y</sub>)</td><td>principal point in pixels</td></tr>
+          <tr><td>q = (w, x, y, z)</td><td>unit quaternion for a rotation (q and −q are the same rotation)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press <i>Solve (LM)</i> from the start pose. Watch the blue crosses slide onto the orange keypoints and the RMS error fall from about 5 px to about 0.5 px in a few steps.</li>
+          <li>The residual of about 0.5 px is the image noise, not a mistake: the hidden true pose is known only to within the pixel noise of the observations.</li>
+          <li>Reset, then set a starting yaw far from the truth (for example 150°) and press Solve. Report whether it recovers. A failure is a real result: a poor starting pose can trap a local solver.</li>
+          <li>Move a slider by hand while the solver is stopped: the error readout updates at once. Find a pose that looks roughly right but has a visibly larger error.</li></ol></div>
+        <div data-lab="perc-pose"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Symmetric objects.</b> A bolt, a washer or a bowl can look identical after a turn. The pose is then ambiguous, and the error does not show it. Use a symmetry-aware metric and choose a grasp that works for every equivalent pose.</li>
+          <li><b>Euler-angle order.</b> Yaw-pitch-roll and roll-pitch-yaw are different rotations. Always write the convention next to the numbers.</li>
+          <li><b>Inverting a pose.</b> <span class="tex">T_{co}</span> (object in camera) and <span class="tex">T_{oc}</span> (camera in object) are inverses, not equal. Name the frames.</li>
+          <li><b>Reporting a pose without uncertainty.</b> A pose with no covariance is an answer without a margin. Grasp planners need one.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>The BOP benchmark (a standard evaluation suite for 6-DoF object pose) scores methods with symmetry-aware errors, so results from different papers are comparable.</li>
+          <li>Learned keypoint and dense-correspondence networks predict the 2-D pixels, and a classical PnP solver turns them into a pose. This split lets a neural network handle appearance while geometry stays exact.</li>
+          <li>Pose estimates feed directly into grasp planners and into the frame tree of the robot (Module 0), so a wrong frame here becomes a crash later.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 2 (<i>estimate</i>): the object pose is part of the world model, and it is produced for each frame that contains the object (typically 5–30 Hz). The stored product is a named object pose, with its frame, timestamp and covariance.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 0.10 m wide object is 1 m from a camera with f = 800 px. How wide is it in the image, and how wide at 2 m?</summary><div class="ans">At 1 m: 800 × 0.10 / 1 = <b>80 px</b>. At 2 m: 800 × 0.10 / 2 = <b>40 px</b>. Doubling the depth halves the image size.</div></details>
+        <details class="check"><summary>2. The quaternions (0.7071, 0, 0, 0.7071) and (−0.7071, 0, 0, −0.7071) are both listed for one object. Are they two poses?</summary><div class="ans">No. <span class="tex">q</span> and <span class="tex">-q</span> encode the same rotation: every entry of the rotation matrix is a product of two quaternion components, so flipping all four signs changes nothing. A solver should compare rotations (matrices or angles), not raw quaternion components.</div></details>
+        <details class="check"><summary>3. Why does the solver use at least four well-spread keypoints when three are enough in principle?</summary><div class="ans">Three keypoints can give up to four valid poses (P3P), so the answer is ambiguous. A fourth point usually selects one solution, and extra points average out pixel noise, so the estimate is more stable.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A 6-DoF pose is a rotation and a translation; a camera gives keypoint-to-pixel matches, and PnP solves for the pose that explains them.</li>
+          <li>Refine with reprojection error and report the covariance; depth is usually the least certain number.</li>
+          <li>Symmetry makes some poses ambiguous; the solver cannot fix that, so the grasp must allow for it.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 ===================== -->
+    <section class="lesson" id="grasp-detection" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">4.5</span><h2>Grasp detection</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A bin holds many unknown parts, and a depth image shows their tops. Where should a two-finger gripper close, at what angle, with what opening, so that the part is lifted and does not slip out? Most of the answer is geometry and friction; a few candidates are worth scoring.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Pinch a pencil between finger and thumb. It stays put because the two contact points push toward each other along the same line, and because the friction at each contact is large enough to stop the pencil sliding. A <b>parallel-jaw grasp</b> is exactly this: a centre, a jaw-closing direction and an opening. A good grasp has two contacts whose surface normals point straight at each other (the grasp is <b>antipodal</b>), and whose pushing forces stay inside the friction limit.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a grasp as a rectangle.</b> Looking down at a depth image, a parallel-jaw grasp is a small rectangle: a centre <span class="tex">(x,y)</span>, an angle <span class="tex">\theta</span> for the jaw line, and a width <span class="tex">w</span> for the opening. A 3-D grasp adds a height and an approach direction, but the top-down rectangle carries most of the information, which is why many learned detectors predict it.</p>
+        <p><b>Step 2: the friction cone.</b> A contact can push along its normal, and it can also push a little sideways, up to the friction limit. With friction coefficient <span class="tex">\mu</span>, every force inside the cone of half-angle <span class="tex">\alpha = \arctan\mu</span> around the inward normal is safe. The jaw force must stay inside that cone at both contacts.</p>
+        <div class="worked"><b>Worked example: a box, three grasp angles, μ = 0.5</b>
+          <p>The part is an 80 × 40 mm box, turned by <span class="tex">\varphi = 20^\circ</span>. With <span class="tex">\mu = 0.5</span>, <span class="tex">\alpha = \arctan 0.5 = 26.6^\circ</span>. Let <span class="tex">d</span> be the jaw direction and <span class="tex">n_1, n_2</span> the outward normals at the two contacts. The grasp is safe when the angle between <span class="tex">d</span> and <span class="tex">n_1</span>, and between <span class="tex">-d</span> and <span class="tex">n_2</span>, are both at most α.</p>
+          <ul>
+            <li><b>θ = 20°.</b> The jaws close across the two 80 mm faces; both contact normals are along the jaw line. Angles 0° and 0°, width 80 mm. <b>Passes.</b></li>
+            <li><b>θ = 50°.</b> The jaws still span 80 mm, but the jaw line meets each face 60° away from its normal. <b>Fails</b>: 60° is more than 26.6°, so the contact would slip.</li>
+            <li><b>θ = 110°.</b> The jaws close across the two 40 mm faces; angles 0° and 0°, width 40 mm. <b>Passes.</b></li>
+          </ul>
+          <p>Lowering the friction to <span class="tex">\mu = 0.2</span> gives <span class="tex">\alpha = 11.3^\circ</span>. The θ = 20° grasp still passes, because its contact angles are 0°. But any grasp whose contact angles lie between 11.3° and 26.6° passes on a dry part and fails on a wet one.</p>
+        </div>
+
+        <p><b>Step 3: scoring many candidates.</b> A learned detector proposes many rectangles, filters out those that are too wide for the jaws or fail the antipodal and friction tests, and ranks the rest by a quality score (how much margin they have, how well the object fills the jaws). The robot then executes the best-ranked candidate that is reachable.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">g=(x,\,y,\,\theta,\,w),\qquad w \le w_{\max},\qquad \alpha=\arctan\mu</div>
+        <div class="eq">\angle(\mathbf d,\ \mathbf n_1)\le\alpha\quad\text{and}\quad \angle(-\mathbf d,\ \mathbf n_2)\le\alpha</div>
+        <table class="sym">
+          <tr><td>x, y, θ</td><td>centre of the grasp (m) and the jaw-line angle (degrees in the lab)</td></tr>
+          <tr><td>w, w<sub>max</sub></td><td>distance between the two contacts, and the largest opening of the jaws (m)</td></tr>
+          <tr><td>μ, α</td><td>friction coefficient (dimensionless) and the friction-cone half-angle</td></tr>
+          <tr><td>d</td><td>unit vector along the jaw closing line</td></tr>
+          <tr><td>n<sub>1</sub>, n<sub>2</sub></td><td>outward surface normals at the two contact points</td></tr>
+          <tr><td>∠(a, b)</td><td>the angle between two unit vectors</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press <i>Sweep θ</i>. Watch the jaw line turn. The grasp turns green only in some ranges: note the angles where the contact turns red and why (the yellow friction-cone edges no longer contain the purple normal).</li>
+          <li>Set the friction to 0.2 and sweep again. Count how many green ranges disappear.</li>
+          <li>Set the jaw maximum to 70 mm. Find the angles where the width is fine but the grasp is still rejected for slip, and the angles where it is rejected for width.</li>
+          <li>Change the object angle φ. The same θ gives a different result: a grasp is always a pair of object angle and jaw angle, not a jaw angle alone.</li></ol></div>
+        <div data-lab="perc-grasp"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Treating the top view as the whole object.</b> A depth image shows only the visible surface; the hidden side may be a different shape, and the centre of mass may be far from the contacts.</li>
+          <li><b>Ignoring the opening.</b> A grasp can be antipodal and still impossible if the object is wider than the jaws.</li>
+          <li><b>A fixed friction value.</b> Real μ varies with material, dust and water. Plan with a margin, or use the smallest μ you expect.</li>
+          <li><b>Suction is not a parallel-jaw grasp.</b> Suction cups need a seal on a flat, non-porous surface and use a different model; do not score them with the friction cone.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Dex-Net 2.0 learned grasp quality for bin picking from synthetic depth images, and the GraspNet-1Billion benchmark evaluates grasp detectors on cluttered scenes.</li>
+          <li>Learned detectors (convolutional and transformer-based) predict the grasp rectangle for every image pixel at once, so ranking candidates is cheap.</li>
+          <li>Grasp scores are also used as rewards or filters in learned manipulation policies, which links this lesson to Module 7.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 2 (<i>estimate</i>, the grasp candidates) and the hand-off to stage 3 (<i>plan</i>). Grasp detectors run once per scene or once per re-grasp, typically in 50–300 ms, so they sit outside the fast control loop. The stored product is a ranked list of grasps in the robot frame.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. μ = 1.0. Is a grasp with contact angles of 40° and 40° safe?</summary><div class="ans">α = arctan 1.0 = 45°. Both angles are below 45°, so the grasp is <b>safe</b>. At μ = 0.5 (α = 26.6°) the same grasp would slip.</div></details>
+        <details class="check"><summary>2. A grasp has contact normals perfectly opposite, a width of 90 mm, and the jaws open to 80 mm. Pass or fail?</summary><div class="ans">Fail. The antipodal and friction tests are satisfied, but the width (90 mm) exceeds the jaw maximum (80 mm). The jaws cannot close on the object at that spot.</div></details>
+        <details class="check"><summary>3. A grasp passes at μ = 0.5 with contact angles of 20°. Wet conditions reduce μ to 0.2. Does it still pass?</summary><div class="ans">No. With μ = 0.2, α = arctan 0.2 = 11.3°, and 20° exceeds it. The same geometry is safe in dry conditions and unsafe in wet ones, so friction must be part of the plan.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A parallel-jaw grasp is a centre, a jaw angle and an opening; it is useful only if the contacts are antipodal and inside the friction cone.</li>
+          <li><span class="tex">\alpha = \arctan\mu</span>: lower friction narrows the set of safe angles.</li>
+          <li>Learned detectors rank many candidate rectangles; the geometric tests still decide which ones are physically possible.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.6 ===================== -->
+    <section class="lesson" id="visual-servoing" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--pink)">4.6</span><h2>Visual servoing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A camera is mounted on the robot's wrist. The task is to move the camera until a marker appears exactly where a reference photo shows it, even though nobody has measured the marker's position precisely. Which way should the camera move at each instant, and how fast?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The camera already tells you the error: the marker is 30 pixels to the left of where it should be. Move the camera so that the marker moves right, and the error shrinks. <b>Visual servoing</b> closes the control loop on image features rather than on a measured 3-D position. In image-based visual servoing (IBVS), the controller works only with pixels. It never needs to know where the marker is in the room, only how the image changes when the camera moves.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: one feature, one axis.</b> Let a feature sit at normalised image coordinates <span class="tex">(x, y) = (X/Z, Y/Z)</span>, where <i>Z</i> is its depth. If the camera slides sideways at speed <span class="tex">v_x</span>, the feature moves the other way in the image, at <span class="tex">\dot x = -v_x/Z</span>. Closer features move faster.</p>
+        <div class="worked"><b>Worked example: a single axis, numbers</b>
+          <p>The feature is at depth <span class="tex">Z = 0.5</span> m and its error is <span class="tex">e = 0.05</span> (normalised units). Choose the gain <span class="tex">\lambda = 0.5\ \text{s}^{-1}</span> and the control <span class="tex">v_x = \lambda Z e</span>:</p>
+          <div class="eq">v_x = 0.5 \times 0.5 \times 0.05 = 0.0125\ \text{m/s}</div>
+          <div class="eq">\dot x = -\frac{v_x}{Z} = -\frac{0.0125}{0.5} = -0.025 = -\lambda e</div>
+          <p>So the error decays exponentially: <span class="tex">e(t) = 0.05\,e^{-0.5t}</span>. After 1 s it is <span class="tex">0.0303</span>; after 2 s, <span class="tex">0.0184</span>; after 3 s, <span class="tex">0.0112</span>. The time constant is <span class="tex">1/\lambda = 2</span> s.</p>
+        </div>
+
+        <p><b>Step 2: the interaction matrix.</b> For a camera with translational velocity <span class="tex">(v_x, v_y, v_z)</span> and rotational velocity <span class="tex">(\omega_x, \omega_y, \omega_z)</span>, a point at <span class="tex">(x,y)</span> and depth <i>Z</i> moves as</p>
+        <div class="eq">\dot x=-\frac{v_x}{Z}+\frac{x}{Z}v_z+xy\,\omega_x-(1+x^2)\,\omega_y+y\,\omega_z,\qquad \dot y=-\frac{v_y}{Z}+\frac{y}{Z}v_z+(1+y^2)\,\omega_x-xy\,\omega_y-x\,\omega_z</div>
+        <p>Written as <span class="tex">\dot s = L\,v</span>, the matrix <span class="tex">L</span> is the <b>image Jacobian</b> (interaction matrix). The lab uses the planar part only (<span class="tex">v_x, v_y, \omega_z</span>), where <span class="tex">\dot x = -v_x/Z + y\,\omega_z</span> and <span class="tex">\dot y = -v_y/Z - x\,\omega_z</span>. A single point gives two equations for the three unknowns, so the system is underdetermined; four points give eight equations.</p>
+
+        <p><b>Step 3: the control law.</b> Let <span class="tex">e = s - s^*</span> be the current feature positions minus the desired ones. Pick the camera velocity that makes <span class="tex">\dot e = -\lambda e</span>: <span class="tex">v = -\lambda L^{+}e</span>, where <span class="tex">L^{+} = (L^{\top}L)^{-1}L^{\top}</span> is the least-squares inverse. Using more features than unknowns averages out measurement noise and keeps one bad detection from dominating.</p>
+        <div class="worked"><b>Worked example: the depth is only an estimate</b>
+          <p>The controller needs <span class="tex">Z</span> for <span class="tex">L</span>, but in practice only an estimate <span class="tex">\hat Z</span> is available. On one axis, <span class="tex">\hat L^{+} = -\hat Z</span> and the command is <span class="tex">v = \lambda\hat Z e</span>, so the true feature motion is <span class="tex">\dot x = -\lambda(\hat Z/Z)\,e</span>. If <span class="tex">\hat Z = 1.4\,Z</span>, the decay rate becomes <span class="tex">1.4\lambda</span>: faster. If <span class="tex">\hat Z = 0.6\,Z</span>, it becomes <span class="tex">0.6\lambda</span>: slower, but still converging. The error keeps falling for moderate depth errors, which is why IBVS works without a precise depth.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\dot{\mathbf s}=L\,\mathbf v,\qquad \mathbf v=-\lambda\,\hat L^{+}\,\mathbf e,\qquad \mathbf e=\mathbf s-\mathbf s^{*}\qquad\Rightarrow\qquad \dot{\mathbf e}\approx-\lambda\,L\hat L^{+}\mathbf e</div>
+        <table class="sym">
+          <tr><td>s, s*</td><td>current and desired image features (normalised coordinates for points)</td></tr>
+          <tr><td>e</td><td>feature error, a vector of length 2 × (number of points)</td></tr>
+          <tr><td>v</td><td>camera velocity command (m/s for translation, rad/s for rotation)</td></tr>
+          <tr><td>L, L̂</td><td>the true and the estimated interaction matrix, which uses the true and estimated depths</td></tr>
+          <tr><td>λ</td><td>gain (s<sup>-1</sup>); it sets the time constant 1/λ</td></tr>
+          <tr><td>Z, Ẑ</td><td>true and estimated depth of the features (m)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the defaults. Four blue points start rotated and offset from the orange square; watch the trails shrink toward the target. The readout shows the error norm and the camera velocity.</li>
+          <li>Set the depth estimate error to +40 % and then −40 %. Convergence time changes, but the error still falls. Compare the simulated times in the readout.</li>
+          <li>Raise the gain λ to 3. The motion is faster; the time constant is 1/λ, so convergence takes about a third of the default time.</li>
+          <li>Set the initial roll error to 30°. The rotation part of the motion becomes visible in the trails. Note that the path curves, even though the goal is a plain translation.</li></ol></div>
+        <div data-lab="perc-servo"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Losing features from the field of view.</b> A large move can carry a point off the edge of the image, and then the controller has no measurement. Plan the path or the initial pose so that the features stay visible.</li>
+          <li><b>The rotation problem.</b> With a large initial roll or yaw, IBVS can move the camera along a curved path that swings through the scene. Position-based servoing avoids that but needs a 3-D pose estimate.</li>
+          <li><b>Collinear features.</b> If the points lie on one line, <span class="tex">L</span> loses rank and the control becomes unreliable. Use points spread across the image.</li>
+          <li><b>High gain plus delay.</b> A large λ with a slow camera (or a slow image pipeline) can oscillate. The continuous-time analysis is only a guide; check the loop at the real frame rate.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Classic IBVS is the reference method for camera-guided arms in assembly and surgical robots, and the 2006 Chaumette and Hutchinson tutorials are the standard references.</li>
+          <li>Learned visual policies (Module 7 and Module 8) learn the same mapping from image to motion, but they usually lack the explicit error and gain that make classical servoing easy to analyse.</li>
+          <li>Visual feedback also runs inside grasp execution: the robot re-centres the gripper on the object as it approaches, using the same loop.</li></ul></div>
+
+        <div class="callout"><b>Pipeline position</b>Stage 4 (<i>control</i>), with stage 1 (<i>sense</i>) supplying the feature measurements. The loop runs at the camera rate (typically 30–60 Hz), and the stored product is the error history and the commanded velocity.</div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. The depth Z doubles from 0.5 m to 1.0 m, and the camera speed v<sub>x</sub> is unchanged. How does the feature speed ẋ change?</summary><div class="ans">It halves: ẋ = −v<sub>x</sub>/Z, so doubling Z halves the image motion for the same camera speed. The controller's factor Z in v = λZe compensates: a distant feature makes it command a larger camera motion for the same image error.</div></details>
+        <details class="check"><summary>2. λ = 0.5 s⁻¹ and e = 0.05 at time 0. What is e after 2 s?</summary><div class="ans">e(2) = 0.05 · e<sup>−0.5 × 2</sup> = 0.05 · e<sup>−1</sup> = 0.05 × 0.3679 = <b>0.0184</b>.</div></details>
+        <details class="check"><summary>3. Why use four points for a planar problem with three unknowns?</summary><div class="ans">Four points give eight equations for three unknowns, so the least-squares solution averages out pixel noise and tolerates one bad detection. A single point cannot determine all three motions; using more points than unknowns is the usual design.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Image-based servoing moves the camera to reduce pixel error: <span class="tex">v = -\lambda L^{+}e</span>, with <span class="tex">L</span> the interaction matrix.</li>
+          <li>Depth enters <span class="tex">L</span>; an estimated depth slows convergence but does not usually break it.</li>
+          <li>Watch the feature field of view, the initial rotation and the gain: these, more than the algorithm, decide whether the servo behaves well.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now turn point clouds and images into poses and grasps, align scans, budget detector latency and close a camera loop. Next, <a href="robo-planning.html"><b>Module 5 · Planning &amp; motion</b></a> uses these object poses to find collision-free paths for the arm.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

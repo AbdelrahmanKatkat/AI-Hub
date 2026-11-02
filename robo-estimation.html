@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · State estimation &amp; mapping · Robotics</title>
+<meta name="description" content="Where am I? Bayes filters, the Kalman and extended Kalman filters, particle filters, occupancy grids and SLAM pose graphs, built from intuition with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-robo-estimation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#39c5cf26">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · State estimation &amp; mapping</h1>
+        <p>A robot never knows its state exactly. Its wheels slip, its sensors are noisy, and the map it needs may not exist yet. This module shows how to hold a <b>belief</b> about where the robot is and what surrounds it, update that belief with every reading, and keep track of how uncertain it is. By the end you will run a Bayes filter by hand, update a Kalman gain with numbers, explain why an extended Kalman filter straightens a curve and where that breaks, resample a particle cloud, update a log-odds map cell by cell, and read a pose graph that closes a loop.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs Module 1 (sensors) and probability</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="intro">
+      <div class="prose">
+        <p><b>Where this sits in the loop.</b> Estimation is the second stage of the sense–think–act loop. Sensors give readings; the estimator fuses them with a motion model into one belief; planning and control then act on that belief. Estimators typically run at the rate of their fastest sensor: an inertial unit at 100–1000 Hz for prediction, a lidar or camera at 5–30 Hz for correction. The probability you need is in <a href="math-probability.html">Mathematics · Probability</a>; the matrices are in <a href="math-linear-algebra.html">Linear algebra</a>; the Jacobians are in <a href="math-calculus.html#partials-gradient">Calculus · partial derivatives</a>.</p>
+      </div>
+    </div>
+
+    <!-- ===================== 3.1 ===================== -->
+    <section class="lesson" id="bayes-filter" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.1</span><h2>The Bayes filter</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery robot wakes up in a corridor of ten cells. It cannot see its cell number. Three of the cells are doors, the rest are walls. Its door sensor is right 80% of the time, and its wheels sometimes move one cell too far or too little. How should it keep track of where it probably is, when every new reading and every movement changes the answer?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a detective with a town map. Before any clue, every house is a suspect. A clue (a witness saw a red car) makes some suspects more likely and others less likely. Then the detective walks to the next street, which moves the whole set of suspects along the map and blurs it a little, because walking is not exact. Clue, walk, clue, walk: that is the whole Bayes filter.</p>
+        <p>The robot's answer to "where am I?" is not one cell. It is a <b>belief</b>: a probability for every cell, adding up to 1. A belief that puts 0.9 on one cell is confident; a belief that is flat over ten cells says "I have no idea". Measuring how flat it is gives a single number we can track: the entropy, in bits. The lab below reports it.</p>
+
+        <h3 class="sec">Build it up: one sense step, one move step</h3>
+        <p><b>Step 1: start with no knowledge.</b> Ten cells, each probability 0.1. The belief is a list of ten numbers: <span class="tex">[0.1,\,0.1,\,\dots,\,0.1]</span>.</p>
+        <p><b>Step 2: a sensor reading (sense).</b> The sensor says "door". A door cell explains that reading with probability 0.8; a wall cell explains it with probability 0.2 (the sensor's false alarm rate). Multiply each belief entry by how well its cell explains the reading, then divide by the total so the numbers sum to 1 again.</p>
+        <div class="worked"><b>Worked example: sense "door"</b>
+          <p>Door cells are 0, 3 and 7. Before the reading every cell is 0.1. Multiply:</p>
+          <div class="eq">\text{door cell: } 0.1\times0.8=0.08\qquad\text{wall cell: } 0.1\times0.2=0.02</div>
+          <p>The total is <span class="tex">3\times0.08+7\times0.02=0.24+0.14=0.38</span>. Dividing by 0.38 gives <b>0.2105</b> for each door cell and <b>0.0526</b> for each wall cell. Three doors now share 63% of the belief, up from 30%.</p></div>
+        <p><b>Step 3: the robot moves (move).</b> The command is "+1 cell". Suppose the wheels do +1 with probability 0.8, stay put with probability 0.1 and do +2 with probability 0.1. Each cell's probability is shifted and shared among the cells it could reach. Moving never makes the belief sharper; it always spreads it out a little.</p>
+        <div class="worked"><b>Worked example: move one cell</b>
+          <p>Take cell 1. It can be reached from cell 0 (a step of +1, probability 0.8), from cell 1 itself (a step of 0, probability 0.1) and from cell 9 (a step of +2, probability 0.1; cells wrap round the ring). So</p>
+          <div class="eq">\overline{\text{bel}}(1)=0.8\times0.2105+0.1\times0.0526+0.1\times0.0526=0.1789</div>
+          <p>Cell 6 is fed by cell 5 (+1), cell 6 (stay) and cell 4 (+2), all walls at 0.0526, so it also comes out at 0.0526. After the move the belief is <span class="tex">[0.068,\,0.179,\,0.068,\,0.068,\,0.179,\,0.068,\,0.053,\,0.068,\,0.179,\,0.068]</span>. The probability mass that was on cell 0 has slid to cell 1 and has leaked to cells 2 and 9.</p></div>
+        <p><b>Step 4: sense again.</b> A second reading, "wall", multiplies each cell by 0.8 if it is a wall and 0.2 if it is a door. The numbers that were high next to the door are now re-weighted: cells 1, 4 and 8 (just after a door, now reading wall) rise to about 0.21, while cell 0 falls to 0.02. The robot now believes it is one cell past a door. Two readings and one move were enough to narrow a flat belief.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">x_t</span> be the state at time <i>t</i> (here, the cell), <span class="tex">u_t</span> the command, and <span class="tex">z_t</span> the reading. The belief is <span class="tex">\text{bel}(x_t)=p(x_t\mid z_{1:t},u_{1:t})</span>. It is updated in two steps:</p>
+        <div class="eq">\overline{\text{bel}}(x_t)=\sum_{x_{t-1}} p(x_t\mid u_t,x_{t-1})\,\text{bel}(x_{t-1})\qquad\text{(predict: move)}</div>
+        <div class="eq">\text{bel}(x_t)=\eta\; p(z_t\mid x_t)\;\overline{\text{bel}}(x_t)\qquad\text{(correct: sense)}</div>
+        <table class="sym">
+          <tr><td>x<sub>t</sub></td><td>the state at time <i>t</i>: here the cell index, 0 to 9</td></tr>
+          <tr><td>u<sub>t</sub></td><td>the command sent to the wheels (“+1 cell”)</td></tr>
+          <tr><td>z<sub>t</sub></td><td>the measurement: “door” or “wall”</td></tr>
+          <tr><td>bel(x<sub>t</sub>)</td><td>the posterior belief: a probability for each state after the reading</td></tr>
+          <tr><td><span class="tex">\overline{\text{bel}}</span></td><td>the predicted belief, after the move but before the reading (the bar means “predicted”)</td></tr>
+          <tr><td>p(x<sub>t</sub> | u<sub>t</sub>, x<sub>t−1</sub>)</td><td>the motion model: how likely each new cell is, given the old cell and the command</td></tr>
+          <tr><td>p(z<sub>t</sub> | x<sub>t</sub>)</td><td>the sensor model: how likely the reading is in each cell (0.8 for the matching type)</td></tr>
+          <tr><td>η</td><td>the normalising constant, <span class="tex">1/\sum_x p(z\mid x)\overline{\text{bel}}(x)</span>, which makes the belief sum to 1</td></tr>
+        </table>
+        <p>The first line is the <b>total probability</b> rule: to know where you are now, add up every way you could have got here. The second line is <b>Bayes' rule</b>: a reading multiplies the prior by the likelihood, then rescales. Both steps only need the previous belief, which is why the filter is <i>recursive</i>: it never stores the whole history of readings.</p>
+
+        <h3 class="sec">Try this</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press <b>Sense</b> a few times, then <b>Move</b>. Watch the belief pile onto the door cells while the robot moves, then smear after each move.</li>
+          <li>Set sensor accuracy to 0.55 and press Auto for a minute. The belief barely forms: a nearly useless sensor cannot separate doors from walls.</li>
+          <li>Set move reliability to 1.0 and then 0.5. With perfect wheels a sharp belief stays sharp; with poor wheels it blurs in a few moves, even though nothing was sensed.</li>
+          <li>Read the entropy in the readout. It drops when the sensor is good and rises after each move. The true cell is shown in green but the robot never sees it.</li></ol></div>
+      </div>
+      <div data-lab="bayes-corridor"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Forgetting to normalise.</b> Multiplying likelihoods gives numbers that sum to 0.38, not 1. The division is what makes the result a probability; skipping it changes the answer only by a scale, but then the entropy and the comparisons are wrong.</li>
+          <li><b>The most likely cell is not the truth.</b> A belief of 0.21 on one cell means the robot is wrong four times in five. Report the belief, not just its maximum.</li>
+          <li><b>Using the same reading twice.</b> If a sensor is applied twice because the code loops over a stale buffer, the belief becomes too confident. Each reading must enter once.</li>
+          <li><b>Believing a move makes you surer.</b> Motion always adds uncertainty. Only sensing removes it.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Localisation in mobile robots: the Monte Carlo localisation used in the ROS 2 navigation stack (AMCL) is a particle version of this filter, lesson 3.4.</li>
+          <li>The same recursion in hidden Markov models for sequences (speech, gesture recognition): a belief over hidden states updated by an observation and a transition.</li>
+          <li>Any learned state estimator, from a neural network that predicts a belief over positions, is trained to approximate this predict-then-correct structure.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. After the sense step the numbers were 0.08 and 0.02 before dividing. Why must we divide by 0.38?</summary><div class="ans">The products no longer sum to 1, so they are not a probability distribution. Dividing by the total (the normaliser η) makes them sum to 1 while keeping their ratios: a door cell stays 4× as likely as a wall cell.</div></details>
+        <details class="check"><summary>2. A sensor is right only half the time (accuracy 0.5). What does one sense step do to a uniform belief?</summary><div class="ans">Nothing. Both likelihoods are 0.5, so every cell is multiplied by the same number and normalising returns the same uniform belief. A reading that carries no information leaves the belief unchanged.</div></details>
+        <details class="check"><summary>3. The robot is certain it is in cell 4 (belief 1.0). It moves with reliability 0.8 (+1 with probability 0.8, 0 with 0.1, +2 with 0.1). What is the belief now?</summary><div class="ans">Cell 5 has 0.8, cell 4 has 0.1 and cell 6 has 0.1. A certain belief spreads into three cells: the motion model adds exactly the uncertainty that the wheels produce.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A belief is a probability for every state. Sensing multiplies by a likelihood and renormalises; moving shifts and spreads.</li>
+          <li>The Bayes filter is recursive: only the last belief and the newest reading or command are needed.</li>
+          <li>Moving always adds uncertainty; only sensing removes it. Report the whole belief, not only its peak.</li>
+          <li>Loop position: estimate, run at each sensor update. Stores one probability per state (here ten numbers).</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 ===================== -->
+    <section class="lesson" id="kalman-filter" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.2</span><h2>The Kalman filter</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot drives along a straight line at about 1 m/s. Its wheel model says where it should be; its position sensor says where it is, with noise of about 1 m. Neither is right. How should the robot combine the two into one estimate, and how confident should it be in the result?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Two people guess the distance to a station. One is an experienced driver who knows the speed and the time elapsed; the other reads a sign that is slightly blurred. A sensible answer is a weighted average of the two, and the weight should favour whoever is more reliable. The Kalman filter is exactly this, applied again and again, with the weight written as a number called the <b>gain</b>.</p>
+        <p>If the sign is very clear (small noise), the gain is large and the estimate follows the reading. If the driver is very reliable (little process noise), the gain is small and the estimate follows the model. The filter also tracks the uncertainty of its estimate, and that uncertainty shrinks after every reading and grows during every prediction.</p>
+
+        <h3 class="sec">Build it up: predict, measure, correct</h3>
+        <p><b>Step 1: a Gaussian belief.</b> Instead of a list of ten probabilities, the belief is a bell curve described by two numbers: its mean <span class="tex">\mu</span> (the best estimate) and its variance <span class="tex">P</span> (the squared uncertainty, in m² here). Start at <span class="tex">\mu=0\text{ m}</span>, <span class="tex">P=4\text{ m}^2</span>, so the standard deviation is 2 m.</p>
+        <p><b>Step 2: predict.</b> The model says "+1 m". The mean moves by 1 m. The uncertainty grows by the process noise <span class="tex">Q</span>, because the model is not perfect.</p>
+        <p><b>Step 3: measure and correct.</b> The sensor reports <span class="tex">z</span> with noise variance <span class="tex">R</span>. The gain is <span class="tex">K=P/(P+R)</span>, a number between 0 and 1. The new mean moves a fraction <span class="tex">K</span> of the way from the prediction to the reading, and the variance shrinks.</p>
+        <div class="worked"><b>Worked example: two cycles with numbers</b>
+          <p>Start with <span class="tex">\mu=0</span>, <span class="tex">P=4</span>. Measurement noise <span class="tex">R=1</span>, process noise <span class="tex">Q=0.5</span>.</p>
+          <p><b>Correction 1.</b> The reading is <span class="tex">z_1=1.2</span> m:</p>
+          <div class="eq">K_1=\frac{4}{4+1}=0.8,\qquad \mu=0+0.8(1.2-0)=0.96\ \text{m},\qquad P=(1-0.8)\cdot4=0.8\ \text{m}^2</div>
+          <p><b>Predict.</b> Move +1 m and add Q: <span class="tex">\mu=1.96</span> m, <span class="tex">P=0.8+0.5=1.3</span> m².</p>
+          <p><b>Correction 2.</b> The reading is <span class="tex">z_2=2.5</span> m:</p>
+          <div class="eq">K_2=\frac{1.3}{1.3+1}=0.5652,\qquad \mu=1.96+0.5652(2.5-1.96)=2.265\ \text{m},\qquad P=(1-0.5652)\cdot1.3=0.565\ \text{m}^2</div>
+          <p>The reading at step 2 was 0.54 m above the prediction. The filter took 57% of that surprise, which is the gain. Notice that the variance after correction (0.565 m²) is smaller than before the reading (1.3 m²): every good measurement reduces uncertainty.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>In one dimension with a state that follows <span class="tex">x_t=x_{t-1}+u_t+w_t</span> and a reading <span class="tex">z_t=x_t+v_t</span>, where <span class="tex">w_t\sim\mathcal N(0,Q)</span> and <span class="tex">v_t\sim\mathcal N(0,R)</span>:</p>
+        <div class="eq">\mu^-=\mu+u,\qquad P^-=P+Q\qquad\text{(predict)}</div>
+        <div class="eq">K=\frac{P^-}{P^-+R},\qquad \mu=\mu^-+K\,(z-\mu^-),\qquad P=(1-K)\,P^-\qquad\text{(correct)}</div>
+        <p>In several dimensions the same equations become matrix equations: <span class="tex">\mu^-=A\mu+Bu</span>, <span class="tex">P^-=APA^{\top}+Q</span>, <span class="tex">K=P^-H^{\top}(HP^-H^{\top}+R)^{-1}</span>, <span class="tex">\mu=\mu^-+K(z-H\mu^-)</span>, <span class="tex">P=(I-KH)P^-</span>.</p>
+        <table class="sym">
+          <tr><td>μ, P</td><td>the mean (best estimate) and the variance (squared uncertainty) of the belief</td></tr>
+          <tr><td>μ⁻, P⁻</td><td>the same after the predict step but before the reading (the bar means “prior”)</td></tr>
+          <tr><td>u</td><td>the known motion command, here +1 m per step</td></tr>
+          <tr><td>Q</td><td>process noise variance: how much the motion model is wrong per step (m²)</td></tr>
+          <tr><td>R</td><td>measurement noise variance: how noisy the sensor is (m²)</td></tr>
+          <tr><td>K</td><td>the Kalman gain, between 0 and 1: how much to trust the reading</td></tr>
+          <tr><td>z</td><td>the reading (m)</td></tr>
+          <tr><td>A, B, H, I</td><td>matrices for the state model, control model, measurement and identity (in one dimension, all equal 1 or are absent)</td></tr>
+        </table>
+        <p>Two facts make the filter worth knowing. For a linear model with Gaussian noise, the Kalman filter gives the <b>exact</b> posterior, not an approximation. And the gain depends only on the variances, so it can be computed before any data arrive; in practice it settles quickly to a steady value.</p>
+
+        <h3 class="sec">Try this</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with the defaults (σ<sub>R</sub> = 1 m, σ<sub>Q</sub> = 0.3 m). Watch the gain in the readout. It starts large and falls as the uncertainty shrinks, then settles.</li>
+          <li>Increase the measurement noise to 3 m. The gain drops; the estimate ignores the noisy dots and follows the model.</li>
+          <li>Set σ<sub>R</sub> back to 1 m and increase σ<sub>Q</sub> to 1.5 m. The gain rises: the filter now distrusts the motion model and follows the readings.</li>
+          <li>Notice the shaded band. It is the 2σ interval of the estimate: about 95% of the time the truth should lie inside it, if the noise numbers are right. Make σ<sub>R</sub> much smaller than the real noise and watch the truth escape the band: a filter that is too confident is a classic bug.</li></ol></div>
+      </div>
+      <div data-lab="kalman-track"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Variance versus standard deviation.</b> R and Q are variances (m²). A sensor with σ = 1 m has R = 1 m²; a sensor with σ = 2 m has R = 4 m². Plugging in 2 where you meant 4 makes the filter far too trusting.</li>
+          <li><b>Tuning Q and R to look good.</b> Q and R are statements about the world. If you tune them only so the plot looks smooth, the 2σ band lies, and any later fusion step inherits the lie.</li>
+          <li><b>Assuming the noise is Gaussian.</b> The equations are exact only for Gaussian noise. Heavy-tailed noise (a sensor that returns garbage 1% of the time) needs outlier rejection before the update.</li>
+          <li><b>Thinking the filter removes all noise.</b> The estimate's variance settles at a positive value; a filter with noisy measurements is always uncertain.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Sensor fusion in robots and vehicles: wheel odometry, inertial units and GPS are fused, and the Kalman filter (or an extended version) is the usual way to do it.</li>
+          <li>Multi-object tracking: the SORT tracker and its successors predict each object's box with a constant-velocity Kalman filter, then match detections to predictions frame by frame.</li>
+          <li>Learned systems keep the same structure: a predict-then-correct network with a learned gain (a recurrent state estimator) is trained to behave like a Kalman filter when the model is linear.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. P⁻ = 9 m² and R = 1 m². What is the gain, and how much does the reading move the estimate?</summary><div class="ans">K = 9 / (9 + 1) = 0.9. The estimate moves 90% of the way from the prediction to the reading: the filter trusts the sensor much more than the model.</div></details>
+        <details class="check"><summary>2. In the worked example, why does the variance go from 1.3 m² to 0.565 m² and not to zero?</summary><div class="ans">Each correction multiplies the variance by (1 − K), which is positive as long as the sensor is noisy (R > 0). The variance shrinks by a factor that depends on the gain, but a finite-noise sensor can never give infinite confidence. The remaining uncertainty is set by R and the prediction variance.</div></details>
+        <details class="check"><summary>3. A colleague doubles Q (the model is more uncertain) and says the filter will now be "more accurate". Is that right?</summary><div class="ans">Not necessarily. Doubling Q raises the gain and makes the filter follow the noisy readings more. The estimate may be more responsive but noisier. Q should match how wrong the motion model really is; a larger value is not automatically better. Test the filter against logged data with known truth.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The Kalman filter fuses a prediction and a reading by weighting each with its confidence; the weight is the gain K = P⁻/(P⁻+R).</li>
+          <li>Prediction grows the uncertainty by Q; a correction shrinks it. Both are visible in every step.</li>
+          <li>For linear models with Gaussian noise the filter is exact. Get Q and R right: they are claims about the world.</li>
+          <li>Loop position: estimate at sensor rate, after each prediction step. Stores a mean vector and a covariance matrix.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 ===================== -->
+    <section class="lesson" id="extended-kalman" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.3</span><h2>The extended Kalman filter</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot has no position sensor, but a beacon at a known place measures the straight-line distance to the robot (a range sensor). Distance is not a straight-line function of position: it is a square root of a sum of squares. The Kalman filter needs linear measurements. What do we do when the measurement curves?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Zoom in. A curve looks like a straight line if you look closely enough at one point. The extended Kalman filter (EKF) takes the measurement function, draws the best straight line through it at the current estimate, and then runs an ordinary Kalman filter with that line. Near the estimate the line is a good stand-in for the curve; far from it, it is not.</p>
+        <p>The straight line is the <b>Jacobian</b>: the rate of change of the measurement with each state, evaluated at the current estimate. Everything in the EKF is the Kalman filter, with the measurement matrix replaced by this local slope.</p>
+
+        <h3 class="sec">Build it up: a beacon on a line</h3>
+        <p><b>Step 1: the geometry.</b> The robot moves along the x-axis; its state is its position x (m). A beacon sits at (10, 3) m, three metres to the side of the line. The range the sensor measures is <span class="tex">h(x)=\sqrt{(10-x)^2+3^2}</span>. At <span class="tex">x=0</span> the range is about 10.4 m; at <span class="tex">x=10</span> it is 3 m. It is a curve, not a line.</p>
+        <p><b>Step 2: the slope at the estimate.</b> The derivative <span class="tex">H=\dfrac{dh}{dx}=-\dfrac{10-x}{h(x)}</span> tells us how fast the range changes if we move. It is negative: moving towards the beacon shortens the range.</p>
+        <div class="worked"><b>Worked example: one range update at x = 4 m</b>
+          <p>Prior: <span class="tex">\mu^-=4</span> m, <span class="tex">P^-=1</span> m². Sensor: range noise σ = 0.5 m, so <span class="tex">R=0.25</span> m². The sensor reads <span class="tex">z=6.2</span> m.</p>
+          <div class="eq">h(\mu^-)=\sqrt{6^2+3^2}=\sqrt{45}=6.708\ \text{m},\qquad H=-\frac{6}{6.708}=-0.894\ \text{m/m}</div>
+          <div class="eq">S=H^2P^-+R=0.800+0.25=1.05,\qquad K=\frac{P^-H}{S}=\frac{-0.894}{1.05}=-0.852</div>
+          <div class="eq">\text{innovation }y=z-h(\mu^-)=6.2-6.708=-0.508\ \text{m}</div>
+          <div class="eq">\mu=4+(-0.852)(-0.508)=4.433\ \text{m},\qquad P=(1-KH)P^-=(1-0.762)\cdot1=0.238\ \text{m}^2</div>
+          <p>The gain is negative. That is right: the measured range is shorter than predicted, so the robot must be closer to the beacon, which means further along the line. The mean moved right, to 4.43 m. The uncertainty fell from 1 m² to 0.24 m² (σ from 1 m to 0.49 m).</p>
+          <p><b>How good is the straight-line trick?</b> We can check by brute force: evaluate the exact posterior on a fine grid of positions. Its mean is 4.445 m and its variance is 0.245 m². The EKF got 4.433 m and 0.238 m². Close, because the prior was narrow compared with the curve.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For a nonlinear model <span class="tex">x_t=f(x_{t-1},u_t)+w_t</span> and reading <span class="tex">z_t=h(x_t)+v_t</span>, the EKF linearises both functions at the current estimate, using their Jacobians <span class="tex">F=\partial f/\partial x</span> and <span class="tex">H=\partial h/\partial x</span>:</p>
+        <div class="eq">\mu^-=f(\mu,u),\qquad P^-=FPF^{\top}+Q</div>
+        <div class="eq">S=HP^-H^{\top}+R,\qquad K=P^-H^{\top}S^{-1},\qquad \mu=\mu^-+K\,\big(z-h(\mu^-)\big),\qquad P=(I-KH)P^-</div>
+        <table class="sym">
+          <tr><td>f, h</td><td>the motion and measurement functions (nonlinear in general)</td></tr>
+          <tr><td>F, H</td><td>Jacobian matrices: the partial derivatives of f and h with respect to the state, evaluated at μ</td></tr>
+          <tr><td>S</td><td>the innovation covariance: the predicted spread of the reading, including the sensor noise</td></tr>
+          <tr><td>y = z − h(μ⁻)</td><td>the innovation: the surprise, what the reading says beyond the prediction (same units as z)</td></tr>
+          <tr><td>K</td><td>the gain (a matrix in general, a number here)</td></tr>
+        </table>
+        <p>The predict and correct structure is the same as the Kalman filter. Only the two Jacobians are new, and they must be correct: a sign error in H is the most common EKF bug. Check them by comparing with a finite difference: <span class="tex">(h(x+\varepsilon)-h(x))/\varepsilon</span> for a small <span class="tex">\varepsilon</span>.</p>
+
+        <h3 class="sec">Try this</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the belief spread to 0.2 m. Each dot of the left-hand cloud lands near the mean, and the right-hand cloud is a tight blob. The straight-line picture (the dashed ellipse) matches the cloud well.</li>
+          <li>Increase the spread to 2.5 m. The right-hand cloud now bends and stretches; the dashed ellipse no longer covers it, and the pink mean of the cloud drifts away from the EKF centre. That gap is the linearisation error.</li>
+          <li>Read the sample mean minus h(μ) in the readout at large spread. A bias means the EKF's centre is systematically wrong in measurement space.</li>
+          <li>Press Replay reveal and watch each belief sample appear on both sides at the same time: one possible position on the left, the measurement it would give on the right.</li></ol></div>
+      </div>
+      <div data-lab="ekf-range"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Wrong or unchecked Jacobians.</b> A sign error or a missing chain-rule factor gives a filter that looks fine on easy data and drifts on hard data. Test every Jacobian with a finite difference.</li>
+          <li><b>Angles wrap round.</b> A bearing of +3.20 rad and −3.10 rad are only 0.02 rad apart. Subtracting naively gives 6.30 rad. The innovation must be wrapped into (−π, π].</li>
+          <li><b>Linearising far from the truth.</b> If the belief is wide or the measurement curves sharply, the EKF is biased and overconfident. The 2σ ellipse is then too small.</li>
+          <li><b>Near a singularity.</b> Range-based Jacobians divide by the distance. A robot that drives over the beacon (distance → 0) produces huge numbers. Guard the division or stop updating there.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>GPS and inertial fusion (GNSS/INS) in cars, aircraft and drones: the GPS measurement is nonlinear in the attitude and the EKF is the classic tool.</li>
+          <li>Visual-inertial odometry: the multi-state constraint Kalman filter (MSCKF) is an EKF whose state holds several past camera poses, linearised around the features it tracks.</li>
+          <li>Learned estimators are often compared with the EKF on the same benchmark: a neural network that outperforms it usually does so because the real measurement model is far from linear.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why is the Jacobian evaluated at the predicted mean μ⁻ and not at the true position?</summary><div class="ans">The true position is unknown: that is the point of estimating it. The best available point is the predicted mean, where most of the belief lies, so the straight line is fitted where the probability mass is.</div></details>
+        <details class="check"><summary>2. The bearing reading is 3.20 rad and the predicted bearing is −3.10 rad. What innovation should the filter use?</summary><div class="ans">Naively 6.30 rad, which is wrong. The two directions are almost the same. Wrap the difference into (−π, π]: 6.30 − 2π = 0.017 rad.</div></details>
+        <details class="check"><summary>3. What happens to the range Jacobian as the robot drives right over the beacon?</summary><div class="ans">The range h is 0 and the Jacobian has the distance in its denominator, so it blows up. The linearisation becomes meaningless there. A practical guard is to skip the update when the predicted range is below a threshold.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The EKF is a Kalman filter with a local straight-line stand-in for each nonlinear function, found from its Jacobian at the estimate.</li>
+          <li>Predict with f, correct with h; the gain and covariance equations are unchanged in form.</li>
+          <li>It is not exact. Its error grows with spread and curvature: the dashed ellipse in the lab shows exactly how much.</li>
+          <li>Loop position: the same rate as the Kalman filter; stores a mean and covariance, plus the Jacobian computed each step.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 ===================== -->
+    <section class="lesson" id="particle-filter" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.4</span><h2>Particle filters (Monte Carlo localisation)</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot is switched on in a building it has never seen, or it is picked up and moved while the power is off (the "kidnapped robot" problem). Its belief could have two or three humps: it might be in front of either of two identical doors. A single bell curve cannot say "either A or B". What kind of belief can?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Replace the belief by a crowd. Scatter a few hundred guesses (particles) about where the robot might be. Each particle is one whole hypothesis. Move every guess with a random motion, as if the wheels were noisy; score each guess by how well it explains the sensor reading; then copy the good guesses and drop the bad ones. The crowd automatically forms as many humps as the evidence needs, and a hump has as many particles as its probability deserves.</p>
+        <p>This is a Monte Carlo method: the belief is approximated by samples, and the more samples, the better the approximation. Nothing has to be Gaussian.</p>
+
+        <h3 class="sec">Build it up: four particles on the ring</h3>
+        <p>Use the corridor from lesson 3.1: ten cells on a ring, doors at cells 0, 3 and 7, sensor accuracy 0.8. Suppose the robot is somewhere near cell 0, but we have four particles at positions 0, 3, 5 and 8.</p>
+        <p><b>Step 1: predict.</b> Each particle takes its own random motion (+1 cell, 0 or +2). For this worked example, assume the motion has already happened and the particles sit at 0, 3, 5 and 8.</p>
+        <p><b>Step 2: weight.</b> The reading is "door". A particle on a door cell has likelihood 0.8; a particle on a wall has 0.2.</p>
+        <div class="worked"><b>Worked example: weight, normalise, resample</b>
+          <p>Likelihoods: particle at 0 (door) 0.8; at 3 (door) 0.8; at 5 (wall) 0.2; at 8 (wall) 0.2. Their sum is 2.0, so the normalised weights are <span class="tex">0.4,\;0.4,\;0.1,\;0.1</span>.</p>
+          <p>How many particles really carry the belief? The effective sample size is</p>
+          <div class="eq">N_{\text{eff}}=\frac{1}{\sum_i w_i^2}=\frac{1}{0.16+0.16+0.01+0.01}=\frac{1}{0.34}=2.94</div>
+          <p>Four particles, but only about three count. The two wall particles are almost useless.</p>
+          <p><b>Step 3: resample.</b> Draw four new particles, each with probability equal to its weight. The systematic method uses one random offset in [0, 1/4) and four evenly spaced pointers. With offset 0.025 the pointers are 0.025, 0.275, 0.525 and 0.775. The cumulative weights are 0.4, 0.8, 0.9 and 1.0. The pointers pick particles at 0, 0, 3 and 3. The particles at 5 and 8 die; the two door particles each have two copies.</p></div>
+        <p><b>Step 4: the trap that appears.</b> Before resampling the particles at 0 and 3 form two humps. The mean of all four particles is 4.0 (on the wall at cell 4), which is nonsense. A particle set that is split between two places has no single good average. Report the strongest hump instead, or the mode, or cluster the particles.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>The belief is approximated by <span class="tex">M</span> weighted samples: <span class="tex">\text{bel}(x_t)\approx\sum_{i=1}^{M} w_t^{[i]}\,\delta\big(x_t-x_t^{[i]}\big)</span>, where <span class="tex">\delta</span> is a point mass. Each step does three things:</p>
+        <div class="eq">\text{predict: } x_t^{[i]}\sim p\big(x_t\mid u_t,x_{t-1}^{[i]}\big)\qquad\text{weight: } \tilde w_t^{[i]}=p\big(z_t\mid x_t^{[i]}\big)\qquad\text{resample: draw } M \text{ particles with } P(i)\propto \tilde w_t^{[i]}</div>
+        <table class="sym">
+          <tr><td>M</td><td>the number of particles (the “N” slider in the lab)</td></tr>
+          <tr><td>x<sub>t</sub><sup>[i]</sup>, w<sub>t</sub><sup>[i]</sup></td><td>particle <i>i</i>: its state (cell position) and its normalised weight</td></tr>
+          <tr><td>∼</td><td>“is drawn from”: the predict step samples the motion model, so each particle gets its own noise</td></tr>
+          <tr><td>N<sub>eff</sub></td><td>effective sample size, <span class="tex">1/\sum_i w_i^2</span>: equal to M when weights are equal, near 1 when one particle dominates</td></tr>
+        </table>
+        <p>Two facts guide practice. The approximation gets better as <span class="tex">M</span> grows, with a typical Monte Carlo error that shrinks like <span class="tex">1/\sqrt M</span>: halving the error needs four times the particles. And the cost of one step grows linearly with M, so the particle count is a direct trade-off between accuracy and compute.</p>
+
+        <h3 class="sec">Try this</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with N = 60 and press Play. Watch the cloud spread during Predict, collapse onto the door cells during Sense (the weight bars show the mass), and reform during Resample.</li>
+          <li>Press Reset with N = 10, then with N = 400. With ten particles the cloud often loses the true cell altogether (particle deprivation); with 400 the estimate is steady.</li>
+          <li>Lower the sensor accuracy to 0.55. The weights become almost equal, N<sub>eff</sub> stays near N, and resampling does little: a weak sensor gives the filter little reason to prefer one particle.</li>
+          <li>Read the estimate (green dashed line) and the most-populated cell. They can disagree while the cloud has two humps: that is the multimodal trap.</li></ol></div>
+      </div>
+      <div data-lab="particle-corridor"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Averaging a multimodal cloud.</b> The mean of particles at 0 and 3 is 1.5, which is a wall. Summaries must respect the shape of the belief.</li>
+          <li><b>Sample impoverishment.</b> Resampling copies heavy particles and kills light ones; after a few steps many particles are copies of one ancestor. Add a little motion noise, use more particles, or resample only when N<sub>eff</sub> drops below about half of M.</li>
+          <li><b>Too few particles.</b> If the true state has no nearby particle, the filter cannot recover. Global localisation needs far more particles than tracking.</li>
+          <li><b>Forgetting to normalise the weights.</b> Weights must sum to 1 before resampling; otherwise the pointers do not land on the cumulative distribution.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Monte Carlo localisation (AMCL) in the ROS 2 navigation stack: a robot initialised with an unknown pose spreads particles over the map and collapses them onto its true position as it drives.</li>
+          <li>Visual object tracking with particle filters, where the belief over a target's box is multimodal when similar objects are near.</li>
+          <li>Sampling-based planners and learned samplers share the idea: a population of hypotheses scored by a likelihood, then concentrated where the evidence is.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Doubling the particle count, roughly how much does the Monte Carlo error fall? And how many particles would halve the error of a 1000-particle filter?</summary><div class="ans">The error falls like 1/√M, so doubling M cuts it by about 30%. To halve it, you need four times as many: 4000 particles.</div></details>
+        <details class="check"><summary>2. After resampling, every particle has weight 1/M again. Why does the filter still remember which hump was more probable?</summary><div class="ans">Because the probable hump now has more particles. The density of particles around each place is the belief: a hump with 3 of 4 particles means probability 3/4. The weights were consumed by the resampling and turned into counts.</div></details>
+        <details class="check"><summary>3. The weights are 0.5 on one particle and 0.5 spread over 99 others. What is N<sub>eff</sub> roughly, and what should the filter do?</summary><div class="ans">N<sub>eff</sub> = 1 / (0.5² + 99 × (0.005)²) ≈ 1 / (0.25 + 0.0025) ≈ 4. Only about four particles are informative, so resampling now (or adding motion noise) is needed to restore diversity.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A particle filter represents any belief, including several humps, by weighted samples.</li>
+          <li>Each step predicts with the motion model, weights by the likelihood and resamples in proportion to the weights.</li>
+          <li>Do not summarise a multimodal cloud with its mean; check N<sub>eff</sub> to see whether the particles still carry information.</li>
+          <li>Loop position: runs at sensor rate; cost grows linearly with the particle count. Stores M particles, each a state and a weight.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 ===================== -->
+    <section class="lesson" id="occupancy-mapping" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.5</span><h2>Occupancy grids &amp; mapping</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot with a laser scanner drives into a room it has never seen. It knows where it is (suppose its pose is given) and every scan returns a few hundred distances. Each distance is noisy, sometimes wrong, and says nothing about the cells in between. How do we turn thousands of noisy beams into a map that says, for every small square of floor, "free", "wall" or "don't know"?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Draw the room as a chessboard of small squares. A laser beam starts at the robot and travels outwards. Every square it passes through is probably empty; the square where it stops is probably solid. A single beam is weak evidence, and a square can get many beams from many directions and positions. So each square collects evidence, and its belief rises or falls with each beam. That is the occupancy grid (Elfes and Moravec's idea from the 1980s).</p>
+        <p>Keeping a probability in each square is awkward because probabilities multiply and must stay between 0 and 1. The trick is to store the <b>log-odds</b> instead: <span class="tex">\log\frac{p}{1-p}</span>. Evidence then <i>adds</i>, and a square that has seen nothing sits at log-odds 0, which means probability 0.5.</p>
+
+        <h3 class="sec">Build it up: one cell, several beams</h3>
+        <p><b>Step 1: the sensor model.</b> Suppose a beam that ends in a cell says "occupied" with probability 0.7 when the cell really is occupied, and a beam that passes through a cell says the same cell is free with probability 0.7. (This is a teaching simplification: real lidar errors are more complicated.)</p>
+        <p><b>Step 2: convert to log-odds.</b> For a probability p, the log-odds is <span class="tex">l=\ln\frac{p}{1-p}</span>. For p = 0.7, <span class="tex">l_{\text{occ}}=\ln(0.7/0.3)=0.847</span>. A "free" observation adds the negative: <span class="tex">l_{\text{free}}=-0.847</span>.</p>
+        <div class="worked"><b>Worked example: how a cell's belief changes</b>
+          <p>Start every cell at log-odds <span class="tex">l_0=0</span> (probability 0.5, unknown). Convert back with <span class="tex">p=\dfrac{1}{1+e^{-l}}</span>.</p>
+          <table class="tbl">
+            <tr><th>Observations</th><th>Sum of log-odds</th><th>Probability occupied</th></tr>
+            <tr><td>none</td><td>0</td><td>0.500</td></tr>
+            <tr><td>one “occupied”</td><td>+0.847</td><td>0.700</td></tr>
+            <tr><td>two “occupied”</td><td>+1.695</td><td>0.845</td></tr>
+            <tr><td>three “occupied”</td><td>+2.541</td><td>0.927</td></tr>
+            <tr><td>one occupied, one free</td><td>0</td><td>0.500</td></tr>
+          </table>
+          <p>Two beams that agree raise the belief from 0.70 to 0.84. Two beams that cancel return it to 0.5. A cell seen only once is not yet trusted; a cell seen again and again becomes nearly certain. Notice that probability does not add (0.7 + 0.7 is not 1.4), but log-odds do.</p></div>
+        <p><b>Step 3: one beam.</b> A beam from the robot at cell (4, 8) passes through five empty cells and then hits a wall at cell (9, 8). The five empty cells each add −0.847; the wall cell adds +0.847. Repeat for every beam of every scan. The map is the table of log-odds, converted to probabilities for display.</p>
+        <p><b>Step 4: clamp.</b> Log-odds could grow without limit as a wall is seen a thousand times. Real systems clamp the value to a fixed range so that a changed world (a door that opens) can still be learned. The lab clamps at ±8.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Each cell <i>m</i> stores its log-odds. Given the poses <span class="tex">x_{1:t}</span> and the scans <span class="tex">z_{1:t}</span>, the update for each beam is a sum:</p>
+        <div class="eq">l_t(m)=l_{t-1}(m)+\log\frac{p(m\mid z_t)}{1-p(m\mid z_t)}-\log\frac{p(m)}{1-p(m)}\qquad\text{with }p(m)=0.5\Rightarrow l_0=0</div>
+        <div class="eq">P(m\mid z_{1:t})=1-\frac{1}{1+\exp\big(l_t(m)\big)}</div>
+        <table class="sym">
+          <tr><td>m</td><td>one grid cell (a small square of floor)</td></tr>
+          <tr><td>z<sub>t</sub></td><td>the scan at time <i>t</i>: a set of range returns along beams</td></tr>
+          <tr><td>p(m | z<sub>t</sub>)</td><td>the inverse sensor model: the probability that cell <i>m</i> is occupied given this beam</td></tr>
+          <tr><td>p(m)</td><td>the prior probability of occupancy; 0.5 when nothing is known</td></tr>
+          <tr><td>l<sub>t</sub>(m)</td><td>the log-odds of occupancy after time <i>t</i>; 0 means unknown</td></tr>
+          <tr><td>exp, ln</td><td>exponential and natural logarithm (base e)</td></tr>
+        </table>
+        <p>The second term subtracts the prior's log-odds; with a prior of 0.5 it is zero, which is why the update is a plain sum. The derivation needs the assumption that the cells are independent given the poses, which is clearly false for real walls (neighbouring cells are correlated), so grids tend to be overconfident. Clamping is the practical patch.</p>
+
+        <h3 class="sec">Try this</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Scan and watch the yellow beams sweep out. Each beam fills the empty cells lighter (free) and the return cell darker (occupied); the caption says which.</li>
+          <li>When the scan finishes, read the readout: how many true wall cells are marked occupied, and how many interior cells are free. Then press Scan again: more evidence arrives and the wall gets sharper.</li>
+          <li>Set the sensor accuracy to 0.55 and scan once. Walls are blurry and some cells are marked wrongly; scan again and the errors remain (the sensor is biased in the same way every time).</li>
+          <li>Set accuracy to 0.95 and scan once. One scan already maps the room, which is what a confident sensor gives you.</li></ol></div>
+      </div>
+      <div data-lab="occupancy-grid"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>Adding probabilities.</b> Two agreeing readings of 0.7 do not give 1.4 or 1.0. Add log-odds, convert back at the end.</li>
+          <li><b>Mapping without a good pose.</b> The grid is only as good as the poses that place each beam. A 2° heading error at a 10 m range puts the return about 0.35 m away, a few cells off. That is why mapping and localisation are coupled (lesson 3.6).</li>
+          <li><b>Overconfidence from correlated beams.</b> Beams that all hit the same wall are not independent evidence. Clamping and inflating the sensor's noise are the usual remedies.</li>
+          <li><b>Forgetting that unknown is not free.</b> A cell with log-odds 0 has never been seen. Planners must treat it as unknown, not as empty space.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Navigation in mobile robots: occupancy grids are the base of the costmaps that path planners read; the graph search lesson in Module 5 (planning) shows the planner side.</li>
+          <li>Autonomous driving perception: modern systems predict occupancy in 3-D voxels from camera and lidar, a learned version of the same idea.</li>
+          <li>Map-building and exploration: a robot chooses the next place to drive by asking which unknown cells it could reveal, using these probabilities.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A cell has seen three "occupied" and one "free" with inverse-model values ±0.847. What is its probability of being occupied?</summary><div class="ans">The sum is 3(0.847) − 0.847 = 1.694. Then P = 1 / (1 + e^(−1.694)) = 0.845. Two net occupied readings give 0.845.</div></details>
+        <details class="check"><summary>2. Why are cells stored as log-odds and not probabilities?</summary><div class="ans">Because each beam multiplies the odds by a constant (likelihood ratio), which becomes an addition in log space. Addition is simple, numerically stable and never leaves the valid range; probabilities would need repeated multiplication and renormalisation, and could underflow.</div></details>
+        <details class="check"><summary>3. The clamp is at ±8. A wall has been seen 30 times and then a door opens and is seen as free 3 times. Why does the clamp matter?</summary><div class="ans">Without a clamp the wall's log-odds would be about 30 × 0.847 ≈ 25.4; three free readings leave 22.9, still almost certainly occupied. With the clamp, the value stops at 8 (P ≈ 0.9997); three free readings leave 5.5 (still P ≈ 0.996), but about ten free readings flip it, instead of the thirty an unclamped cell would need. The clamp limits how much past evidence can outvote the present.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An occupancy grid stores, per cell, the log-odds of being occupied. Beams add evidence: free cells along the ray, occupied at the return.</li>
+          <li>Log-odds turn products into sums; a prior of 0.5 is 0 log-odds, which means unknown.</li>
+          <li>Grids assume independent cells and known poses; both are violated in practice, so clamp and inflate the noise.</li>
+          <li>Loop position: mapping at lidar rate (5–20 Hz typical). Stores one number per cell, so a 10 m × 10 m room at 5 cm cells is 200 × 200 values.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 ===================== -->
+    <section class="lesson" id="slam" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.6</span><h2>SLAM &amp; pose graphs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot starts with no map and no certainty about its own position. Its wheel odometry drifts. Partway round a loop, it sees a doorway it has seen before. How can it fix the map and its earlier positions at once, when the map depended on those positions and the positions depended on the map?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture a rubber-band network. Each robot pose is a knot. Each measurement between two poses (wheel odometry, a scan match, a recognised place) is a rubber band whose rest length is the measured displacement. Drift shows up as bands that are stretched in a contradictory way. When the robot recognises its starting place, a new band joins the last pose to the first. The whole network then settles into the shape that stretches the bands least. The error is shared out along the path instead of being dumped on the last pose.</p>
+        <p>That is SLAM: simultaneous localisation and mapping. Its usual form, the <b>pose graph</b>, keeps the poses and the constraints between them, and forgets the individual sensor readings once they have been turned into constraints.</p>
+
+        <h3 class="sec">Build it up: a loop in one dimension</h3>
+        <p><b>Step 1: the constraints.</b> Use a corridor. Poses <span class="tex">x_0,x_1,x_2,x_3</span> lie on a line. Pose <span class="tex">x_0=0</span> is fixed (the origin). Wheel odometry says each step is 1.1 m, so <span class="tex">x_1-x_0=1.1</span>, <span class="tex">x_2-x_1=1.1</span>, <span class="tex">x_3-x_2=1.1</span>. Then the robot recognises the start: its laser says <span class="tex">x_3-x_0=3.0</span> m.</p>
+        <p><b>Step 2: the contradiction.</b> Odometry says the total is 3.3 m; the loop closure says 3.0 m. One of them is wrong, or both are a little wrong. The graph needs one answer for all four constraints.</p>
+        <div class="worked"><b>Worked example: least squares on the loop</b>
+          <p>Choose the poses that make the squared residuals as small as possible: minimise</p>
+          <div class="eq">E(x_1,x_2,x_3)=(x_1-1.1)^2+(x_2-x_1-1.1)^2+(x_3-x_2-1.1)^2+(x_3-3.0)^2</div>
+          <p>Setting the three partial derivatives to zero gives three linear equations. Solving them exactly:</p>
+          <div class="eq">x_1=1.025,\qquad x_2=2.050,\qquad x_3=3.075</div>
+          <p>Each odometry constraint is off by −0.075 m and the loop closure by +0.075 m. At every pose the pulls from its constraints balance (for <span class="tex">x_1</span>, the first two residuals cancel; for <span class="tex">x_3</span>, the third odometry residual and the loop-closure residual cancel), which is exactly what least squares requires. With equal trust in every constraint, the 0.3 m contradiction is shared among all four edges.</p>
+          <p>Now suppose the loop closure is ten times more trustworthy (weight 10). The solution becomes <span class="tex">x_1=1.003,\;x_2=2.007,\;x_3=3.010</span>: the odometry edges now absorb almost all the 0.3 m (each off by −0.097 m) and the loop closure is nearly kept.</p></div>
+        <p><b>Step 3: solve on a big graph.</b> Real graphs have thousands of poses in 2-D or 3-D, so nobody solves them by hand. Iterative methods do the job: each constraint pulls its two poses toward the measured displacement, and the pulls are repeated until the network is still. The lab shows exactly this.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>A pose graph has nodes <span class="tex">x_i</span> (poses) and edges <span class="tex">(i,j)</span> carrying a measured relative displacement <span class="tex">z_{ij}</span> and an information matrix <span class="tex">\Omega_{ij}</span> (the inverse of its covariance: a large Ω means a trusted measurement). The estimate is</p>
+        <div class="eq">x^{*}=\arg\min_{x}\sum_{(i,j)}\big(x_j-x_i-z_{ij}\big)^{\top}\Omega_{ij}\big(x_j-x_i-z_{ij}\big)</div>
+        <table class="sym">
+          <tr><td>x<sub>i</sub>, x<sub>j</sub></td><td>poses at nodes <i>i</i> and <i>j</i> (here positions, in metres)</td></tr>
+          <tr><td>z<sub>ij</sub></td><td>the measured displacement from pose <i>i</i> to pose <i>j</i> (odometry or loop closure)</td></tr>
+          <tr><td>x<sub>j</sub> − x<sub>i</sub> − z<sub>ij</sub></td><td>the residual: how much the current poses disagree with the measurement</td></tr>
+          <tr><td>Ω<sub>ij</sub></td><td>the information matrix (weight) of that measurement; the inverse of its covariance</td></tr>
+          <tr><td>argmin</td><td>the value of x that makes the expression smallest</td></tr>
+        </table>
+        <p>With known poses fixed for one node (the anchor), the problem is a sparse nonlinear least squares. Real graphs use a nonlinear solver (Gauss–Newton or Levenberg–Marquardt) on sparse matrices; libraries such as g2o and GTSAM implement it. The lab uses the simplest possible iteration, Gauss–Seidel relaxation, which converges to the same kind of answer more slowly.</p>
+
+        <h3 class="sec">Try this</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Relax with the default gyro bias (2° per step). Watch the solid blue path pull its end back toward the start: the green dashed loop-closure edge is the force doing it.</li>
+          <li>Press Reset, switch loop closure off, and press Relax. Nothing moves: without a constraint that links the end to the start, there is nothing to correct the drift. The gap stays.</li>
+          <li>Raise the gyro bias to 5° per step and relax again. The gap and the squared edge error are larger, and the path bends into a different shape before it settles. The result is a compromise, not the true square.</li>
+          <li>Press Skip to end and compare the readouts: the start-to-end gap drops to nearly zero, and the sum of squared edge errors is spread across all edges.</li></ol></div>
+      </div>
+      <div data-lab="pose-graph"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b>
+          <ul><li><b>A wrong loop closure.</b> Two different corridors that look alike (perceptual aliasing) produce a false constraint. The optimiser then bends the whole map to satisfy it. Verify loop closures before adding them, for example with geometric consistency checks.</li>
+          <li><b>Trusting the weights.</b> The solution depends on the information matrices. Overconfident odometry (too large Ω) keeps the drift; overconfident loop closures destroy the local geometry.</li>
+          <li><b>Poor initial guesses.</b> Nonlinear solvers find a local minimum. Starting from raw odometry usually works; a badly drifted or mis-initialised graph can converge to a twisted map.</li>
+          <li><b>Position-only graphs are not full SLAM.</b> The lab ignores heading. In 2-D or 3-D, poses are rotations and translations, and rotations do not commute, so real solvers work on full poses.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Autonomous driving and drones: visual and lidar SLAM systems (the ORB-SLAM family for cameras) keep a pose graph and close loops when a place is recognised again.</li>
+          <li>Mapping at scale: pose-graph optimisation with g2o or GTSAM is the back end of many SLAM pipelines; the front end finds scan matches and loop candidates.</li>
+          <li>Learned place recognition (image embeddings that say "this is a place I have seen") supplies the loop-closure edges that make the whole graph consistent.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the 1-D loop with equal weights, the three odometry residuals are −0.075 m and the loop-closure residual is +0.075 m. Why is this the least-squares answer, when they do not sum to zero?</summary><div class="ans">Least squares does not require the residuals to sum to zero. It requires that, for every pose, the pulls from its constraints cancel. Pose x<sub>1</sub> sits in edges 1 and 2 with residuals −0.075 and −0.075 (opposite signs in the sum), so they balance; pose x<sub>3</sub> sits in edge 3 and the loop closure, with −0.075 and +0.075, which also balance. Any small move of a pose would then increase the total squared error, so the point is a minimum.</div></details>
+        <details class="check"><summary>2. If the loop closure is trusted ten times more than odometry, which constraints absorb most of the 0.3 m contradiction?</summary><div class="ans">The odometry edges. The solution becomes x<sub>3</sub> = 3.010, so the loop closure is off by only 0.010 m and each odometry edge by about −0.097 m. The information matrix decides where the error lands.</div></details>
+        <details class="check"><summary>3. Why does a pose graph forget the raw scans once they are turned into constraints?</summary><div class="ans">Because each constraint already summarises what the scans said about two poses, with a covariance. The optimisation needs only the poses and the constraints, which is far cheaper than storing every scan. The map can be rebuilt from the optimised poses and the scans later, if needed.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>SLAM estimates the map and the trajectory together; the pose graph is the usual representation.</li>
+          <li>Odometry edges accumulate drift; a loop closure edge says two poses are the same place and lets optimisation spread the correction along the path.</li>
+          <li>The solution is a weighted least-squares fit: the information matrices decide which constraints give way.</li>
+          <li>Loop position: the front end runs at sensor rate and proposes constraints; the back end optimises them a few times per second or in the background. Stores poses and constraints, not raw scans.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now hold a belief over where the robot is and what surrounds it: a histogram filter, a Kalman filter and its nonlinear extension, a particle cloud, a log-odds map, and a pose graph that closes a loop. Next, <b>Module 4</b> turns sensor data into objects and poses: point clouds, registration, detection and grasp pose estimation, in <a href="robo-perception.html">Perception for robots</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

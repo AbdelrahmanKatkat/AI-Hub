@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 · Learning for robots · Robotics</title>
+<meta name="description" content="Imitation learning and behaviour cloning, DAgger, reinforcement learning basics, policy gradients and PPO, simulation training with domain randomisation, and reward design with safety constraints.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-robo-learning.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="7">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 7</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">7</div>
+      <div style="flex:1">
+        <h1>Module 7 · Learning for robots</h1>
+        <p>Some robot skills are easier to show than to program: how to pour, how to walk over gravel, how to recover after a slip. This module covers the two main ways a robot learns them, <b>imitation</b> (copy a teacher's demonstrations, then fix the mistakes the copy makes) and <b>reinforcement learning</b> (try actions, keep what earns reward), and then how to train safely in simulation and how to write a reward that means what you intend.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs probability and gradients</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="intro prose" style="max-width:780px">
+      <p><b>Where this sits in the loop.</b> Learning happens in the <b>learn</b> stage of the pipeline: data is collected while the robot runs, a model is trained offline (often on a GPU), and the trained policy is then executed in the <b>act</b> loop at the controller's rate. Every lesson ends with a short pipeline note saying which stage it touches, how often it runs and what it stores.</p>
+      <p><b>How the labs work.</b> Every lab is an <i>illustrative</i> toy, not data from a real robot. The simplifications are stated in each lab's caption. The numbers in the labs are computed in the browser, so change a slider and the learner, the reward or the policy responds immediately.</p>
+    </section>
+
+    <!-- ===================== 7.1 ===================== -->
+    <section class="lesson" id="behaviour-cloning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.1</span><h2>Imitation learning and behaviour cloning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery robot must keep itself in its lane. A skilled human has driven the route while we recorded every steering command. Can we train a model on those recordings, so that the robot copies the human? And if the copy fits the recordings almost perfectly, why might it still drive off the road?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A learner driver learns partly by watching a teacher. The teacher sees a situation (the car has drifted a little to the left) and responds (a gentle turn to the right). If the learner has seen many such pairs, it can respond the same way to a new drift. This is <b>imitation learning</b>, and its simplest form, <b>behaviour cloning</b> (BC), is just supervised learning: the input is the state the robot observes, the output is the action the expert took, and the training data are the recorded pairs.</p>
+        <p>The catch is that the teacher only ever shows the situations the teacher gets into. A skilled driver rarely drifts far from the lane, so the recordings contain almost no examples of what to do when the car is far off track. The learner has never been taught how to recover from that position, and a small mistake can carry it there.</p>
+
+        <h3 class="sec">Build it up, one piece at a time</h3>
+        <p><b>Step 1: a demonstration is a list of state–action pairs.</b> Let the state be the lateral error <span class="tex">e</span> (metres from the lane centre) and the action be the steering command <span class="tex">u</span> (metres per second of lateral velocity). A recorded demonstration is then a list of pairs <span class="tex">(e_i, u_i)</span>.</p>
+        <p><b>Step 2: choose a learner.</b> The simplest learner is a straight line through the origin, <span class="tex">u = w\,e</span>, with one parameter <span class="tex">w</span> (a negative <span class="tex">w</span> means "steer back towards the centre"). Its output depends on the input only through the single number <span class="tex">e</span>.</p>
+        <p><b>Step 3: fit the parameter.</b> Choose <span class="tex">w</span> so that the learner's commands are as close as possible to the expert's, measured by squared error summed over the demonstrations. For a straight line through the origin, the best value has a closed form.</p>
+
+        <div class="worked"><b>Worked example: fitting three demonstrations by hand</b>
+          <p>Three recorded pairs: <span class="tex">(e, u) = (1.0,\,-1.2),\;(0.5,\,-0.4),\;(-0.5,\,0.8)</span>. The least-squares slope is</p>
+          <div class="eq">w=\frac{\sum_i e_i u_i}{\sum_i e_i^2}=\frac{(1.0)(-1.2)+(0.5)(-0.4)+(-0.5)(0.8)}{1.0^2+0.5^2+(-0.5)^2}=\frac{-1.2-0.2-0.4}{1.5}=\frac{-1.8}{1.5}=-1.20</div>
+          <p>So the learner is <span class="tex">u = -1.2\,e</span>: at <span class="tex">e = 1.0</span> m it steers at <span class="tex">-1.2</span> m/s. Now roll it out with a time step of <span class="tex">\Delta t = 0.5</span> s from <span class="tex">e_0 = 1.0</span> m, using <span class="tex">e_{t+1} = e_t + \Delta t\,u_t</span>:</p>
+          <div class="eq">e_1 = 1.0 + 0.5(-1.2\cdot 1.0) = 0.40 \text{ m},\qquad e_2 = 0.40 + 0.5(-1.2\cdot 0.40) = 0.16 \text{ m}</div>
+          <p>The error shrinks by a factor of 0.4 per step, which is what we want. The learner was fitted only on three points, and the rollout used only the learner's own predictions, not the demonstrations. The gap between those two things is the subject of the rest of this lesson.</p></div>
+
+        <p><b>Step 4: why a good fit can still fail.</b> Suppose the learner makes a small error at one step and ends up at <span class="tex">e = 2.5</span> m, a position the expert never showed. The learner now has no training data there. If its polynomial fit is wrong out there, it can push the robot further away, into states that are even less familiar. Each small error moves the robot into a region where the next error is larger. This is <b>compounding error</b>, and it is the central problem of behaviour cloning. Ross, Gordon and Bagnell (2011) showed that, in the worst case, the gap between the expert's performance and the cloned policy can grow roughly with the square of the horizon <span class="tex">T</span>, not with <span class="tex">T</span> itself.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Given a dataset of demonstrations <span class="tex">\mathcal D = \{(s_i, a_i)\}_{i=1}^{N}</span>, behaviour cloning chooses parameters <span class="tex">\theta</span> that minimise an average loss:</p>
+        <div class="eq">\hat\theta = \arg\min_{\theta}\; \frac{1}{N}\sum_{i=1}^{N} \ell\big(\pi_\theta(s_i),\, a_i\big)</div>
+        <p>For the straight-line learner with squared loss, <span class="tex">\ell = (\pi_\theta(e)-u)^2</span>, this gives <span class="tex">w = \sum e_i u_i / \sum e_i^2</span>, the formula above.</p>
+        <table class="sym">
+          <tr><td>s, a</td><td>state (what the robot observes) and action (what the expert commanded)</td></tr>
+          <tr><td><span class="tex">\mathcal D</span></td><td>the set of N demonstrated state–action pairs</td></tr>
+          <tr><td><span class="tex">\pi_\theta</span></td><td>the learned policy, a function from states to actions with parameters <span class="tex">\theta</span></td></tr>
+          <tr><td><span class="tex">\ell</span></td><td>the loss for one pair, here squared error</td></tr>
+          <tr><td><span class="tex">e, u, w</span></td><td>lateral error (m), steering command (m/s), and the single learned gain (1/s)</td></tr>
+          <tr><td><span class="tex">\Delta t</span></td><td>the time between control steps (s)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: where the copy breaks</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the degree at 3 and move the start error to 2.5 m. The learner (orange) starts close to the expert (green), but its cubic fit, which only ever saw states inside the blue band, pushes the error further out over the first few steps until the rollout hits the ±4 m clip.</li>
+          <li>Drop the degree to 1 and run the same start. The straight-line learner comes back to the lane, because a line extrapolates gently while a cubic does not.</li>
+          <li>Move the start into the blue band (|e| ≤ 0.6 m). Both curves coincide: the learner is fine where it was trained.</li>
+          <li>Press Step and watch one control step at a time. Notice that the learner's error decreases, but the trained states never include the place it goes.</li></ol></div>
+        <div data-lab="bc-rollout"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Low training loss does not mean a good robot.</b> The loss is measured on states the expert visited. Closed-loop performance is measured on the states the learner visits, and the two sets differ.</li>
+            <li><b>Flexible models extrapolate badly.</b> A high-degree polynomial can fit the demonstrations almost exactly and still explode a short distance outside them, as the lab shows.</li>
+            <li><b>Demonstrations need the right state.</b> If the expert's view and the robot's sensors differ, the policy learns a relation that does not exist on the robot.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Early autonomous driving used behaviour cloning from human steering: ALVINN (Pomerleau, 1989) learned to steer from camera images and a human driver's commands.</li>
+            <li>Manipulation policies trained from teleoperated demonstrations use the same supervised objective, often with image inputs and action chunks (Module 8).</li>
+            <li>Behaviour cloning is the usual first stage before reinforcement learning or DAgger: it gives the learner a starting point that already moves in roughly the right direction.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage (offline training); the trained policy then runs in the act loop, typically at 10–50 Hz for a visuomotor policy and faster for a low-level joint controller. Stores: the demonstration episodes (states, actions, timestamps) and the policy weights.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Using the worked example, what slope would the fit give if the third demonstration were (−0.5, 0.2) instead of (−0.5, 0.8)?</summary><div class="ans">The numerator becomes (1.0)(−1.2) + (0.5)(−0.4) + (−0.5)(0.2) = −1.2 − 0.2 − 0.1 = −1.5. The denominator is still 1.5, so w = −1.5 / 1.5 = −1.00.</div></details>
+          <details class="check"><summary>2. Name two different reasons the learner can end up in states the expert never demonstrated.</summary><div class="ans">Any two of: a small early error from the learner's own imperfect fit; an external disturbance such as a gust or a bump; a start position that was never in the demonstrations; and a difference between the expert's and the robot's dynamics, so the same command produces a different state.</div></details>
+          <details class="check"><summary>3. Why is a degree-3 polynomial risky here even though it fits the demonstrations better than a straight line?</summary><div class="ans">Its extra terms are only constrained by the data inside the demonstrated band. Outside the band the cubic term dominates and the predicted command can grow in the wrong direction, so small training gains become large errors at the edges.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>Behaviour cloning is supervised learning from (state, action) pairs recorded from an expert.</li>
+            <li>The loss is measured on the expert's states, but the robot is judged on its own states; compounding error is the gap between them.</li>
+            <li>Fit the simplest model that the data support, and check the learner outside the training region before trusting it.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.2 ===================== -->
+    <section class="lesson" id="dagger" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.2</span><h2>Interactive imitation (DAgger)</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The cubic learner from the last lesson fails when it starts 2.5 m off the lane, because the demonstrations never showed that region. We could record more demonstrations, but there are infinitely many places a robot can drift to. Is there a way to collect exactly the states the learner actually reaches, and still get the right action for each one?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a student essay. A teacher who reads the final essay only sees polished work and cannot tell where the student went wrong. A better teacher reads the student's draft, marks the paragraph where the argument turned, and writes what the next paragraph should say. The marking happens on the student's own draft, so it addresses the mistakes the student really makes.</p>
+        <p><b>DAgger</b> (Dataset Aggregation, Ross, Gordon and Bagnell, 2011) does exactly this for a robot. Let the current learner drive, record the states it reaches, ask the expert what it would have done in each of those states, add the labelled states to the dataset, and retrain. Repeat. Over the iterations the dataset covers the states the learner actually visits, so the compounding error has less room to grow.</p>
+
+        <h3 class="sec">Build it up: distribution shift, then the loop</h3>
+        <p><b>Step 1: the two distributions.</b> Plain behaviour cloning trains on states drawn from the expert's distribution, written <span class="tex">d_{\pi^*}</span>. The learner, when deployed, visits states drawn from its own distribution, <span class="tex">d_{\pi}</span>. When these differ, the learner is being tested on states it was never trained on. This mismatch is called <b>distribution shift</b>.</p>
+        <p><b>Step 2: close the gap by labelling the learner's states.</b> We cannot make the expert's distribution equal the learner's in advance, but we can add samples from the learner's distribution and label them with the expert's action. Once the dataset contains those samples, the learner is trained on the states it actually produces.</p>
+        <p><b>Step 3: iterate.</b> Each iteration rolls out the current learner, labels the visited states, aggregates them with all previous data and refits. Early iterations fix the largest gaps; later ones refine the policy around the states it now visits.</p>
+
+        <div class="worked"><b>Worked example: one DAgger iteration in the lab's toy</b>
+          <p>The initial demonstrations are 3 recorded trajectories of 8 states each, so <span class="tex">|\mathcal D_0| = 24</span> labelled states. The DAgger iteration rolls the current cubic learner out for 12 steps from each of five start points (−2.5, −1.5, 1.5, 2.5, 3.0 m). Each rollout visits 13 states including its start, so the iteration adds</p>
+          <div class="eq">5 \times 13 = 65 \text{ newly labelled states},\qquad |\mathcal D_1| = 24 + 65 = 89.</div>
+          <p>After refitting, the learner started at 2.5 m ends at <span class="tex">0.007</span> m after 12 steps, from a start that the first cubic had sent off the chart. After four iterations the dataset has 284 states and the same three test starts end within 0.007 m of the lane. These numbers were computed with the same procedure the lab uses.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">\pi^*</span> be the expert, which must be <i>queryable</i>: given any state, it returns an action. DAgger repeats, for <span class="tex">i = 1, 2, \dots</span>:</p>
+        <div class="eq">\mathcal S_i = \{\,s_t : s_t \text{ visited by } \pi_i\,\},\qquad \mathcal D_i = \mathcal D_{i-1}\cup\{(s,\pi^*(s)) : s \in \mathcal S_i\},\qquad \pi_{i+1} = \arg\min_{\pi}\, \sum_{(s,a)\in\mathcal D_i}\ell\big(\pi(s),a\big)</div>
+        <table class="sym">
+          <tr><td><span class="tex">\pi^*</span></td><td>the expert policy, which can be asked for an action in any state</td></tr>
+          <tr><td><span class="tex">\pi_i</span></td><td>the learner after iteration i</td></tr>
+          <tr><td><span class="tex">\mathcal S_i</span></td><td>the set of states visited when the learner <span class="tex">\pi_i</span> is run</td></tr>
+          <tr><td><span class="tex">\mathcal D_i</span></td><td>the aggregated dataset of states labelled by the expert, after iteration i</td></tr>
+          <tr><td><span class="tex">\ell</span></td><td>the same per-sample loss as behaviour cloning</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: the learner asks, the expert answers</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Reset, then Step once. The purple dots are the states the learner visited in iteration 1; the orange curve should now be close to the green expert curve near them.</li>
+          <li>Set the test start to 2.5 m and watch the bottom track. Before iteration 1 (iteration 0 is plain behaviour cloning) the learner's trace leaves the chart. After one iteration it comes back.</li>
+          <li>Let the simulation run. Each iteration takes about 3 seconds. Notice that the learner curve stops changing after a few iterations: the states it visits are now covered.</li>
+          <li>Count the purple dots. Each iteration adds 65 labelled states in this toy; the blue demonstrations never change.</li></ol></div>
+        <div data-lab="dagger-loop"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The expert must be queryable.</b> DAgger needs labels for states the learner reaches. A human teleoperator, a planner that can run on the logged state, or a slower but reliable controller can provide them. A recording alone cannot.</li>
+            <li><b>The learner's rollouts are risky.</b> Early learners are poor, so iterations on real hardware need a safety monitor, a speed limit and a human able to take over (Module 9).</li>
+            <li><b>Labels must match the robot's observations.</b> If the expert labels from a privileged state the robot cannot see, the learner is asked to do the impossible.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>DAgger is the standard fix for compounding error in imitation learning; human-gated variants let a person take over during a rollout and provide the correction as the label.</li>
+            <li>Self-driving and lane-keeping research has used interactive correction in this way, because the failures that matter are the ones the learner produces itself.</li>
+            <li>The same idea appears in language models as iterative fine-tuning on the model's own outputs, labelled by a judge: the data follow the model's distribution, not only a fixed corpus.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage, run as a data loop: each iteration uses the robot (or a simulator) in the act loop and the expert in the learn stage. The cost of each iteration is robot time on hardware or simulation time in the simulator, so the number of iterations is the budget to plan. Stores: the aggregated labelled dataset with the iteration number of each sample.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In DAgger, who provides the action label for a state that the learner visited?</summary><div class="ans">The expert policy π*, queried on that state. The learner's own action is not used as the label, because the point is to correct it.</div></details>
+          <details class="check"><summary>2. Why does DAgger help more than simply recording a much longer demonstration?</summary><div class="ans">A longer demonstration still follows the expert's distribution, so it mostly adds more examples of states the expert already visits. DAgger adds states from the learner's own distribution, which is where the learner will be tested.</div></details>
+          <details class="check"><summary>3. From the worked example, how many labelled states are in the dataset after two DAgger iterations in the toy?</summary><div class="ans">24 demonstrated states plus 65 per iteration: 24 + 65 + 65 = 154 states.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>DAgger labels the learner's own visited states, so training matches the distribution where the learner is tested.</li>
+            <li>It needs a queryable expert, and its early rollouts must be run safely.</li>
+            <li>Typically a few iterations reduce the error sharply; the dataset grows with each one.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.3 ===================== -->
+    <section class="lesson" id="rl-basics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.3</span><h2>Reinforcement learning for control</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A charging robot is not given a recording of how to reach the charger. It is only told that reaching the charger is good and falling into the stairwell is very bad. How can it work out, from reward alone, which move to make in each cell of the floor?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine a corridor with a goal at one end and a pit at the other. Every cell has a value: how much reward you expect to collect from there if you keep moving sensibly. A cell next to the goal is valuable, because one step gets you the reward. A cell two steps away is also valuable, but a little less, because the reward is one step further away and each move costs a little. Value flows backwards from the goal, one step at a time, the same way heat spreads through a bar of metal.</p>
+        <p>Reinforcement learning formalises this. The robot is an <b>agent</b> in a <b>Markov decision process</b> (MDP): at each step it observes a state, chooses an action, receives a reward and moves to a new state. Its goal is to maximise the total <b>return</b>, the discounted sum of rewards, where future rewards count a little less than immediate ones.</p>
+
+        <h3 class="sec">Build it up: return, value, and the Bellman backup</h3>
+        <p><b>Step 1: the return.</b> A trajectory of rewards <span class="tex">r_0, r_1, r_2, \dots</span> has return <span class="tex">G = \sum_t \gamma^t r_t</span>, where the discount <span class="tex">\gamma \in [0,1)</span> sets how far ahead the agent cares. With <span class="tex">\gamma = 0.9</span> a reward 10 steps away is worth <span class="tex">0.9^{10} \approx 0.35</span> of the same reward now.</p>
+        <p><b>Step 2: the value.</b> The value of a state is the expected return from it: <span class="tex">V(s)=\mathbb E[G\mid s_0=s]</span>. If we knew the values, the best action in a state would be the one whose reward plus discounted next-state value is largest. The equation that says this is the <b>Bellman optimality equation</b>.</p>
+        <p><b>Step 3: find the values by repeated backups.</b> Start with all values at zero. Sweep over the states, and for each one replace its value with the best one-step lookahead. This is <b>value iteration</b>. Each sweep extends the known values one step further from the goal.</p>
+
+        <div class="worked"><b>Worked example: three sweeps on the corridor</b>
+          <p>Cells 0 (pit) to 5 (goal) on a line. Entering the goal pays +1, entering the pit pays −1, both end the episode (their value is 0), and every move costs 0.04. Take <span class="tex">\gamma = 0.9</span>. Cell 4 is next to the goal. Its best move is right, with reward <span class="tex">1 - 0.04 = 0.96</span> and no future value, so</p>
+          <div class="eq">V_1(4) = \max\big(\underbrace{-0.04 + 0.9\cdot V_0(3)}_{\text{left}},\;\underbrace{0.96 + 0.9\cdot 0}_{\text{right, goal}}\big) = 0.96</div>
+          <p>Cell 3 in sweep 2 sees cell 4 with value 0.96: <span class="tex">V_2(3) = \max(-0.04 + 0.9\cdot 0,\; -0.04 + 0.9\cdot 0.96) = 0.824</span>. In sweep 3, cell 2 sees cell 3: <span class="tex">V_3(2) = -0.04 + 0.9\cdot 0.824 = 0.7016</span>. Cell 1, next to the pit, is at first worse, because moving left costs <span class="tex">-1-0.04</span> and moving right gets <span class="tex">-0.04</span> from cell 2, so it keeps moving right. The table after three sweeps is <span class="tex">[0,\,-0.108,\,0.702,\,0.824,\,0.960,\,0]</span> (cell 1 is still settling, as the lab shows).</p></div>
+
+        <p><b>Step 4: why this is "learning" and not just planning.</b> The backup above assumed we knew the transition rule (what happens when the robot moves left) and the reward function. A real robot usually does not. Reinforcement learning methods estimate these quantities from experience, and in the end must trade off <b>exploration</b> (trying an action to learn about it) against <b>exploitation</b> (using what is already known to earn reward). The lessons 7.4 and 7.5 deal with that trade-off.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">V^*(s)=\max_{a}\Big[\,R(s,a)+\gamma\sum_{s'}P(s'\mid s,a)\,V^*(s')\Big]</div>
+        <p>Value iteration applies the right-hand side repeatedly, starting from <span class="tex">V_0 = 0</span>, until the values stop changing. The optimal policy is then the action that achieves the maximum in each state.</p>
+        <table class="sym">
+          <tr><td>s, a, s′</td><td>state now, action chosen, state after the action</td></tr>
+          <tr><td><span class="tex">R(s,a)</span></td><td>expected immediate reward for taking a in s (here: +1 or −1 on entry to a terminal cell, minus the move cost)</td></tr>
+          <tr><td><span class="tex">P(s'\mid s,a)</span></td><td>probability of landing in s′ (deterministic in the lab, so this is 0 or 1)</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>discount factor, between 0 and 1; small values make the agent short-sighted</td></tr>
+          <tr><td><span class="tex">V^*(s)</span></td><td>optimal value of state s: the best expected return from s</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: values spreading from the goal</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Step several times. Each press is one sweep. Watch the goal's +1 reach cell 4, then cell 3, then cell 2, and read the numbers against the worked example.</li>
+          <li>Set the discount γ to 0.5. Run to convergence. Values now fall off roughly by half per step away from the goal, because future reward is worth so little.</li>
+          <li>Set the cost per move to 0. With γ = 0.9 the converged values are then powers of 0.9: 1, 0.9, 0.81 and 0.729 for the cells one, two, three and four moves from the goal.</li>
+          <li>Set the cost to 0.2. The values shrink, but cell 1 still points right. The pit pays −1, and walking towards the goal is always better than that, so the arrow never prefers the pit. Explain why using the worked example.</li></ol></div>
+        <div data-lab="mdp-values"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>The discount is a modelling choice.</b> With γ close to 1 the agent plans far ahead and values grow large and slow to converge; with γ too small it ignores the goal. Pick γ from the task's time horizon.</li>
+            <li><b>Sparse rewards are slow.</b> If reward only arrives at the goal, most sweeps change nothing far from it. Learning from sparse reward needs many samples, which is the reason shaping is tempting (lesson 7.6).</li>
+            <li><b>Value is not a probability.</b> A value of 0.96 is an expected discounted reward, not a chance of success, and it depends on the reward scale.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Locomotion and manipulation policies are trained by RL in simulation, where the agent can afford millions of trials.</li>
+            <li>Value functions and backups underlie planning in games and robotics, and model-free relatives of this backup learn values from experience alone.</li>
+            <li>Language models trained with RL from human feedback use the same objects (return, value, advantage) on sequences of tokens.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage (offline, usually in simulation); the resulting policy runs in the act loop. The value table or network is updated per sweep or per batch of experience. Stores: the reward specification, the transition model or simulator, and the value or policy weights.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, why is V₁(4) = 0.96 and not 1?</summary><div class="ans">Cell 4 moves into the goal, which pays +1, but every move also costs 0.04. The goal is terminal, so there is no future value. The net is 1 − 0.04 = 0.96.</div></details>
+          <details class="check"><summary>2. With γ = 0 the value of each state is just the best immediate reward. Which cell in the corridor is then the only one with a positive value?</summary><div class="ans">Cell 4, which is one step from the goal. Its best immediate reward is 0.96. Every other cell has a best immediate reward of −0.04 or less, because only a move into the goal or the pit has a reward other than the move cost.</div></details>
+          <details class="check"><summary>3. Why can the planning backup not be used directly on a real robot whose dynamics are unknown?</summary><div class="ans">The backup needs P(s′|s,a) and R(s,a) for every action. On a real robot these must be estimated from experience, which needs exploration: trying actions to learn their outcomes, while still earning reward.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>An MDP is states, actions, transitions, rewards and a discount; the return is the discounted sum of rewards.</li>
+            <li>Value iteration applies the Bellman optimality backup until values stop changing, and the best action follows from the values.</li>
+            <li>When the model is unknown, the robot must explore; that trade-off is what the next lessons address.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.4 ===================== -->
+    <section class="lesson" id="policy-gradient" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.4</span><h2>Policy gradients and PPO</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A walking policy is a neural network with millions of weights θ. It outputs joint torques, and the only feedback is a single number at the end of an episode: how far the robot walked before it fell. How do we change θ so that the robot walks further, when we cannot differentiate through the simulator and the feedback is one sparse number?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine trying a few different ways of stepping. Each time, you notice how it went. If a step pattern gave you a better outcome than you expected, you do it a little more often next time; if it went worse than expected, a little less. Nobody tells you the correct joint angles. You only increase the probability of the actions that were followed by good results.</p>
+        <p>The probability and gradient background is in <a href="math-probability.html">Mathematics · Probability</a> and <a href="math-optimization.html#gradient-descent">Gradient descent</a>; the policy as a neural network is in <a href="ml-neural.html">Machine Learning · Neural networks</a>.</p>
+        <p>That is a <b>policy gradient</b> method. The policy is a probability distribution over actions, <span class="tex">\pi_\theta(a\mid s)</span>. We sample actions from it, see the returns, and nudge θ to make good actions more probable. The key quantity is the <b>advantage</b>: how much better an action turned out than the average action in that state.</p>
+
+        <h3 class="sec">Build it up: from a two-action coin to PPO</h3>
+        <p><b>Step 1: a softmax policy.</b> Give each action a score (a logit) <span class="tex">\theta_k</span> and turn the scores into probabilities with the softmax: <span class="tex">\pi_k = e^{\theta_k}/\sum_j e^{\theta_j}</span>. Raising a logit raises that action's probability.</p>
+        <p><b>Step 2: the REINFORCE update.</b> For a sampled action <span class="tex">a</span> with return <span class="tex">R</span>, the gradient of the log-probability with respect to the logits is <span class="tex">\nabla_\theta \log\pi(a) = \mathbf e_a - \boldsymbol\pi</span>, where <span class="tex">\mathbf e_a</span> is 1 in position a and 0 elsewhere. The update is <span class="tex">\theta \leftarrow \theta + \alpha R\,(\mathbf e_a - \boldsymbol\pi)</span>.</p>
+
+        <div class="worked"><b>Worked example: one REINFORCE step</b>
+          <p>Two actions, logits <span class="tex">\theta = (0, 0)</span>, so <span class="tex">\boldsymbol\pi = (0.5, 0.5)</span>. Sample action 2 (the second one), which returns <span class="tex">R = 2</span>. With learning rate <span class="tex">\alpha = 0.1</span>:</p>
+          <div class="eq">\mathbf e_2 - \boldsymbol\pi = (0-0.5,\;1-0.5) = (-0.5,\;0.5),\qquad \theta \leftarrow (0,0) + 0.1\cdot 2\cdot(-0.5,\;0.5) = (-0.1,\;0.1)</div>
+          <p>The new probabilities are <span class="tex">\pi_2 = e^{0.1}/(e^{-0.1}+e^{0.1}) = 0.550</span>, up from 0.500. One good outcome moved the policy by 5 percentage points. Had the return been negative, the same formula would have lowered the probability of action 2.</p></div>
+
+        <p><b>Step 3: a baseline reduces noise.</b> A return of 2 is only good if the average return is lower. Subtract a baseline <span class="tex">b</span>, often the running average of returns, so the update uses <span class="tex">R - b</span>. The expected gradient does not change when <span class="tex">b</span> does not depend on the sampled action, but the variance of the estimate falls, and learning is faster and steadier. The bandit lab below lets you turn it off to see the difference.</p>
+        <p><b>Step 4: PPO limits how far one update can move the policy.</b> A large step can ruin a good policy, because the samples were collected with the old policy. Proximal Policy Optimization (PPO) measures the change as the ratio <span class="tex">r = \pi_\theta(a\mid s)/\pi_{\text{old}}(a\mid s)</span> and clips it, so that the objective gives no extra reward for moving the ratio beyond <span class="tex">1\pm\varepsilon</span>. Worked numbers:</p>
+        <div class="worked"><b>Worked example: the clipped objective</b>
+          <p>Take <span class="tex">\varepsilon = 0.2</span>. For a good action with advantage <span class="tex">A = 2</span> and ratio <span class="tex">r = 1.3</span> (the new policy is 30% more likely to take it): the unclipped term is <span class="tex">1.3\cdot 2 = 2.6</span>, the clipped term is <span class="tex">1.2 \cdot 2 = 2.4</span>, and the objective takes the minimum, <span class="tex">2.4</span>. Once <span class="tex">r</span> is above 1.2, further increases earn nothing, so the gradient is zero and the step stops pushing.</p>
+          <p>For a bad action with <span class="tex">A = -2</span> and <span class="tex">r = 0.7</span>: unclipped <span class="tex">0.7\cdot(-2) = -1.4</span>, clipped <span class="tex">0.8\cdot(-2) = -1.6</span>, minimum <span class="tex">-1.6</span>. Pushing the probability of a bad action down beyond 0.8 earns nothing more either.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\nabla_\theta J(\theta)=\mathbb E_{\pi_\theta}\big[\nabla_\theta\log\pi_\theta(a\mid s)\,A(s,a)\big]</div>
+        <div class="eq">L^{\text{CLIP}}(\theta)=\mathbb E_t\Big[\min\big(r_t(\theta)\,\hat A_t,\;\operatorname{clip}(r_t(\theta),1-\varepsilon,1+\varepsilon)\,\hat A_t\big)\Big]</div>
+        <table class="sym">
+          <tr><td><span class="tex">J(\theta)</span></td><td>expected return of the policy with parameters θ</td></tr>
+          <tr><td><span class="tex">\pi_\theta(a\mid s)</span></td><td>probability the policy assigns to action a in state s</td></tr>
+          <tr><td><span class="tex">A(s,a)</span>, <span class="tex">\hat A_t</span></td><td>advantage: return of the action minus a baseline (the value of the state); <span class="tex">\hat A_t</span> is a sample estimate</td></tr>
+          <tr><td><span class="tex">r_t(\theta)</span></td><td>ratio of new to old probability of the sampled action</td></tr>
+          <tr><td><span class="tex">\varepsilon</span></td><td>clip range, typically a small number such as 0.1 to 0.3</td></tr>
+          <tr><td><span class="tex">\alpha</span></td><td>learning rate, the step size of the update</td></tr>
+        </table>
+
+        <h3 class="sec">Lab 1: the clipped objective</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with A = 2, r = 1.3, ε = 0.2. The blue curve is flat to the right of 1.2: the clip is active and the gradient is zero. Read the readout to confirm.</li>
+          <li>Set A to −2. The flat part moves to the left of 0.8. A bad action can only be pushed down to the clip boundary.</li>
+          <li>Widen ε to 0.5 and watch the green band and the flat region move. A wider clip allows larger policy changes per update.</li>
+          <li>Set r = 1.0 and vary A. At r = 1 the ratio is neutral and the objective equals A, the advantage itself.</li></ol></div>
+        <div data-lab="ppo-clip"></div>
+
+        <h3 class="sec">Lab 2: REINFORCE on a three-armed bandit</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults and press Play. Arm 2 has the best mean (2.0), so the policy should move towards it. Watch how noisy the path is: each update uses a single sampled reward.</li>
+          <li>Turn the baseline off and compare how quickly and how smoothly the probabilities move. Without a baseline, every positive reward reinforces the sampled arm, whatever its quality.</li>
+          <li>Set the noise σ to 0. Learning becomes smooth and fast. Raise σ to 1 and observe the difference.</li>
+          <li>Set the learning rate α to 1 and watch the policy commit too early. Larger steps are not better.</li></ol></div>
+        <div data-lab="bandit-pg"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Sign errors.</b> The update adds the advantage times the gradient of log-probability. Flipping the sign makes the policy learn to avoid good actions.</li>
+            <li><b>Clipping is not a trust region.</b> PPO's clip discourages large ratio changes but does not guarantee monotonic improvement; in practice you also monitor the KL divergence or the ratio statistics.</li>
+            <li><b>Sample efficiency.</b> On-policy methods such as PPO must discard old samples after each update. Robots pay for every sample in time and wear, so the simulation budget is usually the binding constraint.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>PPO is widely used to train locomotion policies for legged robots in simulation, and to fine-tune large language models from human preference signals.</li>
+            <li>REINFORCE, its baseline variants and the log-derivative trick are the basis of most policy-gradient methods in robotics.</li>
+            <li>The softmax policy in the bandit lab is the same object as the output layer of a discrete-action neural policy (Machine Learning, neural networks).</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage (training in simulation or on logged data); the policy then runs in the act loop. Training batches are typically thousands of environment steps; the deployed policy runs at the control rate of the robot. Stores: rollout buffers (states, actions, rewards, old log-probabilities) and policy weights.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. With A = 2, ε = 0.2 and r = 1.5, what is the PPO objective for this sample, and does its gradient with respect to r vanish?</summary><div class="ans">Unclipped: 1.5 × 2 = 3.0. Clipped: 1.2 × 2 = 2.4. The minimum is 2.4, which is the clipped term, and the gradient is zero because the clip is active for a positive advantage above 1 + ε.</div></details>
+          <details class="check"><summary>2. Why does subtracting a baseline not change the expected policy gradient, but still help?</summary><div class="ans">The baseline term has zero expectation when it does not depend on the sampled action, since the expected value of ∇log π is zero. It reduces the variance of the sampled estimate, so each update is less noisy.</div></details>
+          <details class="check"><summary>3. In the REINFORCE worked example, what happens to the probability of action 2 if the sampled return had been −2 instead of +2?</summary><div class="ans">The update flips sign: θ becomes (0.1, −0.1), so π₂ = 0.450, down from 0.500. A bad outcome lowers the probability of the action that produced it.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>A policy gradient raises the log-probability of actions in proportion to their advantage.</li>
+            <li>A baseline lowers the variance of the estimate without biasing it.</li>
+            <li>PPO's clipped ratio limits how far one update moves the policy; the clip is the safety margin, not a guarantee.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.5 ===================== -->
+    <section class="lesson" id="sim-to-real" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.5</span><h2>Simulation training and sim-to-real transfer</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Millions of trials are needed to teach a legged robot to recover from a slip. Doing that on hardware would take years and break legs. So we train in a simulator, where the mass, friction and motor delay are only approximately right. Why would a policy that is perfect in the simulator fail on the real machine, and what can we do about it?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A pilot who has only ever flown one aircraft in one set of weather is in trouble on the first flight of a different aircraft. A pilot trained on many aircraft and many winds has learned the principles that hold across them. The same is true of a policy. If the simulator is the only world the policy sees, the policy learns the quirks of that world. If the simulator is randomised, so that the mass, friction and damping change from episode to episode, the policy must work across all of them, and the real robot is hopefully one more sample from the same family.</p>
+
+        <h3 class="sec">Build it up: the reality gap and two ways to close it</h3>
+        <p><b>Step 1: the gap.</b> The <b>reality gap</b> is the difference between the simulator's dynamics and the real robot's. Sources include unmodelled friction, motor saturation and delay, sensor noise, and a link mass that is off by 10%.</p>
+        <p><b>Step 2: system identification.</b> Measure the real robot's parameters (a mass, a damping, a motor constant) by fitting the simulator to logged data. This narrows the gap, but measurements have error, and some effects (contact, cable drag) are hard to model at all.</p>
+        <p><b>Step 3: domain randomisation.</b> Instead of trusting one set of parameters, draw them from a distribution and train across all of them. The policy then learns to work for every world in the range, which should include the real one.</p>
+
+        <div class="worked"><b>Worked example: the first control step of the lab's robot</b>
+          <p>A reaching task: a 1 kg cart starts at <span class="tex">x=0</span> m and must reach <span class="tex">x = 1</span> m. The controller is a PD law <span class="tex">u = K_p(x_{\text{target}} - x) - K_d\,\dot x</span> with <span class="tex">K_p = 16</span> N/m, <span class="tex">K_d = 6</span> N·s/m, and an actuator limit of 6 N. At the first step <span class="tex">x = \dot x = 0</span>, so the controller asks for <span class="tex">16 \times 1 = 16</span> N, which saturates to 6 N. The acceleration is</p>
+          <div class="eq">\ddot x = \frac{u - c\,\dot x}{m} = \frac{6 - 0}{1.0} = 6.0\ \text{m/s}^2.</div>
+          <p>The same first command on a 2 kg robot gives <span class="tex">6/2 = 3.0</span> m/s². The controller has not changed, but the robot responds differently. With the damping at 0.5 N·s/m, the simulated nominal robot reaches <span class="tex">x = 0.187</span> m at 0.25 s, <span class="tex">0.571</span> m at 0.5 s, <span class="tex">0.964</span> m at 1.0 s and <span class="tex">1.009</span> m at 1.5 s. A real robot at 1.6 kg reaches only <span class="tex">1.062</span> m at 1.5 s, which is outside the 0.05 m success band, so the same policy fails.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">\xi</span> be the simulator's physical parameters, drawn from a distribution <span class="tex">p(\xi)</span>. Domain randomisation trains the policy to maximise the expected return across that distribution:</p>
+        <div class="eq">\max_\theta\; \mathbb E_{\xi\sim p(\xi)}\big[J(\pi_\theta;\,\xi)\big]</div>
+        <p>System identification instead estimates the real parameters from logged data <span class="tex">y_{1:T}</span> by least squares:</p>
+        <div class="eq">\hat\xi = \arg\min_{\xi}\sum_{t=1}^{T}\big\lVert y_t - \operatorname{sim}_t(\xi)\big\rVert^2</div>
+        <table class="sym">
+          <tr><td><span class="tex">\xi</span></td><td>simulator parameters: here mass m (kg) and damping c (N·s/m)</td></tr>
+          <tr><td><span class="tex">p(\xi)</span></td><td>the distribution the parameters are drawn from during training</td></tr>
+          <tr><td><span class="tex">J(\pi;\xi)</span></td><td>the return of policy π in the world with parameters ξ</td></tr>
+          <tr><td><span class="tex">y_t</span>, <span class="tex">\operatorname{sim}_t(\xi)</span></td><td>logged real measurement at time t, and the simulated prediction with parameters ξ</td></tr>
+          <tr><td><span class="tex">K_p, K_d</span></td><td>proportional and derivative gains of the PD controller (N/m and N·s/m)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: many worlds, one controller</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the width at ±0.4 kg and the real mass at 1.0 kg. Most simulated worlds succeed and the real robot succeeds.</li>
+          <li>Widen the randomisation to ±0.8 kg. Count how many worlds fail. The controller was tuned for one mass, so the extremes are where it breaks.</li>
+          <li>Set the real mass to 1.6 kg with the width at 0.4 kg. Watch the blue real-robot marker stop short of the green band. The real mass lies outside the simulated range, and this fixed controller fails there.</li>
+          <li>Set the width to 0 and move the real mass. The policy only works near the mass it was tuned for; randomisation is what buys robustness.</li></ol></div>
+        <div data-lab="sim-random"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Randomise the right things.</b> Mass and friction are the obvious choices. Latency, sensor noise, motor saturation and actuator backlash often matter more, and an unrandomised effect is a gap the policy cannot cover.</li>
+            <li><b>Too much randomisation makes a timid policy.</b> A policy trained across a huge range becomes slow and conservative, because it must be safe in the worst world.</li>
+            <li><b>Passing in simulation is not evidence of transfer.</b> Hold out a set of real trials, use a hardware safety stop, and report success rates with confidence intervals (Module 8, embodied evaluation).</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Legged locomotion policies are commonly trained in simulation with randomised masses, friction, motor strength and terrain, then deployed on hardware.</li>
+            <li>Dexterous manipulation work has used randomised visuals and physics in simulation to transfer grasping and in-hand skills to real hands.</li>
+            <li>Autonomous-driving and drone teams combine simulation, randomised scenes and logged real-world data, because each source alone has a gap.</li></ul></div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage (simulator training on GPUs, identification from logged data on the robot) and the deploy stage (the trained policy runs at the robot's control rate, with a safety layer from Module 9). Stores: the simulator configuration and parameter ranges, identification logs, and the policy weights with the parameter ranges they were trained on.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. In the worked example, what acceleration does the first step give on a 2 kg robot, and why does the controller need no retuning to see that?</summary><div class="ans">a = 6 / 2 = 3.0 m/s². The controller only sees the position and velocity errors, and the force it commands is the same; the robot's response depends on its mass, which the policy does not measure. This is exactly why mass errors show up as behaviour differences.</div></details>
+          <details class="check"><summary>2. Why is system identification alone not enough, even when it is accurate?</summary><div class="ans">Measured parameters have error, and some effects cannot be captured by a few parameters (contact, cable drag, wear). Randomisation around the identified values covers the residual uncertainty that identification leaves.</div></details>
+          <details class="check"><summary>3. In the lab, the real robot fails at 1.6 kg while the simulated worlds at ±0.4 kg mostly pass. Why does the lab not simply let you widen the range until the real robot passes, and what would a real team do?</summary><div class="ans">The lab's controller is fixed: it only tests the same controller across worlds, so widening the range shows more failures, not a fix. A real team would retrain the policy with randomisation that covers the real mass (or identify the mass and narrow the range around it), then re-test on hardware with a safety stop. More simulation steps on the same narrow range would not close the gap.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>The reality gap is the difference between the simulated and real dynamics; it cannot be eliminated, only managed.</li>
+            <li>Domain randomisation trains across a range of simulated worlds; system identification narrows that range using real data.</li>
+            <li>Transfer is an empirical claim: test on hardware, with a safety layer and honest success rates.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.6 ===================== -->
+    <section class="lesson" id="reward-design" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">7.6</span><h2>Reward design and safety constraints</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You tell a cleaning robot "+1 for every tile you clean". The robot learns to clean the same tile over and over, or to push dirt back onto clean tiles, because that is what the reward says to do. You meant "clean the floor". How do you write a reward that means what you intend, and how do you keep a robot away from hazards that you did not put into the reward at all?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A reward is a message from you to the optimiser, and the optimiser reads it literally. If the message leaves something out, the optimiser is free to ignore it, because it does not know you care. The gap between what you wrote and what you wanted is called <b>reward misspecification</b>, and when an agent exploits it, the behaviour is called <b>reward hacking</b>. Nobody has to be malicious. A proxy that is easy to measure ("tiles cleaned", "distance covered") is usually an imperfect stand-in for the goal ("the floor is clean and nobody got hurt").</p>
+
+        <h3 class="sec">Build it up: a proxy, a true reward and a budget</h3>
+        <p><b>Step 1: write the proxy.</b> Suppose the goal is to reach the goal cell, and every move costs 1. The proxy reward is <span class="tex">+20</span> at the goal and <span class="tex">-1</span> per move. The designer forgot the hazard cells.</p>
+        <p><b>Step 2: add what you care about.</b> The true reward subtracts a harm <span class="tex">h</span> each time the robot enters a hazard cell. Now the two rewards can disagree, and the question becomes how large <span class="tex">h</span> should be.</p>
+        <p><b>Step 3: prefer a budget to a penalty.</b> A penalty trades hazards against progress at a rate you must guess. A <b>constraint</b> states the requirement directly: maximise the proxy return, subject to at most <span class="tex">d</span> hazard cells. A constrained RL method then finds the best policy that respects the budget, instead of hoping that the penalty happens to be large enough.</p>
+
+        <div class="worked"><b>Worked example: two routes in a 9 × 5 grid</b>
+          <p>The fast route is straight across the middle: 8 moves, and it crosses 2 hazard cells. The safe route makes a detour through the bottom row: 12 moves, no hazards. Returns are the goal reward minus move costs, minus <span class="tex">h</span> for each hazard:</p>
+          <div class="eq">\text{proxy: fast } 20-8 = 12,\qquad \text{safe } 20-12 = 8\qquad\Rightarrow\text{the proxy prefers fast}</div>
+          <div class="eq">\text{true: fast } 12-2h,\qquad \text{safe } 8 \qquad\Rightarrow\text{fast wins only when } h<2</div>
+          <p>The routes tie at <span class="tex">h = 2</span>. With <span class="tex">h = 3</span> the fast route is worth <span class="tex">12-6 = 6</span> against 8 for the safe route, so the true objective prefers the detour. A hazard budget of zero removes the fast route entirely and gives the safe route at any <span class="tex">h</span>.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>Let <span class="tex">R</span> be the proxy reward the robot is trained on and <span class="tex">C</span> a cost that counts hazard contacts. Constrained RL solves</p>
+        <div class="eq">\max_{\pi}\; J_R(\pi)\quad\text{subject to}\quad J_C(\pi) \le d,\qquad J_X(\pi)=\mathbb E_\pi\Big[\sum_t \gamma^t X(s_t,a_t)\Big]</div>
+        <p>and, via a Lagrange multiplier <span class="tex">\lambda \ge 0</span>, optimises <span class="tex">J_R(\pi) - \lambda\,(J_C(\pi)-d)</span>, raising λ whenever the constraint is violated.</p>
+        <table class="sym">
+          <tr><td><span class="tex">R, C</span></td><td>proxy reward (what the robot is trained on) and cost (what must stay within a budget)</td></tr>
+          <tr><td><span class="tex">J_X(\pi)</span></td><td>expected discounted total of quantity X under policy π</td></tr>
+          <tr><td><span class="tex">d</span></td><td>the budget: the largest acceptable expected cost, e.g. "hazard contacts per episode at most 0"</td></tr>
+          <tr><td><span class="tex">\lambda</span></td><td>Lagrange multiplier (non-negative): the price of violating the constraint</td></tr>
+          <tr><td><span class="tex">h</span></td><td>harm per hazard cell in the lab's true reward</td></tr>
+        </table>
+
+        <h3 class="sec">Lab: the proxy picks the fast route</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the training reward on "proxy" and the budget at 2. The robot takes the fast route. Its true return, shown in the readout, is 12 − 2h; at h = 3 it is 6, below the safe route's 8.</li>
+          <li>Switch the training reward to "true". The robot now takes the safe route at h = 3. Find the harm value where the choice flips (h = 2).</li>
+          <li>Set the budget to 1 and then 0 with the proxy reward. The fast route is removed by the constraint even though the proxy prefers it. Note that the constraint, not the reward, is what changed the behaviour.</li>
+          <li>Press Step to see one move at a time and note where the robot passes the hazard cells on the fast route.</li></ol></div>
+        <div data-lab="reward-routes"></div>
+
+        <div class="prose">
+          <div class="trap"><b>Common traps</b><ul>
+            <li><b>Shaping can change the optimum.</b> Adding a bonus for progress can make the robot prefer the bonus to the goal. Potential-based shaping (Ng, Harada and Russell, 1999) adds a difference of a potential function and leaves the optimal policy unchanged; other shaping terms do not.</li>
+            <li><b>A huge penalty is not a safety guarantee.</b> A very large harm can make learning slow or unstable, and it still only trades off the hazard against other rewards. A hard constraint or a separate safety filter says what must hold.</li>
+            <li><b>Missing terms are invisible.</b> The robot cannot avoid harms that no term describes. Review what the reward does not count, not only what it does.</li></ul></div>
+
+          <div class="aihook"><b>Where it shows up in AI</b><ul>
+            <li>Reward hacking is the best-known failure of learned objectives: agents exploit gaps in a reward model or a simulator's scoring, whether a game score or a learned preference model.</li>
+            <li>Constrained policy optimisation is used when the safety requirement is a budget (collisions, torque limits, energy) rather than a preference.</li>
+            <li>Learned robot policies are paired with safety filters that enforce joint and speed limits whatever the policy outputs; this is covered in Module 9 (safe control filters).</li></ul></div>
+
+          <div class="callout warn"><b>Safety honesty.</b> A reward that is well designed in simulation is not a certified safety case. Any learned policy on real hardware needs independent limits, a watchdog and a human able to stop it (Module 9). Do not treat a reward as the only safety mechanism.</div>
+
+          <div class="callout"><b>Pipeline placement.</b> Learn stage (reward and constraints are specified before training, and reviewed after evaluation); the deploy and monitor stage checks that the reward's measured behaviour matches the intent. Stores: the reward and constraint specification, its version, and the evaluation logs used to find hacks.</div>
+
+          <h3 class="sec">Check yourself</h3>
+          <details class="check"><summary>1. Under the proxy reward in the worked example, which route is preferred and by how much?</summary><div class="ans">The fast route, by 12 − 8 = 4 return units (12 against 8), because it saves four moves and the proxy ignores hazards.</div></details>
+          <details class="check"><summary>2. At what harm value h do the two routes tie under the true reward, and what does a budget of zero do?</summary><div class="ans">They tie at h = 2, since 12 − 2h = 8. A budget of zero hazard cells removes the fast route completely, so the safe route is chosen for any h, including h = 0.</div></details>
+          <details class="check"><summary>3. Why is a constraint often preferred to a very large penalty for hazards?</summary><div class="ans">A constraint states the requirement directly and is checked against the budget, while a penalty only trades the hazard against other rewards at a rate that depends on the penalty's size. A huge penalty can also make the reward landscape hard to learn from, so a constraint plus a safety filter is more transparent.</div></details>
+
+          <div class="takeaways"><h4>Takeaways</h4><ul>
+            <li>The robot optimises the reward you wrote, not the goal you meant; check for what the reward leaves out.</li>
+            <li>Constraints state safety requirements directly and do not depend on guessing a penalty's size.</li>
+            <li>Reward design is one safety layer among several; hazards must also be handled by filters and monitoring.</li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say how a robot learns from demonstrations, why copying is not enough, how DAgger closes the gap, how reinforcement learning turns reward into values and policies, how simulation is made to transfer, and how reward and constraints express what you actually want. Next, <b>Module 8</b> covers foundation models for robots, where these ideas meet large pretrained models: <a href="robo-foundation.html">Module 8 · Foundation models for robots</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

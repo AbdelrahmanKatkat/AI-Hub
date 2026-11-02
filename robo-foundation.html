@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 · Foundation models for robots · Robotics</title>
+<meta name="description" content="Robot datasets and teleoperation, actions as tokens and action chunks, vision-language-action models, diffusion policies, language models as planners, and how to evaluate a learned robot policy honestly.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-robo-foundation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="8">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 8</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">8</div>
+      <div style="flex:1">
+        <h1>Module 8 · Foundation models for robots</h1>
+        <p>Large models trained on many robots and many tasks are now trying to do what a child does: look at a scene, understand a sentence, and produce motion. This module shows how the data is collected, how continuous motion becomes tokens a model can predict, how a vision-language-action model is built, why diffusion can represent several correct ways to move, how language models plan with robot skills, and how to measure a policy without fooling yourself.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs Module 7 (policies, MDPs) and ML neural networks</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 8.1 ===================== -->
+    <section class="lesson" id="robot-data" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">8.1</span><h2>Robot datasets &amp; data collection</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You want a robot to load a dishwasher. You have one robot and one afternoon. A language model learned from the whole internet, but no such archive of robot motion exists. Where do the thousands of training examples come from, and what exactly is one example?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Picture a cookbook written by watching a cook. Each recipe is not a list of ingredients but a short film: what the kitchen looked like at each moment, and what the cook's hands did next. Learning to cook from such a book means learning the mapping from "what I see now" to "what to do next". A robot dataset is that film collection, filmed from the robot's own point of view.</p>
+        <p>The usual way to make the film is <b>teleoperation</b>. A person moves a leader device, such as a copy of the arm or a VR controller, and the robot copies the motion. Every few tenths of a second the system writes down what the robot sensed and what command was sent. The human does the hard part, and the robot records how it was done.</p>
+
+        <h3 class="sec">Build it up: from one moment to one episode</h3>
+        <p><b>Step 1: one moment.</b> At time step <span class="tex">t</span> the robot records an <b>observation</b> <span class="tex">o_t</span>: camera images, joint angles, and the gripper opening. It also records the <b>action</b> <span class="tex">a_t</span>: the command it was given, here the joint velocities.</p>
+        <p><b>Step 2: a sequence of moments.</b> Steps are chained in time. One attempt at one task, from start to success or failure, is an <b>episode</b>. The learner later sees pairs (what was seen, what was done) and tries to predict the action from the observation.</p>
+        <p><b>Step 3: many episodes.</b> A dataset holds many episodes of the same task and of related tasks. Variety is the point. The same task done under different lighting, with different objects placed in different positions, teaches the model what matters and what can be ignored.</p>
+
+        <div class="worked"><b>Worked example: a four-step episode of a two-joint arm</b>
+          <p>Joint angles <span class="tex">q_t = (q_1, q_2)</span> in radians are recorded at <span class="tex">\Delta t = 0.1\ \text{s}</span> (10 Hz). The recorded joint angles are</p>
+          <div class="eq">q_0=(0.00,\,0.50),\quad q_1=(0.02,\,0.52),\quad q_2=(0.05,\,0.55),\quad q_3=(0.09,\,0.57)</div>
+          <p>If the action is the joint velocity the teleoperator commanded, <span class="tex">a_t = (q_{t+1}-q_t)/\Delta t</span>, so:</p>
+          <div class="eq">a_0=\frac{(0.02,\,0.02)}{0.1}=(0.20,\,0.20)\ \text{rad/s},\quad a_1=\frac{(0.03,\,0.03)}{0.1}=(0.30,\,0.30)\ \text{rad/s},\quad a_2=\frac{(0.04,\,0.02)}{0.1}=(0.40,\,0.20)\ \text{rad/s}</div>
+          <p>Each pair <span class="tex">(o_t, a_t)</span> is one training example. Note that the recorded action is the command, and the next observation is the result. The two are related but not identical, because the arm lags behind its command.</p></div>
+
+        <h3 class="sec">Scale: how big is a real collection?</h3>
+        <p>Suppose you record 50 episodes of 20 s each at 10 Hz, with two cameras at 224 × 224 pixels and 3 colour channels of 8 bits each. The count of frames is</p>
+        <div class="eq">N_\text{frames}=E\cdot T_s\cdot f=50\cdot 20\cdot 10=10\,000</div>
+        <p>One camera frame is <span class="tex">224\cdot224\cdot3=150\,528</span> bytes, so one time step with two cameras is <span class="tex">301\,056</span> bytes. The whole collection is <span class="tex">10\,000\cdot301\,056\approx3.01\times10^9</span> bytes, about 2.80 GiB, before compression, and that is only one task. The lab lets you change these numbers and watch the total move.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>An episode is a finite sequence, and a dataset is a collection of episodes:</p>
+        <div class="eq">\tau=(o_0,a_0,o_1,a_1,\dots,o_{T-1},a_{T-1}),\qquad \mathcal D=\{\tau^{(1)},\dots,\tau^{(E)}\}</div>
+        <table class="sym">
+          <tr><td><span class="tex">o_t</span></td><td>the observation at step <span class="tex">t</span>: images, joint angles, gripper width (units depend on the sensor, e.g. rad and m)</td></tr>
+          <tr><td><span class="tex">a_t</span></td><td>the action at step <span class="tex">t</span>, the command sent to the robot (here rad/s per joint)</td></tr>
+          <tr><td><span class="tex">T</span></td><td>the number of steps in one episode</td></tr>
+          <tr><td><span class="tex">E</span></td><td>the number of episodes in the dataset</td></tr>
+          <tr><td><span class="tex">f</span></td><td>the recording rate in Hz (steps per second), here 10 Hz</td></tr>
+          <tr><td><span class="tex">\Delta t</span></td><td>the time between steps, <span class="tex">1/f</span> seconds (0.1 s here)</td></tr>
+        </table>
+        <div class="callout"><b>Pipeline position</b>Stage 5, <i>Learn</i> (data for the policy), built from the logs of Stage 4, <i>Control</i>. The loop runs at the recording rate, 10 Hz in this example. The dataset stores one episode per file, with images, states and actions in aligned order.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Episodes are recorded one after another, grouped by task. Watch the end-effector trail: each episode starts at a different place, but the task is the same.</li>
+        <li>Set episodes to 10, then 50, then 200. Read how the frame count and the storage move, and check the frame count against the formula above.</li>
+        <li>Double the image size. Notice that storage grows with the number of pixels, so resolution is a real cost.</li>
+        <li>Lower the recording rate to 2 Hz. Fewer frames are stored, and the trail becomes a set of dots. Ask whether the policy can still learn a smooth motion from them.</li></ol></div>
+      <div data-lab="robo-episodes"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"More episodes is always better."</b> Ten thousand near-identical demonstrations teach one motion. Diversity of objects, positions and lighting usually matters more than raw count.</li>
+          <li><b>"The action is the next observation."</b> The commanded velocity and the measured motion differ because of lag, friction and contact. Record both, and be clear which one the policy predicts.</li>
+          <li><b>Forgetting units.</b> Joint angles in radians, velocities in rad/s, images in pixels: a model trained on degrees will be wrong by a factor of about 57.</li>
+          <li><b>Clean demonstrations only.</b> A dataset with no failures teaches the policy nothing about recovery. Keep some failures, and label them.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Large collections of robot episodes gathered by many labs and many robot types have been pooled into shared datasets, such as the Open X-Embodiment collection, which is used to train generalist policies.</li>
+          <li>The same episode structure (observation, action, reward or success flag) is what the imitation and reinforcement learning methods of Module 7 consume.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the worked example, what is the action <span class="tex">a_2</span> if <span class="tex">q_3-q_2=(0.04,\,0.02)</span> and <span class="tex">\Delta t=0.1\ \text{s}</span>?</summary><div class="ans">It is the joint-wise difference divided by 0.1 s: (0.04/0.1, 0.02/0.1) = (0.40, 0.20) rad/s. Each joint moves 0.04 rad and 0.02 rad in one step.</div></details>
+        <details class="check"><summary>2. A collection has 30 episodes of 15 s at 20 Hz, with one camera at 128 × 128 × 3 bytes. How many frames and how many image bytes?</summary><div class="ans">Frames: 30 · 15 · 20 = 9000. Image bytes: one frame is 128 · 128 · 3 = 49 152 bytes, so 9000 · 49 152 = 442 368 000 bytes, about 0.44 GB (0.41 GiB).</div></details>
+        <details class="check"><summary>3. Why does a dataset of only successful demonstrations give a policy no way to recover from a small mistake?</summary><div class="ans">Every observation in the data comes from a state that a good demonstrator reached. The policy never sees the states that follow an error, so it has no examples of what to do there. Including labelled recoveries or failures covers this gap.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A robot example is a pair (observation, action) inside an episode; a dataset is a set of episodes.</li>
+          <li>Teleoperation records the command, which is not the same as the measured motion; keep both and say which one is predicted.</li>
+          <li>Storage grows with episodes, frames per second, cameras and pixels; compute it before you record.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.2 ===================== -->
+    <section class="lesson" id="action-tokenisation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">8.2</span><h2>Actions as tokens &amp; action chunking</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A language model predicts the next token from a fixed vocabulary of discrete symbols. A robot action is a continuous number, such as a velocity of 0.2734 rad/s. How can a model that speaks in tokens produce continuous motion, and what happens to the control loop when it does?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a ruler with marks only every few millimetres. You can measure a length to the nearest mark, and you can write the answer as a mark number. A length of 12.3 mm on a ruler with marks every 0.5 mm reads as the mark at 12.5 mm, which you can write down, store and read back as a single number. The price is a small error, at most half a step. Tokenisation of actions is that ruler. Each continuous value is rounded to the nearest of a fixed set of bins, and the bin's index is the token.</p>
+        <p>Action chunking is a second idea that is about time rather than values. Instead of predicting one action per control tick, the model predicts a short sequence of future actions, a chunk, and the robot executes the whole chunk before asking the model again. The model runs less often, and its output is smoother.</p>
+
+        <h3 class="sec">Build it up: one number, then a chunk</h3>
+        <p><b>Step 1: pick a range.</b> Assume each action component lies in <span class="tex">[-1,1]</span>. Values outside it are clipped first.</p>
+        <p><b>Step 2: cut the range into bins.</b> With <span class="tex">B=256</span> bins, each bin has width <span class="tex">w=\dfrac{2}{256}=0.0078125</span>. Bin 0 covers <span class="tex">[-1,\,-0.9921875)</span>, bin 1 the next slice, and so on.</p>
+        <p><b>Step 3: map a value to a token.</b> A value <span class="tex">x</span> goes to bin <span class="tex">k=\lfloor (x+1)/w\rfloor</span>. Going back, the robot uses the bin centre, <span class="tex">\hat x = -1 + (k+\tfrac12)w</span>.</p>
+
+        <div class="worked"><b>Worked example: tokenising three values with 256 bins</b>
+          <table class="tbl">
+            <tr><th>value <i>x</i></th><th>bin <i>k</i></th><th>centre <span class="tex">\hat x</span></th><th>error <span class="tex">\hat x-x</span></th></tr>
+            <tr><td>0.30</td><td>166</td><td>0.300781</td><td>+0.00078</td></tr>
+            <tr><td>−0.73</td><td>34</td><td>−0.730469</td><td>−0.00047</td></tr>
+            <tr><td>0.00</td><td>128</td><td>0.003906</td><td>+0.00391</td></tr>
+          </table>
+          <p>For <span class="tex">x=0.30</span>: <span class="tex">(0.30+1)/0.0078125 = 166.4</span>, so <span class="tex">k=166</span>, and <span class="tex">\hat x=-1+166.5\cdot0.0078125=0.300781</span>. The largest possible error is half a bin, <span class="tex">w/2=0.0039</span>. A value of exactly 1.0 would land on bin 256, which does not exist, so it is clipped to bin 255 with centre 0.996094.</p></div>
+
+        <p><b>Step 4: chunk the actions.</b> Suppose the control loop runs at 10 Hz and one model call takes 0.2 s. If the robot called the model every step, the model would be busy for twice as long as one step, so it could not keep up. If the model predicts a chunk of <span class="tex">K</span> future actions, it runs at <span class="tex">10/K</span> Hz. With <span class="tex">K=4</span> that is 2.5 calls per second, and each chunk covers 0.4 s of motion.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">w=\frac{hi-lo}{B},\qquad k=\min\!\bigl(B-1,\max(0,\lfloor (x-lo)/w\rfloor)\bigr),\qquad \hat x=lo+\bigl(k+\tfrac12\bigr)w,\qquad |\hat x-x|\le \tfrac w2</div>
+        <div class="eq">\text{chunk}_t=(a_t,a_{t+1},\dots,a_{t+K-1}),\qquad \text{model calls per second}=\frac{f}{K}</div>
+        <table class="sym">
+          <tr><td><span class="tex">lo, hi</span></td><td>the lower and upper ends of the action range (here −1 and 1, unitless normalised commands)</td></tr>
+          <tr><td><span class="tex">B</span></td><td>the number of bins (the number of distinct action tokens per component)</td></tr>
+          <tr><td><span class="tex">w</span></td><td>the bin width, <span class="tex">(hi-lo)/B</span></td></tr>
+          <tr><td><span class="tex">k</span></td><td>the integer token, the bin index from 0 to B−1</td></tr>
+          <tr><td><span class="tex">\hat x</span></td><td>the value the robot executes after decoding the token</td></tr>
+          <tr><td><span class="tex">K</span></td><td>the chunk length, the number of future actions predicted at once</td></tr>
+          <tr><td><span class="tex">f</span></td><td>the control rate in Hz; <span class="tex">f/K</span> is the rate of model calls</td></tr>
+        </table>
+        <p>Both rules cost something. Tokenising trades precision for a finite vocabulary: more bins mean smaller error but more classes to predict. Chunking trades responsiveness for compute: during a 0.4 s chunk the robot cannot react to a new obstacle until the chunk ends.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The curve is a demonstrated action, sampled at 10 Hz. Each sample is rounded to a bin, and the bin index appears as a token under it.</li>
+        <li>Set the bins to 4, then 16, then 256. The staircase tracks the curve more closely as the bins grow. Read the maximum error in the readout each time.</li>
+        <li>Set the chunk length to 1, then 4, then 8. Watch the call rate fall. Read the chunk duration in seconds.</li>
+        <li>Edit the curve formula, for example <code>0.9*sin(2*t)</code>, and see whether a coarse vocabulary still follows it. Values are clipped to [−1, 1].</li></ol></div>
+      <div data-lab="robo-tokens"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Tokenising is lossless."</b> It is not. The error is at most half a bin, and that error accumulates over a long task if the policy keeps rounding the same way.</li>
+          <li><b>Forgetting the clip.</b> A value outside the range is silently clipped. Check the range of your data before you pick <span class="tex">lo</span> and <span class="tex">hi</span>.</li>
+          <li><b>Chunks are not free.</b> A long chunk is cheap to compute and fast to run, but a stale chunk can drive the robot into a person who has just moved.</li>
+          <li><b>Mixing rates.</b> A chunk of 8 actions at 10 Hz covers 0.8 s. If the recorded data was at 5 Hz, the same numbers mean twice the motion.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Vision-language-action models, such as RT-2 and OpenVLA, write each action component as one of a fixed set of discrete tokens, so the same model that predicts words also predicts motion (Lesson 8.3).</li>
+          <li>Action chunking is used by learned manipulation policies to produce smooth, multi-step motion from a single model call, and it is the reason a policy can run at a lower rate than its controller.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With 256 bins on [−1, 1], which token and decoded value represent x = −0.5?</summary><div class="ans">(−0.5 + 1)/0.0078125 = 64, so k = 64. The centre is −1 + 64.5 · 0.0078125 = −0.496094. The error is +0.0039, within half a bin.</div></details>
+        <details class="check"><summary>2. A policy takes 0.2 s per call and the loop runs at 10 Hz. What chunk length K keeps calls to 2 per second, and how long does each chunk last?</summary><div class="ans">Calls per second = 10/K = 2, so K = 5. Each chunk covers 5 · 0.1 s = 0.5 s of motion. (At K = 4 the policy would run at 2.5 Hz, which is also fine since 0.2 s &lt; 0.4 s.)</div></details>
+        <details class="check"><summary>3. Doubling the number of bins from 128 to 256 on the same range: does the maximum error double, halve, or stay the same?</summary><div class="ans">It halves. The bin width is 2/B, so 2/128 = 0.015625 becomes 2/256 = 0.0078125, and the largest error is half of each width.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Tokenising maps a continuous value to one of B bins; the largest error is half a bin, <span class="tex">w/2</span>.</li>
+          <li>Action chunking predicts K future actions per call, so the model runs at <span class="tex">f/K</span> Hz.</li>
+          <li>Both choices trade accuracy or responsiveness for compute; choose them from the loop rate and the task's precision.</li></ul></div>
+      </div>
+
+      <div class="callout" style="max-width:780px"><b>Pipeline position</b>Stage 4, <i>Control</i> (the decoded action is sent to the joints at the control rate), fed by Stage 3, <i>Plan</i>, at the model rate <span class="tex">f/K</span>. It stores the token sequence and the bin edges with the model so that decoding is identical at run time.</div>
+    </section>
+
+    <!-- ===================== 8.3 ===================== -->
+    <section class="lesson" id="vision-language-action" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">8.3</span><h2>Vision-language-action models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A kitchen robot is shown a photo of a counter and told, in plain words, "put the red cup in the sink". One function must read the picture, understand the sentence, and output the joint commands for the next moments. What are its inputs, what are its outputs, and how is it trained?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a bilingual reader who looks at a picture and reads a caption. The reader's brain links the words "red cup" to the red object in the picture, and then decides where the hand should go. A vision-language-action model, or VLA, is the same idea with a third language added: motor commands. It reads images, reads text, and writes actions, and all three are tokens inside one network.</p>
+        <p>Why is this a good idea? A vision-language model already knows that a "cup" is a container and that the "sink" is a basin. A model trained only on robot data has never seen most of those words in context. Starting from a model that already understands pictures and words, and teaching it motion on top, lets the robot reuse that knowledge.</p>
+
+        <h3 class="sec">Build it up: what goes in, what comes out</h3>
+        <p><b>Step 1: the image becomes tokens.</b> A vision encoder cuts the picture into patches. A 224 × 224 image cut into 16 × 16 patches gives <span class="tex">(224/16)^2 = 14^2 = 196</span> patches, and each patch becomes one image token.</p>
+        <p><b>Step 2: the instruction becomes tokens.</b> The words are split into text tokens by the same tokeniser the language model uses. A short sentence gives about ten.</p>
+        <p><b>Step 3: one backbone reads everything.</b> A transformer reads the image tokens and the text tokens together, as one sequence, and can attend from any word to any patch.</p>
+        <p><b>Step 4: the action is written as tokens.</b> The model then writes the action for this moment as seven action tokens, one for each component, using the bin scheme of Lesson 8.2. One layout used in many manipulation datasets is three translation components, three rotation components and one gripper command.</p>
+
+        <div class="worked"><b>Worked example: the sequence the model reads and writes</b>
+          <p>For one decision the input sequence has <span class="tex">196 + 10 = 206</span> tokens: 196 image patches and about 10 text tokens. The output is 7 action tokens. Take a hand-made action <span class="tex">(0.12,\,-0.40,\,0.05,\,0.00,\,0.25,\,-0.10,\,1.00)</span> and tokenise it with 256 bins on [−1, 1] from Lesson 8.2:</p>
+          <div class="eq">(k^1,\dots,k^7)=(143,\;76,\;134,\;128,\;160,\;115,\;255)</div>
+          <p>The last value, 1.00, is clipped to bin 255, so the robot executes 0.996 rather than 1.00. The model's total output is therefore 7 tokens, and the total sequence it handles for one decision is <span class="tex">206+7=213</span> tokens.</p></div>
+
+        <h3 class="sec">Training</h3>
+        <p>Training uses demonstrations from the dataset of Lesson 8.1. For each example the model sees the image and the instruction, and is trained to predict the tokens of the recorded action, one after another. The model's probability for the whole action factorises over the components, each conditioned on the earlier ones:</p>
+        <div class="eq">\pi_\theta(a\mid o,\ell)=\prod_{j=1}^{7} p_\theta\bigl(k^{j}\mid o,\ell,k^{1},\dots,k^{j-1}\bigr)</div>
+        <p>Training minimises the negative log-likelihood of the recorded tokens, the same cross-entropy loss used for language. This is why a VLA can be trained with the same tools as a language model.</p>
+        <h3 class="sec">The formal definition</h3>
+        <table class="sym">
+          <tr><td><span class="tex">o</span></td><td>the observation image (or images), turned into image tokens</td></tr>
+          <tr><td><span class="tex">\ell</span></td><td>the language instruction, turned into text tokens</td></tr>
+          <tr><td><span class="tex">a</span></td><td>the action, a vector of 7 components in normalised units</td></tr>
+          <tr><td><span class="tex">k^{j}</span></td><td>the token for component <span class="tex">j</span> of the action, an integer from 0 to 255</td></tr>
+          <tr><td><span class="tex">\theta</span></td><td>all learned parameters of the network</td></tr>
+          <tr><td><span class="tex">\pi_\theta</span></td><td>the policy: the probability distribution over actions given what is seen and said</td></tr>
+        </table>
+        <p>RT-2 and OpenVLA are published examples of this design. Both start from a pretrained vision-language model and fine-tune it on robot demonstrations, with the action tokens added to its output. The lab below is a teaching sketch of the data flow, not either model.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The stages run one after another: picture tokens, word tokens, the model, seven action tokens, decoding, and the arm moves. Read the caption at each stage.</li>
+        <li>Change the instruction to "pick the blue block" and run it again. The target changes, and so do the action tokens.</li>
+        <li>Pause during stage 4 and read the seven tokens. Compare them with the table in Lesson 8.2.</li>
+        <li>Slow the speed to the minimum. Watch that the arm moves only after its action has been decoded, not before.</li></ol></div>
+      <div data-lab="robo-vla"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"The VLA understands the scene like a person."</b> It has learned correlations in its data. A new object shape or lighting can break it, and its success must be measured (Lesson 8.6).</li>
+          <li><b>Forgetting the image budget.</b> Many image tokens make the model slower. Resolution is a latency choice as much as a quality choice.</li>
+          <li><b>Treating the seven tokens as independent.</b> The factorisation conditions each token on the earlier ones, so the decoded motion is coherent; decoding them separately throws that structure away.</li>
+          <li><b>Ignoring the control rate.</b> A model that takes 0.5 s per answer can drive a 10 Hz controller only with chunking or a slower target rate.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>RT-2 and OpenVLA are the reference examples: vision-language models whose outputs include robot action tokens, trained on robot episodes so that instructions control motion.</li>
+          <li>The same "one backbone, many outputs" idea underlies generalist robot policies that accept a language goal and a camera view and return a chunk of actions.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With 16 × 16 patches, how many image tokens does a 224 × 224 image give, and what is the total input length with 10 text tokens?</summary><div class="ans">(224/16)² = 196 image tokens. With 10 text tokens the input is 206 tokens.</div></details>
+        <details class="check"><summary>2. Why is the probability of an action written as a product over components, each conditioned on earlier ones?</summary><div class="ans">An autoregressive model predicts one token at a time, so each token is conditioned on everything before it. This lets the seven components be coordinated, instead of each being chosen in isolation.</div></details>
+        <details class="check"><summary>3. Why can a VLA reuse knowledge from pretraining on images and text, even though it was trained on few robot episodes?</summary><div class="ans">The backbone was pretrained on large amounts of image and text data, so it already encodes objects and words. Robot demonstrations only need to teach how those concepts map to motion, which needs fewer examples.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A VLA maps (image tokens, text tokens) to action tokens with one transformer.</li>
+          <li>Actions are written as discrete tokens, trained with the same cross-entropy loss as language.</li>
+          <li>Pretraining supplies knowledge of objects and words; robot data teaches the motion.</li></ul></div>
+      </div>
+
+      <div class="callout" style="max-width:780px"><b>Pipeline position</b>Stage 3, <i>Plan</i>, producing an action chunk for Stage 4, <i>Control</i>, at a model rate well below the loop rate. The model weights and the tokeniser are stored together, and the instruction and image are logged for review.</div>
+    </section>
+
+    <!-- ===================== 8.4 ===================== -->
+    <section class="lesson" id="diffusion-policy" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">8.4</span><h2>Diffusion policies for action</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Demonstrations show a robot reaching around an obstacle. Some demonstrators went left and some went right. A network trained by least squares learns to predict the average of the demonstrations, which is straight through the obstacle. How can a policy represent two correct ways of moving instead of averaging them?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Think of a sculptor who starts with a rough block of clay and removes material until a shape appears. Diffusion does the same with noise. It starts from random noise and removes a little noise at each step, guided by a learned rule, until a clean action sequence remains. Because each run starts from a different random block, different runs can end at different shapes. Two demonstrated modes are both possible endpoints.</p>
+        <p>This is the key difference from a regression policy. A regression policy outputs one answer for each input, and when the training answers disagree it outputs their average. A diffusion policy outputs a sample from a distribution, so it can commit to one of the modes.</p>
+
+        <h3 class="sec">Build it up: noise, then denoising</h3>
+        <p><b>Step 1: corrupt the data on purpose.</b> Take a clean action sequence <span class="tex">x_0</span>. Mix it with Gaussian noise <span class="tex">\varepsilon</span> by a schedule <span class="tex">\bar\alpha_t</span> that goes from 1 (clean) toward 0 (pure noise):</p>
+        <div class="eq">x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\varepsilon</div>
+        <p><b>Step 2: learn to undo it.</b> A network <span class="tex">\varepsilon_\theta</span> receives the noisy <span class="tex">x_t</span>, the step <span class="tex">t</span> and the observation <span class="tex">o</span>, and predicts the noise that was added. Training minimises the squared error between the true and the predicted noise.</p>
+        <p><b>Step 3: generate by removing noise.</b> At run time we start from pure noise and repeat the denoising step, from <span class="tex">t=T</span> down to 0. Each step moves the sample a little toward a clean sequence.</p>
+
+        <div class="worked"><b>Worked example: one noising step and its inverse</b>
+          <p>Take a one-number "action" <span class="tex">x_0=0.5</span>, a schedule value <span class="tex">\bar\alpha_t=0.25</span>, and noise <span class="tex">\varepsilon=-1</span>. Then <span class="tex">\sqrt{0.25}=0.5</span> and <span class="tex">\sqrt{0.75}=0.8660</span>, so</p>
+          <div class="eq">x_t=0.5\cdot0.5+0.8660\cdot(-1)=-0.6160</div>
+          <p>If the network predicts the noise exactly, <span class="tex">\hat\varepsilon=-1</span>, we recover the clean value: <span class="tex">\hat x_0=(x_t-\sqrt{1-\bar\alpha_t}\,\hat\varepsilon)/\sqrt{\bar\alpha_t}=(-0.6160+0.8660)/0.5=0.5</span>. If the network is wrong and predicts <span class="tex">\hat\varepsilon=0</span>, the recovered value is <span class="tex">-0.6160/0.5=-1.232</span>. The quality of the noise prediction decides the quality of the action.</p></div>
+
+        <p><b>Step 4: why this represents two modes.</b> If the demonstrations are at <span class="tex">+1</span> and <span class="tex">-1</span>, the least-squares average is 0, which is neither. A denoiser whose noise prediction points toward the nearest mode can land on either +1 or −1, depending on the starting noise. The lab shows exactly this.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L(\theta)=\mathbb E_{x_0,\,\varepsilon,\,t}\Bigl[\bigl\lVert \varepsilon-\varepsilon_\theta\bigl(\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\,\varepsilon,\;t,\;o\bigr)\bigr\rVert^2\Bigr]</div>
+        <div class="eq">x_{t-1}=\frac{1}{\sqrt{\alpha_t}}\Bigl(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\,\varepsilon_\theta(x_t,t,o)\Bigr)+\sigma_t z,\qquad z\sim\mathcal N(0,I)</div>
+        <table class="sym">
+          <tr><td><span class="tex">x_0</span></td><td>the clean action sequence (for example 16 steps of a 2-D end-effector offset, in metres)</td></tr>
+          <tr><td><span class="tex">\varepsilon</span></td><td>standard Gaussian noise, the same shape as <span class="tex">x_0</span></td></tr>
+          <tr><td><span class="tex">\bar\alpha_t</span></td><td>the cumulative signal fraction at noise step <span class="tex">t</span>, from near 1 down to near 0</td></tr>
+          <tr><td><span class="tex">\varepsilon_\theta</span></td><td>the learned noise predictor, conditioned on the observation <span class="tex">o</span></td></tr>
+          <tr><td><span class="tex">\alpha_t,\ \beta_t</span></td><td>per-step quantities with <span class="tex">\alpha_t=1-\beta_t</span> and <span class="tex">\bar\alpha_t=\prod_{s\le t}\alpha_s</span></td></tr>
+          <tr><td><span class="tex">\sigma_t,\ z</span></td><td>the injected noise scale for sampling and a fresh Gaussian sample</td></tr>
+        </table>
+        <p>Practical diffusion policies use a few tens of denoising steps, which is one reason they are slower than a single regression call. Faster samplers reduce the number of steps. The lab is an illustration of the principle, with the denoiser replaced by a known two-mode target, and it is labelled as such.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The line starts as random noise and sharpens into one of the two demonstrated modes (dashed lines). Read which mode it chose.</li>
+        <li>Press play several times, or change the seed, and count how often the sample goes each way. Both modes should appear.</li>
+        <li>Turn on the mean baseline (dotted line). It is the least-squares answer, and it sits between the modes, where no demonstrator went.</li>
+        <li>Move the mode separation to a small value. The two modes merge and the choice stops mattering. Ask why.</li></ol></div>
+      <div data-lab="robo-diffusion"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Diffusion is only for images."</b> It works on any continuous data, including short action sequences, which is why it fits policies.</li>
+          <li><b>Confusing sample quality with success.</b> A smooth, realistic-looking action sequence can still miss the object. Success must be measured on the robot.</li>
+          <li><b>Forgetting the cost.</b> Each action chunk needs several network calls. Count the latency budget before you deploy.</li>
+          <li><b>Using the mean as the answer.</b> If the demonstrations have two modes, regression reports a path that no one took.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Diffusion-based visuomotor policies generate chunks of future actions conditioned on camera images, and are used for contact-rich manipulation where demonstrations are varied.</li>
+          <li>The same denoising machinery as image diffusion models (see the generative-models lessons of the Computer Vision topic, <a href="cv-generative.html">cv-generative.html</a>) is reused, with the action sequence in place of the picture.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With <span class="tex">\bar\alpha_t=0.25</span>, <span class="tex">x_0=0.5</span> and <span class="tex">\varepsilon=-1</span>, what is <span class="tex">x_t</span>? If the network predicts 0 for the noise, what clean value is recovered?</summary><div class="ans"><span class="tex">x_t=0.5\cdot0.5+\sqrt{0.75}\cdot(-1)=-0.6160</span>. With <span class="tex">\hat\varepsilon=0</span>, the recovered value is −0.6160/0.5 = −1.232, which is far from the true 0.5.</div></details>
+        <details class="check"><summary>2. Demonstrations are at +1 and −1 with equal frequency. What does a least-squares regression predict, and why is it not a valid demonstration?</summary><div class="ans">It predicts their mean, 0. No demonstrator moved to 0, so the predicted motion is an average of two different strategies, and in the obstacle case it runs into the obstacle.</div></details>
+        <details class="check"><summary>3. Why can a diffusion policy, unlike a regression policy, reproduce either mode?</summary><div class="ans">It samples from a distribution. Each run starts from different noise and is denoised toward one of the modes, so the output is a sample from the learned distribution rather than an average.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Diffusion learns to remove noise; generation is repeated denoising from random noise.</li>
+          <li>A sample from a multimodal distribution commits to one mode, while the regression mean can fall between the modes.</li>
+          <li>The price is several network calls per action chunk, so latency must be budgeted.</li></ul></div>
+      </div>
+
+      <div class="callout" style="max-width:780px"><b>Pipeline position</b>Stage 3, <i>Plan</i>, producing an action chunk, with several denoising calls per chunk, at a rate below the control loop. It stores the noise schedule and the trained noise predictor.</div>
+    </section>
+
+    <!-- ===================== 8.5 ===================== -->
+    <section class="lesson" id="llm-planners" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">8.5</span><h2>Language models as planners</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Someone says, "I spilled my drink, can you clean it up?" A language model knows the sensible steps: find a sponge, wipe, rinse. But the robot cannot reach a sponge that is in a closed cupboard, and it is already holding a cup. How do we get a plan that is both sensible and doable?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Imagine two advisers. The first has read every household guide and knows what a sensible next step is. The second is a site engineer who knows what the robot can actually do from where it stands. Asking only the first gives a sensible plan that cannot be carried out. Asking only the second gives a plan that is doable but has no sense of purpose. A useful planner asks both, and picks the step that both think is good.</p>
+
+        <h3 class="sec">Build it up: two scores for each candidate skill</h3>
+        <p><b>Step 1: a menu of skills.</b> The robot has a fixed set of skills, each a tested behaviour such as "pick up the sponge", "go to the sink" or "wipe the table". The language model chooses among these names, which keeps its output inside what the robot can run.</p>
+        <p><b>Step 2: the language score.</b> The model gives each skill a probability for being the next sensible step, <span class="tex">p_\text{LLM}</span>.</p>
+        <p><b>Step 3: the affordance score.</b> A separate estimate gives the probability that the skill would succeed from the current state, <span class="tex">p_\text{aff}</span>. It could come from a learned value function or from a hand-written check.</p>
+        <p><b>Step 4: combine and normalise.</b> Multiply the two and divide by the total, so the scores form a probability over the feasible steps.</p>
+
+        <div class="worked"><b>Worked example: choosing the next step for the spill</b>
+          <table class="tbl">
+            <tr><th>skill</th><th><span class="tex">p_\text{LLM}</span></th><th><span class="tex">p_\text{aff}</span></th><th>product</th><th>normalised</th></tr>
+            <tr><td>pick sponge</td><td>0.60</td><td>0.90</td><td>0.540</td><td>0.684</td></tr>
+            <tr><td>go to sink</td><td>0.30</td><td>0.80</td><td>0.240</td><td>0.304</td></tr>
+            <tr><td>pick apple</td><td>0.10</td><td>0.10</td><td>0.010</td><td>0.013</td></tr>
+          </table>
+          <p>The total of the products is <span class="tex">0.540+0.240+0.010=0.790</span>. The normalised score for "pick sponge" is <span class="tex">0.540/0.790=0.684</span>, so the planner picks it. "Pick apple" has a language score of 0.10, but it scores almost nothing because the robot would fail to grasp it from here. Note the rounding: the normalised values sum to 1.001 because each is rounded to three decimals.</p></div>
+
+        <p><b>Step 5: repeat from the new state.</b> Once the sponge is held, the feasible set changes: "pick sponge" is no longer possible, and "wipe" becomes the sensible step. The loop of scoring, executing and re-scoring is the plan.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P(\text{skill}\mid \ell, s)\;\propto\; p_\text{LLM}(\text{skill}\mid \ell,\,h)\cdot p_\text{aff}(\text{success}\mid \text{skill},\,s)</div>
+        <table class="sym">
+          <tr><td><span class="tex">\ell</span></td><td>the instruction in words, for example "clean up the spill"</td></tr>
+          <tr><td><span class="tex">h</span></td><td>the history of skills already executed in this episode</td></tr>
+          <tr><td><span class="tex">s</span></td><td>the robot's current state, such as what it holds and where it stands</td></tr>
+          <tr><td><span class="tex">p_\text{LLM}</span></td><td>the language model's probability that the skill is a sensible next step</td></tr>
+          <tr><td><span class="tex">p_\text{aff}</span></td><td>the probability that the skill succeeds from state <span class="tex">s</span>, an affordance or value estimate in [0, 1]</td></tr>
+          <tr><td><span class="tex">\propto</span></td><td>"proportional to": divide by the sum over all skills to get probabilities</td></tr>
+        </table>
+        <p>The affordance term is what grounds the plan. Without it, the language model can propose any step it likes, and the robot has no way to refuse an impossible one.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The planner scores the feasible skills, picks the best one, executes it, and updates the robot's state. Read each caption.</li>
+        <li>Set the sponge-reach affordance to 0.1, and run again. Notice that the planner now prefers a different first step, even though the language score is unchanged.</li>
+        <li>Lower the language score of "go to sink" to 0.05. The planner may wipe before rinsing. Ask whether that is a bad plan or just an unusual one.</li>
+        <li>Check the readout: every probability is normalised over the feasible skills only.</li></ol></div>
+      <div data-lab="robo-planner"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"The language model knows what the robot can do."</b> It knows what people usually do. The affordance estimate is what knows about this robot, in this state.</li>
+          <li><b>Letting the model invent skills.</b> If the output is free text, the robot must parse it, and an invented skill has no controller. Restrict the output to a menu.</li>
+          <li><b>Multiplying uncalibrated numbers.</b> Two scores on different scales cannot be combined by a product without calibration. Check both on held-out cases.</li>
+          <li><b>Silent failure.</b> If no skill is feasible, the planner needs a defined behaviour: ask for help, stop, or re-observe.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>SayCan-style planners score each skill by a language-model probability times a learned value of success, and execute the best one, then re-plan from the new observation.</li>
+          <li>Task-level planners for household and warehouse robots use a language model to decompose instructions into named skills, which connect to the symbolic task planning of Module 5.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With <span class="tex">p_\text{LLM}=0.3</span> and <span class="tex">p_\text{aff}=0.8</span> for "go to sink", and the other products from the worked example, what is its normalised score?</summary><div class="ans">The product is 0.24, the total is 0.79, so the normalised score is 0.24/0.79 = 0.304.</div></details>
+        <details class="check"><summary>2. Why is a product of the two scores better than using the language score alone?</summary><div class="ans">A high language score for an impossible step is cancelled by a low affordance score, so the planner does not choose it. The product rewards steps that are both sensible and feasible.</div></details>
+        <details class="check"><summary>3. After the robot picks up the sponge, why does the best next step change even though the instruction has not changed?</summary><div class="ans">The state has changed. Holding the sponge makes "pick sponge" infeasible and makes "wipe" feasible with a high affordance, so the same instruction now leads to a different normalised choice.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A language model proposes sensible steps from a fixed menu of robot skills.</li>
+          <li>An affordance score says what the robot can do now; the planner multiplies and normalises the two.</li>
+          <li>Re-plan from the new state after each skill, and define what happens when nothing is feasible.</li></ul></div>
+      </div>
+
+      <div class="callout" style="max-width:780px"><b>Pipeline position</b>Stage 3, <i>Plan</i>, at the task level: one decision per skill, typically a fraction of a second to a few seconds, feeding the controllers of Stage 4. It stores the instruction, the chosen skill sequence and the state at each choice, which is what a reviewer needs to audit a plan.</div>
+    </section>
+
+    <!-- ===================== 8.6 ===================== -->
+    <section class="lesson" id="embodied-evaluation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">8.6</span><h2>Evaluating learned robot policies</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your new policy succeeded 37 times in 50 trials. The old one succeeded 30 times in 50. Is the new one better? Before you answer, consider that each trial takes ten minutes of setup, the objects were the same in every trial, and the lab lights were on.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A success rate is an estimate from a finite number of trials, just as a coin flipped 50 times rarely lands exactly half heads. Fifty trials can give a rate of 0.74, but the true rate might be a little lower or higher. The honest report is the rate together with its uncertainty, and a comparison should ask whether the uncertainty ranges overlap.</p>
+        <p>Two cautions come before any statistics. First, the trials must be representative: the same table and lighting in every trial tests the policy on one scene, not on the world. Second, the trials must be independent enough that they really are separate pieces of evidence. Repeating one trial is not fifty trials.</p>
+
+        <h3 class="sec">Build it up: from a rate to an interval</h3>
+        <p><b>Step 1: the estimate.</b> With <span class="tex">k</span> successes in <span class="tex">n</span> trials, the rate is <span class="tex">\hat p=k/n</span>. For the new policy, <span class="tex">\hat p=37/50=0.74</span>.</p>
+        <p><b>Step 2: the simple interval.</b> The textbook "Wald" interval is <span class="tex">\hat p\pm 1.96\sqrt{\hat p(1-\hat p)/n}</span>. It works for large <span class="tex">n</span>, but it can go below 0 or above 1 and it behaves badly near 0 or 1.</p>
+        <p><b>Step 3: the better interval.</b> The Wilson score interval fixes both problems and is the one we use. It is more honest for small samples and for rates near the ends.</p>
+
+        <div class="worked"><b>Worked example: both intervals for 37 successes in 50 trials</b>
+          <p>Wald: <span class="tex">\sqrt{0.74\cdot0.26/50}=0.0620</span>, so the 95% interval is <span class="tex">0.74\pm0.1215</span>, which is <span class="tex">[0.618,\ 0.862]</span>.</p>
+          <p>Wilson: with <span class="tex">z=1.96</span>, the centre is <span class="tex">(\hat p+z^2/2n)/(1+z^2/n)</span> and the half-width is <span class="tex">z\sqrt{\hat p(1-\hat p)/n+z^2/4n^2}/(1+z^2/n)</span>. The result is <span class="tex">[0.6045,\ 0.8413]</span>.</p>
+          <p>For the old policy, 30 successes in 50 trials gives <span class="tex">\hat p=0.60</span> and a Wilson interval of <span class="tex">[0.4618,\ 0.7239]</span>. The two intervals overlap, from 0.6045 to 0.7239. So these 50-trial results do not separate the two policies by this check. Overlap does not prove the policies are equal, so the honest report is "not yet shown to be better", and the next step is more trials on more scenes.</p></div>
+
+        <p><b>Step 4: more trials narrow the interval.</b> The same 74% rate from 200 trials gives a Wilson interval of about <span class="tex">[0.675,\ 0.796]</span>, which is much narrower. Trials cost time, so the sample size is a planning decision, made before the trials, not after you see the answer.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\tilde p=\frac{\hat p+\dfrac{z^2}{2n}}{1+\dfrac{z^2}{n}},\qquad \text{half-width}=\frac{z\sqrt{\dfrac{\hat p(1-\hat p)}{n}+\dfrac{z^2}{4n^2}}}{1+\dfrac{z^2}{n}}</div>
+        <table class="sym">
+          <tr><td><span class="tex">k</span></td><td>the number of successful trials</td></tr>
+          <tr><td><span class="tex">n</span></td><td>the total number of trials, all counted (including failures and aborted runs)</td></tr>
+          <tr><td><span class="tex">\hat p</span></td><td>the observed success rate, <span class="tex">k/n</span>, a number between 0 and 1</td></tr>
+          <tr><td><span class="tex">z</span></td><td>the normal quantile for the confidence level: 1.96 for 95%</td></tr>
+          <tr><td><span class="tex">\tilde p</span></td><td>the centre of the Wilson interval, which is pulled a little toward 0.5</td></tr>
+        </table>
+        <p>Report the trial count, the scenes, the seeds, and every failure category. A policy evaluated only on the scenes it was trained on will look far better than it is in the world.</p>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Trials arrive one at a time, green for success and red for failure, and the running rate and its Wilson interval update.</li>
+        <li>Set both policies to 37/50, then change the second to 30/50. Read whether the two intervals overlap.</li>
+        <li>Multiply both counts by 4 (148/200 and 120/200). The rate is the same, but the intervals shrink. Ask which result you would trust.</li>
+        <li>Drag the successes slider above the trials for policy A. The lab keeps successes at or below trials, and the interval is only defined for that range. Why must it be?</li></ol></div>
+      <div data-lab="robo-eval"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Quoting a rate without <span class="tex">n</span>.</b> "90%" from 10 trials and "90%" from 1000 trials are not the same claim.</li>
+          <li><b>Dropping failed runs.</b> Crashes and timeouts are failures. Removing them inflates the success rate.</li>
+          <li><b>Tuning on the test scenes.</b> If you choose the policy by its score on the held-out scenes, those scenes are no longer held out.</li>
+          <li><b>Simulation as the benchmark.</b> A simulated success rate says how the policy does in that simulator. Only real trials, with confidence intervals, say how it does on the robot.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Robot learning papers report success over many trials on held-out objects or scenes, and the better ones give intervals and per-scene breakdowns.</li>
+          <li>Benchmarks for manipulation use fixed task suites in simulation and on hardware; the same interval logic decides whether a claimed improvement is real.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A policy succeeds 18 of 20 trials. What is its Wilson 95% interval, and why is it wide?</summary><div class="ans">The rate is 0.90 and the Wilson interval is about [0.699, 0.972]. It is wide because 20 trials is a small sample, and the rate sits near 1, where the Wald interval would misbehave.</div></details>
+        <details class="check"><summary>2. The new policy is 37/50 and the old is 30/50. Why is "the intervals overlap" not the same as "the policies are equal"?</summary><div class="ans">Overlapping intervals mean the data does not separate them with this check; it does not show the rates are the same. A difference could still exist and need more trials to detect.</div></details>
+        <details class="check"><summary>3. Why do 148/200 and 37/50 give the same rate but different intervals?</summary><div class="ans">Both have p̂ = 0.74, but the interval width depends on n. With 200 trials the half-width is about 0.06; with 50 it is about 0.12. More trials give more evidence, so the interval is narrower.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A success rate is an estimate; report it with <span class="tex">n</span> and an interval, such as Wilson's.</li>
+          <li>Count every trial, test on held-out scenes, and state the setup, because the interval only covers the sampling noise.</li>
+          <li>Overlapping intervals mean "not yet shown", not "the same".</li></ul></div>
+      </div>
+
+      <div class="callout" style="max-width:780px"><b>Pipeline position</b>Stage 6, <i>Deploy &amp; monitor</i>, fed by logs from Stage 4 in real or simulated runs. The loop here is the release loop, days to weeks long, and the stored items are the trial records, the scenes, the seeds and the failure labels.</div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now describe a robot dataset as episodes of (observation, action) pairs, tokenise continuous actions and chunk them, explain how a vision-language-action model turns pixels and words into motion, sample multimodal actions with diffusion, combine a language model's plan with what the robot can do, and report a policy's success with honest uncertainty. Next, <b>Module 9 · Safety, deployment &amp; operations</b> (<a href="robo-production.html">robo-production.html</a>) turns these policies into systems that must stay safe in the world.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

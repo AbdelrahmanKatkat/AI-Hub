@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Sensors &amp; actuators · Robotics</title>
+<meta name="description" content="How a robot measures and moves itself: encoders and gear ratios, inertial sensors and drift, stereo and depth cameras, LiDAR time of flight, sensor noise and calibration, and force and tactile sensing.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-robo-sensors.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">1</div>
+      <div style="flex:1">
+        <h1>Module 1 · Sensors &amp; actuators</h1>
+        <p>A robot knows nothing about the world except what its sensors report, and it changes the world only through its actuators. This module follows the two ends of the loop. You will read a joint angle from an encoder, see how a gearbox trades speed for torque, watch an IMU drift, measure depth from two cameras and from a LiDAR pulse, learn how noise and calibration decide what a measurement is worth, and feel contact through force sensing.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs Module 0 (frames, transforms)</span></div>
+      </div>
+    </div>
+
+    <!-- ===================== 1.1 ===================== -->
+    <section class="lesson" id="encoders-motors" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">1.1</span><h2>Encoders, motors &amp; gear ratios</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot wrist must hold a joint at 30.00° to within 0.01°. The motor that turns the joint spins fast but weakly, at 3000 rpm and 0.2 N·m, while the joint needs slow, strong motion. How do we turn the motor into the joint we need, and how does the controller know where the joint actually is?</div>
+
+        <div class="intro"><b>Where this sits.</b> This is <i>sense</i> and <i>act</i> at the joint level: the encoder is a sensor, and the motor and gearbox are the actuator. Joint sensing runs inside the fastest loop on the robot, typically 1 kHz to 10 kHz for a servo drive.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Start with a bicycle. Pedalling at a steady pace, you can choose a small gear to climb a hill slowly with strength, or a large gear to go fast on flat road. A gearbox does the same to a motor. It trades speed for torque. The motor's job is to turn quickly; the joint's job is to turn slowly and firmly.</p>
+        <p>An <b>encoder</b> is the robot's way of counting. It is a disc with evenly spaced marks on a shaft, a light on one side and a sensor on the other. As the disc turns, the light passes through the gaps and the sensor sees pulses. Count the pulses and you know how far the shaft has turned. Nothing more is needed, as long as you know where you started.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: count the marks.</b> One channel of pulses is not enough. If the disc has 500 slits and we read only the rising edges of one channel, we get 500 counts per turn, and we cannot tell whether the shaft turned forward or backward. So an incremental encoder uses two channels, A and B, placed a quarter-cycle apart (a 90° phase shift). This is called <b>quadrature</b>. Each slit produces four distinct states, in the order 00, 10, 11, 01 when turning one way, and the reverse order when turning the other way. The controller reads four edges per slit, so a 500-slit disc gives 2000 counts per revolution.</p>
+        <p><b>Step 2: how fine is a count?</b> With 2000 counts per turn, one count is a rotation of 360° ÷ 2000 = 0.18°. That is the resolution of the sensor: it cannot see motion smaller than one count. The price is that a counter started at power-up knows only relative motion. Its zero is arbitrary, so the robot must find a home position after every restart.</p>
+        <p><b>Step 3: the absolute encoder.</b> An absolute encoder prints a unique code on the disc for every angle, usually a Gray code, so that each position reads a unique word. A 12-bit absolute encoder has 2<sup>12</sup> = 4096 distinct positions, a resolution of 360° ÷ 4096 ≈ 0.088°, and it knows its angle the moment it is powered on.</p>
+        <p><b>Step 4: the gearbox.</b> Now add a reduction gear with ratio N = 50 (the motor turns 50 times for each turn of the output). Three things change at once. The output speed falls by N. The torque rises by about N, reduced a little by friction: with efficiency η = 0.85, the output torque is η·N times the motor torque. And the encoder on the motor now measures a finer joint angle, because the joint turns less per motor count.</p>
+
+        <div class="worked"><b>Worked example: from motor to joint</b>
+          <p>Motor: 3000 rpm, 0.2 N·m, encoder with 2000 counts per motor revolution. Gear ratio N = 50, efficiency η = 0.85.</p>
+          <p>Motor speed in revolutions per second: <span class="tex">3000/60 = 50\ \text{rev/s}</span>. Counts per second: <span class="tex">50\times2000 = 100\,000\ \text{counts/s}</span>.</p>
+          <p>Output speed: <span class="tex">3000/50 = 60\ \text{rpm}</span>, which is one revolution per second.</p>
+          <p>Output torque: <span class="tex">\tau_{out}=\eta N\tau_m = 0.85\times50\times0.2 = 8.5\ \text{N}\cdot\text{m}</span>.</p>
+          <p>Joint resolution with the encoder on the motor: one output revolution needs <span class="tex">2000\times50 = 100\,000</span> counts, so one count is <span class="tex">360^\circ/100\,000 = 0.0036^\circ</span>. The 0.18° sensor has become a 0.0036° joint measurement, because the gear makes the joint turn slowly through many counts.</p>
+          <p>Reflected inertia: a load with inertia <span class="tex">J_L = 0.01\ \text{kg}\cdot\text{m}^2</span> looks like <span class="tex">J_L/N^2 = 0.01/2500 = 4\times10^{-6}\ \text{kg}\cdot\text{m}^2</span> to the motor. A big load becomes small at the motor, which is why gearing makes heavy joints feasible.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{CPR}=4L,\qquad \Delta\theta=\frac{2\pi}{\text{CPR}}\ \text{rad}</div>
+        <div class="eq">\omega_{out}=\frac{\omega_m}{N},\qquad \tau_{out}=\eta N\tau_m,\qquad J_{\text{ref}}=\frac{J_L}{N^2}</div>
+        <table class="sym">
+          <tr><td>L</td><td>number of slits (lines) on the disc, a whole number</td></tr>
+          <tr><td>CPR</td><td>counts per revolution after quadrature decoding (×4 for both edges of both channels)</td></tr>
+          <tr><td>Δθ</td><td>angular resolution: the smallest angle one count represents, in radians</td></tr>
+          <tr><td>N</td><td>gear ratio, motor turns per output turn (N &gt; 1 is a reduction)</td></tr>
+          <tr><td>η</td><td>efficiency of the gearbox, between 0 and 1 (friction and losses)</td></tr>
+          <tr><td>ω<sub>m</sub>, ω<sub>out</sub></td><td>angular speed of motor and output, in rad/s (or rpm when stated)</td></tr>
+          <tr><td>τ<sub>m</sub>, τ<sub>out</sub></td><td>torque at the motor and at the output, in N·m</td></tr>
+          <tr><td>J<sub>L</sub>, J<sub>ref</sub></td><td>load inertia (kg·m²) and that inertia seen at the motor shaft</td></tr>
+        </table>
+        <p>The formula for resolution is the one to remember: a finer count (more slits, a higher multiplier, or a bigger reduction) gives a smaller angle per count. Each choice has a cost: more slits make the disc harder to manufacture and read at high speed, and a bigger gear reduces the top speed of the joint.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>sense</i> (joint encoder), and stage 4, <i>control</i> (the motor drive that receives the torque command). Loop rate: 1 kHz to 10 kHz for the current loop.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The disc turns at a slow speed, and the strip below shows channels A and B as the slits pass the sensor. Count the quarter-steps in one slit: there are four.</li>
+        <li>Switch the reading from incremental to absolute. Notice that the absolute reading shows a value even before any motion, and that the incremental counter only reports changes from its zero.</li>
+        <li>Change the gear ratio to 50 and then to 100. Watch the output joint turn more slowly, and read the joint resolution in degrees change with it.</li>
+        <li>Edit the speed expression. Enter <code>0.5*sin(0.3*t)</code> and watch the disc reverse direction. The quadrature pattern runs backwards, which is how the controller knows the direction.</li></ol></div>
+      <div data-lab="encoder-disc"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"More counts means more accuracy."</b> Counts give resolution, not accuracy. An encoder with a 0.0036° count can still be off by much more because of eccentricity, backlash in the gear or thermal expansion.</li>
+          <li><b>Counting edges on one channel.</b> One channel gives no direction and only a quarter of the resolution. Always decode both channels.</li>
+          <li><b>Mixing motor and joint counts.</b> Motor counts are not joint counts. Always state whether a number is for the motor or the output.</li>
+          <li><b>Assuming a gear is free.</b> Efficiency η below 1 means the output torque is less than N times the motor torque, and the loss is heat.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every learned joint controller reads joint angles and velocities from encoders. A policy network that reaches for an object takes these numbers as part of its observation vector.</li>
+          <li>Teleoperation and demonstrations (Module 7) record joint readings at fixed rates. Their quality depends on the encoder resolution and on the joint's gearing.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A disc has 360 slits and is read in quadrature. What is the resolution in degrees per count?</summary><div class="ans">CPR = 4 × 360 = 1440 counts per revolution, so Δθ = 360° ÷ 1440 = 0.25°.</div></details>
+        <details class="check"><summary>2. A motor with 0.3 N·m drives a gear of ratio 40 with efficiency 0.9. What is the output torque, and what is the output speed if the motor runs at 2400 rpm?</summary><div class="ans">τ<sub>out</sub> = 0.9 × 40 × 0.3 = 10.8 N·m. ω<sub>out</sub> = 2400 ÷ 40 = 60 rpm.</div></details>
+        <details class="check"><summary>3. Why does an absolute encoder remove the need for a homing move after power-up, while an incremental one does not?</summary><div class="ans">The absolute encoder's disc has a unique code for each angle, so one reading gives the angle at once. The incremental encoder only counts changes from an arbitrary zero, so after power loss its count has no link to the real angle until the robot finds a reference mark.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Quadrature gives direction and a fourfold finer count; resolution in degrees is 360 ÷ CPR.</li>
+          <li>A gear of ratio N divides speed by N, multiplies torque by about ηN, and divides reflected inertia by N².</li>
+          <li>Joint resolution is set by the encoder and the gear together, and it is only one part of joint accuracy.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 ===================== -->
+    <section class="lesson" id="imu" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">1.2</span><h2>Inertial sensing: accelerometer and gyroscope</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A balancing robot or a drone must know its tilt many times a second, even when it is moving, and cannot see the horizon. A gyroscope reports how fast the body rotates, and an accelerometer reports the push it feels. Neither reports the tilt directly. How do we turn these two readings into an angle, and why does the angle slowly go wrong?</div>
+
+        <div class="intro"><b>Where this sits.</b> This is the <i>sense</i> stage, feeding the <i>estimate</i> stage. The IMU (inertial measurement unit) typically runs at 100 Hz to 1 kHz, and the estimator that uses it runs at the same rate.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Close your eyes in a moving lift. You feel the push when it speeds up and the lightness when it slows, and you feel the tilt of a car turning a corner. Your inner ear does this with tiny fluid and hair cells. An IMU does it with two chips. The <b>gyroscope</b> measures angular rate, how fast the body turns, in radians per second. The <b>accelerometer</b> measures specific force, the acceleration of the body minus gravity, in metres per second squared.</p>
+        <p>The gyroscope tells you the rate of change of the tilt. To get the tilt itself you must add up the rate over time, and adding up has a weakness: any small error in each reading accumulates. The accelerometer has no such accumulation, because gravity gives a fixed reference direction. But it is noisy, and it is confused whenever the robot accelerates. The two sensors cover each other's weaknesses.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: integrate the rate.</b> If the gyroscope reports ω = 0.5 rad/s for 0.01 s, the tilt changes by 0.005 rad. Repeating this each step and adding it up gives the tilt. This is the <b>gyro-only</b> estimate. It is smooth and responsive, but it drifts, because the gyroscope is never exactly zero when the robot is still.</p>
+        <p><b>Step 2: the bias.</b> A gyroscope reading is the true rate plus a <b>bias</b> b, a small offset that depends on temperature and on the chip. If b = 0.01 rad/s (about 0.57°/s), the integrated tilt error grows by 0.01 rad every second. After 60 seconds the error is 0.6 rad, which is 34.4°. A robot that trusts the gyro alone is lost within a minute.</p>
+        <p><b>Step 3: the accelerometer gives a reference.</b> When the robot is still, the accelerometer reads gravity alone. With the sensor axes x (forward) and z (up), a tilt θ gives a<sub>x</sub> = g sin θ and a<sub>z</sub> = g cos θ, so θ = atan2(a<sub>x</sub>, a<sub>z</sub>). This angle does not drift. It is wrong, though, when the robot accelerates, because the sensor then reads gravity plus the robot's own acceleration.</p>
+        <p><b>Step 4: the complementary filter.</b> Trust the gyro for quick changes and the accelerometer for the slow average. With a blend weight α close to 1 (for example 0.98), each step predicts the new tilt from the gyro and pulls it gently toward the accelerometer angle: θ<sub>new</sub> = α(θ + ω dt) + (1 − α) θ<sub>acc</sub>. The accelerometer's pull has a time constant of about dt/(1 − α): with dt = 0.01 s and α = 0.98 that is 0.5 s, so drift is corrected over about half a second while fast gyro motion is still followed closely.</p>
+
+        <div class="worked"><b>Worked example: one step of the complementary filter</b>
+          <p>Previous tilt θ = 0.10 rad. Gyro rate ω = 0.5 rad/s, step dt = 0.01 s. Accelerometer reads a<sub>x</sub> = 1.7 m/s², a<sub>z</sub> = 9.6 m/s². Blend α = 0.98.</p>
+          <p>Gyro prediction: <span class="tex">\theta+\omega\,dt = 0.10+0.5\times0.01 = 0.105\ \text{rad}</span>.</p>
+          <p>Accelerometer angle: <span class="tex">\theta_{acc}=\operatorname{atan2}(1.7,\,9.6)=0.1753\ \text{rad}\approx10.04^\circ</span>.</p>
+          <p>Blend: <span class="tex">\theta_{new}=0.98\times0.105+0.02\times0.1753 = 0.1029+0.0035=0.1064\ \text{rad}</span>, about 6.10°.</p>
+          <p>The filter moved a little toward the accelerometer, and most of the update still came from the gyro.</p>
+          <p>Accelerometer double integration is far worse. A constant accelerometer bias of 0.02 m/s² gives a position error of <span class="tex">\tfrac12(0.02)t^2</span>: 1 m after 10 s and 36 m after 60 s. This is why an IMU alone cannot give position for long.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\hat\theta_{k+1}=\alpha\,(\hat\theta_k+\omega_k\,\Delta t)+(1-\alpha)\,\theta_{acc,k+1},\qquad \omega_{meas}=\omega+b+n_\omega</div>
+        <div class="eq">\theta_{acc}=\operatorname{atan2}(a_x,\,a_z),\qquad \text{gyro-only error}(t)\approx b\,t</div>
+        <table class="sym">
+          <tr><td>ω<sub>meas</sub></td><td>gyroscope reading, rad/s</td></tr>
+          <tr><td>ω</td><td>true angular rate about the sensing axis, rad/s</td></tr>
+          <tr><td>b</td><td>bias: a slowly changing offset, rad/s</td></tr>
+          <tr><td>n<sub>ω</sub></td><td>random noise of the gyro, rad/s (zero mean)</td></tr>
+          <tr><td>Δt</td><td>time between two samples, s</td></tr>
+          <tr><td>θ̂</td><td>the estimated tilt, rad</td></tr>
+          <tr><td>α</td><td>blend weight between 0 and 1; closer to 1 trusts the gyro more</td></tr>
+          <tr><td>a<sub>x</sub>, a<sub>z</sub></td><td>accelerometer readings along the forward and up axes, m/s²</td></tr>
+        </table>
+        <p>The formula shows the core trade-off. The gyro error grows linearly with time, so for any bias b a tilt estimate from the gyro alone is wrong by b·t. The accelerometer angle is correct on average but wobbles with every bump. The filter keeps the good part of each.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>sense</i> (the IMU), then stage 2, <i>estimate</i> (the filter). Loop rate: 100 Hz to 1 kHz. Stored: raw readings in a ring buffer, and the estimated pose for the controller.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. The true tilt (grey) swings slowly. Watch the gyro-only estimate (orange) follow it at first, then drift away, while the filtered estimate (green) stays close.</li>
+        <li>Set the gyro bias to zero. The gyro-only estimate now tracks the truth. Put the bias back to 0.5°/s and notice how quickly the error grows.</li>
+        <li>Set α to 0.90, then 0.999. A small α follows the accelerometer's noise, a large α drifts for longer. Find a setting where the error stays small.</li>
+        <li>Edit the true tilt expression, for example <code>0.6*sin(0.5*t)</code>. Watch how the filter lags fast motion, and why that lag is the price of a large α.</li></ol></div>
+      <div data-lab="imu-drift"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Integrate the accelerometer for position."</b> Double integration amplifies bias by t²; after a minute the error is tens of metres. Use the IMU for short bursts and fuse it with a position source.</li>
+          <li><b>Forgetting the units.</b> Gyroscope data sheets give degrees per second, and code often expects radians per second. A silent factor of 57.3 is a common bug.</li>
+          <li><b>Using atan2 of a moving robot.</b> The accelerometer angle is valid only when the robot is not accelerating. Filters often reduce the accelerometer weight when the measured magnitude is far from 9.81 m/s².</li>
+          <li><b>Calibrating once.</b> Bias changes with temperature. A cold-started IMU can drift more in its first minutes than in steady state.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Learned locomotion policies for legged robots take IMU angular rates and gravity direction as their main observations. A wrong bias makes the policy fall, so the estimator must run before the network.</li>
+          <li>Drone autopilots and self-driving stacks fuse an IMU with GPS or wheel odometry using the extended Kalman filter (Module 3), which generalises the complementary filter to a full estimate with uncertainty.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A gyro has a constant bias of 0.02 rad/s. How large is the tilt error after 30 s, in radians and in degrees?</summary><div class="ans">Error = b·t = 0.02 × 30 = 0.6 rad, which is 0.6 × 57.30 ≈ 34.4°.</div></details>
+        <details class="check"><summary>2. Why does the accelerometer angle θ<sub>acc</sub> = atan2(a<sub>x</sub>, a<sub>z</sub>) fail during a fast forward acceleration?</summary><div class="ans">During acceleration the sensor reads gravity plus the body's own acceleration. The forward axis then has an extra term, so atan2 reports a tilt the body does not have.</div></details>
+        <details class="check"><summary>3. With α = 0.98, a gyro rate of zero, a previous estimate of 0.10 rad and an accelerometer angle of 0.20 rad, what is the new estimate?</summary><div class="ans">θ<sub>new</sub> = 0.98 × (0.10 + 0) + 0.02 × 0.20 = 0.098 + 0.004 = 0.102 rad. The estimate moved only 0.002 rad toward the accelerometer.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The gyroscope gives smooth rates that drift when integrated; the accelerometer gives a drift-free but noisy tilt that breaks during acceleration.</li>
+          <li>A bias b in the gyro produces an angle error of b·t, which grows without limit.</li>
+          <li>A complementary filter with α near 1 blends the two cheaply; the Kalman filter is its principled successor.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 ===================== -->
+    <section class="lesson" id="cameras-depth" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">1.3</span><h2>Cameras, stereo and depth sensors</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A picking robot sees a cup on a table through its camera. The image tells it where the cup is across the picture, but not how far away it is. Without a distance, the gripper cannot reach it. How can a robot recover depth from light, and how accurate is that depth at different distances?</div>
+
+        <div class="intro"><b>Where this sits.</b> This is <i>sense</i>, feeding the <i>estimate</i> stage with a depth image or point cloud. Camera frames arrive at 15 to 60 Hz, and depth from a stereo pair is usually computed on the same schedule.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Hold a pencil at arm's length and close one eye, then the other. The pencil seems to jump sideways against the wall behind it. That shift is <b>parallax</b>, and it is larger for near objects than for far ones. Your brain uses the difference between two eyes to judge distance, and a stereo camera does the same with two lenses a known distance apart.</p>
+        <p>A single camera cannot do this alone. Every point in a photo is a ray from the lens; a ray does not record how far along it the point sits. This is the basic fact of the <b>pinhole camera</b>: depth is lost in the projection.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the pinhole model.</b> A point at camera coordinates (X, Y, Z), with Z the distance in front of the lens, lands on the image at pixel coordinates u = f·X/Z + c<sub>x</sub> and v = f·Y/Z + c<sub>y</sub>. The focal length f is in pixels, and (c<sub>x</sub>, c<sub>y</sub>) is the image centre. Double the distance and the point moves half as far from the centre. The image scales everything by 1/Z.</p>
+        <p><b>Step 2: a second camera.</b> Put a second camera a distance B (the <b>baseline</b>) to the right. The same point lands at a slightly different column in the second image. The difference between the two columns is the <b>disparity</b> d. Because the cameras are displaced sideways only, the points match along the same row, so the search for a match is one-dimensional.</p>
+        <p><b>Step 3: disparity gives depth.</b> Both images use the same formula, so the difference of the two columns is f·B/Z. Solving for Z gives the rule that makes stereo work: <span class="tex">Z = fB/d</span>. A big disparity means a near object; a small disparity means a far one.</p>
+        <p><b>Step 4: depth is not equally accurate everywhere.</b> Disparity is measured in whole pixels, so an error of half a pixel in d causes a depth error that grows with the square of distance. This is the price of stereo, and it is the main design trade-off: a wider baseline or a longer focal length gives more disparity and more accurate depth, but needs more room and a narrower view.</p>
+        <p><b>Step 5: active depth sensors.</b> Some depth cameras do not compare two views. A <b>structured-light</b> sensor projects a known pattern and sees how it bends on the surface. A <b>time-of-flight</b> camera emits modulated light and measures the round-trip delay for each pixel, the same principle as the LiDAR in Lesson 1.4. Both work on plain surfaces where stereo fails, but they struggle in bright sunlight and on shiny or dark objects.</p>
+
+        <div class="worked"><b>Worked example: depth from disparity, by hand</b>
+          <p>Focal length f = 600 px, baseline B = 0.12 m. A pixel of disparity d = 24 px.</p>
+          <p>Depth: <span class="tex">Z = fB/d = 600\times0.12/24 = 72/24 = 3.00\ \text{m}</span>.</p>
+          <p>Now the error. If the matcher is off by half a pixel, d could be 23.5 px or 24.5 px:</p>
+          <p><span class="tex">Z(23.5)=72/23.5=3.064\ \text{m}</span> and <span class="tex">Z(24.5)=72/24.5=2.939\ \text{m}</span>. The half-pixel error costs about 6 cm at 3 m.</p>
+          <p>A general formula for the depth resolution is <span class="tex">\Delta Z \approx \dfrac{Z^2}{fB}\,\Delta d</span>. At Z = 3 m: <span class="tex">9/72\times0.5 = 0.0625\ \text{m}</span>. At Z = 6 m, the same half-pixel error costs <span class="tex">36/72\times0.5 = 0.25\ \text{m}</span>, four times as much, because the error grows with Z².</p>
+          <p>Pinhole check of the image position: a point at X = 0.3 m, Z = 3 m lies <span class="tex">600\times0.3/3 = 60\ \text{px}</span> from the image centre in the left camera.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">u=f\frac{X}{Z}+c_x,\qquad d=u_L-u_R=\frac{fB}{Z},\qquad Z=\frac{fB}{d},\qquad \Delta Z\approx\frac{Z^2}{fB}\Delta d</div>
+        <table class="sym">
+          <tr><td>(X, Y, Z)</td><td>a point in the camera frame, metres; Z is the distance along the optical axis</td></tr>
+          <tr><td>(u, v)</td><td>the pixel where the point lands, pixels</td></tr>
+          <tr><td>f</td><td>focal length expressed in pixels (focal length in metres divided by the pixel size)</td></tr>
+          <tr><td>(c<sub>x</sub>, c<sub>y</sub>)</td><td>principal point: the pixel where the optical axis meets the image, pixels</td></tr>
+          <tr><td>B</td><td>baseline: distance between the two camera centres, metres</td></tr>
+          <tr><td>d</td><td>disparity: u<sub>L</sub> − u<sub>R</sub> for the same point, pixels</td></tr>
+          <tr><td>ΔZ, Δd</td><td>depth uncertainty (metres) and disparity uncertainty (pixels)</td></tr>
+        </table>
+        <p>The formula for depth error is the one to remember. Its Z² means that stereo is excellent close up and poor far away. Doubling the baseline halves the depth error at any distance, while doubling f does the same.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>sense</i> (the camera pair or depth sensor), then stage 2, <i>estimate</i> (matching and depth). Loop rate: 15 to 60 Hz. Stored: the depth image, the calibration (f, B, c<sub>x</sub>, c<sub>y</sub>) and a timestamp per frame.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. An object drifts toward and away from two cameras seen from above. The two image strips below show where it lands in each view, and the gap between them is the disparity.</li>
+        <li>Watch the disparity shrink as the object moves away. Read the depth from <code>f·B/d</code> in the readout and check that it matches the true depth.</li>
+        <li>Increase the baseline B from 12 cm to 24 cm. The disparity doubles and the depth error (the ± band in the readout) halves at every distance.</li>
+        <li>Edit the depth path to <code>6 + 4*sin(0.2*t)</code>. Note the error band at the far end of the swing: it is widest where the object is farthest.</li></ol></div>
+      <div data-lab="stereo-depth"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Stereo measures depth directly."</b> It measures disparity. Depth comes from calibration, and any calibration error becomes a depth error.</li>
+          <li><b>Using a single image for distance.</b> One camera gives a direction, not a distance, unless the size of the object is known or a learned model is used, and then the answer is an estimate.</li>
+          <li><b>Forgetting that f is in pixels.</b> Data sheets give focal length in millimetres. Multiply by the number of pixels per millimetre before using Z = fB/d.</li>
+          <li><b>Trusting depth on shiny or textureless surfaces.</b> Stereo needs texture to match. A white wall or a mirror gives no reliable disparity, and the depth map will have holes or false depths.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Grasp detection (Module 4) takes an RGB-D image: colour from the camera, depth from the stereo or time-of-flight sensor. The grasp pose is only as good as the depth at the gripper.</li>
+          <li>Monocular depth networks learn to predict depth from one image, using stereo or LiDAR as training labels. They are useful but their errors are not bounded the way geometry bounds stereo error.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A stereo rig has f = 800 px and B = 0.10 m. A point has disparity 40 px. What is its depth?</summary><div class="ans">Z = fB/d = 800 × 0.10 / 40 = 80 / 40 = 2.00 m.</div></details>
+        <details class="check"><summary>2. With the same rig, a half-pixel disparity error at Z = 2 m, and then at Z = 4 m. How do the depth errors compare?</summary><div class="ans">ΔZ = Z²Δd/(fB) = Z²·0.5/80. At 2 m: 4 × 0.5 / 80 = 0.025 m. At 4 m: 16 × 0.5 / 80 = 0.100 m. The error at 4 m is four times the error at 2 m.</div></details>
+        <details class="check"><summary>3. A time-of-flight pixel reads a round-trip delay of 20 ns. What is the distance, and why is this the same principle as LiDAR?</summary><div class="ans">Distance = c·Δt/2 = 299 792 458 × 20 × 10⁻⁹ / 2 ≈ 3.00 m. It is the same principle because light travels to the surface and back, so distance is half the round trip times the speed of light (Lesson 1.4).</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A camera projects 3-D points to pixels and loses depth; two cameras recover it through disparity, with Z = fB/d.</li>
+          <li>Stereo depth error grows with Z², so wider baselines and longer focal lengths are the levers.</li>
+          <li>Active sensors (structured light, time of flight) avoid matching but have their own failure conditions.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 ===================== -->
+    <section class="lesson" id="lidar" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">1.4</span><h2>LiDAR &amp; range sensing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery robot has to know where the walls of a corridor are, reliably, at night and in a dim room, and up to 30 m away. A camera struggles with the dark, and stereo depth is poor at long range. What sensor measures distance directly, and what does its output look like once it has measured the whole room?</div>
+
+        <div class="intro"><b>Where this sits.</b> This is <i>sense</i>. A spinning or solid-state LiDAR fires pulses at tens to hundreds of thousands of points per second, and returns a point cloud about 10 times per second for a rotating unit.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Clap in a large hall and listen for the echo. The longer the echo takes to return, the farther the wall. A <b>LiDAR</b> (light detection and ranging) does this with light. It fires a short laser pulse, waits for the reflection, and converts the wait into distance. Light is so fast that the wait is tiny: a few tens to a few hundred nanoseconds for an object a few tens of metres away.</p>
+        <p>One distance is not a map. A LiDAR sends many pulses in different directions, and each direction gives one range. Combine the ranges with the direction of each beam and you have a set of 3-D points, the <b>point cloud</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: time of flight.</b> The light travels to the target and back, so the distance is half the round trip. Write Δt for the measured delay: <span class="tex">r = c\,\Delta t/2</span>, with c = 299 792 458 m/s. The factor of 2 is the most common mistake in LiDAR code.</p>
+        <p><b>Step 2: one beam gives one point.</b> A beam leaves the sensor at an azimuth angle θ (around the vertical axis) and an elevation angle φ (above or below the horizon). The point it hits is at range r in that direction, so its position in the sensor frame is <span class="tex">x = r\cos\varphi\cos\theta,\ \ y = r\cos\varphi\sin\theta,\ \ z = r\sin\varphi</span>.</p>
+        <p><b>Step 3: many beams make a scan.</b> A typical 16-beam unit spreads its beams over, say, −15° to +15° in elevation (2° apart) and turns the whole head to sweep the azimuth. Every azimuth step gives 16 points. With 1800 azimuth steps per turn (0.2° each) and 10 turns per second, that is 28 800 points per turn and 288 000 points per second.</p>
+        <p><b>Step 4: the beam pattern and its gaps.</b> Beams are discrete. Between two beams the sensor sees nothing, so a thin pole between two beams can be missed. Denser patterns cost more hardware and more data.</p>
+        <p><b>Step 5: noise.</b> Range is not exact. Timing jitter and the surface itself (its angle, colour and roughness) add a random error of a few centimetres. Dark, glossy or wet surfaces can return weak or no echoes at all, and rain and dust return false early echoes.</p>
+
+        <div class="worked"><b>Worked example: a return at 133.4 ns, then one 3-D point</b>
+          <p>The return arrives after Δt = 133.4 ns. Range: <span class="tex">r = c\Delta t/2 = 299\,792\,458\times133.4\times10^{-9}/2 \approx 20.00\ \text{m}</span>.</p>
+          <p>The beam leaves at azimuth θ = 30° and elevation φ = −10°. Then:</p>
+          <p><span class="tex">x = 20\cos(-10^\circ)\cos30^\circ = 20\times0.98481\times0.86603 = 17.057\ \text{m}</span></p>
+          <p><span class="tex">y = 20\cos(-10^\circ)\sin30^\circ = 20\times0.98481\times0.5 = 9.848\ \text{m}</span></p>
+          <p><span class="tex">z = 20\sin(-10^\circ) = -3.473\ \text{m}</span>, so the point lies 3.47 m below the sensor.</p>
+          <p>Timing resolution: a 1 mm range step needs a timing resolution of <span class="tex">2\times0.001/c \approx 6.7\ \text{ps}</span>. That is why LiDAR electronics are expensive.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">r=\frac{c\,\Delta t}{2},\qquad \mathbf{p}=r\,(\cos\varphi\cos\theta,\ \cos\varphi\sin\theta,\ \sin\varphi)^{\mathsf T}</div>
+        <table class="sym">
+          <tr><td>c</td><td>speed of light in air, 299 792 458 m/s (about 3 × 10⁸)</td></tr>
+          <tr><td>Δt</td><td>time between emitting a pulse and detecting its echo, seconds</td></tr>
+          <tr><td>r</td><td>range to the target, metres</td></tr>
+          <tr><td>θ, φ</td><td>azimuth and elevation of the beam, radians (degrees in the worked example)</td></tr>
+          <tr><td>p</td><td>the 3-D point in the sensor frame, metres; transform it with the sensor pose from Module 0</td></tr>
+        </table>
+        <p>The point is one of the most useful forms in robotics. Once the points are transformed by the sensor's pose, they can be merged with points from other scans, registered (Module 4) and used for mapping (Module 3).</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>sense</i> (LiDAR), then stage 2, <i>estimate</i> (point cloud, mapping, localisation). Loop rate: 10 Hz for a rotating scan, faster for solid-state units. Stored: the point cloud per scan, with timestamps and the pose at which each point was taken.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. A beam sweeps around a room (illustrative 2-D slice of a 3-D LiDAR). Each hit adds a point; watch the walls and the box fill in.</li>
+        <li>Reduce the number of beams per turn from 72 to 12. Notice the gaps between points, and why a thin obstacle can be missed.</li>
+        <li>Raise the range noise σ. The walls become fuzzy bands. Read the echo time for the hit under the cursor in the readout; it is <code>2r/c</code>.</li>
+        <li>Slow the sweep to the minimum and step it by hand. The scan is a sequence of beams; the point cloud is the sum of them.</li></ol></div>
+      <div data-lab="lidar-scan"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Forgetting the factor of 2.</b> The measured Δt is the round trip. Using Δt directly doubles the range error.</li>
+          <li><b>Mixing sensor and robot frames.</b> A point is in the sensor frame until it is transformed by the sensor's pose. Points from different poses cannot be merged without this step.</li>
+          <li><b>Motion during a scan.</b> A rotating unit takes about 0.1 s per turn. A robot moving at 1 m/s moves 10 cm during the scan, so points at the start and end of a turn are in different places. This is motion distortion, and it must be corrected.</li>
+          <li><b>Trusting the cloud as a surface.</b> Points are samples; glass, water and black paint may return nothing, and rain returns noise.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Autonomous driving stacks run 3-D detectors on LiDAR point clouds to find cars and pedestrians, and their evaluation depends on the beam pattern, which is why datasets specify the sensor.</li>
+          <li>SLAM (Module 3) builds maps by matching successive scans. Accurate per-point range and correct motion compensation are the inputs that make the match work.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A LiDAR return arrives after 66.7 ns. What is the range?</summary><div class="ans">r = c·Δt/2 = 299 792 458 × 66.7 × 10⁻⁹ / 2 ≈ 10.00 m.</div></details>
+        <details class="check"><summary>2. A 16-beam unit spins at 10 Hz with 1800 azimuth steps per turn. How many points per second, and how much does a robot moving at 1.5 m/s travel during one turn?</summary><div class="ans">Points per second = 16 × 1800 × 10 = 288 000. One turn takes 0.1 s, so the robot moves 1.5 × 0.1 = 0.15 m during the scan, which is why motion distortion must be corrected.</div></details>
+        <details class="check"><summary>3. A beam at azimuth 0° and elevation 0° returns r = 5 m. What is its point, and what is z?</summary><div class="ans">x = 5 cos 0° cos 0° = 5 m, y = 0, z = 5 sin 0° = 0. The point lies 5 m straight ahead on the sensor's horizontal plane.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>LiDAR measures range from the round-trip time of light: r = cΔt/2.</li>
+          <li>Each beam, given its azimuth and elevation, becomes a 3-D point; a scan is a point cloud in the sensor frame.</li>
+          <li>Point density, beam gaps, range noise and motion during the scan decide what the cloud can be trusted for.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 ===================== -->
+    <section class="lesson" id="sensor-noise" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">1.5</span><h2>Noise, bias &amp; calibration</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two range sensors on the same robot both say the wall is about 10 m away, but one reads 10.2 m and the other 9.9 m, and each jumps a little from reading to reading. Which one should the robot believe, and can combining them give a better answer than either alone?</div>
+
+        <div class="intro"><b>Where this sits.</b> This runs across every sensor and feeds every <i>estimate</i> stage. The sensor model you choose here (its noise, its bias, its calibration) is what the Kalman filter of Module 3 uses as its covariance.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Measure a table with a tape measure that is slightly stretched, and you get a consistent error: every length comes out 1% too long. Measure it several times and each reading also wobbles by a millimetre from the way you hold the tape. These are two different errors. The first is <b>bias</b>, a systematic shift that repeating the measurement does not remove. The second is <b>random noise</b>, a scatter that averaging does reduce.</p>
+        <p>A sensor model says what kind of error to expect. The common model is a true value plus a bias plus a zero-mean Gaussian noise. The noise is random, unpredictable from one reading to the next, and symmetric around zero. The bias is fixed or slowly changing, and it must be calibrated away.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a measurement is the truth plus error.</b> Write each reading as z = x + b + v, where x is the true value, b is the bias, and v is noise with mean 0 and standard deviation σ. Repeated readings of a fixed x scatter around x + b.</p>
+        <p><b>Step 2: averaging removes noise but not bias.</b> Take N readings with the same bias and independent noise. The average has error b plus noise whose standard deviation is σ/√N. Going from 1 reading to 16 cuts the noise by four, but the bias stays. This is why a precise sensor can still be inaccurate.</p>
+        <p><b>Step 3: the error that matters.</b> The root-mean-square error (RMSE) combines both: RMSE = √(b² + σ²). A sensor with bias 0.05 m and noise 0.10 m has RMSE √(0.0025 + 0.01) = 0.112 m. Reducing the noise helps only until the bias dominates.</p>
+
+        <div class="worked"><b>Worked example: five readings of one wall</b>
+          <p>Five range readings of the same wall, in metres: 1.04, 0.97, 1.02, 1.08, 0.95.</p>
+          <p>Mean: <span class="tex">\bar z = (1.04+0.97+1.02+1.08+0.95)/5 = 5.06/5 = 1.012\ \text{m}</span>.</p>
+          <p>Sample standard deviation: the squared deviations sum to <span class="tex">0.01108</span>; dividing by 4 gives variance <span class="tex">0.00277</span>, so <span class="tex">s = 0.0526\ \text{m}</span>.</p>
+          <p>Standard error of the mean: <span class="tex">s/\sqrt5 = 0.0526/2.236 = 0.0235\ \text{m}</span>. Averaging five readings reduced the 5 cm scatter to about 2.4 cm, but it cannot tell us if the wall is really at 1.00 m rather than 1.012 m.</p>
+          <p>Now fusion. Sensor 1 has σ<sub>1</sub> = 0.3 m and reads z<sub>1</sub> = 10.2 m. Sensor 2 has σ<sub>2</sub> = 0.1 m and reads z<sub>2</sub> = 9.9 m. Weights are inverse variances: <span class="tex">w_1 = 1/0.3^2 = 11.11</span>, <span class="tex">w_2 = 1/0.1^2 = 100</span>.</p>
+          <p>Fused estimate: <span class="tex">\hat z = (11.11\times10.2+100\times9.9)/(11.11+100) = 9.93\ \text{m}</span>. Fused variance: <span class="tex">1/(w_1+w_2) = 1/111.11 = 0.0090</span>, so the fused standard deviation is <span class="tex">\sqrt{0.0090}=0.0949\ \text{m}</span>, better than either sensor alone (0.1 m).</p></div>
+
+        <h3 class="sec">Calibration</h3>
+        <p>Calibration removes bias by measuring known things. There are two kinds. <b>Intrinsic</b> calibration fixes the internal model of one sensor: a camera's focal length, principal point and lens distortion, or a LiDAR's per-beam angle offsets. <b>Extrinsic</b> calibration fixes where the sensor sits: the rigid transform from the sensor frame to the robot base or to another sensor, which is the transform frames from Module 0. A camera with perfect intrinsics but a wrong extrinsic places every point in the wrong part of the robot.</p>
+        <p>Calibration drifts. Vibration, heat and knocks move the mounts, so robots re-check calibration on a schedule, and many run online checks against landmarks.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">z_k=x_k+b+v_k,\qquad v_k\sim\mathcal N(0,\sigma^2),\qquad \text{RMSE}=\sqrt{b^2+\sigma^2}</div>
+        <div class="eq">\bar z=\frac1N\sum_{k=1}^N z_k,\qquad \operatorname{SE}=\frac{\sigma}{\sqrt N},\qquad \hat z=\frac{\sum_i z_i/\sigma_i^2}{\sum_i 1/\sigma_i^2},\qquad \hat\sigma^2=\Big(\sum_i \sigma_i^{-2}\Big)^{-1}</div>
+        <table class="sym">
+          <tr><td>x<sub>k</sub></td><td>true value at reading k (the quantity being measured)</td></tr>
+          <tr><td>b</td><td>bias: a systematic offset, same units as the measurement</td></tr>
+          <tr><td>v<sub>k</sub></td><td>random noise, drawn from a Gaussian with mean 0 and variance σ²</td></tr>
+          <tr><td>σ</td><td>standard deviation of the noise (the spread of repeated readings)</td></tr>
+          <tr><td>N</td><td>number of readings averaged</td></tr>
+          <tr><td>z<sub>i</sub>, σ<sub>i</sub></td><td>reading and noise standard deviation of sensor i</td></tr>
+          <tr><td>ẑ, σ̂</td><td>fused estimate and its standard deviation, valid when the sensors are independent and unbiased</td></tr>
+        </table>
+        <p>The fusion formula is the most useful result of the lesson. It says that a sensor is worth its precision: its weight is 1/σ², so halving the noise quadruples its influence. It works only if the errors are independent, unbiased and Gaussian. If one sensor has an unnoticed bias, fusion will average the bias in and report a confident wrong answer.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>sense</i>, and stage 2, <i>estimate</i> (fusion). Loop rate: as the sensors report. Stored: each sensor's noise and bias model, the calibration parameters and the date they were last checked.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. Sensor 1 (blue) and sensor 2 (orange) report the true value (grey line) with noise. Watch the fused estimate (green) hug the truth more closely than either sensor.</li>
+        <li>Set σ<sub>2</sub> to 0.5 and watch the fused estimate lean toward sensor 1. The precise sensor dominates because its weight is 1/σ².</li>
+        <li>Give sensor 1 a bias of +0.3 m. The fused estimate now settles off the truth, even though it is less noisy: averaging does not remove bias.</li>
+        <li>Edit the true value expression to <code>1 + 0.5*sin(0.1*t)</code>. Watch the running average lag a moving truth, and see that the lag, not the noise, is the error.</li></ol></div>
+      <div data-lab="noise-fusion"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Averaging fixes everything."</b> Averaging shrinks noise by √N. It leaves bias alone and it cannot track a moving quantity without lag.</li>
+          <li><b>Treating the noise as uniform.</b> Real sensors have heavy tails: occasional wild outliers, a dropout, a multipath echo. A Gaussian model underestimates these, so filters use robust rules or gating.</li>
+          <li><b>Forgetting correlation.</b> Two sensors that share a bias, such as two cameras on one mount, are not independent. Fusing them as if they were overstates confidence.</li>
+          <li><b>Calibrating once and forgetting.</b> A calibration from the factory is correct only until the next knock or temperature change.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every Kalman filter, particle filter and SLAM system (Module 3) needs a sensor model: the noise and bias numbers that set how much to trust each measurement.</li>
+          <li>Learned perception models are trained on data with a known noise profile. A model that has never seen sensor noise can fail on the robot even when it scores well on clean benchmarks.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A sensor has σ = 0.2 m and no bias. How many readings must you average to reduce the standard error to 0.05 m?</summary><div class="ans">σ/√N = 0.05 gives √N = 0.2 / 0.05 = 4, so N = 16 readings.</div></details>
+        <details class="check"><summary>2. Sensor A has σ = 0.4 m, sensor B has σ = 0.2 m, both unbiased. Readings are 5.0 m and 5.6 m. What is the fused estimate, and is it closer to B?</summary><div class="ans">Weights: w<sub>A</sub> = 1/0.16 = 6.25, w<sub>B</sub> = 1/0.04 = 25. Fused = (6.25 × 5.0 + 25 × 5.6) / 31.25 = (31.25 + 140) / 31.25 = 5.48 m. Yes, it is closer to B, whose weight is four times larger.</div></details>
+        <details class="check"><summary>3. A sensor has bias 0.1 m and noise 0.05 m. You average 1000 readings. What is the RMSE of the average, to two decimal places?</summary><div class="ans">The noise of the average is 0.05/√1000 ≈ 0.0016 m, and the bias stays at 0.1 m. RMSE = √(0.1² + 0.0016²) ≈ 0.10 m. Averaging does not help here; calibration is needed.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A measurement is truth plus bias plus noise; averaging removes noise by √N and never removes bias.</li>
+          <li>Fusing independent unbiased sensors weights each by 1/σ², and the fused variance is the inverse of the summed weights.</li>
+          <li>Calibration, intrinsic and extrinsic, is how bias is removed, and it must be checked over the robot's life.</li></ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 ===================== -->
+    <section class="lesson" id="force-tactile" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">1.6</span><h2>Force, torque &amp; tactile sensing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A robot must insert a peg into a hole with 0.1 mm clearance, and must stop pressing before it cracks a plastic housing. Vision cannot see the last millimetre, and a position-controlled arm pushes as hard as it must to reach its target. How does the robot feel contact, and how hard is it pushing right now?</div>
+
+        <div class="intro"><b>Where this sits.</b> This is <i>sense</i> for contact, and it feeds the <i>control</i> stage: force-controlled tasks close a loop on the sensor reading, usually at 500 Hz to 1 kHz.</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Pick up a glass with your fingers. You do not look at the grip; you feel how hard you are squeezing and how the glass would slip if you eased off. Your skin and tendons are a force and tactile sensor, and the sense of effort tells you when to stop.</p>
+        <p>A robot wrist works in the same way. A <b>six-axis force/torque sensor</b> sits between the wrist and the tool and reports three forces and three torques. Tactile sensors on the fingers report contact pressure over a small area. Both turn contact, which vision cannot see, into numbers.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: force from a spring.</b> Many force sensors are small springs with strain gauges on them. Pushing the spring by a small displacement δ gives a force F = kδ, where k is the stiffness. A gauge reads the strain, so the sensor reports force directly.</p>
+        <p><b>Step 2: contact as a threshold.</b> The robot is in contact when the reading rises above what it would read in free air. Noise makes this a decision with errors. If the force noise has standard deviation σ<sub>F</sub>, a threshold at 3σ<sub>F</sub> rarely triggers by mistake (about 0.13% of samples, one-sided, for Gaussian noise), but it reacts only after the force has grown.</p>
+        <p><b>Step 3: torque is force at a distance.</b> A force F applied a distance r from the wrist gives a moment τ = F r. A tool tip pushing with 12 N at 0.1 m from the wrist produces a moment of 1.2 N·m about the wrist, which the sensor also reports. This lets the robot tell a push in the tool's middle from a push at its tip.</p>
+        <p><b>Step 4: friction holds a part.</b> A gripper squeezes a part with normal force N<sub>g</sub> from each finger. Coulomb friction lets each contact resist a tangential force up to μN<sub>g</sub>. With two contacts, the largest tangential force the grip can resist is 2μN<sub>g</sub>. This is why a robot can hold a part by squeezing and why it slips when the grip is too weak.</p>
+        <p><b>Step 5: compliance is a sensing problem.</b> A stiff arm with a force sensor can be made compliant: the controller makes the tool behave like a spring-damper, so a push moves the tool rather than building force. Force control then needs the force reading, and a wrong reading means a wrong push.</p>
+
+        <div class="worked"><b>Worked example: a spring contact and a grip</b>
+          <p>Stiffness k = 5000 N/m. The finger presses 2 mm into a soft surface.</p>
+          <p>Force: <span class="tex">F = k\delta = 5000\times0.002 = 10\ \text{N}</span>.</p>
+          <p>Noise and threshold: force noise σ<sub>F</sub> = 0.5 N, so a threshold of 3σ<sub>F</sub> = 1.5 N. Contact is declared when the reading exceeds 1.5 N. Its false-alarm rate is about 0.00135 per sample for one-sided Gaussian noise, so at 1000 Hz the robot falsely reports contact about 1.35 times per second. A higher threshold or a filter on the reading is needed for a quieter output.</p>
+          <p>Grip: two fingers, each squeezing with N<sub>g</sub> = 40 N, and a friction coefficient μ = 0.4. Largest tangential force that can be held without sliding: <span class="tex">2\mu N_g = 2\times0.4\times40 = 32\ \text{N}</span>. A part that weighs 3 kg needs only <span class="tex">3\times9.81 = 29.4\ \text{N}</span> to be held vertically, so this grip is just enough, with a margin of 2.6 N.</p>
+          <p>Moment: a 12 N tip force at 0.1 m from the wrist gives <span class="tex">\tau = 12\times0.1 = 1.2\ \text{N}\cdot\text{m}</span>.</p></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">F=k\,\delta,\qquad \boldsymbol\tau=\mathbf r\times\mathbf F,\qquad |F_t|\le\mu N_g\ \text{(no slip, per contact)}</div>
+        <table class="sym">
+          <tr><td>k</td><td>stiffness of the sensing spring or of the contact, N/m</td></tr>
+          <tr><td>δ</td><td>displacement of the spring from its rest position, m</td></tr>
+          <tr><td>F</td><td>force along the sensing axis, N</td></tr>
+          <tr><td>r, τ</td><td>lever arm from the reference point (m) and the resulting moment (N·m)</td></tr>
+          <tr><td>μ</td><td>Coulomb friction coefficient, dimensionless</td></tr>
+          <tr><td>N<sub>g</sub>, F<sub>t</sub></td><td>normal (squeezing) force and tangential force at a contact, N</td></tr>
+        </table>
+        <p>The friction law is a limit, not a prediction. Below it the contact holds; at it the part starts to slide. A tactile sensor reports the normal force over a patch, which is why slip detection uses the rate of change of the tangential reading as well as its size.</p>
+
+        <div class="callout"><b>Pipeline position</b>Stage 1, <i>sense</i> (force, torque and tactile), then stage 4, <i>control</i> (force or impedance loop). Loop rate: 500 Hz to 1 kHz for force loops, slower for tactile arrays. Stored: the force history of each task, for later analysis and learning.</div>
+      </div>
+
+      <h3 class="sec" style="max-width:780px">Lab</h3>
+      <div class="try"><b>Try this</b><ol>
+        <li>Press play. A finger presses into a surface and withdraws. The force trace follows the spring law, and the contact flag turns on when the reading passes the threshold.</li>
+        <li>Raise the sensor noise and watch the false contact flags appear before the finger touches anything. Raise the threshold until they stop, and note that the detection now happens later.</li>
+        <li>Change the law to a nonlinear spring with <code>5000*x + 200000*x^3</code>. The force rises faster than linearly at large press depths, and a fixed stiffness estimate becomes wrong.</li>
+        <li>Set the grip force and friction. Read the maximum holding force, and watch the part slide when the load exceeds it.</li></ol></div>
+      <div data-lab="force-contact"></div>
+
+      <div class="prose">
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reading the raw sensor as a force.</b> A force sensor reads the weight of its tool and cable. The tool's mass must be removed with a gravity model before the reading means contact force.</li>
+          <li><b>Assuming a linear spring.</b> Soft materials and rubber pads are nonlinear. A fixed k underestimates the force at larger press depths.</li>
+          <li><b>Setting the contact threshold too low.</b> Every false trigger halts the task; too high and the robot presses hard before it reacts.</li>
+          <li><b>Ignoring the reference frame.</b> Moments are taken about a point. A torque reading at the wrist is not the torque at the fingertip unless the lever arm is applied.</li></ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Assembly and insertion policies (Module 7) learn from force and torque histories as well as images. Force is the signal that tells a policy the peg has touched the hole.</li>
+          <li>Safe human-robot interaction relies on force limits: a collaborative robot stops or yields when the contact force exceeds a limit, which is only as safe as the force sensing behind it (Module 9).</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A spring with k = 2000 N/m is pressed 5 mm. What force does the sensor read, and what moment does it give at a 0.15 m lever arm?</summary><div class="ans">F = kδ = 2000 × 0.005 = 10 N. Moment = F r = 10 × 0.15 = 1.5 N·m.</div></details>
+        <details class="check"><summary>2. Two fingers each squeeze with 25 N and μ = 0.3. What is the largest tangential force the grip can hold, and is a 15 N load safe?</summary><div class="ans">2μN<sub>g</sub> = 2 × 0.3 × 25 = 15 N. A 15 N load is exactly at the limit, so it is on the edge of slipping; with any margin lost, it slides. A safe design keeps the load well below the limit.</div></details>
+        <details class="check"><summary>3. Why does a 1.5 N contact threshold on a sensor with σ<sub>F</sub> = 0.5 N produce false contacts?</summary><div class="ans">1.5 N is 3σ above zero. For a Gaussian reading with no contact, the chance of exceeding 3σ on one sample is about 0.13% one-sided. At a high sample rate, such triggers still occur several times per second, so the threshold must be combined with filtering or a persistence test.</div></details>
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Force sensing turns a spring's displacement into a force, and torque is force times lever arm.</li>
+          <li>Contact detection is a threshold decision under noise, so it trades false alarms against late detection.</li>
+          <li>Friction limits what a grip can hold; compliant control needs a trustworthy force reading.</li></ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now say how a robot measures its joints, its motion, its distance to the world and its contact, and how noisy each reading is. Next, <b>Module 2</b> turns joint readings into the position and motion of the arm and wheeled base: <a href="robo-kinematics.html">Kinematics &amp; dynamics</a>.</div>
+
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

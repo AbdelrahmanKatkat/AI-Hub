@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robotics · AI Learning Hub</title>
+<meta name="description" content="A zero-to-hero robotics curriculum: robot frames and kinematics, sensors, state estimation and SLAM, perception, motion planning, control, learning for robots, vision-language-action models, and safe deployment.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="index.html#topics">Domains</a> › Robotics</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">🤖</div>
+      <div style="flex:1">
+        <h1>Robotics — zero to hero</h1>
+        <p>Robots that <b>sense</b>, <b>estimate</b>, <b>plan</b>, <b>control</b> and <b>learn</b>: from frames and joint angles, through filters, SLAM and motion planning, to PID and MPC, imitation and reinforcement learning, vision-language-action models, and deploying robots safely.</p>
+        <div class="chips"><span class="chip">10 modules</span><span class="chip">59 lessons</span><span class="chip">Kinematics &amp; control</span><span class="chip">Animated arms &amp; filters</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="lesson" id="start" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>How to learn from this</h2></div>
+      <div class="prose">
+        <p>Every lesson starts with a picture of a robot or a scene, then a hand-worked example on a 1–2 link arm, a grid, a one-dimensional filter or a small table, then the formal definition, an <b>animated lab you can edit</b>, traps, real robots and self-check questions. Each lesson says where it sits in the sense–think–act loop and how fast that loop must run.</p>
+        <p>The maths and ML are linked, not repeated: when a lesson needs matrices, Jacobians, Bayes or policy networks it points to the matching <a href="mathematics.html">Mathematics</a> or <a href="machine-learning.html">Machine Learning</a> lesson.</p>
+      </div>
+    </section>
+
+    <section class="lesson" id="pipeline">
+      <div class="lesson-head"><h2>The robot pipeline</h2></div>
+      <div class="prose"><p>Every robot runs these six stages in a loop, many times a second. Click a stage for what it does, what it needs and where its data is stored.</p></div>
+      <div data-lab="pipeline" data-id="robotics"></div>
+    </section>
+
+    <section class="lesson" id="map">
+      <div class="lesson-head"><h2>The map</h2></div>
+      <div class="pathbar" id="pathbar"></div>
+      <div class="prose"><p>Module 0 sets up frames and the software stack. Module 1 covers sensors and actuators, and Module 2 the kinematics and dynamics of arms and wheeled bases. Module 3 estimates the state of the robot and the map, and Module 4 perceives objects and scenes. Module 5 plans motion and tasks, and Module 6 controls it. Module 7 learns policies from demonstrations and experience, and Module 8 covers foundation models for robots. Module 9 makes it safe and keeps it running.</p></div>
+    </section>
+
+    <section class="lesson" id="curriculum">
+      <div class="lesson-head"><h2>The curriculum</h2></div>
+      <div class="mods" id="mod-list"></div>
+      <p style="color:var(--muted);font-size:13px">Full lesson specification: <a href="https://github.com/AbdelrahmanKatkat/AI-Hub/blob/main/curriculum/robotics.md" target="_blank" rel="noopener">curriculum/robotics.md</a>.</p>
+    </section>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · Robot foundations · Robotics</title>
+<meta name="description" content="What a robot is: the sense–think–act loop, coordinate frames and homogeneous transforms, configuration space, workspace and redundancy, and the robot software stack, with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-core.js"></script>
+<script defer src="assets/labs-robo-foundations.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="robotics" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="robotics.html">Robotics</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#f0883e26">0</div>
+      <div style="flex:1">
+        <h1>Module 0 · Robot foundations</h1>
+        <p>What a robot is, and the mathematics it needs before anything else: a robot senses, thinks and acts in a loop, every part of it has its own coordinate frame, and its motion lives in a space of joint values rather than in the room. By the end you can place a robot arm in space with a matrix, count how many ways it can reach a point, and say how fast its software loop must run.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Basic algebra and trigonometry</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="intro prose">
+      <p>Every lesson opens with a picture of a robot, then a hand-worked example on a one- or two-link arm, a frame, or a small schedule, then the formal definition with every symbol explained, then an <b>animated lab you can edit</b>. Angles are in degrees unless a formula needs radians (then it says so), lengths are in metres, times in seconds or milliseconds, and every lab is a <b>teaching model</b>, not a real robot: it is marked <i>illustrative</i>.</p>
+      <p>The sense–think–act loop runs through the whole module. Each lesson ends with a short pipeline view: which of the six stages (sense, estimate, plan, control, learn, deploy and monitor) it belongs to, how fast its loop must run, and what it stores.</p>
+    </div>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="what-is-a-robot" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">0.1</span><h2>What a robot is: sense, think, act</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A warehouse arm must pick a box from a conveyor and place it on a shelf. Which parts of that job are sensing, which are deciding and which are moving? And how do we describe the arm so that a program can move it to a point it has never been to before?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Strip away the metal and every robot runs one loop, over and over:</p>
+        <ul>
+          <li><b>Sense</b> — read the world and the machine itself: joint encoders say how far each joint has turned, a camera or lidar says where the objects are.</li>
+          <li><b>Think</b> — decide what to do next: estimate where things are, plan a path, compute the motor command that moves the arm closer to the goal.</li>
+          <li><b>Act</b> — drive the motors (the <i>actuators</i>) so the machine changes its state, which the next sensing step then measures.</li>
+        </ul>
+        <p>The loop is closed: the action changes what the next sense reports. That is why robotics is about <i>feedback</i>, and why a robot that thinks perfectly but senses badly fails in the real world.</p>
+        <p>There are two broad families. A <b>manipulator</b> is a chain of links joined by joints, fixed to a table or a floor, like an arm. A <b>mobile robot</b> moves through space on wheels or legs, like a delivery robot or a rover. Most of this module is about manipulators, because their geometry is the cleanest place to learn the ideas.</p>
+        <p>A <b>joint</b> is what lets two links move relative to each other. A <b>revolute</b> joint rotates, like a hinge; its value is an angle. A <b>prismatic</b> joint slides, like a telescope; its value is a length. The number of independent joint values needed to set the whole machine is its <b>degrees of freedom</b> (DOF). A planar arm with two hinges has 2 DOF: two numbers fix every pose it can take.</p>
+
+        <h3 class="sec">Build it up: one joint, one loop</h3>
+        <p>Take the smallest possible control problem: one revolute joint that starts at <span class="tex">\theta=0^\circ</span> and must reach a target of <span class="tex">30^\circ</span>. The simplest controller is <i>proportional</i>: command a speed that is proportional to the remaining error. The speed in degrees per second is <span class="tex">K_p</span> times the error, with <span class="tex">K_p=5\ \text{s}^{-1}</span>. The joint keeps that speed for one control period <span class="tex">\Delta t</span>, then the loop senses again.</p>
+        <p>The loop rate is the number of times per second that the sense–think–act cycle runs. A rate of 10 Hz means <span class="tex">\Delta t=0.1\ \text{s}</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Start at <span class="tex">\theta=0^\circ</span>, target <span class="tex">30^\circ</span>, <span class="tex">K_p=5\ \text{s}^{-1}</span>. Each tick: error <span class="tex">e=30^\circ-\theta</span>, speed <span class="tex">\omega=5e</span>, new angle <span class="tex">\theta\leftarrow\theta+\omega\,\Delta t</span>.</p>
+          <p><b>At 10 Hz</b> (<span class="tex">\Delta t=0.1\ \text{s}</span>):</p>
+          <ul>
+            <li>tick 1: <span class="tex">e=30^\circ</span>, <span class="tex">\omega=150^\circ/\text{s}</span>, <span class="tex">\theta=15.0^\circ</span></li>
+            <li>tick 2: <span class="tex">e=15.0^\circ</span>, <span class="tex">\omega=75^\circ/\text{s}</span>, <span class="tex">\theta=22.5^\circ</span></li>
+            <li>tick 3: <span class="tex">e=7.5^\circ</span>, <span class="tex">\omega=37.5^\circ/\text{s}</span>, <span class="tex">\theta=26.25^\circ</span></li>
+          </ul>
+          <p>The error halves on every tick. <b>At 100 Hz</b> (<span class="tex">\Delta t=0.01\ \text{s}</span>) the first tick gives <span class="tex">\theta=1.500^\circ</span>, the second <span class="tex">2.925^\circ</span>, the third <span class="tex">4.279^\circ</span>: slower, but smooth. <b>At 1 Hz</b> (<span class="tex">\Delta t=1\ \text{s}</span>) the first tick jumps to <span class="tex">150^\circ</span>, the second to <span class="tex">-450^\circ</span>, the third to <span class="tex">1950^\circ</span>. The same controller with the same gain has run away.</p>
+        </div>
+        <p>The reason is one number. Each tick multiplies the error by <span class="tex">(1-K_p\Delta t)</span>: at 10 Hz that is <span class="tex">1-0.5=0.5</span>, at 100 Hz it is <span class="tex">0.95</span>, at 1 Hz it is <span class="tex">1-5=-4</span>. A factor of magnitude above 1 grows, and a negative one flips the sign every tick. The loop rate is not a detail; it decides whether the robot is stable at all.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\theta_{k+1}=\theta_k+K_p\,\Delta t\,(\theta^\star-\theta_k),\qquad e_{k+1}=(1-K_p\Delta t)\,e_k</div>
+        <p>The loop is stable (the error shrinks) when <span class="tex">|1-K_p\Delta t|&lt;1</span>, which for positive gains means <span class="tex">K_p\Delta t&lt;2</span>. This is a discrete-time stability condition; module 6 gives the continuous version.</p>
+        <table class="sym">
+          <tr><td>k</td><td>index of the control tick (0, 1, 2, …)</td></tr>
+          <tr><td>θ<sub>k</sub></td><td>joint angle at tick k, in degrees in the worked example</td></tr>
+          <tr><td>θ*</td><td>the target angle (the setpoint)</td></tr>
+          <tr><td>e<sub>k</sub> = θ* − θ<sub>k</sub></td><td>the error at tick k</td></tr>
+          <tr><td>K<sub>p</sub></td><td>proportional gain, in 1/s (speed per unit of error)</td></tr>
+          <tr><td>Δt = 1/f</td><td>control period in seconds; f is the loop rate in hertz</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start at 10 Hz and Kp = 5. Watch the joint settle in about four ticks, without overshoot.</li>
+          <li>Drop the rate to 1 Hz. Notice that the joint overshoots, then runs away. Read the readout: Kp·Δt is 5 and the stability limit is 2.</li>
+          <li>Raise the rate back to 200 Hz and turn on sensor noise (0.5°). The joint now jitters around the target: a fast loop cannot remove noise that the sensor puts in.</li>
+          <li>Set Kp to 8 at 10 Hz and watch the joint ring. Then find the highest Kp that still settles at 10 Hz.</li></ol></div>
+        <div data-lab="sense-think-act"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A faster loop is not always better.</b> A faster loop reacts sooner, but every tick needs compute and a sensor reading, and noise is not removed by sampling faster.</li>
+          <li><b>Degrees and radians.</b> Trigonometric functions in code take radians. A joint command in degrees fed to <code>sin()</code> gives nonsense without any error message.</li>
+          <li><b>Joint DOF is not task DOF.</b> A planar arm with three hinges has 3 DOF, but placing its tip needs only 2 numbers. The spare one is redundancy (lesson 0.4).</li>
+        </ul></div>
+
+        <div class="callout"><b>Pipeline view.</b> Stage: control (with sensing in front). Loop rate: 10 Hz to 1 kHz depending on the joint. Stores: the current joint state and the last command.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every embodied system runs this loop: industrial arms, delivery robots, drones and humanoids all close a feedback loop over sensed state.</li>
+          <li>Learned robot policies (module 7) are one more "think" step: they map what the robot senses to what it should do next, and they run inside the same loop with the same timing limits.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A gripper jaw slides along a rail. Is that joint revolute or prismatic, and what is its value?</summary><div class="ans">Prismatic. It slides rather than turns, so its value is a length (metres), not an angle.</div></details>
+        <details class="check"><summary>2. A planar arm has three revolute joints and its tip is placed in the plane. How many DOF does the arm have, and how many does the task need?</summary><div class="ans">The arm has 3 DOF. Placing the tip in a plane needs 2 numbers, so there is 1 spare degree of freedom.</div></details>
+        <details class="check"><summary>3. Kp = 4 per second and the loop runs at 10 Hz. Is it stable? By what factor does the error shrink each tick?</summary><div class="ans">Kp·Δt = 4 × 0.1 = 0.4, which is below 2, so it is stable. Each tick multiplies the error by 1 − 0.4 = 0.6.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A robot is a closed loop: sense, think, act, then sense what the action changed.</li>
+          <li>Revolute joints give angles, prismatic joints give lengths; DOF counts the independent joint values.</li>
+          <li>For a proportional loop, the error is multiplied by (1 − Kp·Δt) each tick: the loop rate decides stability, so Kp·Δt must stay below 2.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="frames-transforms" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">0.2</span><h2>Coordinate frames &amp; homogeneous transforms</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A camera on the arm's wrist sees a mug 0.30 m in front of its lens. The gripper must close on that mug, but the arm is controlled in its own base frame. How do we turn "the mug is at a point in the camera" into "the mug is at a point in the base", and how do we chain that with the arm's own motion?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A point has no coordinates on its own; it has coordinates <i>in some frame</i>. A frame is a coordinate system with an origin and two (in 2-D) or three (in 3-D) axes. The camera has a frame, the gripper has a frame, the table has a frame, and the robot base has a frame. Each link of an arm carries its own frame, which moves with the link.</p>
+        <p>Converting a point from one frame to another takes two operations, in this order: <b>rotate</b> the point by how the two frames are turned relative to each other, then <b>move</b> it by where the second frame's origin sits. Think of a ruler lying on a table: first you turn it, then you slide it.</p>
+        <p>Doing this with two separate operations for every link would be painful. A trick fixes it: write each point with one extra coordinate equal to 1 (its <b>homogeneous</b> form), and pack the rotation and the translation into one 3×3 matrix (in 2-D) or 4×4 matrix (in 3-D). Then converting frames is a single matrix multiplication, and chaining frames is multiplying matrices.</p>
+
+        <h3 class="sec">Build it up: one frame in 2-D</h3>
+        <p>Start with a rotation alone. Turning a frame counter-clockwise by an angle <span class="tex">\alpha</span> is the matrix <span class="tex">R(\alpha)=\begin{bmatrix}\cos\alpha&amp;-\sin\alpha\\\sin\alpha&amp;\cos\alpha\end{bmatrix}</span>. Its columns are the new x and y axes, written in the old frame. The rotated point is <span class="tex">R\,\mathbf p</span>. Adding the origin of frame B, <span class="tex">\mathbf t</span>, gives <span class="tex">\mathbf p^{A}=R\,\mathbf p^{B}+\mathbf t</span>: rotate, then move.</p>
+        <p>To make it one matrix, append a 1: <span class="tex">\begin{bmatrix}\mathbf p^A\\1\end{bmatrix}=\begin{bmatrix}R&amp;\mathbf t\\0\,0&amp;1\end{bmatrix}\begin{bmatrix}\mathbf p^B\\1\end{bmatrix}</span>. The matrix on the left is the transform <span class="tex">T_B^A</span>. The bottom row (0, 0, 1) keeps the 1 at 1, which is why the trick works.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Frame B is rotated <span class="tex">30^\circ</span> relative to the base frame A, and its origin sits at <span class="tex">(2,\,1)</span> m in A. So</p>
+          <div class="eq">T_B^A=\begin{bmatrix}0.866&amp;-0.500&amp;2\\0.500&amp;0.866&amp;1\\0&amp;0&amp;1\end{bmatrix}</div>
+          <p>A point at <span class="tex">(1,0)</span> m in frame B (one metre along B's x axis) is <span class="tex">\begin{bmatrix}0.866\cdot1-0.500\cdot0+2\\0.500\cdot1+0.866\cdot0+1\\1\end{bmatrix}=\begin{bmatrix}2.866\\1.500\\1\end{bmatrix}</span> in A. In words: the point is 2.866 m right and 1.500 m up from the base.</p>
+          <p>Now go back. The inverse matrix is <span class="tex">T_A^B=\begin{bmatrix}R^\top&amp;-R^\top\mathbf t\\0&amp;1\end{bmatrix}=\begin{bmatrix}0.866&amp;0.500&amp;-2.232\\-0.500&amp;0.866&amp;0.134\\0&amp;0&amp;1\end{bmatrix}</span>. Applying it to <span class="tex">(2.866,1.500)</span> returns <span class="tex">(1.000,0.000)</span>, the original point in B.</p>
+        </div>
+        <p>Chaining is multiplication. Suppose link 2 is attached to the end of link 1 (frame B), and frame C is rotated another <span class="tex">45^\circ</span> relative to B and sits 1 m along B's x axis. Then <span class="tex">T_C^A=T_B^A\,T_C^B</span>, where <span class="tex">T_C^B</span> is the rotation by 45° with translation (1, 0). Multiplying gives a rotation of <span class="tex">30^\circ+45^\circ=75^\circ</span> and an origin at <span class="tex">(2.866,\,1.500)</span>: the last column is where frame C's origin sits in A. The order matters: a rotation then a move is not the same as a move then a rotation (see the traps).</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathbf p^{A}=R_B^A\,\mathbf p^{B}+\mathbf t_B^A,\qquad T_B^A=\begin{bmatrix}R_B^A&amp;\mathbf t_B^A\\\mathbf 0^\top&amp;1\end{bmatrix},\qquad T_A^C=T_A^B\,T_B^C,\qquad (T_B^A)^{-1}=\begin{bmatrix}R^\top&amp;-R^\top\mathbf t\\\mathbf 0^\top&amp;1\end{bmatrix}</div>
+        <p>In 3-D the same form holds with a 3×3 rotation <span class="tex">R</span> and a 4×4 transform. The inverse is cheap because <span class="tex">R^{-1}=R^\top</span> for any rotation matrix: its columns are orthonormal.</p>
+        <table class="sym">
+          <tr><td>p<sup>A</sup>, p<sup>B</sup></td><td>the same physical point written in frame A and frame B, as column vectors</td></tr>
+          <tr><td>R<sub>B</sub><sup>A</sup></td><td>rotation matrix that turns frame B's axes into frame A's; its columns are B's axes expressed in A</td></tr>
+          <tr><td>t<sub>B</sub><sup>A</sup></td><td>position of frame B's origin, expressed in frame A (in metres)</td></tr>
+          <tr><td>T<sub>B</sub><sup>A</sup></td><td>homogeneous transform: 3×3 (2-D) or 4×4 (3-D), maps points from B into A</td></tr>
+          <tr><td>T<sup>−1</sup></td><td>inverse transform, which maps from A back into B</td></tr>
+          <tr><td>0<sup>⊤</sup></td><td>a row of zeros, so the last component stays 1</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set a₁ = 30° and a₂ = 0°, then compare the readout with the worked example: T₀¹ is a rotation by 30° and the gripper point moves with it.</li>
+          <li>Set a₂ = 45°. The second frame rotates relative to the first, so the total rotation of the gripper frame is a₁ + a₂ = 75°. Confirm it from the matrix: the cosine of 75° is 0.259.</li>
+          <li>Move the point p slider in the gripper frame. Its base coordinates change, but the point stays fixed on the gripper: that is what a frame attached to a link means.</li>
+          <li>Change the link lengths. The last column of the matrix (the gripper origin) changes; the rotation block depends only on the angles.</li></ol></div>
+        <div data-lab="frame-chain"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Order of multiplication.</b> <span class="tex">T_A^B T_B^C</span> is not <span class="tex">T_B^C T_A^B</span>. Read a product from the outside in: the left matrix is the frame you are closest to the base of the chain.</li>
+          <li><b>Active versus passive.</b> Rotating a point by α and rotating the frame by α give opposite rotations. Decide which one a formula means before you multiply.</li>
+          <li><b>Translation lives in the parent frame.</b> The offset t is measured in A, not in B. Adding t to coordinates given in B is the most common bug in hand calculations.</li>
+          <li><b>Units.</b> A transform mixes rotations (no units) and translations (metres). Keep all translations in one unit, usually metres.</li></ul></div>
+
+        <div class="callout"><b>Pipeline view.</b> Stage: estimate (the frame tree is a state of the robot). Rate: recomputed at every control tick, because joint angles change. Stores: a tree of transforms, for example the ROS 2 tf2 library's frame graph.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Pose estimation</b> returns a transform from the camera to an object; grasping needs that transform chained to the robot base.</li>
+          <li><b>Hand–eye calibration</b> finds the fixed transform between a camera and the gripper, once, so that every later camera measurement can be mapped into the robot's frame.</li>
+          <li><b>Coordinate reference systems</b> are the same idea on the Earth: GeoAI transforms between map projections, and a robot does this between its own frames.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Frame B is rotated 90° and sits at the origin of A. What are the base coordinates of the point (1, 0) in B?</summary><div class="ans">Rotating (1, 0) by 90° gives (0, 1). With zero translation, the base coordinates are (0, 1).</div></details>
+        <details class="check"><summary>2. In T_B^A the translation column is (2, 1). What does the number 2 mean, and in which frame is it measured?</summary><div class="ans">It is the x-coordinate of frame B's origin, measured in frame A, in the same unit as the points (here metres).</div></details>
+        <details class="check"><summary>3. Using the worked example, check that the inverse maps (2.866, 1.500) back to (1, 0). Show the arithmetic.</summary><div class="ans">x: 0.866×2.866 + 0.500×1.500 − 2.232 = 2.482 + 0.750 − 2.232 = 1.000. y: −0.500×2.866 + 0.866×1.500 + 0.134 = −1.433 + 1.299 + 0.134 = 0.000. The point returns to (1, 0).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A frame is a coordinate system attached to something; a point has coordinates in a given frame.</li>
+          <li>A homogeneous transform packs rotation and translation into one matrix: rotate, then move.</li>
+          <li>Chain frames by multiplying transforms in order; invert a transform with R<sup>⊤</sup> and −R<sup>⊤</sup>t.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="configuration-space" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">0.3</span><h2>Joint space &amp; configuration space</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An arm must move from where it is to a goal without touching a shelf. The shelf is an obstacle in the room. But the arm does not move in the room: it moves its joints. How do we make the shelf and the arm live in the same space, so that a planner can search for a path?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>Describe the robot by its <b>configuration</b>: the list of all its joint values, <span class="tex">\mathbf q=(\theta_1,\theta_2,\dots)</span> for a revolute arm. Every configuration fixes the whole machine, so the list is a complete description of the robot's shape. The set of all possible configurations is the <b>configuration space</b> (C-space). For an arm, it is joint space: each point of it is one arm pose.</p>
+        <p>The point of the idea is this. In the room, the arm is a complicated shape and the shelf is a box. In C-space, the arm is a single point, and the shelf becomes a <i>region</i>: the set of joint values at which some part of the arm would touch the shelf. Moving the arm without collision is now the same problem as moving a point around a region, which is a problem computers handle well.</p>
+        <p>Two facts beginners find surprising. First, C-space is often not a flat box: each revolute joint turns through a full circle, so the angle <span class="tex">-180^\circ</span> and <span class="tex">180^\circ</span> are the same pose, and a two-joint arm lives on a torus (a doughnut). Second, a straight line in C-space is not a straight line in the room, and it is usually not what the arm should do.</p>
+
+        <h3 class="sec">Build it up: a two-link arm and one obstacle</h3>
+        <p>Take a planar arm with links <span class="tex">L_1=L_2=1\ \text{m}</span>. With joint angles <span class="tex">\theta_1</span> (base) and <span class="tex">\theta_2</span> (elbow, measured relative to link 1), the elbow sits at <span class="tex">(L_1\cos\theta_1,\ L_1\sin\theta_1)</span> and the tip at the elbow plus <span class="tex">(L_2\cos(\theta_1+\theta_2),\ L_2\sin(\theta_1+\theta_2))</span>. Put a round obstacle of radius <span class="tex">r=0.3\ \text{m}</span> at <span class="tex">(1.5,\,0)</span> m. Call a configuration <b>in collision</b> if <em>any</em> point of either link lies within r of the obstacle centre.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Test four configurations, measuring each link's closest distance to the obstacle centre:</p>
+          <ul>
+            <li><span class="tex">\mathbf q=(0^\circ,0^\circ)</span>: elbow (1, 0), tip (2, 0). Link 2 runs from (1, 0) to (2, 0) and passes right through (1.5, 0), distance 0 m. <b>Collision.</b></li>
+            <li><span class="tex">\mathbf q=(0^\circ,90^\circ)</span>: elbow (1, 0), tip (1, 1). Link 2 runs up from (1, 0); the closest point is (1, 0), at distance 0.5 m. Link 1 is also 0.5 m away. Both exceed 0.3 m. <b>Free.</b></li>
+            <li><span class="tex">\mathbf q=(90^\circ,0^\circ)</span>: elbow (0, 1), tip (0, 2). Link 1's nearest point is (0, 0), distance 1.500 m; link 2's is (0, 1), distance 1.803 m. <b>Free.</b></li>
+            <li><span class="tex">\mathbf q=(45^\circ,0^\circ)</span>: elbow (0.707, 0.707), tip (1.414, 1.414). Distances 1.062 m and 1.061 m. <b>Free.</b></li>
+          </ul>
+          <p>So the point <span class="tex">(0^\circ,0^\circ)</span> lies in the forbidden region of configuration space, and the other three are free. Testing only the tip would have wrongly passed the first case, which is the first trap below.</p>
+        </div>
+        <p>If we test every configuration on a fine grid of <span class="tex">(\theta_1,\theta_2)</span>, the forbidden cells form a shape in C-space. Obstacles in the room become such shapes; a planner then looks for a path through the free cells. The lab below draws this exactly.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal C=\{\mathbf q\}, \qquad \mathcal C_{\text{obs}}=\{\mathbf q:\ \mathcal A(\mathbf q)\cap\mathcal O\neq\varnothing\}, \qquad \mathcal C_{\text{free}}=\mathcal C\setminus\mathcal C_{\text{obs}}</div>
+        <p>Here <span class="tex">\mathcal A(\mathbf q)</span> is the set of points the robot occupies at configuration <span class="tex">\mathbf q</span>, and <span class="tex">\mathcal O</span> is the set of points of the obstacle. A motion is valid if every configuration along it lies in <span class="tex">\mathcal C_{\text{free}}</span>. For the disc in the example, <span class="tex">\mathcal C_{\text{obs}}</span> is the set of <span class="tex">\mathbf q</span> where some link comes within r of the centre.</p>
+        <table class="sym">
+          <tr><td>q = (θ₁, …, θₙ)</td><td>configuration: the list of joint values, in radians for the formulas (degrees in the examples)</td></tr>
+          <tr><td>𝒞</td><td>configuration space: all configurations the joints can reach</td></tr>
+          <tr><td>𝒜(q)</td><td>the set of points of the robot's body at configuration q (its links, in metres)</td></tr>
+          <tr><td>𝒪</td><td>the set of points occupied by obstacles in the room</td></tr>
+          <tr><td>𝒞<sub>obs</sub>, 𝒞<sub>free</sub></td><td>configurations that collide, and configurations that do not</td></tr>
+          <tr><td>L₁, L₂, r</td><td>link lengths and obstacle radius, in metres</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Move the obstacle centre to (1.0, 0.0) and watch the red region in the right-hand grid. The straight yellow line from S to G crosses it; the readout says where first.</li>
+          <li>Press Play and watch the arm's configuration (the dot) cross the red region. In the workspace the arm turns red at the same moment.</li>
+          <li>Grow the radius from 0.3 m to 0.6 m. The forbidden region grows, and the straight line may now hit it earlier. A bigger obstacle is a bigger shape in C-space, not a bigger shape in the arm.</li>
+          <li>Move the obstacle far from the arm (for example x = −2). The forbidden region shrinks towards nothing.</li></ol></div>
+        <div data-lab="config-space"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Checking only the tip.</b> The worked example's first configuration has its tip clear of the obstacle yet its link passes through it. Every point of every link must be checked.</li>
+          <li><b>Thinking the straight line is safe.</b> A straight line in joint space is a smooth motion for the joints, but the arm's links may sweep through an obstacle along the way. Planners check the whole motion, not only its ends.</li>
+          <li><b>Forgetting the wrap.</b> Revolute angles repeat every 360°. A planner that treats −180° and 180° as far apart will walk the long way round.</li>
+          <li><b>Sampling misses thin obstacles.</b> A grid of configurations can jump over a thin wall. A test must be finer than the thinnest feature, or check the path between samples.</li></ul></div>
+
+        <div class="callout"><b>Pipeline view.</b> Stage: plan (collision checking is run inside the planner). Rate: planning is offline or per request, often in tens of milliseconds; the collision check must be fast. Stores: the obstacle model (a set of shapes) and the robot model (link geometry).</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Motion planners</b> such as sampling-based planners in MoveIt (which uses OMPL) search configuration space for collision-free arm paths (module 5).</li>
+          <li><b>Learned policies</b> that output joint targets are trained or checked against the same notion of a valid configuration.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the worked obstacle, why is q = (0°, 0°) forbidden even though its tip is 1 m from the obstacle centre?</summary><div class="ans">Because the second link lies along the line through the obstacle centre (1.5, 0). A point of the link is at distance 0 from the centre, which is inside the 0.3 m radius. The tip was never the test.</div></details>
+        <details class="check"><summary>2. Two revolute joints each turn through a full circle. What shape is their configuration space, and why is θ₁ = −180° the same configuration as θ₁ = +180°?</summary><div class="ans">A torus (a doughnut). Each angle wraps around, so −180° and +180° point the link in the same direction and give the same pose.</div></details>
+        <details class="check"><summary>3. If an obstacle grows, does the free region of configuration space grow or shrink? Why?</summary><div class="ans">It shrinks. A larger obstacle means more configurations have some link within the radius, so 𝒞<sub>obs</sub> grows and 𝒞<sub>free</sub> = 𝒞 ∖ 𝒞<sub>obs</sub> shrinks.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A configuration is the vector of joint values; the set of all configurations is configuration space.</li>
+          <li>A workspace obstacle becomes a forbidden region in configuration space, where the whole body, not just the tip, is checked.</li>
+          <li>Planning is search for a path of free configurations; revolute joints make the space a torus, and straight lines in C-space are not straight in the room.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="workspace-dof" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">0.4</span><h2>Workspace, degrees of freedom &amp; redundancy</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A two-link arm is asked to put its tip on a point 1.0 m from its base. Is it possible? If yes, how many ways are there to do it? And if we add a third link, how does the answer change?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>The <b>workspace</b> is the set of points the tip can reach. For a two-link arm it is not a disc but a <b>ring</b>. The outer edge is the arm fully stretched, at distance <span class="tex">L_1+L_2</span>. The inner edge is the arm folded back on itself, at distance <span class="tex">|L_1-L_2|</span>. Inside the inner circle is a hole the arm cannot reach, because even folded fully, its two links cannot come back that close to the base.</p>
+        <p>Each point inside the ring usually has <i>two</i> ways to be reached: the elbow can bend one way or the other. Imagine your own arm pointing at a door handle; you can keep the elbow up or let it drop, and the hand lands on the same handle.</p>
+        <p>This is where the earlier idea of degrees of freedom becomes useful. The arm has <span class="tex">m</span> joints, and the task (here, placing the tip in the plane) needs <span class="tex">k</span> numbers. If <span class="tex">m&gt;k</span> the arm is <b>redundant</b>: it has <span class="tex">m-k</span> spare degrees of freedom, and infinitely many joint vectors reach the same tip. A three-link planar arm placing only its tip has one spare degree of freedom. Many real arms (for example some seven-joint arms) are redundant on purpose, because the spare joint lets them avoid obstacles or keep the elbow clear.</p>
+        <p>Finally, some poses are <b>singular</b>: the arm loses the ability to move the tip in some direction, however the joints move. A stretched-out arm can move its tip only along its own line, not sideways. Near a singular pose, a tiny tip motion demands a large joint motion.</p>
+
+        <h3 class="sec">Build it up: the ring, by hand</h3>
+        <p>Take <span class="tex">L_1=1.0\ \text{m}</span> and <span class="tex">L_2=0.6\ \text{m}</span>. The reachable workspace is <span class="tex">0.4\ \text{m}\le r\le 1.6\ \text{m}</span>, where r is the distance of the tip from the base. Our target is at distance <span class="tex">r=1.0</span> m and angle 30°, that is <span class="tex">(0.866,\ 0.500)</span> m.</p>
+        <p>Find the elbow angle first, using the law of cosines on the triangle formed by the base, the elbow and the tip:</p>
+        <div class="eq">\cos\theta_2=\frac{r^2-L_1^2-L_2^2}{2L_1L_2}</div>
+        <div class="worked"><b>Worked example</b>
+          <p>With <span class="tex">r^2=1</span>, <span class="tex">L_1^2=1</span>, <span class="tex">L_2^2=0.36</span>: <span class="tex">\cos\theta_2=\frac{1-1-0.36}{1.2}=-0.300</span>, so <span class="tex">\theta_2=\pm107.46^\circ</span>. Two solutions exist because cosine is even.</p>
+          <p>Then the base angle: <span class="tex">\theta_1=\operatorname{atan2}(y,x)-\operatorname{atan2}\big(L_2\sin\theta_2,\ L_1+L_2\cos\theta_2\big)</span>. The target angle is <span class="tex">\operatorname{atan2}(0.5,\,0.866)=30^\circ</span>.</p>
+          <ul>
+            <li><b>Solution A, θ₂ = +107.46°:</b> <span class="tex">\theta_1=30^\circ-34.92^\circ=-4.92^\circ</span>. Check: the elbow is at <span class="tex">(\cos(-4.92^\circ),\ \sin(-4.92^\circ))=(0.996,\,-0.086)</span> m, and the tip is the elbow plus <span class="tex">0.6(\cos 102.54^\circ,\ \sin 102.54^\circ)=(-0.130,\,0.586)</span>, giving <span class="tex">(0.866,\,0.500)</span>. ✓</li>
+            <li><b>Solution B, θ₂ = −107.46°:</b> <span class="tex">\theta_1=64.92^\circ</span>. The elbow lies on the other side and the tip lands on the same point. ✓</li>
+          </ul>
+          <p>The determinant of the Jacobian (the quantity that measures singularity, module 2) is <span class="tex">L_1L_2\sin\theta_2=0.6\times0.954=0.572\ \text{m}^2</span> for solution A: far from zero, so the pose is not singular.</p>
+        </div>
+        <p>Now the three-link arm, with <span class="tex">L_1=L_2=L_3=1</span> m and the tip fixed at <span class="tex">(1.5,\,1.0)</span> m. Fix the gripper angle <span class="tex">\varphi</span> (the absolute direction of the last link). Then the wrist point, <span class="tex">\text{tip}-L_3(\cos\varphi,\sin\varphi)</span>, must be reached by the first two links, which is the two-link problem above. Each choice of <span class="tex">\varphi</span> gives a valid arm:</p>
+        <ul>
+          <li><span class="tex">\varphi=0^\circ</span>: <span class="tex">(\theta_1,\theta_2,\theta_3)=(7.42^\circ,\ 112.02^\circ,\ -119.45^\circ)</span></li>
+          <li><span class="tex">\varphi=30^\circ</span>: <span class="tex">(-27.93^\circ,\ 132.38^\circ,\ -74.45^\circ)</span></li>
+          <li><span class="tex">\varphi=60^\circ</span>: <span class="tex">(-52.07^\circ,\ 119.41^\circ,\ -7.33^\circ)</span></li>
+          <li><span class="tex">\varphi=90^\circ</span>: <span class="tex">(-41.41^\circ,\ 82.82^\circ,\ 48.59^\circ)</span></li>
+        </ul>
+        <p>Four different arm shapes, one tip. Here θ₂ and θ₃ are <i>relative</i> angles (each measured from the link before), and the gripper angle is their sum with θ₁: <span class="tex">\varphi=\theta_1+\theta_2+\theta_3</span>.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal W=\{\,p(\mathbf q):\ \mathbf q\in\mathcal Q\,\},\qquad \text{2-link: } |L_1-L_2|\le r\le L_1+L_2,\qquad \text{redundancy}=m-k</div>
+        <p>The workspace <span class="tex">\mathcal W</span> is the image of the joint limits <span class="tex">\mathcal Q</span> under the forward map <span class="tex">p</span> (the tip position). The ring formula holds when the joints can turn freely; joint limits shrink the real workspace. A pose is singular when the Jacobian <span class="tex">J(\mathbf q)</span> loses rank, which for the two-link arm is <span class="tex">\det J=L_1L_2\sin\theta_2=0</span>, at <span class="tex">\theta_2=0^\circ</span> or <span class="tex">180^\circ</span>.</p>
+        <table class="sym">
+          <tr><td>W</td><td>workspace: the set of reachable tip positions (a region of the plane or space)</td></tr>
+          <tr><td>Q</td><td>the set of allowed joint vectors, including joint limits</td></tr>
+          <tr><td>p(q)</td><td>forward map: joint values to tip position, in metres</td></tr>
+          <tr><td>m, k</td><td>number of joints, and number of task variables (2 for a tip in the plane, 6 for position and orientation in space)</td></tr>
+          <tr><td>r</td><td>distance of the target from the base, in metres</td></tr>
+          <tr><td>J(q)</td><td>Jacobian matrix: how small joint changes move the tip (module 2)</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep L₁ = 1.0 and L₂ = 0.6. Drag the target to (0.2, 0.0), inside the hole. The arm reports unreachable and gives the reason.</li>
+          <li>Set the target to (0.866, 0.5). Press "Switch solution" and watch the arm fold from solution A to solution B. Between the two poses the tip leaves the target: the joints move in a straight line, not the tip.</li>
+          <li>Set L₂ = L₁ = 1.0 and the target to (2.0, 0.0), on the outer edge. The two solutions merge into one fully stretched arm: that is a singular pose.</li>
+          <li>On the three-link lab, press "Sweep φ". The tip is fixed while the arm turns its gripper through every angle: the spare degree of freedom.</li></ol></div>
+        <div data-lab="reach-2link"></div>
+        <div data-lab="redundancy-3link"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reaching a point is not reaching it in any orientation.</b> The ring tells you the tip can be placed; it says nothing about which way the gripper can point there.</li>
+          <li><b>More joints is not free.</b> A redundant arm has more solutions to choose from, but it also has more to compute, more to check for collisions and more joints that can fail.</li>
+          <li><b>Singularities hurt.</b> Near a singular pose, a small tip motion needs very large joint speeds. Controllers must slow down or refuse the motion there.</li>
+          <li><b>Joint limits.</b> The ring is the reach with unlimited joints. A real elbow that can turn only 120° has a smaller workspace.</li></ul></div>
+
+        <div class="callout"><b>Pipeline view.</b> Stage: plan and control (reachability is checked before a motion is planned, and redundancy is resolved during control). Rate: a reachability check is a few microseconds; redundancy resolution runs at the control rate. Stores: the joint limits and the link lengths, which define the robot model.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Arm design</b> sets link lengths so that a task's workspace is covered; redundant arms are chosen when obstacles or human co-workers are close.</li>
+          <li><b>Teleoperation</b> maps a human's hand pose into the robot's workspace; redundancy resolution keeps the robot's elbow clear while the tip follows the human.</li>
+          <li><b>Learned controllers</b> trained on demonstrations can produce joint targets that are outside the workspace or near singularities, so practical systems check reachability first.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A two-link arm has L₁ = 2 m and L₂ = 1 m. Can its tip reach a point 0.5 m from the base?</summary><div class="ans">No. The inner edge is |L₁ − L₂| = 1 m, so 0.5 m lies inside the hole.</div></details>
+        <details class="check"><summary>2. A planar arm has three revolute joints and only its tip position is specified. What is the redundancy? How many tip positions along one orientation can it realise?</summary><div class="ans">Redundancy = 3 − 2 = 1. For any reachable tip position, a whole family of joint vectors reaches it (one for each gripper angle that works), so there are infinitely many.</div></details>
+        <details class="check"><summary>3. For the two-link arm, at which elbow angles is the pose singular, and why does that matter?</summary><div class="ans">When sin θ₂ = 0, that is θ₂ = 0° or 180°, the arm is fully stretched or fully folded and det J = 0. The tip cannot move sideways there, so tiny tip motions demand large joint motions.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The workspace of a two-link arm is a ring between |L₁ − L₂| and L₁ + L₂; the law of cosines gives the elbow angle.</li>
+          <li>DOF is the number of joints; redundancy is joints minus task numbers, and a redundant arm has a continuum of solutions.</li>
+          <li>Singular poses are where the arm loses a direction of motion; check for them before commanding fast tip motion.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="robot-stack" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--orange)">0.5</span><h2>The robot software stack</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A camera delivers 30 frames per second, a state estimator runs at 50 Hz, a planner replans at 10 Hz, and the motor controller must update 1000 times per second. An emergency stop must act within milliseconds. Which program runs where, how do they talk, and how can we be sure that the fast loop always meets its deadline?</div>
+
+        <h3 class="sec">Intuition</h3>
+        <p>A robot is not one program. It is a stack of programs, each owning one part of the sense–think–act loop, passing messages to its neighbours:</p>
+        <ul>
+          <li><b>Sensor drivers</b> read cameras, lidars, encoders and force sensors and publish their raw data.</li>
+          <li><b>Estimation</b> fuses those readings into one belief about the robot's state and surroundings (module 3).</li>
+          <li><b>Planning</b> decides where to go, slowly, from that belief.</li>
+          <li><b>Control</b> turns the plan into motor commands, fast, against the current state.</li>
+          <li><b>Actuator drivers</b> send the commands to the motors and read back their status.</li>
+        </ul>
+        <p>Each layer runs at its own rate, because each has its own job: a motor loop must be fast and predictable; perception can be slower but heavier. They talk through <b>topics</b> with a publish–subscribe pattern: a node publishes messages on a named topic, and any node that subscribes receives them. ROS 2 is a widely used middleware that provides exactly this, with nodes, topics and services, and a DDS communication layer underneath.</p>
+        <p>There is one more distinction. A <b>real-time</b> task has a deadline: a result that arrives late is wrong, like a motor command that comes 10 ms late. A <b>best-effort</b> task only needs a good average: a logging write can be delayed without harm. Real-time guarantees come from the operating system and the scheduler, not from the message layer, so a fast middleware on a slow scheduler is still not real time.</p>
+
+        <h3 class="sec">Build it up: can three tasks meet their deadlines?</h3>
+        <p>Give the controller a period of <span class="tex">T=1\ \text{ms}</span> and a compute time of <span class="tex">C=0.2\ \text{ms}</span> per run. The estimator runs every <span class="tex">10\ \text{ms}</span> and needs <span class="tex">2\ \text{ms}</span>. The planner runs every <span class="tex">100\ \text{ms}</span> and needs <span class="tex">20\ \text{ms}</span>. Each task's <b>utilisation</b> is the fraction of the processor it needs: <span class="tex">C/T</span>.</p>
+        <div class="worked"><b>Worked example</b>
+          <p>Controller: <span class="tex">0.2/1=0.200</span>. Estimator: <span class="tex">2/10=0.200</span>. Planner: <span class="tex">20/100=0.200</span>. Total <span class="tex">U=0.600</span>: the processor is busy 60% of the time.</p>
+          <p>Is that safe? For three tasks scheduled by fixed priorities (shortest period first, the rate-monotonic rule), the Liu–Layland test says that all deadlines are met if <span class="tex">U\le n(2^{1/n}-1)</span>. For <span class="tex">n=3</span> the bound is <span class="tex">3(2^{1/3}-1)=0.780</span>. Since <span class="tex">0.600\le0.780</span>, the schedule is guaranteed to meet every deadline. The test is sufficient, not necessary: a set above the bound may still be schedulable.</p>
+          <p>Now the data age. The estimator publishes at <span class="tex">R_e=50\ \text{Hz}</span>, and a message takes <span class="tex">L=2\ \text{ms}</span> to reach the controller. The controller ticks at <span class="tex">t_c=0.100\ \text{s}</span>. The newest estimate that has arrived by then was published at <span class="tex">t_p=\lfloor(0.100-0.002)\times50\rfloor/50=\lfloor4.9\rfloor/50=0.080\ \text{s}</span>. Its age is <span class="tex">t_c-t_p=20\ \text{ms}</span>. In general the age lies between L and L + 1/R<sub>e</sub> (here 2 ms and 22 ms).</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">U=\sum_{i=1}^{n}\frac{C_i}{T_i}\ \le\ n\,(2^{1/n}-1),\qquad t_p=\frac{\lfloor (t_c-L)\,R_e\rfloor}{R_e},\qquad \text{age}=t_c-t_p</div>
+        <table class="sym">
+          <tr><td>n</td><td>number of periodic tasks</td></tr>
+          <tr><td>T<sub>i</sub>, C<sub>i</sub></td><td>period and worst-case compute time of task i, in seconds (or ms)</td></tr>
+          <tr><td>U</td><td>total utilisation: the fraction of the processor needed</td></tr>
+          <tr><td>t<sub>c</sub></td><td>time of a controller tick (the moment the command is computed)</td></tr>
+          <tr><td>R<sub>e</sub>, L</td><td>estimator publishing rate (Hz) and bus latency per hop (s)</td></tr>
+          <tr><td>t<sub>p</sub></td><td>the publication time of the newest estimate that has arrived by t<sub>c</sub></td></tr>
+          <tr><td>⌊·⌋</td><td>round down to a whole number of publication periods</td></tr>
+        </table>
+
+        <h3 class="sec">Lab</h3>
+        <div class="try"><b>Try this</b><ol>
+          <li>In the data-age lab, keep the defaults. The readout gives an age of about 20 ms. Raise the bus latency to 10 ms: the age grows, because the controller must wait for the message to arrive before it can use it.</li>
+          <li>Lower the estimator rate to 10 Hz. The age can now reach 100 ms plus latency. Compare with the bound shown in the readout.</li>
+          <li>In the schedule lab, leave the defaults: no misses, U = 0.600. Raise the planner's compute time to 50 ms: U = 0.900, yet no deadline is missed, because the lower-priority planner still fits in its 100 ms period. Raise it to 70 ms and a red cross appears at t = 100 ms: the second planner job arrives while the first is unfinished.</li>
+          <li>Set the controller compute to 0.6 ms (its utilisation alone is 0.6, total 1.0). Still no misses, because the two lower-priority tasks fit exactly in the remaining 40%. Now raise the planner compute to 40 ms: the total is 1.2 and a red cross appears at t = 100 ms.</li></ol></div>
+        <div data-lab="stack-flow"></div>
+        <div data-lab="stack-timeline"></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Average rate hides the worst case.</b> A controller at 1 kHz that is usually on time can still miss a deadline once a second. Real-time analysis uses the worst case, not the mean.</li>
+          <li><b>Real-time middleware is not real time.</b> ROS 2 moves messages; deadlines depend on the operating system, the scheduler and how the nodes are configured.</li>
+          <li><b>Perception in the control thread.</b> A slow camera callback that shares a thread with the motor loop makes the motor loop late. Keep hard loops isolated.</li>
+          <li><b>Forgetting the bus.</b> Each hop adds latency. A pipeline of four hops at 2 ms each has at least 8 ms of delay before any processing time.</li></ul></div>
+
+        <div class="callout"><b>Pipeline view.</b> Stage: deploy and monitor, across all six stages: the stack is what runs them. Rates: from 1 kHz (motor control) to 1–10 Hz (planning) and beyond. Stores: the message log and the configuration of each node, which the monitoring of module 9 reads.</div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>ROS 2</b> is the usual middleware for research and many commercial robots: nodes for each stage, topics for their data, and a launch file that wires them together.</li>
+          <li><b>Learned policies</b> run as one more node. Their inference time must fit the control period, which is why module 8 discusses action chunking: one slow policy call produces several fast actions.</li>
+          <li><b>Industrial controllers</b> run the hard loops on dedicated hardware with a real-time operating system, and keep the learned or planning software out of that path.</li></ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why does the controller run every 1 ms while the planner runs every 100 ms? What would go wrong if both ran every 1 ms?</summary><div class="ans">The motor needs fresh commands at a rate that keeps it stable (module 0.1: Kp·Δt must stay below 2), while planning is slow and expensive. Running the planner every millisecond would need far more compute than the processor has and would leave no time for the control loop.</div></details>
+        <details class="check"><summary>2. Three tasks have U = 0.90. The bound is 0.780. What can you conclude?</summary><div class="ans">The Liu–Layland test cannot guarantee that all deadlines are met, because 0.90 is above the sufficient bound. It does not prove a miss either: the set may still be schedulable, so an exact response-time analysis or a simulation is needed.</div></details>
+        <details class="check"><summary>3. An estimator publishes at 100 Hz and the bus latency is 5 ms. What is the range of the controller's data age?</summary><div class="ans">From L = 5 ms to L + 1/R<sub>e</sub> = 5 + 10 = 15 ms. The age can never be smaller than the latency, and it never exceeds one estimator period plus the latency.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A robot is a stack of nodes, one per stage, passing messages on topics at their own rates.</li>
+          <li>Real-time means meeting a deadline in the worst case; the average is not enough. Fixed priorities with utilisation below the bound give a guarantee.</li>
+          <li>Data age is set by the estimator period and the bus latency; measure it, because the controller always acts on old information.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="max-width:780px"><b>Module complete!</b>You can now describe a robot as a loop of sensing, thinking and acting; place its links with frames and transforms; move its joints through configuration space; count its workspace and redundancy; and say what its software stack must guarantee. Next, <b>Module 1</b> covers the sensors that feed this loop: encoders, inertial units, cameras and lidar. Continue at <a href="robo-sensors.html">robo-sensors.html</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>
