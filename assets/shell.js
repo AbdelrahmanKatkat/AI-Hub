@@ -74,45 +74,87 @@
     paint();
     btn.onclick = () => { progress[key] = !progress[key]; store.set('progress', progress); paint(); renderSide(); updateHero(); };
   });
-  // lesson notes: saved in this browser (localStorage), exportable as Markdown
-  const noteKey = (id) => 'notes:' + page + ':' + id;
-  $$('section.lesson[id]').forEach((sec) => {
-    if (!$('.mark', sec)) return;
-    const box = document.createElement('details');
-    box.className = 'notes'; box.innerHTML = '<summary>My notes</summary>'
-      + '<textarea rows="4" placeholder="Write your own notes on this lesson…" aria-label="Notes for this lesson"></textarea>'
-      + '<div class="notes-bar"><small>Saved in this browser only</small><button type="button" class="btn-ghost notes-export">Export all notes (.md)</button></div>';
-    sec.appendChild(box);
-    const ta = $('textarea', box), saved = store.get(noteKey(sec.id), '');
-    ta.value = saved; if (saved) box.open = true;
-    let timer = null, dirty = false;
-    const flush = () => { clearTimeout(timer); if (dirty) { store.set(noteKey(sec.id), ta.value); dirty = false; } };
-    ta.addEventListener('input', () => { dirty = true; clearTimeout(timer); timer = setTimeout(flush, 300); });
-    ta.addEventListener('blur', flush);
-    // another browser tab changed this note: show it here unless the user is typing in this box
-    window.addEventListener('storage', (e) => {
-      if (e.key !== 'aihub:' + noteKey(sec.id) || document.activeElement === ta) return;
-      ta.value = e.newValue ? JSON.parse(e.newValue) : '';
+  // notes: one notebook per page, saved in this browser. Type a note, or select text on the page and press "+ Note".
+  const NK = 'notes:' + location.pathname;
+  let items = store.get(NK, []);
+  const saveNotes = () => store.set(NK, items);
+  const elm = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const pageTitle = () => document.title.replace(/ · AI Learning Hub$/, '');
+  const whereOf = (node) => {
+    const el = node && (node.nodeType === 1 ? node : node.parentElement);
+    const sec = el && el.closest('section[id]');
+    const h = sec && sec.querySelector('h2, h3');
+    return { id: sec ? sec.id : '', title: h ? h.textContent.trim().slice(0, 80) : '' };
+  };
+  const fab = elm('button', 'notes-fab'); fab.type = 'button';
+  const drawer = elm('aside', 'notes-drawer'); drawer.hidden = true;
+  drawer.innerHTML = '<div class="nd-head"><b>My notes</b><button type="button" class="nd-x" aria-label="Close notes">×</button></div>'
+    + '<div class="nd-add"><textarea rows="3" placeholder="Write a note…" aria-label="Write a note"></textarea><button type="button" class="btn small nd-add-btn">Add note</button></div>'
+    + '<ul class="nd-list"></ul>'
+    + '<div class="nd-foot"><small>Saved in this browser only</small><span><button type="button" class="btn-ghost nd-export">Export this page (.md)</button> <button type="button" class="btn-ghost nd-export-all">Export all pages</button></span></div>';
+  const selBtn = elm('button', 'notes-sel', '+ Note'); selBtn.type = 'button'; selBtn.hidden = true;
+  document.body.append(fab, drawer, selBtn);
+  const list = $('.nd-list', drawer), ta = $('textarea', drawer);
+  const render = () => {
+    fab.textContent = '📝 Notes' + (items.length ? ' (' + items.length + ')' : '');
+    list.textContent = '';
+    if (!items.length) list.append(elm('li', 'nd-empty', 'No notes yet. Type one below, or select text on the page and press “+ Note”.'));
+    items.forEach((it, i) => {
+      const li = elm('li', 'nd-item ' + it.t);
+      li.append(it.t === 'quote' ? elm('blockquote', '', it.text) : elm('p', '', it.text));
+      const meta = elm('small', 'nd-meta');
+      if (it.ref) { const a = elm('a', '', it.title || 'Go to section'); a.href = it.ref; meta.append(a, ' '); }
+      const del = elm('button', 'nd-del', '✕'); del.type = 'button'; del.title = 'Delete'; del.dataset.i = i;
+      meta.append(del); li.append(meta); list.append(li);
     });
-    // switching away from the tab: save what is typed; coming back: reload the saved note
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) flush();
-      else if (document.activeElement !== ta && !dirty) ta.value = store.get(noteKey(sec.id), '');
-    });
-    window.addEventListener('pagehide', flush);
-    $('.notes-export', box).onclick = () => {
-      store.set(noteKey(sec.id), ta.value);
-      const parts = [];
-      $$('section.lesson[id]').forEach((s) => {
-        const txt = store.get(noteKey(s.id), '');
-        if (!txt.trim()) return;
-        const h = $('h2', s); parts.push('## ' + (h ? h.textContent.trim() : s.id) + '\n\n' + txt.trim());
-      });
-      const blob = new Blob([`# Notes · ${document.title.replace(/ · AI Learning Hub$/, '')}\n\n` + (parts.join('\n\n') || '_No notes yet._') + '\n'], { type: 'text/markdown' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = page + '-notes.md'; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    };
-  });
+  };
+  const addItem = (it) => { items.push({ ...it, ts: Date.now() }); saveNotes(); render(); };
+  const setOpen = (on) => { drawer.hidden = !on; if (on) { render(); ta.focus(); } };
+  fab.onclick = () => setOpen(drawer.hidden);
+  $('.nd-x', drawer).onclick = () => setOpen(false);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
+  $('.nd-add-btn', drawer).onclick = () => { const v = ta.value.trim(); if (!v) return; addItem({ t: 'note', text: v }); ta.value = ''; };
+  list.onclick = (e) => { const b = e.target.closest('.nd-del'); if (!b) return; items.splice(+b.dataset.i, 1); saveNotes(); render(); };
+  window.addEventListener('storage', (e) => { if (e.key === 'aihub:' + NK) { items = store.get(NK, []); render(); } });
+
+  // selected text -> "+ Note" button
+  const main = $('main') || document.body;
+  let selText = '', selWhere = null;
+  const hideSel = () => { selBtn.hidden = true; };
+  document.addEventListener('mouseup', () => setTimeout(() => {
+    const s = window.getSelection(), txt = s && s.toString().trim();
+    if (!txt || txt.length < 3 || !s.rangeCount || drawer.contains(s.anchorNode) || !main.contains(s.anchorNode)) return hideSel();
+    const r = s.getRangeAt(0).getBoundingClientRect();
+    selText = txt.slice(0, 2000); selWhere = whereOf(s.anchorNode);
+    selBtn.style.top = Math.max(8, r.top - 40) + 'px'; selBtn.style.left = Math.max(8, r.left) + 'px';
+    selBtn.hidden = false;
+  }, 0));
+  window.addEventListener('scroll', hideSel, { passive: true });
+  selBtn.addEventListener('mousedown', (e) => e.preventDefault());
+  selBtn.onclick = () => {
+    addItem({ t: 'quote', text: selText, title: selWhere.title, ref: selWhere.id ? location.pathname + '#' + selWhere.id : location.pathname });
+    hideSel(); window.getSelection().removeAllRanges(); setOpen(true);
+  };
+
+  // export as Markdown
+  const mdFor = (title, its) => `# Notes · ${title}\n\n` + (its.length
+    ? its.map((it) => it.t === 'quote' ? `> ${it.text.replace(/\n/g, '\n> ')}` + (it.title ? `\n\n— ${it.title}` : '') : `- ${it.text.replace(/\n/g, '\n  ')}`).join('\n\n')
+    : '_No notes yet._') + '\n';
+  const download = (name, text) => {
+    const a = elm('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/markdown' })); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $('.nd-export', drawer).onclick = () => download(location.pathname.split('/').pop().replace(/\.html$/, '') + '-notes.md', mdFor(pageTitle(), items));
+  $('.nd-export-all', drawer).onclick = () => {
+    const all = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('aihub:notes:')) continue;
+      try { const its = JSON.parse(localStorage.getItem(k)) || []; if (its.length) all.push(mdFor(k.slice('aihub:notes:'.length), its)); } catch (e) { /* skip unreadable entry */ }
+    }
+    download('ai-hub-notes.md', all.length ? all.join('\n---\n\n') : '# Notes\n\n_No notes yet._\n');
+  };
+  render();
 
   const updateHero = () => {
     const t = H.topics.find((x) => x.id === page); if (!t || !t.sections) return;
