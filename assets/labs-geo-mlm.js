@@ -284,7 +284,7 @@
     ['mlm:accelerator', { item: 'yes', asset: 'no', coll: 'yes', why: 'A model-level hardware fact.' }],
     ['mlm:artifact_type', { item: 'no', asset: 'yes', coll: 'no', why: 'Asset field. Required on the asset that has the mlm:model role.' }],
     ['mlm:compile_method', { item: 'no', asset: 'yes', coll: 'no', why: 'Asset field on the model asset: aot, jit or null.' }],
-    ['mlm:entrypoint', { item: 'check', asset: 'yes', coll: 'no', why: 'Asset field on the source-code asset; setting it makes the code role mandatory. The MLM repository example places it on the Item, so check which version your validator expects.' }],
+    ['mlm:entrypoint', { item: 'no', asset: 'yes', coll: 'no', why: 'Asset field on the source-code asset; setting it makes the code role mandatory. The v1.6.0 JSON Schema rejects it in Item properties (some older examples show it there).' }],
     ['mlm:source_code', { item: 'no', asset: 'yes', coll: 'no', why: 'Asset object (the code asset), recommended, with the code role.' }],
     ['mlm:container', { item: 'no', asset: 'yes', coll: 'no', why: 'Asset object for a container with the runtime role.' }],
   ];

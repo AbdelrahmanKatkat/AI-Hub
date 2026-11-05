@@ -335,7 +335,7 @@ fc 10</script></div>
             <tr><td>conv</td><td>3</td><td>1</td><td>2</td><td>4 + 2·2 = 8</td></tr>
             <tr><td>pool</td><td>2</td><td>2</td><td>4</td><td>8 + 1·2 = 10</td></tr>
             <tr><td>conv</td><td>3</td><td>1</td><td>4</td><td>10 + 2·4 = 18</td></tr></table>
-          <p>LeNet-style: conv 5 (r = 5, j = 1), pool 2 (r = 6, j = 2), conv 5 (r = 6 + 4·2 = 14, j = 2), pool 2 (r = 16, j = 4). VGG-16's last conv layer reaches RF = 212 pixels and ResNet-50 (as counted by the visualiser) 427.</p>
+          <p>LeNet-style: conv 5 (r = 5, j = 1), pool 2 (r = 6, j = 2), conv 5 (r = 6 + 4·2 = 14, j = 2), pool 2 (r = 16, j = 4). VGG-16's last conv layer reaches RF = 212 pixels. ResNet-50 gives 427 in the visualiser, which puts each block's stride on the 3×3 convolution (the layout used by torchvision, "v1.5"); the original paper put the stride on the first 1×1 convolution, which moves the jump earlier and gives 483, the figure often quoted. Both are correct for their layout: the receptive field depends on where the stride sits, not only on the layer list.</p>
           <p>Dilated stack k = 3 with d = 1, 2, 4: r = 3, 7, 15, exponential growth with depth.</p></div>
         <p><b>Why stacking small kernels is attractive.</b> Three 3×3 convs have the same RF (7) as one 7×7 but, with C channels in and out, 3·9·C² = 27C² weights instead of 49C² (C = 64: 110,592 vs 200,704) and two extra non-linearities in between.</p>
         <p><b>Effective receptive field.</b> Not all pixels inside the RF matter equally: central pixels reach the neuron through many more paths than border pixels, so the influence has a bell shape and occupies only part of the theoretical RF. The lab computes this exactly for uniform kernels (all weights 1/k).</p>

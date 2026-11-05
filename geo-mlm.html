@@ -111,7 +111,7 @@
         <ol>
           <li><b>Identity.</b> <code>type</code> is <code>"Feature"</code>, <code>stac_version</code> is the STAC version (here <code>"1.0.0"</code>), and <code>id</code> is unique in the catalogue.</li>
           <li><b>Where and when.</b> <code>geometry</code> is a GeoJSON polygon in longitude, latitude (WGS84, Module 0), <code>bbox</code> is its envelope, and <code>properties.datetime</code> is the time of the record. These make the model discoverable on a map and by date.</li>
-          <li><b>Extensions.</b> <code>stac_extensions</code> lists the MLM schema URL, <code>https://stac-extensions.github.io/mlm/v1.6.0/schema.json</code>. A validator uses this URL to know which fields to expect. An MLM item should also list the extensions it reuses, such as classification (we do so below), because the extension delegates some fields to them.</li>
+          <li><b>Extensions.</b> <code>stac_extensions</code> lists the MLM schema URL, <code>https://stac-extensions.github.io/mlm/v1.6.0/schema.json</code>. A validator uses this URL to know which fields to expect. An MLM item should also list the extensions it reuses, such as classification and eo (we list both below), because the extension delegates some fields to them. The band names in <code>mlm:input</code> are one example: MLM requires named bands to be described by the <code>eo</code> or <code>raster</code> extension (or by STAC 1.1 <code>bands</code>), so the record below declares <code>eo</code> and puts <code>eo:bands</code> on the model asset, as the MLM repository's own band example does.</li>
           <li><b>Identity of the model.</b> <code>mlm:name</code> is the model's name (Item-only), <code>mlm:architecture</code> is the family (<code>U-Net</code>), <code>mlm:tasks</code> is an array of task values (Lesson 6.6).</li>
           <li><b>Framework and size.</b> <code>mlm:framework</code>, <code>mlm:framework_version</code>, <code>mlm:total_parameters</code>, <code>mlm:memory_size</code> (bytes). Lesson 6.5 shows how each number is derived.</li>
           <li><b>Contract.</b> <code>mlm:input</code> and <code>mlm:output</code>, each an array of objects (Lesson 6.3).</li>
@@ -125,7 +125,8 @@
   "stac_version": "1.0.0",
   "stac_extensions": [
     "https://stac-extensions.github.io/mlm/v1.6.0/schema.json",
-    "https://stac-extensions.github.io/classification/v2.0.0/schema.json"
+    "https://stac-extensions.github.io/classification/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/eo/v1.1.0/schema.json"
   ],
   "id": "unet-landcover-s2-demo-v1",
   "geometry": {
@@ -208,7 +209,13 @@
       "title": "Full model (torch.save of the module)",
       "type": "application/octet-stream",
       "roles": ["mlm:model"],
-      "mlm:artifact_type": "torch.save"
+      "mlm:artifact_type": "torch.save",
+      "eo:bands": [
+        { "name": "B02", "common_name": "blue" },
+        { "name": "B03", "common_name": "green" },
+        { "name": "B04", "common_name": "red" },
+        { "name": "B08", "common_name": "nir" }
+      ]
     },
     "weights": {
       "href": "https://example.org/models/unet-landcover-s2-demo/v1/unet_landcover_state_dict.pt",
@@ -231,7 +238,7 @@
         <table class="tbl">
           <tr><th>Field</th><th>Level</th><th>What it says in this record</th></tr>
           <tr><td><code>type</code>, <code>stac_version</code>, <code>id</code></td><td>Item</td><td>A GeoJSON Feature, STAC 1.0.0, a unique id.</td></tr>
-          <tr><td><code>stac_extensions</code></td><td>Item</td><td>The MLM v1.6.0 schema, plus classification v2.0.0 because <code>classification:classes</code> is used inside <code>mlm:output</code>.</td></tr>
+          <tr><td><code>stac_extensions</code></td><td>Item</td><td>The MLM v1.6.0 schema, plus classification v2.0.0 because <code>classification:classes</code> is used inside <code>mlm:output</code>, plus eo v1.1.0 because the four input bands are named with <code>eo:bands</code> on the model asset.</td></tr>
           <tr><td><code>geometry</code>, <code>bbox</code></td><td>Item</td><td>A small polygon (0.2° × 0.2°) where the demo model is meant to apply.</td></tr>
           <tr><td><code>properties.datetime</code></td><td>Item</td><td>When this record was made. Required by STAC unless a start and end are given.</td></tr>
           <tr><td><code>mlm:name</code></td><td>Item only</td><td>The model's name. It is the only MLM field that may also appear on a Collection.</td></tr>
@@ -406,7 +413,7 @@
           </table>
           <p>Our record gives the model asset only the <code>mlm:model</code> role and keeps the weights as a separate asset. The MLM repository's own PyTorch example instead lists <code>mlm:weights</code> on its model asset, which tells a reader that one file is complete. The spec allows either layout. Choose one and say which in the description.</p></div>
 
-        <div class="callout warn"><b>Version check.</b> In the MLM repository's example, <code>mlm:entrypoint</code> sits at the top level of the Item. The v1.6.0 README places it on the source-code asset, which is where this record puts it. If a validator you use complains, check its version before changing your record.</div>
+        <div class="callout warn"><b>Version check.</b> In MLM v1.6.0, <code>mlm:entrypoint</code> is an <b>asset</b> field. The published JSON Schema rejects it in Item properties, and it accepts it on an asset only when that asset also has the <code>code</code> role, which is how this record is written. Some older examples show it at the top level of the Item; if a validator pinned to another version complains, check its version before changing your record.</div>
 
         <div data-lab="mlmRoles"></div>
 
