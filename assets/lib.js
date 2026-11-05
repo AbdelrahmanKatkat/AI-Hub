@@ -272,17 +272,21 @@
 
   /** Animation loop that only runs while `el` is on screen. fn(dt, time). */
   AI.loop = function (el, fn, opts) {
-    let vis = true, last = performance.now();
+    let vis = true, running = false, last = performance.now();
     const gap = 1000 / ((opts && opts.fps) || 60) - 2; // opts.fps caps the frame rate for heavy labs
-    new IntersectionObserver((e) => (vis = e[0].isIntersecting)).observe(el);
+    // the frame loop stops while the lab is off screen or the tab is hidden, and restarts when it comes back
     const tick = (t) => {
+      if (!vis || document.hidden) { running = false; return; }
       requestAnimationFrame(tick);
       if (t - last < gap) return;
       const dt = Math.min(0.05, (t - last) / 1000);
       last = t;
-      if (vis && !document.hidden) fn(dt, t / 1000);
+      fn(dt, t / 1000);
     };
-    requestAnimationFrame(tick);
+    const start = () => { if (!running) { running = true; last = performance.now(); requestAnimationFrame(tick); } };
+    new IntersectionObserver((e) => { vis = e[0].isIntersecting; if (vis) start(); }).observe(el);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) start(); });
+    start();
   };
 
   /** Fixed-rate stepping: const n = ticker(dt, perSecond) -> whole steps to run this frame (frame-rate independent). */
