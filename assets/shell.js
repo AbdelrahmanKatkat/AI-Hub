@@ -218,6 +218,13 @@
   // math + labs
   const ready = () => {
     $$('.eq,.tex').forEach((el) => { if (window.katex) { try { window.katex.render(el.textContent, el, { displayMode: el.classList.contains('eq'), throwOnError: false }); } catch (e) { /* leave raw TeX */ } } });
+    // an inline formula wider than its block cannot wrap: let that one scroll sideways instead of widening the whole page
+    const fitMath = () => {
+      const els = $$('.tex'), flags = els.map((el) => { el.classList.remove('wide'); const b = el.closest('p,li,td,th,div,section'); return !!b && el.getBoundingClientRect().width > b.clientWidth + 1; });
+      els.forEach((el, i) => { if (flags[i]) el.classList.add('wide'); });
+    };
+    fitMath(); window.addEventListener('resize', () => { clearTimeout(fitMath.t); fitMath.t = setTimeout(fitMath, 150); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitMath);
     $$('[data-lab]').forEach((el) => { try { AI.labs[el.dataset.lab](el); } catch (e) { el.textContent = 'Lab failed to load: ' + e.message; console.error(e); } });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();

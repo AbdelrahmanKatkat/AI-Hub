@@ -445,7 +445,7 @@
       fold = 0; tm = 0; summaryT = 0; cur = Float64Array.from(fits[0]); build.prev = Float64Array.from(fits[0]);
     };
     gen(); q(root, '#newd').onclick = () => { seed = (seed * 7 + 13) % 100003; gen(); build(); };
-    q(root, '#reset').onclick = build; q(root, '#step').onclick = () => { st.setPlay(false); const k = nv(root, 'k'); build.prev = Float64Array.from(cur); fold = (fold + 1) % k; tm = 0; summaryT = 0; };
+    q(root, '#reset').onclick = build; q(root, '#step').onclick = () => { st.setPlay(false); if (!cur) build(); const k = nv(root, 'k'); build.prev = Float64Array.from(cur); fold = (fold + 1) % k; tm = 0; summaryT = 0; };
     const DUR = 3.2;
     AI.loop(root, (dt) => {
       sync(root);

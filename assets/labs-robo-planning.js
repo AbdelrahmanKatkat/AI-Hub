@@ -748,7 +748,8 @@
         cap.textContent = `Plan finished in ${plan.length} actions. Every precondition held when its action ran.`;
       } else {
         const o = OPS[plan[k]];
-        const pre = o.pre.map((f) => (sk.has(f) ? f + ' ✓' : f + ' ✗')).join(', ');
+        const cur = states[Math.min(k, states.length - 1)] || new Set();
+        const pre = o.pre.map((f) => (cur.has(f) ? f + ' ✓' : f + ' ✗')).join(', ');
         cap.textContent = `Step ${k + 1} of ${plan.length}: ${o.n}. Preconditions: ${pre}. ${p < 0.5 ? 'Checking the preconditions.' : 'Applying the effects: delete ' + (o.del.join(', ') || 'nothing') + '; add ' + o.add.join(', ') + '.'}`;
       }
       const shown = states[Math.min(k, states.length - 1)] || new Set();
