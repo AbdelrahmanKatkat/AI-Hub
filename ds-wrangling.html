@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Data wrangling &amp; cleaning · Data Science</title>
+<meta name="description" content="Selecting and filtering rows, joining tables, handling missing data, finding duplicates and impossible values, parsing types and units, and grouping and aggregating: the hands-on cleaning work that decides whether every later result can be trusted, with animated labs and hand-checked numbers.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-wrangling.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#388bfd26">1</div>
+      <div style="flex:1">
+        <h1>Module 1 · Data wrangling &amp; cleaning</h1>
+        <p>Real data arrives messy: rows you do not need, tables that must be combined, blank cells, duplicates, text where numbers should be, and mixed units. This module is the craft of turning that into a table you can trust. Every lesson is about stage 2 of the data science loop (clean and prepare), and every one is built around a small table printed on the page so you can check each count by hand.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: Module 0 (what data science is)</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>Where this sits in the loop.</b> The six stages are: ask and collect, <b>clean and prepare</b>, explore, test and model, communicate, deploy and monitor. Surveys of working data scientists routinely put most of their time into stage 2, and mistakes made here are the quietest ones: a wrong join or a mis-parsed date does not raise an error, it just changes the answer. So the habit that runs through this whole module is <b>count before, count after</b>: write down how many rows you expect, then check.</div>
+
+    <!-- ===================== 1.1 ===================== -->
+    <section class="lesson" id="selecting-filtering" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.1</span><h2>Selecting, filtering &amp; sorting rows and columns</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A café owner has ten orders in front of her and must decide whether to open a second counter in Cairo. She only cares about big Cairo orders (a total above 8). How do you tell a computer, precisely, "give me just those rows and just the columns I need", without ever damaging the original records?</div>
+
+        <h3 class="sec">Intuition: a sieve, not a pair of scissors</h3>
+        <p>A table is a grid. Rows are things (one order each) and columns are facts about them (city, item, quantity). There are only two basic ways to shrink a grid: pick some <b>rows</b>, or pick some <b>columns</b>. Everything in this lesson is a combination of those two.</p>
+        <p>Picking rows works like a sieve. You write a yes/no question about a single row, such as "is the city Cairo?", and the computer asks it of every row in turn. The list of answers, one yes or no per row, is called a <b>boolean mask</b>. Rows with yes fall through into the result; rows with no stay behind. The sieve does not cut the original table: it hands you a <em>copy</em> of the survivors. That is why you can try as many filters as you like and the source file is never harmed.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here are the ten orders. The column <b>total</b> is just qty × price.</p>
+        <div class="worked"><b>The table</b>
+<pre style="margin:6px 0;overflow-x:auto">id  city   item    qty  price  total
+ 1  Cairo  Tea       2   4.50    9.00
+ 2  Giza   Coffee    1   3.00    3.00
+ 3  Cairo  Cake      3   5.00   15.00
+ 4  Luxor  Tea       4   4.50   18.00
+ 5  Cairo  Coffee    2   3.00    6.00
+ 6  Giza   Cake      1   5.00    5.00
+ 7  Cairo  Latte     2   6.00   12.00
+ 8  Luxor  Coffee    5   3.00   15.00
+ 9  Cairo  Tea       1   4.50    4.50
+10  Giza   Latte     3   6.00   18.00</pre></div>
+        <p><b>One test.</b> Ask "city = Cairo" of every row. The mask is True for ids 1, 3, 5, 7, 9 and False for the other five: five rows pass. Ask instead "total &gt; 8". The mask is True for ids 1, 3, 4, 7, 8, 10: six rows pass.</p>
+        <p><b>Two tests combined.</b> "AND" keeps a row only if both masks are True; "OR" keeps it if either is. Cairo AND total &gt; 8 keeps only ids 1 (9.00), 3 (15.00) and 7 (12.00): <b>3 rows</b>. Cairo OR total &gt; 8 keeps the union, <b>8 rows</b> (5 + 6 − 3 that are in both). Always check this kind of count: |A ∪ B| = |A| + |B| − |A ∩ B|.</p>
+        <div class="eq">m_i = \mathbf{1}[\text{city}_i=\text{Cairo}]\;\wedge\;\mathbf{1}[\text{total}_i&gt;8], \qquad \text{result} = \{\,\text{row}_i : m_i = 1\,\}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">i</span>: the row number. <span class="tex">m_i</span>: the mask value for row <span class="tex">i</span>, equal to 1 (keep) or 0 (drop). <span class="tex">\mathbf{1}[\cdot]</span>: the indicator, 1 if the statement inside is true and 0 if false. <span class="tex">\wedge</span>: AND (use <span class="tex">\vee</span> for OR, and <span class="tex">\neg</span> for NOT). The result is the set of rows whose mask is 1.</div>
+        <p><b>Columns.</b> Selecting columns is simpler: list the names you want. Keep only <code>id</code> and <code>total</code> and the three surviving rows become <code>(1, 9.00), (3, 15.00), (7, 12.00)</code>.</p>
+        <p><b>Sorting.</b> Sorting reorders rows by one column. Sorting those three by total, largest first, gives ids 3 (15.00), 7 (12.00), 1 (9.00). Sorting never removes anything: it only changes the order, and ties keep their original order if the sort is "stable".</p>
+        <p><b>Chaining.</b> A real pipeline is a chain: filter rows, select columns, sort. Each step takes a table in and gives a table out, so you can read it top to bottom like a recipe. Because every step returns a new table, the file you loaded still has all 10 rows at the end.</p>
+
+        <div data-lab="ds-wr-filter"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with the default condition and watch the three green rows fly into the result. Then change the condition to <code>city = Cairo or total &gt; 8</code> and predict the count (8) before the animation ends.</li>
+          <li>Untick the <code>item</code> and <code>price</code> columns, and sort by total descending. Does the number of rows change? What changes?</li>
+          <li>Type a condition that no row can satisfy, such as <code>qty &gt; 9</code>. What does the result look like, and is that an error?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Overwriting the source.</b> Saving a filtered table over the original file destroys the rows you dropped. Keep raw data read-only and write results to a new file or object.</li>
+          <li><b>AND versus OR confusion.</b> NOT (Cairo OR Giza) equals (NOT Cairo) AND (NOT Giza), and here it keeps the two Luxor orders (ids 4 and 8). Writing (NOT Cairo) OR (NOT Giza) instead keeps all 10 rows, because every row is at least one of the two. Test your logic on a small table.</li>
+          <li><b>Filtering on a column with missing values.</b> A test such as "total &gt; 8" on a blank cell is neither true nor false. Decide on purpose what should happen (lesson 1.3), do not let it silently drop the row.</li>
+          <li><b>Sorting then picking "the first row".</b> If two rows tie, which one is first can depend on the tool. Sort by a second column to make the answer repeatable.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every data pipeline.</b> Training sets are built by masks: keep rows from the last 90 days, drop rows where the label is unknown, keep only users who opted in. A model is only as good as the rows that survive these filters.</li>
+          <li><b>Train and test splits</b> are masks too: a column that says "fold 3" and a filter on it. See <a href="ml-data.html#data-splitting-pipelines">data splitting and pipelines</a>.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With the ten orders above, how many rows pass <code>city = Giza and qty &gt;= 2</code>, and which?</summary><div class="ans">Giza rows are ids 2 (qty 1), 6 (qty 1) and 10 (qty 3). Only id 10 has qty ≥ 2, so <b>1 row</b>.</div></details>
+        <details class="check"><summary>2. How many rows pass <code>city != Cairo</code>? How does that relate to the Cairo count?</summary><div class="ans">10 − 5 = <b>5 rows</b> (ids 2, 4, 6, 8, 10). "Not Cairo" is the complement of the Cairo mask, so the two counts always add to the number of rows (when no cells are missing).</div></details>
+        <details class="check"><summary>3. Why is it safer to write the filtered rows to a new table instead of deleting the others from the original?</summary><div class="ans">The dropped rows might be needed for a different question, an audit, or a later bug fix. A filter is a decision you may revise; if the source is untouched you can change the decision and rerun the whole pipeline from the start.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A filter is a boolean mask: one yes/no per row; AND, OR and NOT combine masks, and counts obey |A ∪ B| = |A| + |B| − |A ∩ B|.</li>
+          <li>Row selection and column selection are independent; sorting only reorders.</li>
+          <li>Chain steps as table in, table out, and never overwrite the raw data.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 ===================== -->
+    <section class="lesson" id="joins" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.2</span><h2>Joining tables: inner, left, outer &amp; many-to-one</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An online shop keeps orders in one table and customer details in another. A manager asks, "What is our total revenue by customer name?" The names live in one table and the money in the other. How do you combine them, and how do you know you did not lose or invent rows on the way?</div>
+
+        <h3 class="sec">Intuition: matching two lists by a shared label</h3>
+        <p>Imagine two paper lists. The first lists orders, each with a customer code like C2. The second lists customers: code C2 means Omar. To attach a name to each order, you take an order, read its code, find that code in the customer list, and copy the name across. A <b>join</b> is exactly that, done for every row. The shared label is called the <b>key</b>.</p>
+        <p>Two things can go wrong, and both change the number of rows. An order may have a code that is not in the customer list (nothing to copy). Or a code may appear <em>twice</em> in the customer list (two things to copy). The different join types are just different decisions about the first problem; the second problem is a bug you must watch for.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>The tables</b>
+<pre style="margin:6px 0;overflow-x:auto">customers (5 rows)       orders (7 rows)
+cid  name                oid  cid  amt
+C1   Amal                o1   C1    20
+C2   Omar                o2   C2    35
+C3   Lina                o3   C2    15
+C4   Sami                o4   C3    40
+C5   Nour                o5   C6    25   (C6 is not a customer)
+                         o6   C1    30
+                         o7   C3    10</pre></div>
+        <p>This is a <b>many-to-one</b> relationship: many orders point to one customer, and each customer code appears once on the customer side. When the right side's key is unique, a join cannot multiply rows. That is the safe case.</p>
+        <p><b>Inner join.</b> Keep only orders whose key is found. o5 (C6) has no match and disappears: <b>6 rows</b>. Revenue kept: 20 + 35 + 15 + 40 + 30 + 10 = <b>150</b>; the 25 from o5 is gone.</p>
+        <p><b>Left join (orders on the left).</b> Keep every order. o5 stays but its name is NULL (missing): <b>7 rows</b>, revenue 175. A left join never has fewer rows than the left table if the right key is unique.</p>
+        <p><b>Outer (full) join.</b> Keep everything from both sides. Customers C4 and C5 have no orders, so they are added with NULL order columns: 7 + 2 = <b>9 rows</b>.</p>
+        <p><b>Direction matters.</b> Put customers on the left instead (a left join of customers with orders): C1 appears twice (o1, o6), C2 twice, C3 twice, C4 once with NULLs, C5 once with NULLs: <b>8 rows</b>.</p>
+        <div class="worked"><b>When a key repeats</b>
+          <p>Suppose the customer table accidentally lists C2 twice (Omar has two saved addresses, and the table has one row per address). Now each C2 order matches two rows. Orders o2 and o3 each produce two output rows. Inner join: 6 + 2 = <b>8 rows</b>; left join: <b>9</b>; outer: <b>11</b>.</p>
+          <p>Worse, the revenue is now wrong: inner-join revenue is 20 + 35·2 + 15·2 + 40 + 30 + 10 = <b>200</b>, not 150. A silent inflation of 50, with no error message.</p>
+        </div>
+        <div class="eq">|A \bowtie_{\text{inner}} B| = \sum_{a\in A} m(a), \qquad |A \bowtie_{\text{left}} B| = \sum_{a\in A} \max\bigl(1,\,m(a)\bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">A</span>: the left table, <span class="tex">B</span>: the right table. <span class="tex">a\in A</span>: one row of <span class="tex">A</span>. <span class="tex">m(a)</span>: the number of rows of <span class="tex">B</span> whose key equals the key of <span class="tex">a</span> (0, 1, 2, …). <span class="tex">\bowtie</span>: the join. An outer join adds the number of right rows that no left row matched. With our tables <span class="tex">m</span> is 1,1,1,1,0,1,1 so inner = 6 and left = 7.</div>
+        <p><b>The habit: count before and after.</b> If the right key is unique, inner ≤ left rows and left rows = original left rows exactly. If your left join returns <em>more</em> rows than the left table, some right key repeated. Check key uniqueness first: the number of distinct keys should equal the number of rows.</p>
+
+        <div data-lab="ds-wr-join"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Run each join type with the default keys and confirm 6, 7 and 9 rows. Watch the red line for C6: where does that order go in an inner join, and in a left join?</li>
+          <li>Tick "customers lists C2 twice" and run the inner join. Predict the row count (8) before the animation finishes, then explain the extra two rows.</li>
+          <li>Edit the keys to <code>C4,C4,C4</code>. How many rows does an inner join give, and why is the answer still 3 although C4 appears in only one customer row?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Joining on a key that is not unique on the "one" side.</b> Row counts and sums quietly inflate, as in the 200 versus 150 example. Always test <code>distinct keys = rows</code> on the lookup table.</li>
+          <li><b>Using an inner join and forgetting what you dropped.</b> Orders with unknown customers vanish, and if those orders are unusual (new users, a data-entry bug) your analysis is biased. Count the dropped rows and look at them.</li>
+          <li><b>Keys that look equal but are not.</b> "C2" and "c2 " or the number 2 and the text "2" do not match. Clean the key (lesson 1.5) before joining.</li>
+          <li><b>NULL keys.</b> A missing key matches nothing, including another missing key, in standard joins.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Combining user, event and label tables.</b> A training set is usually a join: events (features) with a label table keyed on user and date. A duplicate key on the label side silently weights some users double and can leak the label into features. See <a href="ml-data.html#data-splitting-pipelines">data splitting and pipelines</a>.</li>
+          <li><b>Feature stores</b> join features to training rows "as of" a date; the count-before-after check catches missing and doubled rows.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Orders have keys C1 and C6; customers are C1 to C5 (unique). How many rows from an inner, a left and an outer join?</summary><div class="ans">Inner: only C1 matches, <b>1 row</b>. Left: both orders kept, <b>2 rows</b>. Outer: 2 + the 4 customers (C2 to C5) that no order matched = <b>6 rows</b>.</div></details>
+        <details class="check"><summary>2. The customer table lists C3 three times. Two orders have key C3. How many output rows do those two orders produce in an inner join?</summary><div class="ans">m(C3) = 3 for each order, so 2 × 3 = <b>6 rows</b> instead of the 2 you wanted.</div></details>
+        <details class="check"><summary>3. In the tables above, revenue is 175 over all orders. Which join gives exactly 175, and which gives 150?</summary><div class="ans">The left join keeps all 7 orders (175, with a NULL name on o5). The inner join drops o5 (25), leaving <b>150</b>. The duplicated-key inner join inflates it to 200.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A join matches rows by a key; inner keeps matches, left keeps all left rows, outer keeps all rows from both.</li>
+          <li>Many-to-one is safe; a repeated key on the "one" side multiplies rows and inflates sums with no error.</li>
+          <li>Always compare row counts and totals before and after a join.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 ===================== -->
+    <section class="lesson" id="missing-data" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.3</span><h2>Missing data: types &amp; handling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A survey of ten people asks for age and yearly income, but three people left income blank. A manager wants the average income. Do you throw those three people away, fill their cells with something, or report the average of the seven? The answer depends on <em>why</em> the cells are blank.</div>
+
+        <h3 class="sec">Intuition: a blank is information about the process</h3>
+        <p>A missing value is not just an empty box. Somebody or something decided not to record it, and that decision may be related to the very number you are trying to measure. Compare three stories. A clerk spills coffee and loses three random forms. Young respondents skip the income question because they assume it is for working adults. Very high earners skip the income question because they do not want to say. In each story three cells are empty, but only the first leaves the seven remaining people looking like a fair sample.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Statisticians name the three stories:</p>
+        <ul>
+          <li><b>MCAR, missing completely at random.</b> Whether a cell is missing has nothing to do with any value, observed or hidden. The remaining rows are a fair, smaller sample.</li>
+          <li><b>MAR, missing at random.</b> Missingness depends on something you <em>did</em> record (here, age), but not on the hidden value itself once you account for it. You can correct for it using the recorded column.</li>
+          <li><b>MNAR, missing not at random.</b> Missingness depends on the hidden value itself (high earners hide high incomes). No trick using the recorded columns fully repairs it; you must reason about the mechanism or collect more data.</li>
+        </ul>
+        <div class="worked"><b>The table</b> (income in thousands; the full column is known only because this is a simulation, which is labelled <i>illustrative</i>)
+<pre style="margin:6px 0;overflow-x:auto">id   1   2   3   4   5   6   7   8   9   10
+age  23  25  28  31  35  40  44  48  52  58
+inc  30  35  38  42  45  50  55  70  90  120     true mean = 575/10 = 57.5</pre></div>
+        <p><b>Option A: delete the rows.</b> Keep only people with an income. In story one (rows 3, 7, 9 hidden: 38, 55, 90) the seven left are 30, 35, 42, 45, 50, 70, 120 with mean 392/7 = <b>56.00</b>: close to 57.5, because random loss does not tilt the sample. In story two (rows 1, 2, 3 hidden) the seven left are 42 to 120 with mean 472/7 = <b>67.43</b>: too high, because the youngest (lowest earners) vanished. In story three (rows 8, 9, 10 hidden: 70, 90, 120) the seven left are 30 to 55 with mean 295/7 = <b>42.14</b>: far too low. Deleting is honest about what you saw, but it only estimates the right thing under MCAR.</p>
+        <p><b>Option B: impute (fill in).</b> Replace each blank with a plausible value so every row stays usable.</p>
+        <ul>
+          <li><b>Mean imputation</b> fills with the mean of the observed values. The mean of the filled column is unchanged from Option A (56.00, 67.43, 42.14), so it does <em>not</em> fix bias. It also shrinks the spread: in story one the standard deviation of the observed is 30.99 and after filling with 56 three times it falls to 25.30 (the true value is 28.32).</li>
+          <li><b>Median imputation</b> fills with the median of the observed. Story one gives (392 + 3·45)/10 = <b>52.70</b>; story two 63.70; story three 42.10.</li>
+          <li><b>Group-mean imputation</b> fills with the mean of similar rows, here the same age band (under 40 or 40 and over). Story one: 59.00; story two: <b>60.25</b>, a clear improvement because age explains the missingness; story three: 45.25, still far from 57.5 because the hidden incomes are higher than anyone observed in that band.</li>
+        </ul>
+        <div class="worked"><b>All the numbers (estimated mean income, true value 57.5)</b>
+<pre style="margin:6px 0;overflow-x:auto">                   MCAR    MAR    MNAR
+delete rows        56.00  67.43  42.14
+mean fill          56.00  67.43  42.14
+median fill        52.70  63.70  42.10
+age-band mean      59.00  60.25  45.25</pre>
+          <p>No method rescues MNAR. The MAR case is rescued best by using the recorded age.</p></div>
+        <p><b>Indicator columns.</b> Add a column <code>income_missing</code> with 1 where the cell was blank and 0 otherwise. The fill value is a guess; the indicator preserves the fact that it was a guess, and a model can learn that "income was withheld" is itself a signal (under MNAR it often is).</p>
+        <div class="eq">\hat\mu_{\text{fill}} = \frac{1}{n}\Bigl(\sum_{i\in\text{obs}} x_i + \sum_{i\in\text{miss}} c_i\Bigr), \qquad c_i = \bar x_{\text{obs}} \;\Rightarrow\; \hat\mu_{\text{fill}} = \bar x_{\text{obs}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">n</span>: all rows (10). <span class="tex">x_i</span>: the income of row <span class="tex">i</span>. "obs" is the set of rows with a value, "miss" the set without. <span class="tex">c_i</span>: the value you fill into row <span class="tex">i</span>. <span class="tex">\bar x_{\text{obs}}</span>: the mean of the observed values. The identity says that filling with the observed mean leaves the mean exactly where it was: it adds rows but no new information. For the statistics behind bias and spread see <a href="math-statistics.html#bias-variance">bias and variance</a>.</div>
+
+        <div data-lab="ds-wr-missing"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Choose MNAR and "delete rows". Compare the estimate marker (orange) with the true mean line (green). Then switch to "age-band mean": does it help?</li>
+          <li>Choose MAR and compare mean fill with age-band fill. Why does age help here but not under MNAR?</li>
+          <li>Click rows on the canvas to hide your own pattern (for example, only the five highest incomes) and see which method gets closest.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Believing deletion is "neutral".</b> It is only neutral under MCAR. Under MAR or MNAR it changes who is in your sample (67.43 and 42.14 above).</li>
+          <li><b>Mean-filling then reporting uncertainty as if the data were complete.</b> The filled column looks like 10 real values, so the spread and any confidence interval come out too small (standard deviation 25.30 versus 28.32).</li>
+          <li><b>Hidden missing codes.</b> A value of 0, -1, 999 or "unknown" may be a blank in disguise. A mean that includes 999 is nonsense.</li>
+          <li><b>Imputing before splitting.</b> Compute fill values on the training rows only, or information from the test set leaks in (see <a href="ml-data.html#cleaning-missing">cleaning and missing data</a>).</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Survey data, sensor logs, clinical records.</b> A sensor that drops out in the cold, a patient who skips a follow-up because they are too ill: each is missingness tied to the outcome, and a model trained on the survivors will be overconfident.</li>
+          <li><b>Tree models and indicators.</b> Many tree implementations handle missing values natively, and an indicator column often adds predictive power by itself.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Patients with the worst symptoms often skip the "rate your pain" question. Which type of missingness is this, and what does deleting those rows do to the average pain score?</summary><div class="ans">MNAR: missingness depends on the hidden value itself. Deleting them <b>lowers</b> the average, because the high scores are the ones removed.</div></details>
+        <details class="check"><summary>2. In the MAR story, what is the mean of the seven observed incomes, and what is the error against the true 57.5?</summary><div class="ans">(42 + 45 + 50 + 55 + 70 + 90 + 120)/7 = 472/7 = <b>67.43</b>, an overestimate of 9.93.</div></details>
+        <details class="check"><summary>3. You fill three blanks with the mean of the seven observed values. What happens to the mean of the column, and to its spread?</summary><div class="ans">The mean does not change (it equals the observed mean). The spread shrinks: for the first story the standard deviation falls from 30.99 to 25.30, so you look more certain than you are.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Ask why a value is missing: MCAR, MAR or MNAR decides which method is safe.</li>
+          <li>Deletion is fair only under MCAR; imputing with a constant keeps the mean but shrinks the spread; using a related column helps under MAR; MNAR cannot be fixed from the data alone.</li>
+          <li>Add an indicator column so the fact of missingness is not erased.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 ===================== -->
+    <section class="lesson" id="duplicates-errors" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.4</span><h2>Duplicates, outliers &amp; impossible values</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A clinic exports 8 patient records and a column of ages. Someone appears twice, an age says 212, another says -3, and one patient is 98. Which of these are mistakes to repair, which are real but rare, and how do you tell the difference without deleting the wrong thing?</div>
+
+        <h3 class="sec">Intuition: errors are impossible, rare values are merely unusual</h3>
+        <p>Three different problems hide under "dirty data", and they need different responses.</p>
+        <ul>
+          <li><b>Duplicates:</b> the same real-world thing recorded more than once. They count it twice and inflate totals.</li>
+          <li><b>Impossible values:</b> values that cannot be true (an age of -3, a temperature below absolute zero). They are errors; repair or drop them.</li>
+          <li><b>Outliers:</b> values far from the others that <em>could</em> be true (a 98-year-old patient). They might be errors, or the most interesting rows in the file. Investigate before you decide.</li>
+        </ul>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Exact duplicates.</b> Two rows identical in every field. Detection is simple: build a key and remember the keys you have seen; a row whose key was seen before is a repeat. Here are eight records:</p>
+        <div class="worked"><b>The table</b> (· marks a space)
+<pre style="margin:6px 0;overflow-x:auto">#  name           email
+1  "Amal·Hassan"  amal@mail.com
+2  "·amal·hassan" AMAL@mail.com
+3  "Omar·Ali"     omar@mail.com
+4  "Omar·Ali"     omar@mail.com
+5  "Lina·Said"    lina@mail.com
+6  "Lina··Said"   lina@mail.com
+7  "Sami·Nabil"   sami@mail.com
+8  "Omar·Ali"     omar@mail.org</pre></div>
+        <p>On the raw key (name and email) only row 4 repeats row 3, so there are <b>7 unique</b> rows. But rows 1 and 2 are clearly the same person, and so are 5 and 6. These are <b>near duplicates</b>: they differ only in capitalisation or stray spaces. Normalise the text first (trim leading and trailing spaces, lowercase, collapse repeated spaces) and the rows 2 and 6 become copies, giving <b>5 unique</b> rows: 8 − 3 = 5.</p>
+        <p><b>The match rule is a decision.</b> Match on name only (after cleaning) and you get 4 unique rows: row 8 is merged with the two other Omar Alis even though its email differs (it may be a different person). Match on email only and you get 5. There is no universal answer; there is a trade-off between merging different people (false merge) and keeping the same person twice (missed duplicate). Fuzzy matching (edit distance, phonetic codes) widens the net further and needs a human check on borderline pairs.</p>
+        <p><b>Range checks.</b> For impossible values, write down what is allowed (age between 0 and 120) and flag anything outside. This is a rule from outside knowledge, not from the data.</p>
+        <p><b>Outlier fences.</b> For unusual values, a data-driven rule is the <b>IQR fence</b>. Sort the values, find the first quartile <span class="tex">Q_1</span> and third quartile <span class="tex">Q_3</span>, let <span class="tex">\text{IQR}=Q_3-Q_1</span>, and flag anything beyond <span class="tex">k</span> IQRs from the quartiles, usually <span class="tex">k=1.5</span>.</p>
+        <div class="eq">\text{flag } x \iff x &lt; Q_1 - k\,\text{IQR} \;\;\text{or}\;\; x &gt; Q_3 + k\,\text{IQR}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x</span>: one value. <span class="tex">Q_1, Q_3</span>: the values below which 25% and 75% of the sorted data lie (linear interpolation between neighbours). <span class="tex">\text{IQR}</span>: the width of the middle half. <span class="tex">k</span>: how strict the fence is (larger means fewer flags).</div>
+        <div class="worked"><b>Worked example — fourteen ages</b>
+<pre style="margin:6px 0;overflow-x:auto">sorted: -3 27 29 31 33 34 36 38 39 41 45 52 98 212     n = 14</pre>
+          <p>Q1 sits at position 0.25 × 13 = 3.25, between 31 and 33: <span class="tex">Q_1=31.5</span>. Q3 sits at position 9.75, between 41 and 45: <span class="tex">Q_3=44</span>. So IQR = 12.5, and with <span class="tex">k=1.5</span> the fences are 31.5 − 18.75 = <b>12.75</b> and 44 + 18.75 = <b>62.75</b>.</p>
+          <p>The IQR rule flags <b>-3, 98 and 212</b>. The range check (0 to 120) flags only <b>-3 and 212</b>: these are impossible. 98 is merely unusual and perfectly possible: keep it unless another source says it is wrong.</p>
+          <p>Effects on the mean age: all 14 values: 50.86. Drop only the 2 impossible values: <b>41.92</b> (12 values). Drop everything the IQR rule flags: 36.82 (11 values). The median of all 14 is 37 and hardly cares, which is why it is called robust.</p></div>
+
+        <div data-lab="ds-wr-dupes"></div>
+        <div data-lab="ds-wr-range"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>In the duplicates lab, run with no cleaning boxes ticked (7 unique) and then tick all three (5 unique). Which rows merged, and why does each box matter?</li>
+          <li>Switch to "name only". Which row gets wrongly merged, and what does the email column tell you?</li>
+          <li>In the range lab, raise the multiplier to 3. Is 98 still flagged? Is -3 still flagged by the IQR fence? (The range check still catches it.)</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Deleting every outlier automatically.</b> Fraud, equipment failure and rare disease all look like outliers. In many problems they are exactly what you are looking for.</li>
+          <li><b>Trusting an outlier rule computed on dirty data.</b> One huge error can drag the mean and standard deviation; quartile-based fences resist this much better than a "3 standard deviations" rule.</li>
+          <li><b>Counting a repeated measurement as a duplicate.</b> Two readings from one sensor at different times are two facts, not a copy. Decide the key from the meaning of a row.</li>
+          <li><b>Duplicates that cross a train/test split.</b> The same record in both sets makes a model look better than it is.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Data quality in every production system.</b> Range and duplicate checks are the first tests in a data-validation layer; they stop a broken upstream job from silently corrupting a model.</li>
+          <li><b>Large web corpora</b> are de-duplicated (exact and near) because repeated text is memorised and skews what a language model learns.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. After trimming, lowercasing and collapsing spaces, which pairs of rows in the eight-row table merge when matching on name and email?</summary><div class="ans">Rows 1 and 2, rows 3 and 4, and rows 5 and 6. Row 8 stays separate because its email differs. 8 rows become <b>5</b>.</div></details>
+        <details class="check"><summary>2. With k = 3 the IQR fences for the fourteen ages are 31.5 − 37.5 = −6 and 44 + 37.5 = 81.5. Which values are flagged?</summary><div class="ans"><b>98 and 212</b>. The value −3 lies inside the (wide) lower fence, so only the range check catches it: no single rule is enough.</div></details>
+        <details class="check"><summary>3. Why should 98 not be deleted just because it is flagged?</summary><div class="ans">An age of 98 is possible, and the fence only says it is rare relative to this sample. Deleting it would remove a real patient and could bias an analysis of older people. Check with the source before you decide.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Exact duplicates share a key; near duplicates need normalising (trim, case, spaces) and a deliberate match rule.</li>
+          <li>Range checks catch impossible values; IQR fences catch unusual ones; the two answer different questions.</li>
+          <li>Separate errors (fix or drop) from rare true values (investigate and usually keep).</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 ===================== -->
+    <section class="lesson" id="types-units" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.5</span><h2>Parsing types, units &amp; formats</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery company exports trip distances as text: "5 km", "3200 m", "2 mi". A colleague strips the letters and averages the numbers. The result is 801.7. What is wrong, and what is the right answer?</div>
+
+        <h3 class="sec">Intuition: text is not a number until you say what it means</h3>
+        <p>A file is just characters. The characters 1,200 could be twelve hundred (English), or one and two-tenths (some European formats). The characters 03/04/2024 are 3 April in one country and 4 March in another. A column of "12:00" is meaningless until you know the time zone. <b>Parsing</b> is the act of turning text into a typed value (a number, a date, a category) according to explicit rules. A good pipeline makes those rules visible instead of leaving them to a guess.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Strings to numbers.</b> Six price strings arrive: <code>"$1,200"</code>, <code>"950"</code>, <code>"1.2k"</code>, <code>"USD 80"</code>, <code>"n/a"</code>, <code>"1,200.50"</code>. A naive conversion (just try to read it as a number) succeeds on exactly <b>1 of 6</b> (the "950"). Add three rules: remove $, USD, commas and spaces; read a suffix k as ×1000; treat n/a as a deliberate missing value. Now 5 parse: 1200, 950, 1200, 80, 1200.50, with one missing, and the mean of the parsed values is (1200 + 950 + 1200 + 80 + 1200.5)/5 = <b>926.10</b>. The failure that raised an error was the safe one.</p>
+        <div class="worked"><b>The silent failure</b>
+          <p>Distances "5 km", "3200 m", "2 mi", "800 m", "1.5 km". Reading just the numbers gives 5, 3200, 2, 800, 1.5, mean <b>801.7</b>: no error, but the units are mixed, so this is nonsense. Convert to metres first (1 km = 1000 m, 1 mi = 1609.344 m): 5000, 3200, 3218.688, 800, 1500; the mean is 13718.688 / 5 = <b>2743.74 m</b>. The wrong answer was off by more than a factor of three.</p>
+        </div>
+        <p><b>Dates and the day/month trap.</b> Take 03/04/2024, 12/05/2024, 25/12/2024, 07/08/2024. Read as day/month/year they are 3 April, 12 May, 25 December, 7 August. Read as month/day/year the first, second and fourth are valid but different dates (4 March, 5 December, 8 July) and the third (month 25) is <b>invalid</b>. Three of the four strings are ambiguous (both parts at most 12); only 25/12 tells you the order. Rule: decide the order from the source, record it, and never let a parser guess row by row. Prefer ISO 8601 (2024-04-03), which is unambiguous.</p>
+        <p><b>Time zones.</b> Three events are logged as local time with an offset:</p>
+<pre style="margin:6px 0;overflow-x:auto">1  2024-03-04 23:30 -05:00   ->  2024-03-05 04:30 UTC
+2  2024-03-05 01:15 +02:00   ->  2024-03-04 23:15 UTC
+3  2024-03-05 08:00 +09:00   ->  2024-03-04 23:00 UTC</pre>
+        <p>Sorted as text, the order is 1, 2, 3. Converted to UTC, the true order is <b>3, 2, 1</b>: completely reversed. UTC = local time − offset. Store timestamps in UTC and convert to local time only for display.</p>
+        <p><b>Currencies and codes.</b> Money in two currencies cannot be added until converted, and the rate depends on the date. Categorical codes need a mapping table: "M", "male", "Male" and 1 must become one category; a zip code like 02134 must stay text, or the leading zero is lost and it becomes 2134.</p>
+        <div class="eq">x_{\text{SI}} = x \cdot f_u, \qquad t_{\text{UTC}} = t_{\text{local}} - \delta</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x</span>: a number read from text, in unit <span class="tex">u</span>. <span class="tex">f_u</span>: the conversion factor to the base unit (1000 for km to m, 1609.344 for mi to m, 1 for m). <span class="tex">x_{\text{SI}}</span>: the value in the base unit. <span class="tex">t_{\text{local}}</span>: a clock reading. <span class="tex">\delta</span>: the offset of that clock from UTC (for example +02:00 or −05:00).</div>
+
+        <div data-lab="ds-wr-parse"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Prices: untick all three rules, then tick them one at a time. Which rule rescues which rows? What happens to "n/a" with and without its rule?</li>
+          <li>Distances: tick only "read the number". The rows turn orange. Why is a wrong number worse than the red failures?</li>
+          <li>Dates: switch between day first and month first. Which row becomes invalid, and what does that tell you about the data's own order?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Silent success.</b> Code that converts "2 mi" to 2 does not complain. Add a unit column and check it explicitly.</li>
+          <li><b>Locale.</b> "1.200,50" is twelve hundred and a half in much of Europe. A parser using the wrong locale gives 1.2 or fails.</li>
+          <li><b>Local time without a zone.</b> Sorting, subtracting and "per day" counts all go wrong across zones and daylight-saving changes.</li>
+          <li><b>Numbers that are really labels.</b> Phone numbers, zip codes and ids should be text; averaging them is meaningless.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Feature pipelines.</b> A model trained on distances in metres and served distances in kilometres is badly wrong with no error, a classic production failure.</li>
+          <li><b>Logs.</b> Event logs from servers in many zones must be put in UTC before sessions, latencies and sequences are computed.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Convert "2 mi" to metres.</summary><div class="ans">2 × 1609.344 = <b>3218.688 m</b>.</div></details>
+        <details class="check"><summary>2. What does "03/04/2024" mean day-first and month-first?</summary><div class="ans">Day-first: 3 April 2024. Month-first: 4 March 2024. They are different days, so the order must be known, not guessed.</div></details>
+        <details class="check"><summary>3. An event at 12:00 +01:00 and another at 12:00 -04:00 are logged on the same date. By how many hours do they differ in UTC?</summary><div class="ans">The first is 11:00 UTC, the second 16:00 UTC: <b>5 hours</b> apart, although both say "12:00".</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Parse with explicit, visible rules: locale, currency, date order, units and time zone.</li>
+          <li>Failures that raise errors are safer than silent wrong numbers.</li>
+          <li>Store time in UTC, convert units to a base unit, keep identifiers as text.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 ===================== -->
+    <section class="lesson" id="aggregation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">1.6</span><h2>Grouping &amp; aggregating: split, apply, combine</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A chain of three stores logs the sales of 10 shifts. The boss asks, "Which store sells best, and what is the average per shift?" A single overall average hides the stores. How do you get one number per store, and why is the average of the three store averages not the same as the overall average?</div>
+
+        <h3 class="sec">Intuition: sort the cards into piles, then summarise each pile</h3>
+        <p>Imagine each shift is an index card. Sort the cards into piles by store. Then for each pile compute one number (the total, the average, the count). Finally put the three results side by side. That is the whole idea, usually named <b>split, apply, combine</b>: <em>split</em> the table into groups by a key, <em>apply</em> a summary to each group, <em>combine</em> the results into a new, smaller table with one row per group.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>The table</b> (store, day type, sales; wk = weekday, we = weekend)
+<pre style="margin:6px 0;overflow-x:auto">#   store  day  sales
+1   A      wk   10
+2   B      wk   20
+3   A      wk   12
+4   A      we   11
+5   C      we   40
+6   B      we   22
+7   A      wk   13
+8   A      we   12
+9   B      wk   24
+10  A      wk   10</pre>
+          <p><b>Group by store.</b> A has 6 rows: 10, 12, 11, 13, 12, 10, sum 68, mean 11.33. B has 3 rows: 20, 22, 24, sum 66, mean 22.00. C has 1 row: 40, mean 40.00. The counts 6 + 3 + 1 = 10 add back to the table, a check you should always make.</p>
+          <p><b>The overall mean</b> is 174 / 10 = <b>17.40</b>. The <b>mean of the three group means</b> is (11.33 + 22 + 40)/3 = <b>24.44</b>. These differ because the groups have different sizes: store A has six shifts and C has one, but a mean of means gives each store the same weight.</p>
+        </div>
+        <div class="eq">\bar x = \frac{\sum_g n_g\,\bar x_g}{\sum_g n_g} = \frac{6(11.33)+3(22)+1(40)}{10} = 17.4</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">g</span>: a group (store A, B or C). <span class="tex">n_g</span>: how many rows are in group <span class="tex">g</span>. <span class="tex">\bar x_g</span>: the mean of group <span class="tex">g</span>. <span class="tex">\bar x</span>: the overall (pooled) mean. The formula is a <b>weighted</b> mean of group means, with weights equal to group sizes. A plain mean of group means (24.44) is the equal-weight version and is a different quantity.</div>
+        <p><b>Other summaries and other keys.</b> By day type: weekday has 6 rows with sum 89 and mean 14.83; weekend has 4 rows with sum 85 and mean 21.25. The median, maximum and count are also common. Grouping by two keys at once makes a <b>pivot table</b>: store and day type give 5 non-empty cells (A-wk: n=4, mean 11.25; A-we: n=2, mean 11.50; B-wk: n=2, mean 22.00; B-we: n=1, mean 22.00; C-we: n=1, mean 40.00), whose counts 4 + 2 + 2 + 1 + 1 add to 10.</p>
+        <p><b>Small groups are noisy.</b> Store C's "mean 40" rests on a single shift. A group mean is only trustworthy in proportion to its count, so always show <span class="tex">n</span> next to the average (for how uncertainty shrinks with <span class="tex">n</span> see <a href="math-statistics.html#intervals-tests">intervals and tests</a>).</p>
+
+        <div data-lab="ds-wr-group"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Group by store with "sum" and watch the rows fly to their buckets. Confirm 68, 66, 40, and that 68 + 66 + 40 = 174.</li>
+          <li>Switch to "mean" and compare the "pooled" and "mean of the group means" lines in the readout. Which is bigger, and why?</li>
+          <li>Group by "store and day type" and read the counts. Which cells rest on only one row?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Averaging averages.</b> Unless the groups have equal sizes, the mean of means differs from the true mean (24.44 versus 17.40).</li>
+          <li><b>Reporting means without counts.</b> A store with one shift looks like the best store (40) while carrying no real evidence.</li>
+          <li><b>Grouping after a bad join.</b> A duplicated key (lesson 1.2) inflates sums per group. Check the group counts against the source row count.</li>
+          <li><b>Missing keys.</b> Rows with a blank group key may be dropped from the groups without warning, and the totals no longer add up.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Dashboards and cohort analysis.</b> Daily active users, retention by sign-up week, conversion by channel: each is a group-by with a count or mean.</li>
+          <li><b>Feature engineering.</b> "Average spend of this customer over the last 30 days" is a grouped aggregate joined back onto each row (see <a href="ml-data.html#feature-engineering">feature engineering</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the weekday and weekend mean sales and the overall mean as a weighted mean of the two.</summary><div class="ans">Weekday: 89/6 = 14.83. Weekend: 85/4 = 21.25. Weighted: (6 × 14.83 + 4 × 21.25)/10 = 174/10 = <b>17.40</b>. The plain mean of 14.83 and 21.25 would be 18.04, which is wrong for these unequal groups.</div></details>
+        <details class="check"><summary>2. In the store-and-day pivot, how many cells are non-empty, and what must their counts add up to?</summary><div class="ans"><b>5</b> cells, with counts 4, 2, 2, 1, 1 adding to <b>10</b>, the number of rows in the table. If they do not add up, rows were dropped.</div></details>
+        <details class="check"><summary>3. Why should you not conclude store C is the best?</summary><div class="ans">Its mean of 40 rests on a single shift (n = 1), so it carries almost no information about the store's typical sales. You need more shifts, and an interval, before ranking it.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Split by key, apply a summary to each group, combine into one row per group; always check that group counts add to the total.</li>
+          <li>A pooled mean is a count-weighted mean of group means; a plain mean of means is a different, usually misleading number.</li>
+          <li>Show <span class="tex">n</span> beside every grouped statistic; small groups are noisy.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 2 (<a href="ds-eda.html">Exploratory data analysis</a>) takes the clean table you now know how to build and learns to look at it: distributions, relationships and surprises.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

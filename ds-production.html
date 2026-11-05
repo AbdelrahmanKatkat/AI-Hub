@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 · Communicating, deploying &amp; responsible data science · Data Science</title>
+<meta name="description" content="Reports people can reproduce, dataset and model documentation, drift monitoring with the population stability index, fairness metrics and their trade-offs, privacy and k-anonymity, and a practical data-science career path, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-production.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="9">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 9</div>
+    <div class="hero">
+      <div class="big" style="background:#58a6ff26">9</div>
+      <div style="flex:1">
+        <h1>Module 9 · Communicating, deploying &amp; responsible data science</h1>
+        <p>An analysis is only useful if others can trust it, re-run it, and keep it healthy after it ships. This module covers the last two stages of the data science loop: communicating the work so it reproduces, documenting data and models, watching a deployed model drift, measuring fairness honestly, protecting personal data, and planning your own path in the field.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Stages 5–6: communicate, deploy and monitor</span><span class="chip">Labs are illustrative, not legal advice</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>A note before you start.</b> The fairness and privacy lessons describe widely used technical definitions and their known limits. They are not legal advice, and which definition applies to a real system is a legal, ethical and organisational decision, not only a statistical one. All lab data here is synthetic and seeded, so a run can be repeated. For the engineering side of monitoring and governance see <a href="ml-production.html#monitoring-drift">ML production: monitoring and drift</a> and <a href="ml-production.html#ml-governance">responsible and governed ML</a>; this module teaches the data scientist's view and does not repeat that material.</div>
+
+    <!-- ===================== 9.1 ===================== -->
+    <section class="lesson" id="reports-reproduce" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.1</span><h2>Reports people can trust and reproduce</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop manager reads your report: "mean order value is 102.50". Three months later an auditor asks you to produce that number again, and you get 95.00. What went wrong, and what should have been written down so that the number comes back every time?</div>
+
+        <h3 class="sec">Intuition: a number is a recipe, not a fact</h3>
+        <p>A figure in a report is the output of a recipe: some raw data, some steps, some tools. If you keep only the figure, you have the cake but not the recipe. Anyone who doubts it, including you in three months, can only taste it. A report people can trust keeps the recipe next to the cake: <b>the data</b>, <b>the method</b> and <b>the limits</b>, in a form a stranger can re-run.</p>
+        <p>This sits at stage 5 of the data science loop (communicate), but it is decided in stage 2: if you cleaned the data by hand in a spreadsheet and never wrote down what you did, no amount of care at the end repairs it.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, the simplest case.</b> Eight orders, with two refunds recorded as negative amounts. The manager wants the mean order value of real sales.</p>
+        <table class="tbl"><tr><th>row</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+        <tr><td>amount</td><td>120</td><td>80</td><td>−30</td><td>95</td><td>150</td><td>−45</td><td>110</td><td>60</td></tr></table>
+        <div class="worked"><b>Worked example, one recipe, three results</b>
+          <p><b>Recipe:</b> drop rows with a negative amount (refunds), then take the mean. Six rows remain: 120, 80, 95, 150, 110, 60. Their sum is 615 and <span class="tex">615/6=102.50</span>. That is the published number.</p>
+          <p><b>Forgetting the rule.</b> The mean of all eight rows is <span class="tex">540/8=67.50</span>. A different recipe, a different number, and nothing in the report says which was used.</p>
+          <p><b>A hand edit.</b> Someone "corrects" row 5 from 150 to 105 in the file. The mean of the six kept rows becomes <span class="tex">570/6=95.00</span>, exactly the auditor's number. The data changed, silently.</p>
+        </div>
+        <p>Every one of the three results is arithmetic done correctly. The failure is not the arithmetic: it is that the inputs, the rule and the code were not pinned down.</p>
+
+        <p><b>Step 2, what must be pinned.</b> A result is a function of four things:</p>
+        <div class="eq">\text{result}=f\bigl(\text{raw data},\ \text{code version},\ \text{environment},\ \text{random seed}\bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">f</span>: the whole analysis, from raw file to figure. <i>Raw data</i>: the untouched input file, never edited by hand. <i>Code version</i>: the exact script or notebook, for example a version-control commit. <i>Environment</i>: language and package versions. <i>Random seed</i>: the starting value of any random number generator, so that sampling, splits and bootstraps repeat. If all four are the same, the result must be the same; if you cannot say which one changed, you cannot explain a difference.</div>
+
+        <p><b>Step 3, the habits that pin them.</b></p>
+        <ul>
+          <li><b>Raw data is read-only.</b> Every change is made by code that reads raw and writes a new file. Then "what did you do to the data?" is answered by reading the script. A <b>fingerprint</b> (a checksum of the file) lets anyone check they hold the same bytes.</li>
+          <li><b>Version control.</b> Commit the code with messages that say why. A diff then shows exactly what changed between two published numbers.</li>
+          <li><b>One command from raw to report.</b> If reproducing needs eleven manual steps, it will not be reproduced.</li>
+          <li><b>Write the method, the data and the limits.</b> Method: every filter and its row count ("8 rows, 2 refunds dropped, 6 kept"). Data: source, date pulled, what is missing. Limits: sample size, uncertainty, what the analysis cannot say (<a href="math-statistics.html#intervals-tests">intervals</a> belong next to every estimate).</li>
+        </ul>
+
+        <div data-lab="ds-pr-repro"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Re-run with the defaults and watch the packet. The report should reproduce 102.50. Note the fingerprint of the raw file.</li>
+          <li>Change the row 5 value to 105 and re-run. Which message explains the mismatch, and how would a version-control diff have shown it?</li>
+          <li>Reset, untick the refund rule, and re-run. Then reset and tick "hand-type the number". Why is a hand-typed number the hardest failure to find?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Fixing data in the spreadsheet.</b> A manual edit leaves no trace. Do it in code, or record it in a cleaning log with the rule and the row count.</li>
+          <li><b>Pasting numbers into the report.</b> Generate figures and tables from the script so the text and the analysis cannot drift apart.</li>
+          <li><b>Unpinned randomness.</b> A bootstrap interval that changes in the third decimal each run looks like a bug. Seed it, and say the seed.</li>
+          <li><b>Reproducible is not correct.</b> A script can reproduce a wrong answer perfectly. Reproducibility lets others find the error; it does not prove there is none.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Experiment tracking:</b> a model's accuracy only means something with the data version, code commit, hyperparameters and seed attached (see <a href="ml-production.html#experiments-registry">experiments and registry</a>).</li>
+          <li><b>Research and audits:</b> results that cannot be re-run from raw data cannot be audited, and training-set changes that were never logged are a common reason a retrained model behaves differently.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the printed table, what is the mean if refunds are dropped but row 5 is changed from 150 to 105?</summary><div class="ans">Kept rows: 120, 80, 95, 105, 110, 60, sum 570, so 570 / 6 = 95.00.</div></details>
+        <details class="check"><summary>2. Name the four inputs that, if all equal, must give the same result.</summary><div class="ans">Raw data, code version, environment (package versions) and random seed.</div></details>
+        <details class="check"><summary>3. A colleague says "my script runs and gives the same number every time, so it is right". What is wrong with that?</summary><div class="ans">Reproducible means repeatable, not correct. A script with a wrong rule, for example one that keeps refunds (67.50 instead of 102.50), repeats its error perfectly. Reproducibility makes the error findable; review and checks make it absent.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A reported figure is the output of raw data, code, environment and seed; keep all four.</li>
+          <li>Never edit raw data by hand; transform it in code and log row counts at each step.</li>
+          <li>A good report states the method, the data and the limits, with the uncertainty beside each estimate.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.2 ===================== -->
+    <section class="lesson" id="model-cards" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.2</span><h2>Documenting datasets and models: datasheets and model cards</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A hospital team receives your model with the note "accuracy 85%". They serve two patient groups, and one of them is only a quarter of your test data. What else must the note say before they can decide whether to use it?</div>
+
+        <h3 class="sec">Intuition: a nutrition label for data and models</h3>
+        <p>A food label does not say "good". It lists what is inside and who should be careful. A <b>datasheet</b> does that for a dataset (why it was collected, how, by whom, what is missing). A <b>model card</b> does it for a model (what it is for, what it was trained on, how it was evaluated, where it fails). The idea, proposed in the "Datasheets for Datasets" and "Model Cards for Model Reporting" papers, is simple: the people who will use the thing should not have to guess its limits.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The fields.</b> A short model card answers six questions: <i>Intended use</i> (and what is out of scope). <i>Training data</i> (source, period, size, known gaps). <i>Evaluation data</i> and metrics. <i>Results by subgroup</i>. <i>Known failure modes and limits.</i> <i>Owner, version and date.</i> A datasheet adds how the data was collected, consent and licence, preprocessing, and recommended uses.</p>
+        <p><b>Why the subgroup line matters.</b> A single headline number is an average, and an average can hide a weak group. Here is a test set of 80 cases split into two groups.</p>
+        <table class="tbl"><tr><th>group</th><th>cases n</th><th>correct</th><th>accuracy</th><th>95% interval (Wilson)</th></tr>
+        <tr><td>A</td><td>60</td><td>54</td><td>0.900</td><td>0.80 to 0.95</td></tr>
+        <tr><td>B</td><td>20</td><td>14</td><td>0.700</td><td>0.48 to 0.85</td></tr>
+        <tr><td>overall</td><td>80</td><td>68</td><td>0.850</td><td>0.76 to 0.91</td></tr></table>
+        <div class="worked"><b>Worked example, a headline that hides a group</b>
+          <p>Overall accuracy is <span class="tex">68/80=0.85</span>, a weighted average of the groups: <span class="tex">\tfrac{60}{80}(0.90)+\tfrac{20}{80}(0.70)=0.675+0.175=0.85</span>. Group B is 20 points lower, but because B is only a quarter of the data it moves the average by just 5 points.</p>
+          <p>Group B is also small, so its estimate is uncertain. The standard error is <span class="tex">\sqrt{0.7\times0.3/20}=0.1025</span>, giving a rough interval of about ±0.20. The Wilson interval, better for small n, is 0.48 to 0.85. So the honest sentence is "accuracy for B is 0.70, and with 20 cases we can say only that it is somewhere between about 0.5 and 0.85".</p>
+          <p>If we had 100 cases of B with the same 70% accuracy, the interval would tighten to 0.60 to 0.78. More data from the group you are most worried about is often the most valuable data to collect.</p>
+        </div>
+        <div class="eq">\mathrm{acc}_g=\frac{1}{n_g}\sum_{i\in g}\mathbf 1[\hat y_i=y_i],\qquad \mathrm{acc}=\sum_g\frac{n_g}{n}\,\mathrm{acc}_g,\qquad \mathrm{SE}_g\approx\sqrt{\frac{\mathrm{acc}_g(1-\mathrm{acc}_g)}{n_g}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">g</span>: a subgroup such as an age band or a region. <span class="tex">n_g</span>: test cases in that group; <span class="tex">n</span>: all test cases. <span class="tex">\hat y_i</span>: the model's prediction for case <span class="tex">i</span>; <span class="tex">y_i</span>: the true label. <span class="tex">\mathbf 1[\cdot]</span>: 1 if the statement is true, 0 otherwise. <span class="tex">\mathrm{SE}_g</span>: standard error of the group accuracy; about 95% of the time the true accuracy lies within roughly <span class="tex">\pm1.96\,\mathrm{SE}_g</span>, a rough rule that is poor when <span class="tex">n_g</span> is small.</div>
+
+        <div data-lab="ds-pr-subgroup"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the defaults and watch cases arrive. Which whisker stays wide for longer, and why?</li>
+          <li>Raise group B's share to 50%. How does the overall accuracy move relative to the two group lines, and how does B's interval change?</li>
+          <li>Set both accuracies to 0.80. The overall and the groups agree. Now set B to 0.60: how many cases does it take before the model card line clearly shows the gap?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>One number for everyone.</b> Always report by the subgroups your users care about. Choosing them is a judgement; ask who is affected.</li>
+          <li><b>Reporting a subgroup without its n.</b> "70%" from 20 cases and from 2000 cases are different claims.</li>
+          <li><b>Documenting only the good news.</b> The failure modes section is the most useful one. If you do not know any, say how you looked.</li>
+          <li><b>A card that is written once.</b> Models and data change; stale documentation is worse than none because it is trusted.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Responsible AI documentation:</b> model cards and datasheets are standard artefacts for released models and datasets, and are the first thing an auditor asks for (see <a href="ml-production.html#ml-governance">governed ML</a> and <a href="ml-evaluation.html#interpretability-fairness">interpretability and fairness</a>).</li>
+          <li><b>Foundation models:</b> evaluation tables broken down by language, domain or demographic slice are model-card results at scale.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A model scores 0.90 on 50 cases of group A and 0.60 on 50 cases of group B. What is the overall accuracy, and what does it hide?</summary><div class="ans">Overall = (45 + 30)/100 = 0.75. It hides a 30-point gap between the groups.</div></details>
+        <details class="check"><summary>2. Why does the interval for group B in the table (0.48 to 0.85) look wider than group A's (0.80 to 0.95)?</summary><div class="ans">B has only 20 cases against 60, and a lower accuracy gives a larger <span class="tex">p(1-p)</span>. Both increase the standard error.</div></details>
+        <details class="check"><summary>3. Name three things a model card should say besides accuracy.</summary><div class="ans">Any three of: intended and out-of-scope use, training data and its gaps, evaluation data and metrics, results by subgroup, known failure modes, owner, version and date.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Document datasets (datasheets) and models (model cards): purpose, data, evaluation, limits, owner.</li>
+          <li>Overall accuracy is a weighted average that can hide a weaker group; report each group with its n and interval.</li>
+          <li>Known failure modes are the most valuable section; keep the card up to date.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.3 ===================== -->
+    <section class="lesson" id="drift-monitoring" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.3</span><h2>Monitoring: data drift, concept drift and alerts</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your model has been live for two months. The true outcomes (did the customer actually repay?) arrive weeks late, so you cannot yet compute accuracy. How can you tell today that the model's world has changed, and when should it raise an alarm?</div>
+
+        <h3 class="sec">Intuition: compare today's inputs with the inputs you trained on</h3>
+        <p>A model is a memory of the past. It works while tomorrow's inputs look like the training inputs. When they stop looking alike, performance can fall, and you often see the change in the <i>inputs</i> long before you see it in the <i>outcomes</i>, because inputs are available immediately and labels are not.</p>
+        <p>Two kinds of change are worth separating. <b>Data (covariate) drift</b>: the distribution of the inputs <span class="tex">P(x)</span> moves, for example customers get older. <b>Concept drift</b>: the relationship between inputs and the outcome <span class="tex">P(y\mid x)</span> moves, for example the same customer profile now behaves differently after a price change. Data drift is visible without labels; concept drift needs labels (or proxies) to detect. Either can hurt a model, and a model can also be fine under data drift if it still sits in the range it learned.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, bin the feature.</b> Cut a feature into bins using the training data. Record the share of training rows in each bin, <span class="tex">e_i</span> ("expected"), and the share of live rows, <span class="tex">a_i</span> ("actual").</p>
+        <table class="tbl"><tr><th>order value</th><th>&lt;20</th><th>20–40</th><th>40–60</th><th>60–80</th><th>80+</th></tr>
+        <tr><td>training share <span class="tex">e</span></td><td>0.10</td><td>0.20</td><td>0.40</td><td>0.20</td><td>0.10</td></tr>
+        <tr><td>live share <span class="tex">a</span></td><td>0.05</td><td>0.15</td><td>0.35</td><td>0.25</td><td>0.20</td></tr></table>
+        <p><b>Step 2, score each bin.</b> The population stability index adds up, over bins, how much each share moved, weighted by how surprising the log-ratio is:</p>
+        <div class="eq">\mathrm{PSI}=\sum_{i=1}^{B}(a_i-e_i)\,\ln\frac{a_i}{e_i}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">B</span>: number of bins. <span class="tex">e_i</span>: share of training data in bin <span class="tex">i</span>. <span class="tex">a_i</span>: share of live data in bin <span class="tex">i</span>. <span class="tex">\ln</span>: natural logarithm. Each term is zero when <span class="tex">a_i=e_i</span> and is never negative, because <span class="tex">a_i-e_i</span> and <span class="tex">\ln(a_i/e_i)</span> always have the same sign. Swapping <span class="tex">a</span> and <span class="tex">e</span> gives the same value, so PSI is symmetric. An empty bin makes <span class="tex">\ln</span> blow up, so implementations add a tiny floor.</div>
+        <div class="worked"><b>Worked example, PSI for the printed table</b>
+          <p>Bin by bin, <span class="tex">(a-e)\ln(a/e)</span>:</p>
+          <p>&lt;20: <span class="tex">(-0.05)\ln(0.5)=(-0.05)(-0.6931)=0.0347</span><br>
+          20–40: <span class="tex">(-0.05)\ln(0.75)=(-0.05)(-0.2877)=0.0144</span><br>
+          40–60: <span class="tex">(-0.05)\ln(0.875)=(-0.05)(-0.1335)=0.0067</span><br>
+          60–80: <span class="tex">(0.05)\ln(1.25)=(0.05)(0.2231)=0.0112</span><br>
+          80+: <span class="tex">(0.10)\ln(2)=(0.10)(0.6931)=0.0693</span></p>
+          <p>Total <span class="tex">\mathrm{PSI}=0.1362</span>. Half of it comes from the top bin: live customers order big more often than the training data said. A commonly quoted rule of thumb reads below 0.1 as stable, 0.1 to 0.25 as worth watching, and above 0.25 as a large shift. These are folk thresholds from credit scoring, not laws: set yours by watching how PSI relates to real accuracy for your model.</p>
+        </div>
+        <p><b>Step 3, alert and act.</b> Compute PSI on a schedule (daily, weekly) for each important feature and for the model's score. An <b>alert</b> fires when it crosses a threshold. The response is a human decision: investigate (data pipeline bug? a new product?), then maybe retrain, recalibrate or roll back. Retraining triggers usually combine PSI with accuracy once labels arrive, because input drift does not always mean the model got worse.</p>
+
+        <div data-lab="ds-pr-drift"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with the defaults. Watch the orange histogram slide away from the blue training curve and the PSI line climb. On which day does the alert fire, and what is the accuracy then?</li>
+          <li>Lower the alert threshold to 0.1 and then raise it to 0.4. Alerts that come too early cause false alarms; too late, damage is done. Where does accuracy start to fall in relation to the alert?</li>
+          <li>Set the drift to 0 and let it run. The PSI is not exactly zero: it wiggles from sampling noise. What does that tell you about setting the threshold?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Drift is not harm.</b> The model is only hurt if the inputs move to where it is wrong. Check against accuracy once labels arrive.</li>
+          <li><b>Bins from the live data.</b> Always cut bins from the training data, or the comparison is against itself.</li>
+          <li><b>Monitoring only the score.</b> A stable output can hide shifting inputs that cancel out. Watch key features too.</li>
+          <li><b>Alert fatigue.</b> Dozens of features with a noisy threshold means alerts nobody reads. Pick the features that matter and a threshold that survives a quiet week.</li>
+          <li><b>Seasonality is not drift.</b> December shopping differs from June every year. Compare to the same season or to a longer window.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Production ML:</b> drift monitors, delayed-label dashboards and retraining triggers are core to every deployed model (the engineering view is in <a href="ml-production.html#monitoring-drift">ML production</a>).</li>
+          <li><b>Large language models:</b> the same idea applied to prompts and topics: when the kinds of questions users ask shift, an evaluation set built last year stops representing today.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. One bin had a training share of 0.50 and a live share of 0.30. What is its PSI term?</summary><div class="ans"><span class="tex">(0.30-0.50)\ln(0.30/0.50)=(-0.20)(-0.5108)=0.1022</span>.</div></details>
+        <details class="check"><summary>2. Why can PSI warn you earlier than accuracy does?</summary><div class="ans">PSI needs only the inputs, which arrive immediately. Accuracy needs true labels, which often arrive weeks later, and the model may stay accurate until the inputs travel far enough from its training range (in the lab, the alert fires while accuracy is still near its starting level).</div></details>
+        <details class="check"><summary>3. Data drift versus concept drift: which one needs labels to detect, and why?</summary><div class="ans">Concept drift: it is a change in <span class="tex">P(y\mid x)</span>, the link between inputs and outcomes, so you must see outcomes. Data drift is a change in <span class="tex">P(x)</span>, visible from inputs alone.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Compare live inputs with training inputs, bin by bin: <span class="tex">\mathrm{PSI}=\sum(a_i-e_i)\ln(a_i/e_i)</span>; the table above gives 0.1362.</li>
+          <li>Data drift is visible without labels; concept drift needs outcomes; neither automatically means the model got worse.</li>
+          <li>An alert should lead to a human investigation and a retraining decision, with thresholds tuned to your own history.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.4 ===================== -->
+    <section class="lesson" id="fairness" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.4</span><h2>Fairness metrics and their trade-offs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model approves loans using a score from 0 to 1. Group A and group B both apply. How would you check whether the model treats them fairly, and can you always make every reasonable check pass at once?</div>
+
+        <h3 class="sec">Intuition: "fair" can mean several different things</h3>
+        <p>Ask three people what fair means here. One says "the same share of each group should be approved". Another says "among people who would repay, each group should have the same chance of being approved". A third says "an approval should mean the same thing for everyone: the same chance of repaying". All three are reasonable, each is a precise formula, and, as we will see, they cannot all hold at once when the groups differ in how often the outcome occurs. Choosing among them is a decision about values and law for the specific use, not a calculation. This lesson shows the formulas and their limits honestly.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, the printed table.</b> Eight applicants per group, with a score and what actually happened (1 = would repay). Approve when score ≥ 0.50.</p>
+        <table class="tbl"><tr><th>group A score</th><th>0.90</th><th>0.80</th><th>0.70</th><th>0.60</th><th>0.55</th><th>0.40</th><th>0.30</th><th>0.20</th></tr>
+        <tr><td>repays?</td><td>1</td><td>1</td><td>1</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td></tr></table>
+        <table class="tbl"><tr><th>group B score</th><th>0.85</th><th>0.65</th><th>0.60</th><th>0.45</th><th>0.40</th><th>0.35</th><th>0.20</th><th>0.10</th></tr>
+        <tr><td>repays?</td><td>1</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td></tr></table>
+        <p>Group A: 5 of 8 repay (base rate 0.625). Group B: 3 of 8 repay (base rate 0.375). The groups differ in base rate, which matters below. With 8 people each this table is for arithmetic, not for conclusions.</p>
+
+        <p><b>Step 2, three families of metric.</b> Let <span class="tex">\hat Y=1</span> mean "approved", <span class="tex">Y=1</span> "would repay", <span class="tex">G</span> the group.</p>
+        <div class="eq">\text{Demographic parity: }P(\hat Y=1\mid G=A)=P(\hat Y=1\mid G=B)</div>
+        <div class="eq">\text{Equal opportunity: }P(\hat Y=1\mid Y=1,G=A)=P(\hat Y=1\mid Y=1,G=B)</div>
+        <div class="eq">\text{Predictive parity (precision): }P(Y=1\mid \hat Y=1,G=A)=P(Y=1\mid \hat Y=1,G=B)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">P(\cdot\mid\cdot)</span>: probability among the people satisfying the condition. Demographic parity compares <b>selection rates</b>. Equal opportunity compares <b>true-positive rates</b> (qualified people approved); requiring the false-positive rates to match as well is called <b>equalised odds</b>. Predictive parity compares <b>precision (PPV)</b>: of those approved, the share who repay. A closely related idea, <b>calibration within groups</b>, asks that a score of 0.7 mean a 70% repay rate in every group (see <a href="ml-evaluation.html#calibration-uncertainty">calibration</a>). In practice gaps are measured as differences or ratios, and "equal" means "close enough for the decision at hand".</div>
+        <div class="worked"><b>Worked example, the table at threshold 0.50</b>
+          <p><b>Group A.</b> Approved (score ≥ 0.50): 0.90, 0.80, 0.70, 0.60, 0.55, which is 5 of 8, so selection rate <span class="tex">5/8=0.625</span>. Of the 5 who repay, those approved are 0.90, 0.80, 0.70, 0.55, so TPR <span class="tex">4/5=0.800</span>. The one approved non-repayer is 0.60: FPR <span class="tex">1/3=0.333</span>. Precision <span class="tex">4/5=0.800</span>.</p>
+          <p><b>Group B.</b> Approved: 0.85, 0.65, 0.60, so selection rate <span class="tex">3/8=0.375</span>. Of the 3 who repay (0.85, 0.60, 0.45) two are approved: TPR <span class="tex">2/3=0.667</span>. One non-repayer approved (0.65) of 5: FPR <span class="tex">1/5=0.200</span>. Precision <span class="tex">2/3=0.667</span>.</p>
+          <p><b>Gaps.</b> Demographic parity gap <span class="tex">0.625-0.375=0.250</span>. Equal opportunity gap <span class="tex">0.800-0.667=0.133</span>. FPR gap <span class="tex">0.333-0.200=0.133</span>. Precision gap <span class="tex">0.800-0.667=0.133</span>.</p>
+          <p><b>Move the threshold to 0.40.</b> Group A approves 6 (selection 0.750, TPR 5/5 = 1.000, FPR 1/3, precision 5/6 = 0.833). Group B approves 5 (selection 0.625, TPR 3/3 = 1.000, FPR 2/5 = 0.400, precision 3/5 = 0.600). Now equal opportunity holds exactly (both 1.000), the demographic parity gap is 0.125, but the precision gap grew to 0.233 and the FPR gap changed sign (group B is now the higher one, by 0.067). Fixing one metric moved the others.</p>
+        </div>
+
+        <p><b>Step 3, why not all at once.</b> Counting shows the tension. For any group with base rate <span class="tex">p</span> (the share who truly have <span class="tex">Y=1</span>), a binary classifier satisfies an identity:</p>
+        <div class="eq">\mathrm{FPR}=\frac{p}{1-p}\cdot\frac{1-\mathrm{PPV}}{\mathrm{PPV}}\cdot(1-\mathrm{FNR})</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">p</span>: the group's base rate. <span class="tex">\mathrm{PPV}</span>: precision. <span class="tex">\mathrm{FNR}=1-\mathrm{TPR}</span>: false-negative rate. <span class="tex">\mathrm{FPR}</span>: false-positive rate. Check with group A at 0.50: <span class="tex">\tfrac{0.625}{0.375}\cdot\tfrac{0.2}{0.8}\cdot0.8=0.3333</span>, the FPR we counted. For group B: <span class="tex">\tfrac{0.375}{0.625}\cdot\tfrac{1/3}{2/3}\cdot\tfrac23=0.2000</span>.</div>
+        <p><b>The impossibility result (Kleinberg, Mullainathan and Raghavan 2016; Chouldechova 2017), stated carefully.</b> If the two groups have <b>different base rates</b> and the classifier is <b>not perfect</b>, then it is impossible for equal PPV, equal FPR and equal FNR to hold simultaneously. Read the identity: if PPV, FNR are equal in both groups but <span class="tex">p</span> differs, then FPR must differ. In the same spirit, a score that is calibrated within each group and also has equal false-positive and false-negative rates across groups is possible only with a perfect predictor or equal base rates. Demographic parity conflicts with these too when base rates differ, since a classifier that is accurate must approve groups at different rates. The result is a mathematical fact about counting, not a fault of any one model. It does not say fairness is impossible; it says you must choose which criterion matters for this decision, justify it, and say what it costs on the others.</p>
+        <p>Two honest cautions. First, equal base rates are rare, and base rates themselves can reflect past unfairness in the data (who was given loans before), so "just match the data" is not neutral. Second, the group variable can be correlated with other features, so simply deleting it from the inputs does not guarantee fairness metrics improve.</p>
+
+        <div data-lab="ds-pr-fair"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>With the threshold at 0.50 and linked, read the four gaps. Press Play and watch them change as the threshold sweeps. Is there any threshold where all four gaps are near zero?</li>
+          <li>Untick "same threshold" and set group B's threshold lower than A's. Which gap shrinks, and which grows? You have just chosen a criterion.</li>
+          <li>Use the score shift slider to push group B's scores down (a model that underrates B). Which metric reveals it most clearly?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Picking the metric that looks best.</b> Choose the criterion before looking at results, and record why.</li>
+          <li><b>Tiny groups.</b> With few people per group, gaps are mostly noise; show counts and intervals (<a href="#model-cards">lesson 9.2</a>).</li>
+          <li><b>Fairness through unawareness.</b> Dropping the sensitive column does not remove proxy features such as postcode.</li>
+          <li><b>A metric is not an outcome.</b> A parity number tells you nothing about whether the decision helps or harms people downstream; involve the people affected.</li>
+          <li><b>Legal tests differ by jurisdiction.</b> This lesson is not legal advice; for a real system get legal and domain review.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Credit, hiring and health:</b> audits compute selection rates, TPR and precision by group, and teams document which criterion they chose and why (<a href="ml-production.html#ml-governance">governed ML</a>).</li>
+          <li><b>Mitigation:</b> options include reweighting data, group-specific thresholds, and post-processing; each trades one metric for another.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the printed table at threshold 0.50, what is group B's selection rate and the demographic parity gap?</summary><div class="ans">B approves 3 of 8 = 0.375. A approves 5 of 8 = 0.625. Gap = 0.250.</div></details>
+        <details class="check"><summary>2. At threshold 0.40, what is the equal opportunity gap, and what does it show about the metrics?</summary><div class="ans">Both groups have TPR 1.000, so the gap is 0. Yet the precision gap is 0.833 − 0.600 = 0.233, so satisfying one criterion does not satisfy the others.</div></details>
+        <details class="check"><summary>3. State the impossibility result in one careful sentence.</summary><div class="ans">When the groups' base rates differ and the classifier is imperfect, equal precision, equal false-positive rate and equal false-negative rate across the groups cannot all hold at the same time, so a choice among criteria must be made and justified.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Demographic parity, equal opportunity and precision (calibration) are different, precise, and often incompatible definitions of fair.</li>
+          <li>With different base rates and an imperfect classifier, equal PPV, FPR and FNR cannot all hold; the identity <span class="tex">\mathrm{FPR}=\tfrac{p}{1-p}\tfrac{1-\mathrm{PPV}}{\mathrm{PPV}}(1-\mathrm{FNR})</span> shows why.</li>
+          <li>Choose and document the criterion with the affected people and legal review; report gaps with counts and uncertainty.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.5 ===================== -->
+    <section class="lesson" id="privacy" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.5</span><h2>Privacy: anonymisation, consent and aggregation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You remove the names from a patient table and publish it. Someone with a public list of local residents works out which row is a named neighbour, and reads their diagnosis. How did that happen, and how much detail must you remove before it stops?</div>
+
+        <h3 class="sec">Intuition: you can be identified by a combination, not only a name</h3>
+        <p>A name or a national ID is a <b>direct identifier</b>: remove it first. But age, postcode and sex are <b>quasi-identifiers</b>: each is common, yet the combination can be nearly unique, like a fingerprint made of ordinary facts. If your table has one 44-year-old woman in one postcode, and a public record says exactly one such woman lives there, then a name-free table is not anonymous. A famous study estimated that a large share of the US population could be pinned down by ZIP code, birth date and sex alone (Sweeney, 2000; later re-estimates were lower but still high). The lesson is that "anonymous" is a claim you must test, not a property that removing names grants.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, group by the quasi-identifiers.</b> An <b>equivalence class</b> is the set of rows that share the same quasi-identifier values. <b>k-anonymity</b> asks that every class contain at least <span class="tex">k</span> rows, so each person hides among at least <span class="tex">k</span> look-alikes.</p>
+        <table class="tbl"><tr><th>row</th><th>age</th><th>ZIP</th><th>sex</th><th>diagnosis</th></tr>
+        <tr><td>1</td><td>34</td><td>10115</td><td>F</td><td>flu</td></tr>
+        <tr><td>2</td><td>36</td><td>10117</td><td>F</td><td>flu</td></tr>
+        <tr><td>3</td><td>52</td><td>10115</td><td>M</td><td>asthma</td></tr>
+        <tr><td>4</td><td>55</td><td>10117</td><td>M</td><td>diabetes</td></tr>
+        <tr><td>5</td><td>33</td><td>10115</td><td>F</td><td>flu</td></tr>
+        <tr><td>6</td><td>58</td><td>10116</td><td>M</td><td>asthma</td></tr>
+        <tr><td>7</td><td>41</td><td>10215</td><td>F</td><td>asthma</td></tr>
+        <tr><td>8</td><td>44</td><td>10218</td><td>F</td><td>diabetes</td></tr></table>
+        <div class="eq">k(T)=\min_{c\in\mathcal C}\ \lvert c\rvert,\qquad T\text{ is }k\text{-anonymous}\iff k(T)\ge k</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">T</span>: the table. <span class="tex">\mathcal C</span>: the set of equivalence classes (rows sharing all quasi-identifier values). <span class="tex">\lvert c\rvert</span>: number of rows in class <span class="tex">c</span>. <span class="tex">k(T)</span>: the size of the smallest class, which is the best <span class="tex">k</span> the table can claim.</div>
+        <div class="worked"><b>Worked example, raising k by generalising</b>
+          <p><b>Exact values (age, ZIP, sex):</b> all 8 rows are different, so every class has 1 row and <span class="tex">k=1</span>. Anyone who knows a neighbour's age, ZIP and sex finds their row.</p>
+          <p><b>Generalise:</b> age to a decade, ZIP to its first 3 digits. Classes: (30s, 101, F) = rows 1, 2, 5, size 3; (50s, 101, M) = rows 3, 4, 6, size 3; (40s, 102, F) = rows 7, 8, size 2. Now <span class="tex">k=2</span>.</p>
+          <p><b>Generalise more:</b> age to "under 40 / 40+", ZIP to 2 digits, drop sex. Classes: (under 40, 10) = rows 1, 2, 5, size 3; (40+, 10) = rows 3, 4, 6, 7, 8, size 5. Now <span class="tex">k=3</span>. Each step cost detail: we can no longer say where in the city, or how old exactly.</p>
+          <p><b>But look at the first class</b>: rows 1, 2 and 5 all have the diagnosis "flu". An attacker who knows a neighbour is a woman in her 30s in that area learns her diagnosis, even though <span class="tex">k=3</span>. This is the <b>homogeneity attack</b>: k-anonymity protects against being singled out, not against learning the sensitive value. Extensions such as l-diversity (each class has at least <span class="tex">l</span> different sensitive values) address this, and each has its own weaknesses.</p>
+        </div>
+
+        <p><b>Step 2, beyond one table.</b> Anonymisation often fails in practice for three reasons: <i>linkage</i> (another dataset supplies the missing attribute), <i>high dimensions</i> (the more columns, the more unique each row; a few dozen ordinary attributes can make almost everyone unique) and <i>repeated release</i> (several "safe" releases about the same people can be combined). Better practice combines several measures:</p>
+        <ul>
+          <li><b>Minimise:</b> collect and keep only the fields you need, for as long as you need.</li>
+          <li><b>Consent and purpose:</b> use the data for what people agreed to; consent rules differ by place and sector (this is where legal advice matters).</li>
+          <li><b>Aggregate and suppress:</b> publish counts and averages, and hide any cell with fewer than some minimum number of people. The threshold is a policy choice.</li>
+          <li><b>Differential privacy:</b> add calibrated random noise to released statistics so that one person's presence changes the output distribution by at most a factor <span class="tex">e^{\varepsilon}</span>: <span class="tex">\Pr[M(D)\in S]\le e^{\varepsilon}\Pr[M(D')\in S]</span> for datasets <span class="tex">D,D'</span> differing in one person. A smaller <span class="tex">\varepsilon</span> means stronger privacy and more noise. It gives a guarantee that does not depend on what other data an attacker has.</li>
+          <li><b>Access control and logs</b> for the raw data, whatever you publish.</li>
+        </ul>
+
+        <div data-lab="ds-pr-kanon"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>At level 0, read k and the number of unique people. Press Play and watch the boxes merge as detail is removed. At which level does the table first become 3-anonymous?</li>
+          <li>Raise the target k to 6 and step through the levels. What do you lose in detail to reach it, and what does the group count tell you?</li>
+          <li>Look for dashed boxes: groups where everyone has the same diagnosis colour. Does a larger k always remove them?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"We removed the names."</b> Quasi-identifiers still identify. Test with a k count or a linkage attempt.</li>
+          <li><b>k-anonymity is not full privacy.</b> The homogeneity attack above, background knowledge, and repeated releases all remain.</li>
+          <li><b>Hashing an ID is not anonymising it</b> if the possible IDs are few and an attacker can hash them all.</li>
+          <li><b>Small cells in aggregates.</b> A table of counts with a cell of 1 reveals that person. Suppress or merge.</li>
+          <li>Labs here are illustrative; legal definitions of anonymous or personal data vary by law and need professional review.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Personal-data pipelines:</b> training sets from health, location or purchase records need minimisation, access control and release checks before any model or table leaves the team.</li>
+          <li><b>Model memorisation:</b> a model can reproduce parts of its training data, so a model trained on personal data can itself be personal data (see <a href="ml-production.html#ml-governance">governed ML</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the printed table, what is k with exact (age, ZIP, sex)?</summary><div class="ans">k = 1: all eight rows are different, so each class has one row.</div></details>
+        <details class="check"><summary>2. After generalising to (under 40 / 40+, 2-digit ZIP), what is k and what remains risky?</summary><div class="ans">Class sizes are 3 and 5, so k = 3. The class of rows 1, 2 and 5 is all "flu", so the diagnosis of anyone known to be in it is revealed anyway.</div></details>
+        <details class="check"><summary>3. Why is a postcode a quasi-identifier but not a direct identifier?</summary><div class="ans">A postcode alone does not name anyone, but combined with age and sex it can narrow a person down to one row, especially when matched against another dataset such as a public register.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Direct identifiers name you; quasi-identifiers (age, postcode, sex) identify you in combination.</li>
+          <li>k-anonymity needs every group of look-alikes to have at least k rows; generalising raises k at the cost of detail, but it does not stop homogeneity attacks.</li>
+          <li>Real protection combines minimisation, consent and purpose limits, aggregation thresholds, access control and possibly differential privacy; get legal review for real data.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.6 ===================== -->
+    <section class="lesson" id="career-path" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">9.6</span><h2>Working as a data scientist: scope, collaboration and next steps</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A manager says "can you use data to improve retention?" You have the skills from this whole topic. What do you do in the first week, how do you know what to build, and how do you show others what you can do?</div>
+
+        <h3 class="sec">Intuition: most of the job is deciding what the job is</h3>
+        <p>Technical skill is necessary and rarely the bottleneck. The common failure is an excellent answer to a question nobody needed. So the first skill is <b>scoping</b>: turning a wish into a decision, a metric, a dataset and a deliverable, and agreeing it with the person who will act on it. The second is <b>collaboration</b>: the data you need is owned by engineers, the decision is owned by a manager, and the context is held by domain experts. The third is <b>evidence of work</b>: a small set of projects others can open and re-run.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, scope with four questions.</b></p>
+        <table class="tbl"><tr><th>vague request</th><th>decision</th><th>metric</th><th>data</th><th>deliverable</th></tr>
+        <tr><td>"improve retention"</td><td>Which customers get a call from the support team next month?</td><td>share of called customers still active after 90 days vs not called</td><td>subscription table, support log, 24 months</td><td>ranked list of 500 customers plus a one-page method and limits</td></tr></table>
+        <p>Notice what the second row does. It names who decides, what they will do differently, how success is measured and what the data is. Note also the honest checks hidden inside: can we get that data, is it legal and ethical to use it for this (<a href="#privacy">lesson 9.5</a>), and could the effect be measured by an experiment (<a href="ds-experiments.html">Module 5</a>)?</p>
+        <p><b>Step 2, plan the loop.</b> Estimate effort for each of the six stages: ask and agree, collect, clean, explore, model or test, communicate, deploy and monitor. Unclear questions cost extra, because late changes force earlier stages to be redone.</p>
+        <div class="worked"><b>Worked example, a toy plan</b>
+          <p>Suppose you plan Ask 1 day, Collect 3, Clean 5, Explore 3, Model 4, Communicate 2, Deploy 2: 20 days. The work after the Ask stage is <span class="tex">3+5+3+4+2+2=19</span> days. In this teaching toy, we assume rework equals <span class="tex">r\,(1-c)</span> times that downstream work, with <span class="tex">r=0.6</span> and <span class="tex">c</span> the clarity of the question between 0 and 1. The numbers are an assumption for illustration, not a measured rule.</p>
+          <p>If <span class="tex">c=0.5</span>: rework <span class="tex">=0.6\times0.5\times19=5.7</span> days, total 25.7. If the question is perfectly clear (<span class="tex">c=1</span>): total 20. If it is hopelessly vague (<span class="tex">c=0</span>): rework 11.4, total 31.4. The point is the direction: one more day of the Ask stage is cheap insurance.</p>
+        </div>
+        <div class="eq">T_{\text{total}}=\sum_{s=1}^{S}d_s\;+\;r\,(1-c)\sum_{s\ge2}d_s</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">S</span>: number of stages (the lab shows <span class="tex">S=7</span> bars: the six stages of the loop, with "ask and collect" split into two). <span class="tex">d_s</span>: planned days for stage <span class="tex">s</span>; stage 1 is Ask. <span class="tex">c</span>: clarity of the question from 0 to 1. <span class="tex">r</span>: the toy rework constant (0.6 here). The sum from <span class="tex">s\ge2</span> is the work that depends on the question being right. In the lab you can change every <span class="tex">d_s</span> and <span class="tex">c</span>.</div>
+
+        <p><b>Step 3, role families.</b> Titles vary a lot between organisations, so read the job description, not the title. These families overlap:</p>
+        <ul>
+          <li><b>Data / business analyst:</b> questions, dashboards, reports; strong on SQL, visualisation, communication.</li>
+          <li><b>Data scientist (analysis, experiments):</b> statistics, causal questions, A/B tests, modelling for decisions.</li>
+          <li><b>Machine learning engineer:</b> builds and runs models in production; strong software and monitoring (<a href="ml-production.html">ML production</a>).</li>
+          <li><b>Data engineer:</b> builds the pipelines and tables everyone else relies on.</li>
+          <li><b>Research scientist:</b> new methods; usually deep in maths and papers.</li>
+        </ul>
+        <p>No single family is the "real" one. Pick by what you enjoy: answering questions, building systems, or inventing methods.</p>
+        <p><b>Step 4, a portfolio of reproducible projects.</b> Three small, finished projects beat ten half-done ones. For each, the reader should find: the question and decision it informs; where the data came from and its licence; a script or notebook that runs from raw data in one command (<a href="#reports-reproduce">lesson 9.1</a>); a baseline and an honest evaluation (<a href="ds-modelling.html">Module 7</a>); a short README with method, limits and uncertainty; and, if it concerns people, a note on privacy and fairness (<a href="#fairness">9.4</a>, <a href="#privacy">9.5</a>). Public data you care about makes better projects than another generic tutorial dataset.</p>
+
+        <div data-lab="ds-pr-scope"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Reset and watch the playhead walk the plan. Note the sentence at the bottom: what does the stakeholder see at each stage?</li>
+          <li>Slide the question clarity to 100% and then to 0%. How much of the total is rework in each case?</li>
+          <li>Give the Ask stage 3 days and keep clarity at 50%. Then raise clarity to 80% with the same other numbers. Does the extra day pay for itself under the toy assumption?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Starting with a model.</b> "We will use machine learning" is a solution, not a question. Start from the decision.</li>
+          <li><b>Hiding in the notebook.</b> Share early drafts and surprises. Disagreement found in week one is cheap.</li>
+          <li><b>Unscoped "just a quick look".</b> Without a deliverable and a stopping rule the work never ends or quietly changes meaning.</li>
+          <li><b>Portfolio as a gallery of tutorials.</b> The same famous dataset with the same model shows little. Show a question you chose, a decision, and limits.</li>
+          <li><b>Believing a figure about the job market.</b> Demand, titles and tools change; look at current postings in your region instead of trusting any single number, including numbers in courses.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Career planning:</b> the families above map to the rest of this hub: machine learning (<a href="machine-learning.html">ML</a>), computer vision, and later NLP and generative AI. Pick one project in a topic you want to work in.</li>
+          <li><b>Every AI project</b> that fails for non-technical reasons failed at scoping, data access or deployment: the three places this module teaches you to look.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Turn "understand our customers" into a decision, a metric and a deliverable (any reasonable example).</summary><div class="ans">Decision: which of two onboarding emails to send to new customers. Metric: share still active after 30 days. Deliverable: a one-page recommendation from a randomised comparison, with the interval. Any answer naming a decision, a measure and a concrete output is fine.</div></details>
+        <details class="check"><summary>2. In the toy plan, total planned days are 20 with 19 downstream. What is the rework when clarity is 0.8?</summary><div class="ans"><span class="tex">0.6\times(1-0.8)\times19=2.28</span> days, so the total is 22.28.</div></details>
+        <details class="check"><summary>3. Why is a re-runnable project a better portfolio piece than a screenshot of a result?</summary><div class="ans">A reader can verify and extend it, which shows the habits of lesson 9.1 (raw data, code, seed, limits), not only that you obtained a number once.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Scope first: a decision, a metric, data and a deliverable agreed with the person who will act.</li>
+          <li>Role families overlap and titles vary; choose by what you want to do and read the actual descriptions.</li>
+          <li>A few reproducible, honestly evaluated projects with stated limits are the best evidence of skill.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. That is the end of the Data Science topic: return to the <a href="data-science.html">Data Science overview</a> to revisit any module, or continue to <a href="machine-learning.html">Machine Learning</a> to go deeper on models.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

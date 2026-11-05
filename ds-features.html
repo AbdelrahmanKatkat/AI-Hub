@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 6 · Feature engineering &amp; data pipelines · Data Science</title>
+<meta name="description" content="Turn raw records into model inputs: encode categories, scale numbers, build time and window features, avoid leakage, and wrap it all in a reproducible fit/transform pipeline, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-features.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="6">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 6</div>
+    <div class="hero">
+      <div class="big" style="background:#388bfd26">6</div>
+      <div style="flex:1">
+        <h1>Module 6 · Feature engineering &amp; data pipelines</h1>
+        <p>A model never sees your customers, your sensors or your sales. It sees rows of numbers. This module is about the craft of turning raw records into good numbers, without letting the future or the answer sneak in, and about wrapping the recipe so that it runs identically in training and in production. It sits in the <b>clean and prepare</b> stage of the data science loop and feeds the <b>test and model</b> stage.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: Module 1 (wrangling), the idea of a train/test split</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this fits with Machine Learning</b>
+      The machine learning track already covers the mechanics of <a href="ml-data.html#encoding">encoding</a>, <a href="ml-data.html#scaling-transform">scaling</a>, <a href="ml-data.html#feature-engineering">feature engineering</a> and <a href="ml-data.html#data-splitting-pipelines">splits and pipelines</a>. Here we take the data scientist's view: every transform is a decision about what the model is allowed to know, and each lesson names the mistake that quietly ruins the result. All labs are <b>illustrative</b>: small tables and seeded simulations, not real products.</div>
+
+    <!-- ===================== 6.1 ===================== -->
+    <section class="lesson" id="encoding-categories" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.1</span><h2>Encoding categorical variables</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery app wants to predict which customers will cancel their subscription. The table has a <i>city</i> column (Cairo, Giza, Alex) and a <i>plan</i> column (Basic, Plus, Pro). A model multiplies and adds numbers, and "Cairo" is not a number. How do we turn words into numbers without telling the model something false, and what do we do on the day a customer arrives from a city we have never seen?</div>
+
+        <h3 class="sec">Intuition: a number must mean what it says</h3>
+        <p>The lazy fix is to number the cities: Alex = 0, Cairo = 1, Giza = 2. A linear model would now believe that Giza is "twice as much" as Cairo and that Cairo sits exactly halfway between Alex and Giza. None of that is true. Cities have no order and no distances. The encoding has put a fake <b>geometry</b> into the data.</p>
+        <p>So the right encoding depends on what the category really is. If it has no order (cities, colours, product ids) we give every value its own column. If it has a real order (small &lt; medium &lt; large, or Basic &lt; Plus &lt; Pro) a single column of ranks is honest. And if there are thousands of values (zip codes, product ids) separate columns are too many, so we sometimes replace the value by a statistic of the label for that value, which is powerful and dangerous.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here is a tiny training table, printed in full. <i>churned = 1</i> means the customer cancelled.</p>
+        <table class="tbl"><tr><th>row</th><th>city</th><th>plan</th><th>churned</th></tr>
+          <tr><td>1</td><td>Cairo</td><td>Basic</td><td>1</td></tr><tr><td>2</td><td>Giza</td><td>Plus</td><td>0</td></tr>
+          <tr><td>3</td><td>Cairo</td><td>Basic</td><td>1</td></tr><tr><td>4</td><td>Alex</td><td>Pro</td><td>0</td></tr>
+          <tr><td>5</td><td>Giza</td><td>Basic</td><td>1</td></tr><tr><td>6</td><td>Cairo</td><td>Plus</td><td>0</td></tr>
+          <tr><td>7</td><td>Alex</td><td>Plus</td><td>0</td></tr><tr><td>8</td><td>Giza</td><td>Basic</td><td>0</td></tr></table>
+
+        <p><b>One-hot encoding.</b> List the distinct cities seen in training, in a fixed order: (Alex, Cairo, Giza). Create one column per city. A row gets a 1 in the column of its own city and 0 elsewhere. Row 1 (Cairo) becomes <span class="tex">(0,1,0)</span>; row 2 (Giza) becomes <span class="tex">(0,0,1)</span>. Every pair of cities is now equally far apart, which is exactly the claim we want to make.</p>
+        <div class="eq">\text{onehot}(x)_j = \begin{cases}1 &amp; x = c_j\\ 0 &amp; \text{otherwise}\end{cases}\qquad j=1,\dots,K</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x</span>: the category of one row. <span class="tex">c_1,\dots,c_K</span>: the <span class="tex">K</span> categories found in the training data, in a fixed order. <span class="tex">\text{onehot}(x)_j</span>: the value of column <span class="tex">j</span>.</div>
+
+        <p><b>Ordinal encoding.</b> The plan has a genuine order, so Basic, Plus, Pro become 0, 1, 2. Row 4 (Pro) gets 2. Only use this when the order is real <i>and</i> the gaps are roughly sensible; if you are unsure, one-hot is safer.</p>
+
+        <p><b>Target encoding.</b> Replace each city by the average churn of that city in the training rows. Counting: Cairo has 3 rows with churn (1, 1, 0), so its mean is 2/3 = 0.6667. Giza has (0, 1, 0), mean 0.3333. Alex has (0, 0), mean 0. The overall rate is 3/8 = 0.375.</p>
+        <p>A city with only two rows has an unreliable mean, so we pull it towards the overall rate. With a smoothing strength <span class="tex">m</span>:</p>
+        <div class="eq">\text{te}(c) = \frac{n_c\,\bar y_c + m\,\bar y}{n_c + m}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">n_c</span>: number of training rows in city <span class="tex">c</span>. <span class="tex">\bar y_c</span>: their mean label. <span class="tex">\bar y</span>: the mean label over all training rows. <span class="tex">m</span>: a pseudo-count, "how many imaginary average rows to add". Large <span class="tex">m</span> shrinks everything towards <span class="tex">\bar y</span>.</div>
+        <div class="worked"><b>Worked example, m = 2</b>
+          <p>Cairo: <span class="tex">(3\cdot0.6667+2\cdot0.375)/(3+2)=2.75/5=0.55</span>. Giza: <span class="tex">(3\cdot0.3333+2\cdot0.375)/5=1.75/5=0.35</span>. Alex: <span class="tex">(2\cdot0+2\cdot0.375)/4=0.1875</span>. The thinly-supported Alex moved from 0 to 0.1875: we no longer claim "nobody in Alex ever churns" from two rows.</p></div>
+
+        <p><b>The leakage risk.</b> Target encoding uses the label to build a feature. If you encode row 5 (Giza, churned = 1) with a Giza average that <i>includes row 5 itself</i>, the row's own answer is already in its feature. For a category with one row the feature equals the label exactly. The model then learns "trust the city column" and is overconfident on training data, but on new data the trick is gone. The standard cures are to compute the encoding from other rows only (out-of-fold or leave-one-out), to smooth as above, and always to fit it on the training split alone. Leakage gets its own lesson (6.5).</p>
+
+        <p><b>Unseen categories.</b> Suppose a customer from Luxor arrives. The training data has no Luxor column. One-hot gives an all-zero city block (often plus an "unseen" flag column), and target encoding falls back to the overall rate 0.375. A pipeline that crashes on new categories will crash in production.</p>
+
+        <div data-lab="ds-ft-record"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play with Cairo and Basic and watch the vector appear group by group. Then pick Luxor: which columns change, and what happens to the city_te value?</li>
+          <li>Set smoothing m to 0, then slowly raise it to 10. For Alex, how does its encoding move, and why is that useful when a city has only two rows?</li>
+          <li>Pick Pro with Alex. Which column holds the plan, and what would a model infer if you had used 0, 1, 2 for the <i>cities</i> instead?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Integer codes for unordered categories.</b> A linear model, k-NN or neural network treats 2 as "bigger than" 1. Trees can cope, linear models cannot.</li>
+          <li><b>Fitting the category list on all the data.</b> The list of columns must come from training rows only; otherwise test-set categories leak into the schema.</li>
+          <li><b>Target encoding on the training rows with their own labels.</b> It makes the training set look separable and the test set disappoint.</li>
+          <li><b>High-cardinality one-hot.</b> A column per product id gives thousands of mostly-zero columns; use target encoding, hashing or embeddings.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every tabular model</b> (linear, tree ensembles, neural nets) needs categories as numbers; gradient-boosting libraries even offer built-in ordered target statistics to avoid the leak above.</li>
+          <li><b>Embeddings:</b> deep models learn a dense vector per category (a learned one-hot compression), used for user and item ids in recommenders.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With columns (Alex, Cairo, Giza), what is the one-hot vector for row 2 (Giza)? What about a customer from Luxor?</summary><div class="ans">Giza is (0, 0, 1). Luxor was not seen in training, so the city block is (0, 0, 0), usually with an extra "unseen" flag set to 1.</div></details>
+        <details class="check"><summary>2. Compute the target encoding of Alex with m = 2 using the training table.</summary><div class="ans">n = 2, mean churn = 0, overall rate 0.375. (2·0 + 2·0.375) / (2 + 2) = 0.1875.</div></details>
+        <details class="check"><summary>3. Why is it unsafe to compute a city's churn average from all rows and then use it as a feature for those same rows?</summary><div class="ans">Each row's own label is part of its feature, so the feature secretly contains the answer (for a one-row city it equals the label). The model looks excellent on training data and fails on new customers, whose labels are not in any average.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Unordered categories: one-hot. Truly ordered ones: ordinal ranks. Many values: target statistics, hashing or embeddings.</li>
+          <li>Target encoding uses the label, so smooth it and compute it only from training data (out-of-fold).</li>
+          <li>Plan for categories you have never seen: all-zero block, an "unseen" flag, or the overall rate.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.2 ===================== -->
+    <section class="lesson" id="scaling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.2</span><h2>Scaling and transforming numeric features</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model sees two features: an order value in dollars (tens to thousands) and the number of items (1 to 5). Does it matter that one is a thousand times bigger than the other? And when a few orders are huge, is the average still a fair summary? How should a brand-new number be treated at prediction time?</div>
+
+        <h3 class="sec">Intuition: put every feature on a comparable ruler</h3>
+        <p>Many methods compare or combine features by their raw size. Distance-based methods like k-NN add up squared differences, so the dollar column drowns out the item count. Gradient descent on a linear model or neural network takes tiny steps in the dollar direction and huge ones in the other, and crawls. Putting features on a common scale fixes both. Trees do not care, because they only ask "is it bigger than a cut-off?".</p>
+        <p>Skew is a second problem. If most orders are 20 to 40 dollars and a few are 5000, the mean and the squared error are dominated by the few giants. A <b>log</b> turns multiplication into addition, so "twice as much" is the same step everywhere on the scale, and the long tail is pulled in.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Standardisation (z-score).</b> Subtract the mean and divide by the standard deviation. The result has mean 0 and standard deviation 1 on the data it was computed from, and reads "how many standard deviations from typical".</p>
+        <div class="eq">z = \frac{x-\mu}{\sigma}\qquad \mu=\frac1n\sum_i x_i,\quad \sigma=\sqrt{\frac1n\sum_i (x_i-\mu)^2}</div>
+        <p><b>Min–max scaling</b> squeezes the training range onto 0 to 1:</p>
+        <div class="eq">x' = \frac{x-x_{\min}}{x_{\max}-x_{\min}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x</span>: a value of the feature. <span class="tex">\mu,\sigma</span>: mean and standard deviation of the feature (here the divisor is <span class="tex">n</span>, as scikit-learn does; with <span class="tex">n-1</span> the numbers change slightly). <span class="tex">x_{\min},x_{\max}</span>: smallest and largest <i>training</i> values. <span class="tex">z,x'</span>: the scaled values.</div>
+
+        <div class="worked"><b>Worked example, five training orders</b>
+          <p>Training order values (dollars): 20, 25, 30, 35, 90. Mean: <span class="tex">\mu=200/5=40</span>. Deviations: −20, −15, −10, −5, 50. Squares: 400, 225, 100, 25, 2500, sum 3250. Variance <span class="tex">3250/5=650</span>, so <span class="tex">\sigma=25.4951</span>.</p>
+          <p>Standardised: 20 → −0.7845, 25 → −0.5883, 30 → −0.3922, 35 → −0.1961, 90 → 1.9612. Min–max (min 20, max 90, range 70): 0, 0.0714, 0.1429, 0.2143, 1.</p>
+          <p>Now a <b>new</b> order of 60 arrives. We reuse the numbers learned from training: <span class="tex">z=(60-40)/25.4951=0.7845</span> and <span class="tex">x'=(60-20)/70=0.5714</span>. Notice the new value is not required to land in [0, 1]: an order of 140 would give <span class="tex">(140-20)/70=1.7143</span>, which is correct and informative.</p></div>
+
+        <p><b>Fit on training data only.</b> A scaler has two phases. <i>Fit</i> computes <span class="tex">\mu,\sigma</span> (or min and max). <i>Transform</i> applies them. The fit must see training rows only. Suppose we lazily fit on training plus the new value: the six numbers 20, 25, 30, 35, 90, 60 give <span class="tex">\mu=43.3333,\ \sigma=24.4381</span>, and the new order becomes <span class="tex">z=0.6820</span> instead of 0.7845. The test row has quietly influenced its own transformation. With 5 rows the gap is visible; with a bigger test set and extreme values it can flatter the score.</p>
+
+        <p><b>Log transform.</b> For the same five orders, <span class="tex">\ln x</span> gives 2.9957, 3.2189, 3.4012, 3.5553, 4.4998. The gap between 35 and 90 shrank from 55 dollars to 0.9445 log-units, and the skewness of the column falls from 1.3577 to 1.0244. Use <span class="tex">\ln(1+x)</span> when zeros are possible. A log needs positive values; a negative input gives NaN, which the lab below will show.</p>
+
+        <div data-lab="ds-ft-scale"></div>
+        <div data-lab="ds-ft-transform"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>In the first lab leave the training values as they are and let the test value sweep from 0 to 120. Where is z equal to 0, and where does min–max leave the 0 to 1 range?</li>
+          <li>Tick "fit on train + test (wrong)" and slide the test value to 60, then to 120. When does peeking change z the most, and in which direction?</li>
+          <li>In the second lab press Play and watch the raw histogram build a long tail. Then try <i>log(x)</i>, <i>sqrt(x)</i> and <i>x^2</i>: which one makes the skewness closest to 0, and what does <i>log(x-100)</i> do?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Fitting the scaler on all the data</b> before splitting. The test set's mean and range leak into training.</li>
+          <li><b>Scaling the label by accident,</b> or scaling a one-hot column (harmless but pointless).</li>
+          <li><b>Min–max with an outlier.</b> One value of 9000 squeezes every ordinary order into 0 to 0.01. Use a robust scaler (median and IQR) or log first.</li>
+          <li><b>Assuming z-scores are normal.</b> Standardising changes the scale, not the shape: a skewed column is still skewed.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Linear models and neural nets:</b> comparable scales make gradient descent converge faster and make penalties (L1, L2) treat features fairly.</li>
+          <li><b>k-NN and clustering:</b> distances are only meaningful when features share a scale.</li>
+          <li><b>Normalisation layers</b> inside deep networks apply the same idea (batch statistics during training, stored running statistics at inference).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the training statistics above (μ = 40, σ = 25.4951), standardise a new order of 50.</summary><div class="ans">z = (50 − 40) / 25.4951 = 0.3922.</div></details>
+        <details class="check"><summary>2. Min–max scaling was fitted on the training orders (min 20, max 90). What does a test order of 140 become, and is that a bug?</summary><div class="ans">(140 − 20) / 70 = 1.7143. It is not a bug; the test value is just larger than anything seen in training. Do not re-fit or clip silently, since the model should see that it is extrapolating.</div></details>
+        <details class="check"><summary>3. Why does a log transform help when a feature has a few enormous values?</summary><div class="ans">A log turns ratios into differences: from 35 to 90 the gap is 55 dollars but only 0.9445 on the log scale. The tail is compressed, so a handful of giants no longer dominate the mean, the squared error and the scale.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Standardise with <span class="tex">(x-\mu)/\sigma</span> or rescale with min–max, using statistics from training rows only, and reuse them for every new row.</li>
+          <li>Log-type transforms tame long right tails; scaling changes the ruler, not the shape.</li>
+          <li>Distance-based and gradient-based models need scaling; tree models mostly do not.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.3 ===================== -->
+    <section class="lesson" id="time-features" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.3</span><h2>Date and time features</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop wants to forecast tomorrow's sales. Each row has a timestamp. A model cannot use "2026-03-14 23:00" as it stands. What can we pull out of a timestamp that actually predicts sales, and how do we say that 23:00 and 01:00 are close when the numbers 23 and 1 are far apart?</div>
+
+        <h3 class="sec">Intuition: time is a source of many different signals</h3>
+        <p>A timestamp hides several questions: what hour is it (rush hour?), what weekday, which month (season), is it a holiday, how long since the last payday, and what happened on the days just before. We pull these out as separate features. Two of them need care: things that wrap around (hours, weekdays, months) and things that look backwards (yesterday's sales).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Cyclic encoding.</b> If hour is the number 0 to 23, then 23 and 0 look 23 units apart, yet they are one hour apart on the clock. Put the 24 hours on a circle and describe each hour by its position, two numbers:</p>
+        <div class="eq">\text{hour}\;\mapsto\;\left(\sin\frac{2\pi h}{24},\ \cos\frac{2\pi h}{24}\right)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">h</span>: hour of the day, 0 to 23 (it may have a fraction). <span class="tex">24</span>: the period of the cycle; use 7 for weekday, 12 for month. The pair is a point on the unit circle; two numbers are needed because sine alone gives the same value for two different hours.</div>
+        <div class="worked"><b>Worked example, hours on the circle</b>
+          <p>Hour 6 → (1, 0). Hour 12 → (0, −1). Hour 23 → (−0.2588, 0.9659). Hour 1 → (0.2588, 0.9659).</p>
+          <p>Raw gap between 23 and 1: 22. Straight-line distance between their points: 0.5176, small. Between 23 and 0 (0, 1): raw gap 23 but circle distance 0.2611. Between 6 and 18 the points are opposite, (1, 0) and (−1, 0), distance 2, the largest possible.</p></div>
+
+        <p><b>Lags and rolling windows.</b> The best predictor of today's sales is often yesterday's. A <b>lag-k</b> feature is the value k steps ago; a <b>rolling mean</b> over the previous <span class="tex">w</span> days smooths the noise. The key rule: when predicting day <span class="tex">t</span>, only values from days before <span class="tex">t</span> may be used.</p>
+        <div class="eq">\text{lag}_k(t)=y_{t-k},\qquad \text{roll}_w(t)=\frac1w\sum_{j=1}^{w} y_{t-j}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">y_t</span>: sales on day <span class="tex">t</span>, the quantity to predict. <span class="tex">k</span>: how many days back. <span class="tex">w</span>: window length. The sum starts at <span class="tex">j=1</span>, so today <span class="tex">y_t</span> is excluded.</div>
+        <p>Ten days of sales: 12, 15, 11, 18, 20, 17, 25, 28, 22, 30.</p>
+        <table class="tbl"><tr><th>day</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th></tr>
+          <tr><td>sales</td><td>12</td><td>15</td><td>11</td><td>18</td><td>20</td><td>17</td><td>25</td><td>28</td><td>22</td><td>30</td></tr>
+          <tr><td>lag-1</td><td>–</td><td>12</td><td>15</td><td>11</td><td>18</td><td>20</td><td>17</td><td>25</td><td>28</td><td>22</td></tr>
+          <tr><td>roll-3 (past only)</td><td>–</td><td>–</td><td>–</td><td>12.667</td><td>14.667</td><td>16.333</td><td>18.333</td><td>20.667</td><td>23.333</td><td>25</td></tr>
+          <tr><td>roll-3 incl. today (wrong)</td><td>–</td><td>–</td><td>12.667</td><td>14.667</td><td>16.333</td><td>18.333</td><td>20.667</td><td>23.333</td><td>25</td><td>26.667</td></tr></table>
+        <div class="worked"><b>Reading the table</b>
+          <p>Day 4's past-only roll-3 is <span class="tex">(12+15+11)/3=12.667</span>, all known by the morning of day 4. The "including today" row would use <span class="tex">(15+11+18)/3=14.667</span>, which contains the 18 we are trying to predict. Days 1 to 3 have no complete window, so the feature is <b>missing</b> there: decide on purpose whether to drop those rows, or fill them.</p></div>
+
+        <p><b>Holidays and calendar events.</b> Holidays are known in advance, so features like <i>is_holiday</i> and <i>days_to_next_holiday</i> are safe, because the calendar is a published fact rather than the future of the thing being predicted. Add them, along with day of month and payday proximity where relevant, and keep one rule: any feature must be computable at the moment you make the prediction.</p>
+
+        <div data-lab="ds-ft-cyclic"></div>
+        <div data-lab="ds-ft-roll"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>In the clock lab keep A at 23 and let B sweep. When B passes midnight, what happens to the raw gap, and what happens to the chord distance?</li>
+          <li>Set A to 6 and watch B reach 18. Why is the chord exactly 2 there, and what hour is the farthest from 23?</li>
+          <li>In the rolling lab tick "include today" and compare the feature with the bar for today. Then set holiday days to 3, 4 and read days-to-next-holiday as the cursor moves.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Raw hour or month as one number</b> for a model that treats numbers as distances; 12 and 1 (December and January) look far apart.</li>
+          <li><b>A rolling window that includes today</b> (the default in many libraries unless you shift by one). The feature then holds the target.</li>
+          <li><b>Random train/test splits for time data.</b> A random split puts days after the test day into training; use time-based splits (Module 7).</li>
+          <li><b>Time zones and daylight saving.</b> "Hour" of a UTC timestamp is not the customer's local hour.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Demand forecasting:</b> lag, rolling, calendar and holiday features are the backbone of gradient-boosted forecasters (see <a href="ds-timeseries.html">Module 8</a>).</li>
+          <li><b>Churn and fraud:</b> time since last activity and counts in the last week are among the strongest features (next lesson).</li>
+          <li><b>Transformers</b> add sinusoidal or learned position encodings, the same idea of representing position as sines and cosines.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is the roll-3 (past only) value for day 7 in the table?</summary><div class="ans">The three days before day 7 are days 4, 5, 6 with sales 18, 20, 17: (18 + 20 + 17) / 3 = 18.333.</div></details>
+        <details class="check"><summary>2. Holidays are on days 6 and 7. What is days_to_next_holiday on day 4, and is it leakage to use it?</summary><div class="ans">6 − 4 = 2. It is not leakage: the holiday calendar is published in advance and is known on day 4.</div></details>
+        <details class="check"><summary>3. Why do hours 6 and 18 have the largest distance after the sine/cosine encoding, and what is it?</summary><div class="ans">They are half a day apart, opposite points on the circle, (1, 0) and (−1, 0). The distance is 2, the diameter.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Pull hour, weekday, month, holidays and elapsed time out of timestamps; encode cycles with sine and cosine so the ends meet.</li>
+          <li>Lag and rolling features must use strictly earlier rows; windows near the start are missing, which you handle on purpose.</li>
+          <li>Ask of every time feature: could I have computed this at prediction time?</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.4 ===================== -->
+    <section class="lesson" id="aggregates" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.4</span><h2>Aggregate and window features</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A bank wants to flag a suspicious card transaction. A single transaction (50 dollars at 3 a.m.) says little. But "this card made 4 purchases in the last hour and 0 in the last month" says a lot. How do we turn a customer's whole history into a few numbers a model can use, as they stood at one moment in time?</div>
+
+        <h3 class="sec">Intuition: summarise the history, as of a moment</h3>
+        <p>Models want one row per decision, but the real data is a log with many events per customer. We collapse the log with <b>aggregates</b>: counts, sums, means, maxima, over a window of time. Three families do most of the work: <b>recency</b> (how long since the last event), <b>frequency</b> (how many events), and <b>monetary</b> value (how much), often called RFM.</p>
+        <p>The crucial word is <i>as of</i>. A feature value belongs to a customer at a prediction time <span class="tex">t</span>. It may only use events strictly before <span class="tex">t</span>. If a window creeps past <span class="tex">t</span>, the model is shown purchases that happen after the moment it is supposed to be predicting from.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>One customer's purchases (day, amount in dollars): (1, 30), (3, 45), (4, 20), (8, 60), (9, 25), (12, 40), plus later ones. We want the features at prediction time <span class="tex">t=10</span> using a 7-day window.</p>
+        <div class="eq">\text{count}_w(t)=\bigl|\{i:\ t-w\le d_i&lt;t\}\bigr|,\quad \text{sum}_w(t)=\sum_{t-w\le d_i&lt;t} a_i,\quad \text{recency}(t)=t-\max_{d_i&lt;t} d_i</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">d_i</span>: day of event <span class="tex">i</span>. <span class="tex">a_i</span>: its amount. <span class="tex">t</span>: the prediction day ("now"). <span class="tex">w</span>: window length in days. The window is half-open: it includes day <span class="tex">t-w</span> and stops just before day <span class="tex">t</span>. The mean is sum divided by count.</div>
+        <div class="worked"><b>Worked example, now = day 10</b>
+          <p>Window <span class="tex">[3,10)</span>: events on days 3, 4, 8, 9 (amounts 45, 20, 60, 25). Count 4, sum 150, mean <span class="tex">150/4=37.5</span>. The last event before day 10 was day 9, so recency is 1 day. Frequency in all history before day 10: 5 purchases (days 1, 3, 4, 8, 9), average amount 36. The purchase on day 12 does not exist yet.</p>
+          <p>Slide to now = day 13: window <span class="tex">[6,13)</span> holds days 8, 9, 12 (60, 25, 40): count 3, sum 125, mean 41.6667, recency 1 (day 12). Day 1, 3 and 4 have dropped out. The window <i>slides</i>: new events enter at its right edge and old ones leave on the left.</p></div>
+        <p><b>The look-ahead mistake.</b> Suppose the window were allowed to end 3 days after day 10, <span class="tex">[3,13)</span>. It would catch the day-12 purchase: count 5, sum 190, mean 38. The feature has jumped from 4 to 5 purchases by using something that happens two days after the decision. In production those days have not occurred.</p>
+        <p><b>Choosing windows.</b> Short windows (1 hour, 1 day) catch sudden change; long ones (30, 90 days) catch habit. Use several at once, and also ratios such as "last-7-days spend divided by last-30-days spend". Features are cheap; the discipline is the same for all: strictly before <span class="tex">t</span>.</p>
+
+        <div data-lab="ds-ft-window"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Pause with now at day 10 and window 7. Read count, sum, mean and recency, and compare with the numbers printed above.</li>
+          <li>Step forward to day 13 and watch which bars leave and enter the window. Then shrink the window to 3: how does recency differ from the count?</li>
+          <li>Set the look-ahead to 3 at day 10. Which bar turns red, and by how much did the count and the sum change compared with look-ahead 0?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>One global aggregate per customer</b> computed from the full history (total spend, total purchases) and joined to every row. A row in January then knows about purchases in December.</li>
+          <li><b>Window edges.</b> "Last 7 days" including or excluding today changes the feature; fix the convention and write it down.</li>
+          <li><b>Customers with no history.</b> Count 0 is meaningful, but mean of nothing is undefined: use a flag or a fill value, not 0.</li>
+          <li><b>Aggregating after the join.</b> Joining a customer table to an event table, then averaging, can double-count rows (see <a href="ds-wrangling.html">Module 1</a> on joins).</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Fraud detection:</b> counts and sums over the last minute, hour and day, per card and per merchant, are the main inputs.</li>
+          <li><b>Recommendation:</b> a user's recent clicks and categories, and an item's recent popularity, drive ranking models.</li>
+          <li><b>Feature stores</b> (lesson 6.6) exist largely to compute these windowed values correctly as of each point in time.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At now = day 13 with a 7-day window, give the count, sum and recency.</summary><div class="ans">Window [6, 13) contains days 8, 9, 12: count 3, sum 60 + 25 + 40 = 125, recency 13 − 12 = 1.</div></details>
+        <details class="check"><summary>2. At now = day 10 with a window [3, 13) (3 days of look-ahead), what are the count and sum, and what is wrong?</summary><div class="ans">Days 3, 4, 8, 9 and 12: count 5, sum 45 + 20 + 60 + 25 + 40 = 190. The day-12 purchase is in the future of the day-10 decision, so the feature uses information not available then.</div></details>
+        <details class="check"><summary>3. At now = day 7, what is the recency and the total number of earlier purchases?</summary><div class="ans">Purchases before day 7 are on days 1, 3, 4. The last is day 4, so recency is 7 − 4 = 3 days, and the count is 3.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Collapse an event log into counts, sums, means, recency and frequency over windows, evaluated as of a prediction time.</li>
+          <li>The window is half-open: it ends just before the prediction time, never after.</li>
+          <li>Use several window lengths and handle empty windows deliberately.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.5 ===================== -->
+    <section class="lesson" id="leakage" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.5</span><h2>Data leakage: the silent killer</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your churn model scores 92 percent on held-out data. The team celebrates, ships it, and in production it barely beats guessing. Nothing crashed and no test failed. What went wrong, how do you spot it, and how large can the effect be?</div>
+
+        <h3 class="sec">Intuition: the exam paper was in the textbook</h3>
+        <p>A model is evaluated to estimate how it will do on data it has never seen. <b>Leakage</b> is any way the training or the features carry information that will not exist at prediction time, or that comes from the evaluation rows. The score then answers a different question (how well do you do with the answers visible?) than the one you care about. It is "silent" because the number looks like good news.</p>
+        <p>There are three common routes. (1) <b>The label or the future inside a feature:</b> a column that is a consequence of the outcome. (2) <b>Train/test contamination:</b> the same customer, document or time period appearing on both sides. (3) <b>Leakage through preprocessing:</b> any step that learns from data (a scaler, an encoder, a feature selector, an imputer) fitted on rows that include the test set.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Route 1, the future creeping into the past.</b> Predict, on the prediction day, which of 300 subscribers will cancel. A feature counts support contacts. People who are about to cancel contact support, but mostly <i>after</i> the prediction day, when they ask how to cancel. We build the count with a window of the 30 days before the prediction day plus <span class="tex">s</span> days past it. We pick the best "contacts ≥ threshold" rule on the first 150 customers and measure accuracy on the last 150. (Simulated data, seeded, so the numbers repeat.)</p>
+        <div class="worked"><b>The numbers</b>
+          <p>Always predicting "stays" gets <b>0.633</b> on the test half. With the strictly past window (<span class="tex">s=0</span>) the rule scores <b>0.647</b>: a little better than nothing, the honest number. Let the window reach 5 days past the prediction day: <b>0.793</b>. Reach 14 days: <b>0.920</b>. Same customers, same model, same code; only the window edge moved into the future. In production the future days are empty and the model falls back to about 0.65.</p></div>
+
+        <p><b>Route 3, leakage through preprocessing.</b> This one fools even careful people. Take 40 rows and give every row 5 to 500 features that are pure random noise, with random labels. The honest accuracy is 0.5 by definition. Now choose the 5 features most correlated with the label, then run 5-fold cross-validation on those 5. The selector looked at all 40 labels, including the ones later held out, so the "held-out" rows already voted.</p>
+        <div class="worked"><b>The numbers</b> (average over 10 simulated datasets, 5 features kept, 5-fold cross-validation)
+          <p>With 5 noise features available, both methods score 0.455 (nothing to select from). With 50: selecting on all rows scores <b>0.748</b>, selecting inside each fold scores <b>0.545</b>. With 500: <b>0.838</b> against <b>0.515</b>. The more candidates, the more "signal" the selector can find in noise, and the more optimistic the leaky score. The correct pipeline does the selection <i>inside each training fold</i> and gets chance level, which is the truth.</p></div>
+
+        <p>The same logic applies to the scaler from lesson 6.2: fitting on all rows moved a z-score from 0.7845 to 0.6820, and the effect is larger for imputers, target encoders and anything with many parameters. The rule is simple:</p>
+        <div class="eq">\text{every learned step: } \text{fit}(\text{train rows only}) \;\longrightarrow\; \text{transform}(\text{train}),\ \text{transform}(\text{test})</div>
+        <div class="sym"><b>Reading it.</b> "Learned step" means any preprocessing step that computes something from data (a mean, a vocabulary, a selected feature list, a target average). It is fitted on training rows alone, and then <i>applied</i> to both training and test rows with the stored result.</div>
+
+        <p><b>Route 2, contamination.</b> Several rows for one patient, several photos of one scene, several days of one customer: if some land in training and some in test, the model can recognise the entity rather than learn the pattern. Split by entity (group split) or by time. Duplicates and near-duplicates across the split behave the same way.</p>
+        <p><b>Detecting leakage.</b> Be suspicious when: the score is too good for the problem; one feature dominates the importance; a feature's name suggests an outcome (<i>refund_issued</i>, <i>account_closed_date</i>, <i>treatment_given</i> when predicting disease); or the score collapses in production or on a later time period. Ask of every feature: <i>at the moment of prediction, would I know this?</i></p>
+
+        <div data-lab="ds-ft-leak-time"></div>
+        <div data-lab="ds-ft-leak-select"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Run the first lab from 0 future days. Note the accuracy with no future, then watch it climb. How many future days does it take to pass 0.80?</li>
+          <li>Press "New random customers" and run again. Is the pattern stable, and does the no-future accuracy stay close to the dashed baseline?</li>
+          <li>In the second lab watch the two lines as the number of noise features grows. Then drop "features kept" to 1 and raise it to 10: when does the gap between the lines grow or shrink?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Preprocess everything, then split.</b> The most common leak of all. Split first, or use a pipeline that fits inside each fold (lesson 6.6).</li>
+          <li><b>"The test set is clean, so I am safe."</b> If you tune on the test set repeatedly, it leaks into your choices too (Module 7).</li>
+          <li><b>Using a post-event column</b> (a status, a closing date, a count "to date" that includes the outcome) because it is in the table.</li>
+          <li><b>Believing a great score.</b> Too good is a finding. Investigate before celebrating.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Medical imaging:</b> models that "diagnose" from a hospital's marker or scanner type, or that were tested on scans from patients also in training, post impressive scores that vanish in a new hospital.</li>
+          <li><b>Benchmark contamination:</b> a large language model that has seen test questions in its training text answers them well for the wrong reason.</li>
+          <li><b>Competitions and papers:</b> several well-known challenges were won by exploiting a leaking identifier or ordering column.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the simulated churn example, the test accuracy rose from 0.647 to 0.920 as the window reached 14 days past the prediction day. Is 0.920 the number to report?</summary><div class="ans">No. The extra accuracy comes from contacts that happen after the prediction day, which do not exist in production. The honest estimate is the strictly past one, 0.647, only a little above the always-"stays" baseline of 0.633.</div></details>
+        <details class="check"><summary>2. You select the best 5 of 500 features on all 40 rows, then cross-validate, and get 0.838. The features are pure noise. Why is the score so high, and how do you fix the procedure?</summary><div class="ans">The selector saw every label, including those in the held-out folds, so it picked features that happen to match them by chance. Do selection inside each training fold only; that gives about 0.515, which is chance and the truth.</div></details>
+        <details class="check"><summary>3. When predicting whether a loan will default, which is a leaky feature: (a) income at application, (b) number of missed payments in the first 6 months after the loan, (c) credit score at application?</summary><div class="ans">(b). It is only known after the loan has run, so it was not available at the moment of the decision, and it is partly the outcome itself. (a) and (c) exist at application time.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Leakage is any information in training or features that will not exist at prediction time, or that comes from evaluation rows.</li>
+          <li>Three routes: future or label inside a feature, train/test contamination, and learned preprocessing fitted on all rows.</li>
+          <li>A suspiciously good score is a symptom: ask of every feature "would I know this at prediction time?" and fit every learned step on training data only.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.6 ===================== -->
+    <section class="lesson" id="pipelines" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">6.6</span><h2>Reproducible pipelines and feature stores</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The model was trained in a notebook where someone filled missing ages, standardised them, and one-hot encoded cities by hand. Six months later the model runs in an app and a new customer sends a request with the age missing and a city nobody has seen. Which numbers does the app use, and how can we be sure they are the same ones the model was trained with?</div>
+
+        <h3 class="sec">Intuition: a recipe with remembered quantities</h3>
+        <p>Feature engineering is a recipe, and a recipe has two kinds of content: the steps (impute, scale, encode) and the <b>quantities learned from data</b> (the mean age, the standard deviation, the list of cities). If those quantities live in someone's head or in a notebook cell, the recipe cannot be reproduced. The fix is to bundle steps and quantities into one object that has two methods.</p>
+        <p><b>fit</b> looks at the training rows once and stores the quantities. <b>transform</b> applies the stored quantities to any rows, training or new, and never learns anything. Keeping them apart is what prevents leakage (lesson 6.5) and what guarantees that training and serving agree.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Five training rows: ages 22, 35, 41, 29, 48 and cities Cairo, Giza, Cairo, Alex, Giza. A three-step pipeline: (1) impute a missing age with the mean, (2) standardise age, (3) one-hot the city.</p>
+        <div class="eq">\text{fit}:\ (\mu,\sigma,\ \text{cities}) \leftarrow \text{train rows}\qquad \text{transform}(x)=\Bigl[\tfrac{\text{impute}(a)-\mu}{\sigma},\ \text{onehot}(c)\Bigr]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\mu,\sigma</span>: mean and standard deviation of age over the training rows. <span class="tex">a</span>: the age in a record (maybe missing). <span class="tex">c</span>: its city. <span class="tex">\text{impute}(a)</span>: <span class="tex">a</span> itself, or <span class="tex">\mu</span> if missing.</div>
+        <div class="worked"><b>Worked example</b>
+          <p><b>Fit.</b> <span class="tex">\mu=(22+35+41+29+48)/5=35</span>. Squared deviations: 169, 0, 36, 36, 169, sum 410, variance 82, <span class="tex">\sigma=9.0554</span>. Categories, in order: (Alex, Cairo, Giza).</p>
+          <p><b>Transform</b> a record with age 60 in Cairo: impute (not needed), <span class="tex">z=(60-35)/9.0554=2.7608</span>, one-hot (0, 1, 0). Vector: [2.7608, 0, 1, 0].</p>
+          <p>A record with the age missing: impute 35, <span class="tex">z=0</span>. A record from Luxor: city block (0, 0, 0). Age 30 in Alex: <span class="tex">z=-0.5522</span>, vector [−0.5522, 1, 0, 0]. None of these needed the training table again.</p></div>
+
+        <p><b>Training-serving skew.</b> Suppose the serving code instead standardises each incoming request with its own statistics. A request is one row, so its mean is its own age and its standard deviation is 0: <span class="tex">z=0/0</span>, undefined. Even if a batch is used, the batch mean differs from the training mean, so the model receives numbers on a scale it never learned. The same bug appears when two teams re-implement the logic (one in SQL, one in Python) and disagree on a rounding or a fill value.</p>
+
+        <p><b>A pipeline object.</b> Libraries package this. In scikit-learn a <code>Pipeline</code> chains transformers and a model; calling <code>fit</code> fits each step on the training rows in order, and <code>predict</code> transforms new rows with the stored state. Cross-validation then refits the whole pipeline inside every fold, which removes the preprocessing leak of lesson 6.5 by construction. Saving that one object (with its versions and a fixed random seed) gives a reproducible model: the same input always gives the same features.</p>
+        <p><b>Feature stores (preview).</b> At company scale many models share features such as "purchases in the last 7 days". A feature store is a system that (a) defines each feature once, (b) computes it for training <b>as of each historical moment</b> (the point-in-time correctness of lesson 6.4), (c) serves the latest values at low latency for live predictions, and (d) guarantees both use the same definition. It is the pipeline idea applied across a whole organisation. Module 9 returns to monitoring these features for drift.</p>
+
+        <div data-lab="ds-ft-pipe"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Let the animation run once: first the fit panel stores mean 35, sd 9.0554 and the city list, then the record passes through three steps using those stored numbers.</li>
+          <li>Tick "age is missing", then choose Luxor. Which step handles each, and what is the final vector?</li>
+          <li>Tick "refit on the serving data (wrong)" with age 60. What happens to the standard deviation and to z, and why does the model get nonsense?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Notebook-only preprocessing.</b> The model is saved but the cleaning steps are not, so nobody can recreate the inputs.</li>
+          <li><b>Calling fit on test or serving data.</b> Use <code>transform</code> only; a fit there leaks or changes the scale.</li>
+          <li><b>Hidden state.</b> Random seeds, library versions and column order are part of the pipeline; record them.</li>
+          <li><b>Two implementations of one feature.</b> Offline (SQL/batch) and online (service) code drift apart; define the feature once.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Production ML systems</b> package preprocessing with the model (scikit-learn pipelines, TensorFlow Transform, model-serving containers) so the same code runs in training and inference.</li>
+          <li><b>Feature stores</b> (for example Feast, or the stores in cloud ML platforms) serve consistent features to many models, with point-in-time joins for training.</li>
+          <li><b>MLOps</b> versions data, code and fitted pipelines together so any prediction can be reproduced and audited.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the pipeline fitted above (μ = 35, σ = 9.0554), what is z for a new customer aged 30?</summary><div class="ans">z = (30 − 35) / 9.0554 = −0.5522.</div></details>
+        <details class="check"><summary>2. Why must serving call transform and never fit?</summary><div class="ans">Fit would recompute the mean, standard deviation and category list from the serving rows, which differ from the training ones (for one request the sd is 0). The model would then receive numbers on a scale it never saw. Transform reuses the stored training quantities, so training and serving features agree.</div></details>
+        <details class="check"><summary>3. A request arrives from a city that was not in the training data and has no age. What does the pipeline output for those two features?</summary><div class="ans">The age is imputed with the training mean 35, which standardises to z = 0. The city one-hot block is (0, 0, 0) for (Alex, Cairo, Giza). The request is handled with no error and without looking at training data again.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Bundle the steps and the quantities they learned into one object: fit on training rows once, transform everything with the stored state.</li>
+          <li>The same pipeline in training and serving avoids skew; fitting inside each cross-validation fold avoids leakage.</li>
+          <li>A feature store defines features once, computes them as of the right time for training, and serves them live.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 7 (<a href="ds-modelling.html">Predictive modelling in practice</a>) uses these pipelines inside train, validation and test splits and cross-validation.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

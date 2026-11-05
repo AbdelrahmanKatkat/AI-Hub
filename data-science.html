@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Science · AI Learning Hub</title>
+<meta name="description" content="A zero-to-hero data science curriculum: data wrangling, exploratory analysis, statistics, visualisation, experiments and causal inference, feature engineering, predictive modelling in practice, time series, and responsible deployment.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › Data Science</div>
+    <div class="hero">
+      <div class="big" style="background:#388bfd26">📊</div>
+      <div style="flex:1">
+        <h1>Data Science — zero to hero</h1>
+        <p>Turn <b>questions</b> and <b>messy data</b> into <b>trusted decisions</b>: clean and join tables, explore, reason with statistics, run experiments, build features and models that are honest about uncertainty, forecast, and communicate and monitor the result responsibly.</p>
+        <div class="chips"><span class="chip">10 modules</span><span class="chip">59 lessons</span><span class="chip">Statistics &amp; experiments</span><span class="chip">Animated samples</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="lesson" id="start" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>How to learn from this</h2></div>
+      <div class="prose">
+        <p>Every lesson starts with a decision someone must make and the data that could inform it. Then comes a hand-worked example on a 5–10 row table, the formal definition, an <b>animated lab you can edit</b>, traps, real uses and self-check questions. Samples arrive one by one so you can watch estimates settle and uncertainty shrink.</p>
+        <p>The maths and ML are linked, not repeated: distributions and estimation point to <a href="mathematics.html">Mathematics</a>, and models and evaluation metrics to <a href="machine-learning.html">Machine Learning</a>.</p>
+      </div>
+    </section>
+
+    <section class="lesson" id="pipeline">
+      <div class="lesson-head"><h2>The data science loop</h2></div>
+      <div class="prose"><p>Every data science project walks these six stages, and loops back when a result raises a new question. Click a stage for what it does, what it needs and where its data is stored.</p></div>
+      <div data-lab="pipeline" data-id="ds"></div>
+    </section>
+
+    <section class="lesson" id="map">
+      <div class="lesson-head"><h2>The map</h2></div>
+      <div class="pathbar" id="pathbar"></div>
+      <div class="prose"><p>Module 0 frames the problem: questions, data types and tidy tables. Module 1 wrangles and cleans, and Module 2 explores. Module 3 supplies the statistics: sampling, confidence intervals, tests and the bootstrap. Module 4 turns results into honest charts, and Module 5 covers experiments and causal inference. Module 6 builds features and pipelines without leakage, Module 7 covers predictive modelling in practice, and Module 8 adds time series and forecasting. Module 9 communicates, monitors and keeps the work responsible.</p></div>
+    </section>
+
+    <section class="lesson" id="curriculum">
+      <div class="lesson-head"><h2>The curriculum</h2></div>
+      <div class="mods" id="mod-list"></div>
+      <p style="color:var(--muted);font-size:13px">Full lesson specification: <a href="https://github.com/AbdelrahmanKatkat/AI-Hub/blob/main/curriculum/data-science.md" target="_blank" rel="noopener">curriculum/data-science.md</a>.</p>
+    </section>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

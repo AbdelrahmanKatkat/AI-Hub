@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · Foundations of data science · Data Science</title>
+<meta name="description" content="What data science is, the types of data, tidy tables and the unit of analysis, reproducible tools, and how to turn a vague wish into an answerable question, taught from small printed tables with every number worked out.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-foundations.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#388bfd26">0</div>
+      <div style="flex:1">
+        <h1>Module 0 · Foundations of data science</h1>
+        <p>Data science is a way of making a decision with evidence. This module gives you the loop that every project follows, the kinds of data you will meet, the table layout that makes analysis easy, a working setup that you can repeat, and the habit of asking a question that data can actually answer.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2 hours</span><span class="chip">Needs: nothing but curiosity</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="what-is-data-science" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.1</span><h2>What data science is: questions, data, evidence, decisions</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Maya runs a small café and must decide how much ice to order for next week. She has eight weeks of records: the average temperature and the number of iced drinks sold. What can she learn from that table, and what kinds of question can it even answer?</div>
+
+        <h3 class="sec">Intuition: a decision is waiting at the end</h3>
+        <p>Beginners often think data science starts with an algorithm. It does not. It starts with a person who must choose something, and who is unsure. Maya must order ice. If she orders too little she turns customers away; if she orders too much it melts. Data science is the discipline of turning records like hers into evidence that changes the choice she makes, and of being honest about how sure that evidence is.</p>
+        <p>Think of a detective. The detective starts with a question (who was in the building?), gathers clues, checks that the clues are reliable, looks for patterns, forms a theory and tests it, explains it to a judge, and then watches for new facts that overturn it. Data science follows the same path, and the path is a loop because a decision creates new data and new questions.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The loop has six stages: <b>ask and collect</b>, <b>clean and prepare</b>, <b>explore</b>, <b>test and model</b>, <b>communicate</b>, <b>deploy and monitor</b>. Each later module of this topic is one stage made deeper. First, look at Maya's table, which is small enough to see completely.</p>
+        <table class="tbl"><tr><th>week</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+          <tr><th>temperature (°C)</th><td>11</td><td>14</td><td>17</td><td>19</td><td>22</td><td>25</td><td>28</td><td>31</td></tr>
+          <tr><th>iced drinks sold</th><td>18</td><td>25</td><td>31</td><td>40</td><td>52</td><td>66</td><td>79</td><td>95</td></tr></table>
+        <p>The same table can answer four different kinds of question, and the kind decides what you do with it.</p>
+        <div class="worked"><b>Worked example — four questions, one table</b>
+          <p><b>Descriptive</b> (what happened?): the mean weekly sales are <span class="tex">(18+25+31+40+52+66+79+95)/8 = 406/8 = 50.75</span> drinks. Three weeks (6, 7 and 8) sold more than 60.</p>
+          <p><b>Diagnostic</b> (why?): split the weeks at 20 °C. The four cooler weeks average <span class="tex">114/4=28.5</span> drinks; the four warmer weeks average <span class="tex">292/4=73</span>. The warmer weeks sold <span class="tex">73-28.5=44.5</span> more drinks on average. That is evidence that warmth and sales go together; with eight weeks it does not prove warmth is the cause.</p>
+          <p><b>Predictive</b> (what will happen?): fit a straight line by least squares. With mean temperature <span class="tex">\bar x=20.875</span> and mean sales <span class="tex">\bar y=50.75</span>, the slope is <span class="tex">b=1310.75/334.875=3.914</span> drinks per degree and the intercept is <span class="tex">a=50.75-3.914\times20.875=-30.96</span>. At 26 °C the line predicts <span class="tex">-30.96+3.914\times26=70.81</span>, about 71 drinks.</p>
+          <p><b>Prescriptive</b> (what should we do?): turn the prediction into an action. Order ice for about 71 drinks plus a margin, where the size of the margin depends on what a lost sale costs compared with a bag of melted ice. A prescription always needs a cost, which the data alone cannot supply.</p>
+        </div>
+        <p>Notice what each answer needs. Description needs only the data. Diagnosis needs a comparison. Prediction needs a model and a way to check it on weeks it has not seen. Prescription needs all of that plus a statement of what matters. Climbing from one type to the next asks more of both the data and the analyst.</p>
+
+        <div class="eq">\hat y = a + b\,x,\qquad b=\frac{\sum_i (x_i-\bar x)(y_i-\bar y)}{\sum_i (x_i-\bar x)^2},\qquad a=\bar y-b\,\bar x</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_i</span>: temperature in week <span class="tex">i</span> (the input). <span class="tex">y_i</span>: iced drinks sold in week <span class="tex">i</span> (the outcome). <span class="tex">\bar x,\bar y</span>: the averages of all <span class="tex">x_i</span> and <span class="tex">y_i</span>. <span class="tex">b</span>: slope, extra drinks per extra degree. <span class="tex">a</span>: intercept, the line's value at 0 °C (an extrapolation, so do not take it literally). <span class="tex">\hat y</span>: the predicted sales. Numerator: <span class="tex">1310.75</span>; denominator: <span class="tex">334.875</span>. The fit is derived in <a href="ml-linear.html#linear-regression">linear regression</a>.</div>
+
+        <p><b>Where this lesson sits in the loop.</b> It is the map of all six stages. Watch the question travel round them below, and change the question to a different kind to see the “test and model” stage change its job.</p>
+        <div data-lab="ds-fnd-loop"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the question as predictive and watch the token stop at each stage. Read each caption: which stage would you expect to take the most time in a real project?</li>
+          <li>Switch the kind of question to descriptive, then diagnostic. Only one stage caption changes. Which one, and why does the kind of question change the work there?</li>
+          <li>Type your own question and let the loop pass the last stage. What starts the next lap?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Starting from the tool.</b> “Let us use machine learning on the sales data” names a method, not a decision. Without the decision you cannot say what a good answer looks like.</li>
+          <li><b>Promoting a pattern to a cause.</b> The warm weeks sold 44.5 more drinks, but weeks 5 to 8 were also later in the season. Eight rows cannot separate the two.</li>
+          <li><b>Extrapolating.</b> The line gives about 98 drinks at 33 °C, but no week in the table was hotter than 31 °C. Predictions outside the observed range are guesses.</li>
+          <li><b>Stopping at the model.</b> An analysis that nobody acts on, or that nobody keeps checking, has not finished the loop.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every machine-learning project begins at this loop: the target variable of a model is the outcome from a predictive question, and the lesson on the <a href="ml-foundations.html#ml-pipeline">ML pipeline</a> is the same loop with a model in the middle.</li>
+          <li>Monitoring is where deployed models fail quietly: when customers change, the world no longer looks like the training table.</li>
+          <li>Prescriptive questions become reinforcement learning and recommender systems, which choose actions rather than only predict outcomes.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Which kind of question is “Which weeks sold more than 60 drinks?”, and what is the answer?</summary><div class="ans">Descriptive: it asks what happened. Weeks 6, 7 and 8 sold 66, 79 and 95, so the answer is three weeks.</div></details>
+        <details class="check"><summary>2. By how many drinks did the warmer half of the weeks (22 °C and above) outsell the cooler half, on average?</summary><div class="ans">Warmer mean 292/4 = 73, cooler mean 114/4 = 28.5, so 73 − 28.5 = 44.5 drinks. This is a diagnostic comparison, evidence of association, not proof of cause.</div></details>
+        <details class="check"><summary>3. What does the fitted line predict at 30 °C, and how far should you trust it?</summary><div class="ans">−30.96 + 3.914 × 30 = 86.47, about 86 drinks. 30 °C lies inside the observed range of 11 to 31 °C, so it is an interpolation, but it rests on only eight weeks and states no uncertainty yet.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Data science is the loop ask and collect, clean, explore, test and model, communicate, deploy and monitor, aimed at a decision.</li>
+          <li>Questions are descriptive, diagnostic, predictive or prescriptive; each asks more of the data than the one before.</li>
+          <li>Evidence supports a decision; it does not prove a cause, and its strength depends on how much data you have.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="data-types" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.2</span><h2>Types of data: tables, text, images, time, graphs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An app team wants to know whether Pro customers are more satisfied than Free customers. Their export has six columns. Which of the columns can be averaged, which can only be counted, and which cannot be summarised at all until it is converted?</div>
+
+        <h3 class="sec">Intuition: what you may do with a value depends on what it means</h3>
+        <p>The number 4 can be a count of apples, a satisfaction rating, or a customer's ID. The symbol is the same; the meaning is not. You may add apples. You may sort ratings. You may only look up IDs. Before computing anything you must know which of these you hold, because the <b>type</b> of a column decides which operations are honest.</p>
+        <p>Data also has a <b>shape</b>. The most familiar shape is a table: rows are observations (one thing that was measured, such as one customer) and columns are variables (one property of each, such as age). Text, images, sound, time series and networks are also data, but they do not fit into rows and columns until you describe them with numbers.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here is the team's export, five customers and six columns.</p>
+        <table class="tbl"><tr><th>customer_id</th><th>age</th><th>plan</th><th>satisfaction</th><th>signup</th><th>review</th></tr>
+          <tr><td>1041</td><td>34</td><td>Free</td><td>4</td><td>2025-01-06</td><td>love the app</td></tr>
+          <tr><td>1042</td><td>52</td><td>Pro</td><td>2</td><td>2025-01-09</td><td>too slow on my phone</td></tr>
+          <tr><td>1043</td><td>29</td><td>Free</td><td>5</td><td>2025-01-15</td><td>simple and quick</td></tr>
+          <tr><td>1044</td><td>41</td><td>Team</td><td>4</td><td>2025-01-21</td><td>good, needs export</td></tr>
+          <tr><td>1045</td><td>38</td><td>Free</td><td>3</td><td>2025-02-03</td><td>ok</td></tr></table>
+        <p>There are four common types. A <b>numeric</b> variable is a measured quantity with equal gaps (age). A <b>categorical</b> variable names a group with no order (plan). An <b>ordinal</b> variable has an order but unequal or unknown gaps (satisfaction from 1 to 5). A <b>datetime</b> variable marks a moment (signup). Two more roles appear constantly: an <b>identifier</b> (customer_id) that only names a row, and <b>free text</b> (review), which is unstructured.</p>
+        <div class="worked"><b>Worked example — what each type allows</b>
+          <p><b>age</b> is numeric, so the mean is honest: <span class="tex">(34+52+29+41+38)/5=194/5=38.8</span> years.</p>
+          <p><b>plan</b> is categorical, so the natural summary is the most common value, the mode: Free appears 3 times out of 5. There is no “average plan”.</p>
+          <p><b>satisfaction</b> is ordinal. Sorted it is 2, 3, 4, 4, 5, so the median is 4. The mean, 3.6, is computable but quietly assumes that the step from 2 to 3 is as large as the step from 4 to 5, which a rating scale does not promise.</p>
+          <p><b>signup</b> is a datetime. You can subtract dates: 6 January to 3 February is <span class="tex">25+3=28</span> days.</p>
+          <p><b>customer_id</b> averages to 1043, a number that means nothing: IDs are names. <b>review</b> has no arithmetic at all until you convert it (for example to its length, its word counts or an embedding vector).</p>
+        </div>
+        <p><b>Structured and unstructured.</b> Data that already sits in rows and typed columns is <b>structured</b>. Text, images, audio and video are <b>unstructured</b>: a photo is a grid of pixel numbers but no single pixel is a meaningful variable. Time series (values in time order) and graphs (nodes joined by edges, such as friendships or road networks) are structured in a looser way: the order or the links carry the information, so you must keep them intact. Every modelling method first asks for a numeric representation, and choosing it is part of the work.</p>
+
+        <div class="eq">D=\{\,(x_{i1},x_{i2},\dots,x_{ip})\,\}_{i=1}^{n}\qquad\text{an } n\times p \text{ table: } n \text{ observations, } p \text{ variables}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">n</span>: the number of rows (here 5). <span class="tex">p</span>: the number of columns (here 6). <span class="tex">x_{ij}</span>: the value of variable <span class="tex">j</span> for observation <span class="tex">i</span>; for example <span class="tex">x_{22}</span> is 52, the age of customer 1042. Each column <span class="tex">j</span> carries a type, and the type restricts which summaries of that column are meaningful.</div>
+
+        <p><b>Where this lesson sits in the loop.</b> Types are decided while you clean and prepare, and checked again while you explore. Label the columns below and see how a wrong label shows up as a summary that looks fine and means nothing.</p>
+        <div data-lab="ds-fnd-types"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press the guided tour and read the reason for each type. Then clear the labels and relabel the columns yourself without the tour.</li>
+          <li>Label <b>customer_id</b> as numeric and ask for its mean. The result 1043 appears, but the verdict is different once you label it an identifier. Which one is correct?</li>
+          <li>Label <b>satisfaction</b> as ordinal and compare mean and median. Which gets a caution, and what assumption does the caution name?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Numbers that are really labels.</b> Postcodes, phone numbers and IDs are digits but not quantities. Averaging them is meaningless; some models would treat 90210 as “bigger” than 10001.</li>
+          <li><b>Averaging a rating.</b> A mean of 3.6 stars hides that three customers gave 4 or 5 and one gave 2. For ordinal data show the distribution or the median.</li>
+          <li><b>Dates stored as text.</b> The string “2025-02-03” sorts correctly only in this year-first format. “03/02/2025” sorts wrongly and means different days in different countries.</li>
+          <li><b>Treating a one-hot category as a size.</b> Coding Free, Pro, Team as 1, 2, 3 invents an order and equal gaps that are not there.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Feature choice: numeric columns are scaled, categorical columns are one-hot encoded, ordinal columns keep their order, and datetime columns become day-of-week or elapsed time (see <a href="ml-foundations.html#data-and-features">data and features</a>).</li>
+          <li>Different shapes use different model families: images use convolutional networks or vision transformers, text uses language models, graphs use graph neural networks, time series use sequence models.</li>
+          <li>Unstructured data becomes usable through an <b>embedding</b>: a learned vector of numbers that stands for the text or image.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is the median of the satisfaction column, and why is the median safer than the mean here?</summary><div class="ans">Sorted: 2, 3, 4, 4, 5, so the median is 4. The median only needs the order of the levels; the mean (3.6) also assumes that every step between ratings is equally large.</div></details>
+        <details class="check"><summary>2. Is the mean age 38.8 a sensible summary, and what is the value computed from?</summary><div class="ans">Yes, because age is numeric with equal gaps. (34 + 52 + 29 + 41 + 38) / 5 = 194 / 5 = 38.8 years, based on n = 5 customers, which is a very small sample.</div></details>
+        <details class="check"><summary>3. How many days separate the earliest and the latest signup, and which type allows that subtraction?</summary><div class="ans">28 days, from 2025-01-06 to 2025-02-03 (25 days to the end of January plus 3). A datetime type allows ordering and subtraction to a duration.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Rows are observations and columns are variables; the type of each column (numeric, categorical, ordinal, datetime, identifier, text) decides which summaries are honest.</li>
+          <li>Structured data is already in typed columns; text, images and audio are unstructured and need a numeric representation first.</li>
+          <li>Check types before computing: a summary can be easy to compute and still meaningless.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="tidy-data" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.3</span><h2>Tidy data and the unit of analysis</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop keeps its sales in a spreadsheet with one column per month. The owner asks for the best month, the total per product and a chart of sales over time. Why is each of these awkward in that layout, and what layout makes all three easy? And what, exactly, should one row represent?</div>
+
+        <h3 class="sec">Intuition: one fact, one place</h3>
+        <p>A well-kept filing cabinet has one drawer per kind of thing, and one folder per item. A good table works the same way. If the month is written in a column header, the month is not data any more; it is part of the table's decoration, and you cannot group by it, filter on it or plot it without first rearranging the sheet. <b>Tidy data</b> puts every piece of information in exactly one cell and gives every kind of information exactly one column.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Three rules define a tidy table: each <b>variable</b> is a column, each <b>observation</b> is a row, and each <b>type of observational unit</b> forms its own table. Start with the shop's spreadsheet, the <b>wide</b> layout.</p>
+        <table class="tbl"><tr><th>product</th><th>Jan</th><th>Feb</th><th>Mar</th></tr>
+          <tr><td>Tea</td><td>120</td><td>135</td><td>150</td></tr><tr><td>Coffee</td><td>200</td><td>210</td><td>260</td></tr><tr><td>Cake</td><td>80</td><td>95</td><td>90</td></tr></table>
+        <p>This table has three real variables: the product, the month and the sales. But only the product has a column. The month is spread over three headers, and the one variable “sales” is spread over three columns. The fix is to <b>melt</b> the table to the <b>long</b> layout: one row per product and month.</p>
+        <div class="worked"><b>Worked example — melting and checking</b>
+          <p>There are <span class="tex">3\times3=9</span> sales numbers, so the long table has 9 rows and three columns (product, month, sales): (Tea, Jan, 120), (Tea, Feb, 135), (Tea, Mar, 150), (Coffee, Jan, 200), and so on up to (Cake, Mar, 90).</p>
+          <p>Now the owner's questions are easy. Coffee total: <span class="tex">200+210+260=670</span>. February total: <span class="tex">135+210+95=440</span>. Best month overall: group by month. All totals still add to 1340 (Tea 405, Coffee 670, Cake 265). Always check that the total is unchanged after reshaping: if it moves, you lost or duplicated rows.</p>
+        </div>
+        <div class="eq">n_{\text{long}} = n_{\text{wide}}\times m,\qquad p_{\text{long}} = p_{\text{wide}} - m + 2</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">n_{\text{wide}}</span>: rows of the wide table (3 products). <span class="tex">m</span>: the number of columns melted (3 months). <span class="tex">n_{\text{long}}</span>: rows of the long table (<span class="tex">3\times3=9</span>). <span class="tex">p_{\text{wide}}</span>: columns of the wide table (4); <span class="tex">p_{\text{long}}</span>: columns after melting, because the <span class="tex">m</span> month columns are replaced by two new ones, month and sales (<span class="tex">4-3+2=3</span>). Melting multiplies rows; it adds no information.</div>
+
+        <div data-lab="ds-fnd-tidy"></div>
+
+        <h3 class="sec">The unit of analysis: what is one row?</h3>
+        <p>Tidiness has a second half that no reshaping can fix: you must decide what a row <i>is</i>. This is the <b>unit of analysis</b>. The same raw records can be arranged with one row per order, per customer or per day, and each choice answers a different question and gives a different average.</p>
+        <p>Here are eight orders from a small shop: Ana (Mon 12, Tue 20, Wed 10, Thu 6), Ben (Mon 8, Wed 15), Cy (Tue 5, Thu 7). The total is <span class="tex">83</span> whichever way you slice it.</p>
+        <div class="worked"><b>Worked example — three units, three averages</b>
+          <p><b>One row per order:</b> 8 rows, average <span class="tex">83/8=10.38</span> per order. Good for “how big is a typical order?”.</p>
+          <p><b>One row per customer:</b> 3 rows (Ana 48, Ben 23, Cy 12), average <span class="tex">83/3=27.67</span> per customer. Good for “how much does a typical customer spend?”. Ana alone drives the total, which the order-level table hides.</p>
+          <p><b>One row per day:</b> 4 rows (Mon 20, Tue 25, Wed 25, Thu 13), average <span class="tex">83/4=20.75</span> per day. Good for “how busy is a typical day?”.</p>
+          <p>Same data, three correct but different numbers. The mistake is to quote one of them as the answer to another's question.</p>
+        </div>
+        <div data-lab="ds-fnd-unit"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>In the wide-to-long lab, press Play and watch one value travel. What happens to the column header “Feb” when its numbers arrive in the long table?</li>
+          <li>Raise the products to 4 and the month columns to 6. Predict the number of long rows before you replay, then check it against the readout.</li>
+          <li>In the unit lab, switch between order, customer and day. Which choice makes the average per row largest, and which question does that answer?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Mixing units in one table.</b> If some rows are orders and others are customer totals, every average is meaningless. State the unit of each table in one sentence.</li>
+          <li><b>Repeated rows treated as independent.</b> Ana appears four times. A statistic that counts each order as a separate person overstates how much evidence you have about customers.</li>
+          <li><b>Wide is not wrong.</b> A wide table is fine for display and some matrix methods. It is the working format that should be tidy.</li>
+          <li><b>Reshaping without a check.</b> Always compare row counts and totals before and after.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Every training set must have one row per example and one column per feature plus the label. If the unit is wrong (rows per order when you predict per customer), the same customer lands in both training and test data and the score is inflated, a leakage problem treated in a later module.</li>
+          <li>Time-series models usually need the long layout: one row per series and time step.</li>
+          <li>Dashboards, group-by queries and plotting libraries all assume tidy tables.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A wide table has 3 products and 4 month columns. How many rows has its long version?</summary><div class="ans">3 × 4 = 12 rows, each with columns product, month and sales.</div></details>
+        <details class="check"><summary>2. What is the Coffee total across the three months, and what must stay equal after melting?</summary><div class="ans">200 + 210 + 260 = 670. The grand total, 1340, must be identical in the wide and long layouts.</div></details>
+        <details class="check"><summary>3. To answer “how much does a typical customer spend?” from the eight orders, which unit and what value?</summary><div class="ans">One row per customer: totals 48, 23 and 12, average 83 / 3 = 27.67. The per-order average, 10.38, answers a different question.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Tidy: one variable per column, one observation per row, one table per kind of unit.</li>
+          <li>Melting a wide table to long multiplies rows by the number of melted columns and must leave totals unchanged.</li>
+          <li>The unit of analysis decides the meaning of every average; fix it before you compute.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="tools-and-reproducibility" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.4</span><h2>The working environment: notebooks, scripts and versions</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Six months after you report an average, a colleague reruns your analysis and gets a different number. Neither of you made an arithmetic mistake. What could have changed, and how do you arrange your work so it cannot happen?</div>
+
+        <h3 class="sec">Intuition: a recipe, not a photograph of the meal</h3>
+        <p>If you analyse data by clicking around a spreadsheet, you end with a result but no record of how you got it. It is like a photograph of a finished meal. A <b>script</b> is the recipe: every step written down, runnable by anyone, any number of times. <b>Reproducibility</b> means that someone else (or you next month) running the recipe on the same inputs gets the same output.</p>
+        <p>Three things must therefore be fixed: the steps (a script), the randomness (a seed) and the tools (their versions).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Notebooks and scripts.</b> A <b>notebook</b> mixes code, results and explanation in one document; it is excellent for exploring and for telling a story. A <b>script</b> is a plain file of code that runs top to bottom; it is better for anything that must be repeated or run on a schedule. A common habit is to explore in a notebook, then move the stable steps into scripts or functions, and re-run the notebook from a clean start before trusting it. A notebook whose cells were run out of order can show results that no top-to-bottom run would produce.</p>
+        <p><b>Seeds.</b> Many analyses use randomness: picking a sample, splitting data, shuffling rows, starting a model. A computer's random numbers come from a formula, the <b>pseudo-random generator</b>, which begins at a starting value called the <b>seed</b>. Same seed, same sequence, every time. Different seed (or none), a different sequence. Here is a population of 20 weekly sales figures, 12, 15, 9, 22, 18, 14, 30, 11, 16, 20, 13, 25, 17, 10, 19, 21, 8, 24, 15, 27, whose mean is 17.3.</p>
+        <div class="worked"><b>Worked example — one seed, one answer</b>
+          <p>Draw 5 of the 20 without replacement. With seed 42 the draw is the values 17, 20, 24, 19, 30, whose mean is <span class="tex">110/5=22</span>. Run it again with seed 42 and you get exactly the same five values and the same 22. With seed 1 you get 17, 15, 25, 27, 22, mean 21.2. With seed 2 you get 19, 11, 15, 17, 15, mean 15.4.</p>
+          <p>All three means differ from the population mean 17.3, and from each other: that is ordinary sampling variation. A report that says “the sample mean was 22” without the seed cannot be checked. A report that says “seed 42, n = 5, mean 22” can.</p>
+        </div>
+        <div data-lab="ds-fnd-seed"></div>
+        <p><b>Environments and versions.</b> Your code uses libraries, and libraries change. A function can get a new default or a fix between versions. An <b>environment</b> is an isolated set of installed libraries; <b>pinning</b> records the exact version of each (for example in a requirements or lock file) so the environment can be rebuilt. Defaults are a quiet source of disagreement: the standard deviation of the ten numbers 4, 8, 6, 5, 3, 2, 8, 9, 2, 5 depends on the divisor.</p>
+        <div class="worked"><b>Worked example — same data, two answers</b>
+          <p>The mean is <span class="tex">52/10=5.2</span>. The squared deviations from 5.2 add up to <span class="tex">57.6</span>. Dividing by <span class="tex">n=10</span> gives variance 5.76 and standard deviation <span class="tex">\sqrt{5.76}=2.4000</span>. Dividing by <span class="tex">n-1=9</span> gives variance 6.4 and standard deviation <span class="tex">\sqrt{6.4}=2.5298</span>, which is 5.4% larger.</p>
+          <p>NumPy's <code>std</code> divides by <span class="tex">n</span> by default; pandas' <code>std</code> divides by <span class="tex">n-1</span> by default. Neither is wrong; they answer slightly different questions (describe these ten values versus estimate the spread of a larger population). Writing the setting down in the code removes the ambiguity.</p>
+        </div>
+        <div data-lab="ds-fnd-pin"></div>
+
+        <p><b>A reproducible project folder.</b> A layout like this lets a stranger rebuild your result with a few commands:</p>
+        <pre><code>project/
+  data/raw/        original files, never edited
+  data/clean/      produced by scripts, can be deleted and rebuilt
+  notebooks/       exploration, run top to bottom before sharing
+  src/             functions used by notebooks and scripts
+  results/         tables and figures written by code
+  requirements.txt pinned library versions
+  README.md        how to run it, in order, with the seed</code></pre>
+
+        <div class="eq">\mathrm{Result} = f(\underbrace{\text{code}}_{\text{script}},\ \underbrace{\text{data}}_{\text{raw files}},\ \underbrace{\text{seed}}_{s},\ \underbrace{\text{versions}}_{v})</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">f</span>: running the whole analysis. The four inputs are the code (a script, not clicks), the raw data (never edited by hand), the random seed <span class="tex">s</span>, and the versions <span class="tex">v</span> of the language and libraries. If any one of them is missing from the record, the result may not be reproducible.</div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>In the seed lab run seed 42 three times. Are the three history lines identical? Then untick “use the seed” and run again three times.</li>
+          <li>Change the seed to 1, then 2, and compare each mean with the population mean, 17.3. Which sample was closest and was that luck?</li>
+          <li>In the two-defaults lab, edit the data to just three numbers such as 1, 2, 3. The gap between the two standard deviations changes; does it grow or shrink for small n?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Editing the raw data.</b> Fix problems in code, never in the original file, so every correction is recorded and reversible.</li>
+          <li><b>Seeding once and assuming it holds everywhere.</b> Several libraries have separate generators; each needs its own seed.</li>
+          <li><b>Hunting for a lucky seed.</b> Trying seeds until the result looks good is cheating. Choose a seed once, or report results over several seeds.</li>
+          <li><b>“It runs on my machine.”</b> Without pinned versions and a README, nobody else can say whether a difference is a bug or a version change.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li>Training runs depend on seeds (weight initialisation, data shuffling, dropout). Papers report the mean over several seeds because one lucky seed can look like an improvement.</li>
+          <li>Reproducibility is a requirement for audits and regulated models: you must be able to rebuild exactly what was deployed.</li>
+          <li>Experiment trackers and data-versioning tools record the code version, data version, seed and library versions of each run.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. You run the seed-42 draw again tomorrow. What do you get?</summary><div class="ans">The same five values, 17, 20, 24, 19 and 30, and the same mean, 22, provided the code, data and generator version are unchanged.</div></details>
+        <details class="check"><summary>2. For 4, 8, 6, 5, 3, 2, 8, 9, 2, 5, why do 2.4000 and 2.5298 both appear, and which should a report state?</summary><div class="ans">The sum of squared deviations is 57.6; dividing by n = 10 gives sd 2.4000, dividing by n − 1 = 9 gives 2.5298. A report should state which divisor it used (and the tool and version), because the choice is part of the result.</div></details>
+        <details class="check"><summary>3. Name two reasons to pin library versions even when your code has not changed.</summary><div class="ans">Libraries change defaults and fix bugs between versions, which can change numbers; and an environment you cannot rebuild cannot be audited or handed to a colleague.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Script the analysis; clicks leave no record. Explore in notebooks, run them top to bottom, move stable steps into scripts.</li>
+          <li>Set and report the seed; the same seed gives the same draw, the same split and the same answer.</li>
+          <li>Pin versions and record defaults; keep raw data untouched and the project folder rebuildable.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="asking-good-questions" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">0.5</span><h2>Turning a vague wish into an answerable question</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An online shop's manager says: “I want to know whether our customers are happy.” What would you measure, what would you compare it with, what decision would the answer change, and how many orders must you look at before you can tell?</div>
+
+        <h3 class="sec">Intuition: a question is a test the data can pass or fail</h3>
+        <p>“Are customers happy?” cannot be answered by any dataset, because nothing in the data says what “happy” means or what would count as “enough”. A good question is like a good experiment: before you look, you can say what result would change your mind. Four ingredients turn a wish into something answerable.</p>
+        <p>First, a <b>measurable outcome</b>: a quantity you can record for each unit. Second, a <b>comparison or baseline</b>: a number to be better or worse than. Third, the <b>decision</b> the answer will change. Fourth, what would count as <b>failure</b>: the result that means “we were wrong” or “the data cannot tell”. If you cannot name the decision, the analysis is a hobby; if you cannot name a failure, no result can ever disappoint you, which means none can inform you.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Rewrite the manager's wish step by step.</p>
+        <table class="tbl"><tr><th>ingredient</th><th>vague</th><th>answerable</th></tr>
+          <tr><td>outcome</td><td>“happy”</td><td>share of orders with a support complaint within 14 days of delivery</td></tr>
+          <tr><td>baseline</td><td>“good”</td><td>8%, last year's complaint rate</td></tr>
+          <tr><td>decision</td><td>(none)</td><td>hire a second support agent if the rate is above 8%</td></tr>
+          <tr><td>failure</td><td>(none)</td><td>an interval for the rate that still contains 8% after the planned orders: the data could not decide</td></tr></table>
+        <p>Now the question reads: “Is the share of orders with a complaint within 14 days above 8%?” A single number from the data (the observed rate) is not enough, because a rate measured on few orders wobbles. To say how much it wobbles we attach an <b>interval</b>. For a rate <span class="tex">\hat p</span> measured on <span class="tex">n</span> orders, an approximate 95% interval is <span class="tex">\hat p\pm1.96\sqrt{\hat p(1-\hat p)/n}</span> (the assumptions and the reason are in <a href="math-statistics.html#intervals-tests">intervals and tests</a>; it assumes orders behave like independent draws).</p>
+        <div class="worked"><b>Worked example — when can the data decide?</b>
+          <p>Suppose the observed rate stays at 9%, a little above the 8% baseline.</p>
+          <p><b>n = 200 orders (18 complaints).</b> <span class="tex">\hat p=0.09</span>, standard error <span class="tex">\sqrt{0.09\times0.91/200}=0.0202</span>, interval <span class="tex">0.0503</span> to <span class="tex">0.1297</span>. It contains 8%: the data cannot decide.</p>
+          <p><b>n = 1000 (90).</b> Standard error 0.00905, interval 7.23% to 10.77%. Still contains 8%.</p>
+          <p><b>n = 4000 (360).</b> Standard error 0.00452, interval 8.11% to 9.89%. The whole interval is above 8%: the data supports hiring.</p>
+          <p>So a one-point gap needs about four thousand orders to resolve. Knowing this <i>before</i> collecting tells you whether the question is answerable with the data you can get, and what to do if it is not (wait, accept the uncertainty, or change the decision rule).</p>
+        </div>
+        <div class="eq">\hat p=\frac{k}{n},\qquad \hat p\pm 1.96\sqrt{\frac{\hat p(1-\hat p)}{n}}\ \text{ versus the threshold } p_0</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">k</span>: the number of orders with a complaint. <span class="tex">n</span>: the number of orders observed. <span class="tex">\hat p</span>: the observed share (the hat means “estimated from data”). <span class="tex">\sqrt{\hat p(1-\hat p)/n}</span>: the standard error, how much <span class="tex">\hat p</span> would wobble between samples; it shrinks like <span class="tex">1/\sqrt n</span>. <span class="tex">1.96</span>: the multiplier for a 95% interval. <span class="tex">p_0</span>: the baseline or decision threshold (0.08). Decision rule: act when the whole interval lies on one side of <span class="tex">p_0</span>.</div>
+
+        <p><b>Where this lesson sits in the loop.</b> This is stage one, and it governs every later stage: the outcome decides what you collect, the baseline decides what you compare, the decision decides what you report. Orders arrive below one at a time; watch the interval narrow, and see when the data first answers the question.</p>
+        <div data-lab="ds-fnd-question"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the true rate at 9% and the threshold at 8% and press Restart. At what number of orders does the interval first clear the threshold? Press New run twice and compare.</li>
+          <li>Move the true rate to 12%. The gap to the threshold is four times larger. Does the answer arrive earlier or later, and by how much?</li>
+          <li>Set the true rate equal to the threshold (8%). Does the interval ever settle on one side? What does that say about questions where the truth is right at the decision boundary?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A metric that is easy to measure rather than the one that matters.</b> Complaints measure unhappiness that gets reported; quiet unhappy customers do not appear. State what the outcome misses.</li>
+          <li><b>No baseline.</b> “A 9% complaint rate” is neither good nor bad until compared with something.</li>
+          <li><b>Moving the goalposts.</b> Choosing the threshold or the metric after seeing the data lets you find a “yes” almost every time. Write the question and the failure condition first.</li>
+          <li><b>A question nobody will act on.</b> If every possible answer leads to the same decision, do not spend the effort.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>A/B tests:</b> the outcome, the baseline and the minimum effect worth acting on decide how many users the test needs (a later module).</li>
+          <li><b>Forecasting targets:</b> “predict demand” must become a specific number per product per day with a horizon and an error that the business can tolerate.</li>
+          <li><b>Model evaluation:</b> the metric you optimise is the outcome you chose; a poorly chosen one produces a model that scores well and helps nobody (see <a href="ml-evaluation.html#metrics-classification">classification metrics</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With 200 orders and 18 complaints, can the data decide between “above 8%” and “not above 8%”?</summary><div class="ans">No. p̂ = 0.09, standard error 0.0202, interval 5.03% to 12.97%. The interval contains 8%, so 200 orders cannot answer this decision.</div></details>
+        <details class="check"><summary>2. Which of the four ingredients is missing from “find out whether customers like the new checkout”?</summary><div class="ans">All four could be missing, but most obviously a measurable outcome (conversion? time to pay? complaints?), a baseline (the old checkout), the decision (keep or revert) and a failure condition (what result would make you revert).</div></details>
+        <details class="check"><summary>3. At n = 4000 and 360 complaints, what do you conclude and how sure are you?</summary><div class="ans">p̂ = 0.09, interval 8.11% to 9.89%, entirely above 8%, so the data supports hiring. The 95% interval assumes the orders behave like independent draws and that complaints mean the same thing throughout; it is evidence, not proof.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An answerable question has a measurable outcome, a baseline, a decision it will change and a stated failure condition.</li>
+          <li>Uncertainty shrinks like 1/√n, so a small gap needs many observations; compute how many before you collect.</li>
+          <li>Write the question and the failure condition before looking at the results.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 1 (<a href="ds-wrangling.html">Data wrangling and cleaning</a>) takes the tidy tables from lesson 0.3 and shows how to filter, join and repair them, which is stage two of the loop.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

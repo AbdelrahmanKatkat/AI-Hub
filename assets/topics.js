@@ -14,7 +14,12 @@ window.HUB = {
       tags: ['Data preparation', 'Trees & boosting', 'Neural networks', 'Evaluation', 'MLOps'],
       // lessons are generated from curriculum/machine-learning.md (assets/curriculum-ml.js)
     },
-    { id: 'ds', title: 'Data Science', icon: '📊', color: '#388bfd', status: 'soon', desc: 'Exploration, statistics, experimentation and storytelling with data.' },
+    {
+      id: 'ds', title: 'Data Science', icon: '📊', color: '#388bfd', status: 'live', href: 'data-science.html', curriculum: 'assets/curriculum-ds.js', next: 'cv',
+      desc: 'From a messy table to a trusted decision: wrangling, exploration, statistics, experiments, features, forecasting and responsible communication.',
+      tags: ['Wrangling', 'EDA', 'Statistics', 'A/B tests', 'Forecasting'],
+      // lessons are generated from curriculum/data-science.md (assets/curriculum-ds.js)
+    },
     {
       id: 'cv', title: 'Computer Vision', icon: '👁️', color: '#2f81f7', status: 'live', href: 'computer-vision.html', curriculum: 'assets/curriculum-cv.js', next: 'nlp',
       desc: 'Teach machines to see: from pixels and filters to CNNs, transformers, detection, segmentation and deployment — with animated architectures.',
@@ -115,6 +120,16 @@ window.PIPELINES = {
       { name: 'Gradient', color: '#db61a2', items: ['Derivatives', 'Chain rule', 'Backprop'], out: '∇θ L', compute: 'Calculus / autodiff', storage: 'Activations kept for backward', desc: 'The gradient points uphill. Backpropagation computes it efficiently with the chain rule.' },
       { name: 'Update', color: '#39c5cf', items: ['SGD', 'Momentum', 'Adam'], out: 'θ ← θ − η·g', compute: 'Optimization', storage: 'Optimizer state (m, v)', desc: 'Step downhill. Optimizers differ in how they use gradient history to move faster and steadier.' },
       { name: 'Evaluate', color: '#3fb950', items: ['Held-out data', 'Metrics', 'Confidence'], out: 'score ± error', compute: 'Statistics', storage: 'Metrics logs', desc: 'Measure on unseen data and quantify uncertainty before trusting the result.' },
+    ],
+  },
+  ds: {
+    stages: [
+      { name: 'Ask & collect', color: '#2f81f7', items: ['Define the question', 'Find data sources', 'Sample or extract'], out: 'raw dataset', compute: 'I/O: queries, exports, APIs', storage: 'Data warehouse, files, versioned extracts', desc: 'A decision defines the question, and the question defines which data to collect and how it was sampled.' },
+      { name: 'Clean & prepare', color: '#39c5cf', items: ['Types & units', 'Missing values', 'Joins & duplicates'], out: 'tidy table', compute: 'CPU, dataframes', storage: 'Cleaned tables with a log of every change', desc: 'Raw data is rarely usable: parse types, fix errors, handle missing cells and join sources, checking row counts at every step.' },
+      { name: 'Explore', color: '#a371f7', items: ['Summaries', 'Plots', 'Relationships'], out: 'what the data says', compute: 'CPU, interactive notebooks', storage: 'Notebooks and figures', desc: 'Summaries and plots reveal shape, outliers and relationships, and decide what is worth testing or modelling.' },
+      { name: 'Test & model', color: '#db6d28', items: ['Hypothesis tests', 'Experiments', 'Predictive models'], out: 'estimates with uncertainty', compute: 'CPU, sometimes GPU', storage: 'Experiment logs, model files', desc: 'Statistics and experiments say how sure we can be; models predict. Every result carries its uncertainty.' },
+      { name: 'Communicate', color: '#db61a2', items: ['Honest charts', 'Dashboards', 'Written report'], out: 'decision-ready story', compute: 'BI tools, notebooks', storage: 'Reports, dashboards', desc: 'A finding only matters if the audience understands it: one clear chart, a headline, and the limits stated.' },
+      { name: 'Deploy & monitor', color: '#3fb950', items: ['Reproducible pipeline', 'Drift checks', 'Fairness checks'], out: 'trusted, repeatable results', compute: 'Scheduled jobs, monitoring', storage: 'Feature store, metrics store', desc: 'Pipelines run again on new data; monitoring catches drift and unfair outcomes before decisions go wrong.' },
     ],
   },
 };

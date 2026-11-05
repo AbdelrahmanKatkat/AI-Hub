@@ -12,8 +12,8 @@ computed on a small dataset that is printed in the lesson, and every simulation 
 Order is strict. Ten modules, 59 lessons. Module pages are `ds-<name>.html`; hub `data-science.html`.
 
 Maths and ML prerequisites are linked, not re-taught: `math-probability.html` (distributions, expectation, Bayes), `math-statistics.html`
-(estimation, likelihood), `math-linear-algebra.html` (matrices of features), `math-optimization.html` (loss minimisation), `ml-supervised.html`
-and `ml-evaluation.html` (models and metrics), `ml-neural.html` (neural models), `geo-foundations.html` (spatial data, shared with GeoAI).
+(estimation, likelihood), `math-linear-algebra.html` (matrices of features), `math-optimization.html` (loss minimisation), `ml-linear.html`
+, `ml-classical.html` and `ml-evaluation.html` (models and metrics), `ml-neural.html` (neural models), `geo-foundations.html` (spatial data, shared with GeoAI).
 
 ## Lesson template (every lesson must have all of these)
 1. **The question** – a concrete business, science or policy question that makes the idea necessary.

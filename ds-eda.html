@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Exploratory data analysis · Data Science</title>
+<meta name="description" content="Summaries, histograms, scatter plots, correlation, cross-tabs, Simpson's paradox and group comparisons, and a written EDA workflow that ends in a decision, built from small printed tables with hand-worked numbers.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-eda.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#388bfd26">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Exploratory data analysis</h1>
+        <p>Before testing or modelling, look. Exploratory data analysis is the habit of summarising each column, plotting it, plotting pairs, splitting by group, and writing down what you found, so that the next step is a decision and not a guess. This module sits in stage 3 of the data science loop, <b>explore</b>.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: Module 0, Module 1 (clean data), averages from school maths</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="univariate-summary" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.1</span><h2>One variable: centre, spread and shape</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A café owner must decide how many coffees to prepare each morning. She has nine days of sales. Can one number stand for "a typical day", and how much should she trust it? This lesson is stage 3 (explore) of the loop, and it is always the first thing you do with a column.</div>
+
+        <h3 class="sec">Intuition: a pile of numbers needs a name, a width and a shape</h3>
+        <p>Nine numbers are easy to read; nine million are not. A <b>summary</b> replaces the pile with a few values that answer three questions: where is it (<i>centre</i>), how scattered is it (<i>spread</i>), and which way does it lean (<i>shape</i>)? No summary is "the" right one; each can be fooled by something the others ignore, and that is exactly why we use several together.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here are the nine days, sorted from smallest to largest (sales in coffees). The last day included a large catering order.</p>
+        <table class="tbl"><tr><th>rank</th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr><tr><th>coffees</th><td>12</td><td>14</td><td>15</td><td>15</td><td>16</td><td>18</td><td>19</td><td>21</td><td>60</td></tr></table>
+        <p><b>Centre, three ways.</b> The <b>mean</b> adds everything and divides by the count; the <b>median</b> is the middle value once sorted; the <b>mode</b> is the most frequent value.</p>
+        <div class="worked"><b>Worked example — the three centres</b>
+          <p>Mean: <span class="tex">(12+14+15+15+16+18+19+21+60)/9=190/9=21.11</span>. Median: with 9 values it is the 5th, which is <span class="tex">16</span>. Mode: <span class="tex">15</span> occurs twice, so it is the mode.</p>
+          <p>Without the catering day (8 values, sum 130): mean <span class="tex">130/8=16.25</span>, median <span class="tex">(15+16)/2=15.5</span>. One day moved the mean by <span class="tex">4.86</span> coffees and the median by only <span class="tex">0.5</span>. The median is <b>robust</b>: it only looks at the order, not the size, of the extreme values.</p>
+        </div>
+
+        <p><b>Spread, two ways.</b> The <b>variance</b> is the average squared distance from the mean, and the <b>standard deviation</b> is its square root (so it is back in coffees). We divide by <span class="tex">n-1</span> rather than <span class="tex">n</span> when the data are a sample, for a reason we meet in Module 3. The <b>IQR</b> (interquartile range) is the distance between the 25th and 75th percentiles, so it ignores the outer quarter on each side.</p>
+        <div class="eq">s^2=\frac{1}{n-1}\sum_{i=1}^{n}(x_i-\bar x)^2,\qquad s=\sqrt{s^2},\qquad \mathrm{IQR}=Q_3-Q_1</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_i</span>: the i-th value. <span class="tex">n</span>: how many values. <span class="tex">\bar x</span>: the mean. <span class="tex">s^2,\ s</span>: sample variance and standard deviation. <span class="tex">Q_1,Q_3</span>: the 25th and 75th percentiles, here found by linear interpolation between sorted values (the NumPy default).</div>
+        <div class="worked"><b>Worked example — spread of the nine days</b>
+          <p>Deviations from 21.11: <span class="tex">-9.11,\,-7.11,\,-6.11,\,-6.11,\,-5.11,\,-3.11,\,-2.11,\,-0.11,\,+38.89</span>. Their squares sum to <span class="tex">1760.89</span>, so <span class="tex">s^2=1760.89/8=220.11</span> and <span class="tex">s=14.84</span>. The one large deviation (<span class="tex">38.89^2=1512.4</span>) supplies 86% of the total.</p>
+          <p>Quartiles: the position of <span class="tex">Q_1</span> is <span class="tex">0.25\times(9-1)=2</span> counting from 0, which is the 3rd value, <span class="tex">15</span>. <span class="tex">Q_3</span> is at position 6, the 7th value, <span class="tex">19</span>. So <span class="tex">\mathrm{IQR}=19-15=4</span>, a quarter of the standard deviation. Without day 9: <span class="tex">s=2.92</span>, <span class="tex">\mathrm{IQR}=3.5</span>: the standard deviation collapses; the IQR barely changes.</p>
+        </div>
+
+        <p><b>Shape and the five-number summary.</b> <b>Skew</b> measures lean: positive when the long tail points right. The five-number summary (minimum, <span class="tex">Q_1</span>, median, <span class="tex">Q_3</span>, maximum) is what a <b>box plot</b> draws: a box from <span class="tex">Q_1</span> to <span class="tex">Q_3</span> with a line at the median, whiskers to the last point inside the fences <span class="tex">Q_1-1.5\,\mathrm{IQR}</span> and <span class="tex">Q_3+1.5\,\mathrm{IQR}</span>, and dots beyond.</p>
+        <div class="worked"><b>Worked example — the box plot of the nine days</b>
+          <p>Five numbers: <span class="tex">12,\ 15,\ 16,\ 19,\ 60</span>. Fences: <span class="tex">15-1.5\times4=9</span> and <span class="tex">19+6=25</span>. The value 60 is above 25, so it is drawn as a dot; 12 is above 9, so it is not. Moment skewness is <span class="tex">2.32</span> with day 9 and <span class="tex">0.25</span> without: strongly right-skewed because of one point. When the mean (21.11) sits well above the median (16), that gap is itself the skew signal.</p>
+        </div>
+
+        <div data-lab="ds-eda-summary"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and watch each day arrive. Which moves more as days join, the orange mean or the green median?</li>
+          <li>When all nine days are in, drag the day-9 slider from 60 down to 20. At what value does the red dot disappear, and do mean and median meet?</li>
+          <li>Set day 9 to 130. Which numbers in the readout change a lot (mean, sd) and which hardly move (median, IQR)?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Average" is ambiguous.</b> Report mean or median by name. For incomes, house prices and waiting times the mean is dragged by the tail and can describe almost nobody.</li>
+          <li><b>The mean hides multiple groups.</b> A mean of 21 could come from two kinds of day (quiet and busy) and describe neither.</li>
+          <li><b>Dividing by n or n−1.</b> Software differs: NumPy's <code>std</code> divides by n, pandas by n−1. Check, especially on small samples (here 220.11 versus 195.65 for the variance).</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Feature inspection before modelling:</b> a column with mean far above median, or a standard deviation of zero, is flagged before it reaches the model. Many models assume features on a similar scale.</li>
+          <li><b>Normalisation uses these numbers:</b> standardising subtracts the mean and divides by the sd; a single outlier can wreck both, so robust scaling uses the median and IQR instead.</li>
+          <li><b>Pipeline view:</b> this is the first pass of stage 3 (explore) after cleaning, and the numbers you record here become the baseline for drift monitoring in stage 6.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Values 2, 4, 4, 6, 14. Give the mean and the median. Which one would you quote as "typical", and why?</summary><div class="ans">Mean = 30/5 = 6, median = 4. The 14 pulls the mean above all but one of the values, so the median 4 is the more typical value here; report both and the reason.</div></details>
+        <details class="check"><summary>2. The IQR of the nine days is 4 but the standard deviation is 14.84. What does the gap tell you?</summary><div class="ans">The middle half of the days is tightly packed, but a squared-distance measure is dominated by one far-away value. A large sd against a small IQR is a signature of outliers or a heavy tail.</div></details>
+        <details class="check"><summary>3. Why is the box plot fence 1.5 × IQR, and is a point beyond it automatically an error?</summary><div class="ans">1.5 is a convention (Tukey's rule) that flags about 0.7% of values for a normal distribution. A point beyond it is only unusual, not wrong: the catering order of 60 coffees is real and may matter for the decision.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Describe centre (mean, median, mode), spread (sd, IQR) and shape (skew, five numbers) together; each alone can mislead.</li>
+          <li>Median and IQR are robust to extreme values; mean and sd are not: for the nine days 21.11 versus 16, and 14.84 versus 4.</li>
+          <li>A box plot is the five-number summary plus a fence rule for flagging points to investigate, not to delete blindly.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="distributions-shape" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.2</span><h2>Distribution shapes and transformations</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An analyst has the yearly incomes of ten customers and must decide whether to use the mean income as a model feature. The histogram looks different every time she changes a setting. Which picture is true, and can a transformation tame the long tail?</div>
+
+        <h3 class="sec">Intuition: a histogram is a choice, not a fact</h3>
+        <p>A <b>histogram</b> sorts values into consecutive bins and draws a bar as tall as the count in each. The only real decisions are where the bins start and how wide they are. Too wide and the shape is blurred into a lump; too narrow and every bar is 0, 1 or 2 and the picture is noise. The best width shows the broad shape without the jitter, and you find it by trying several.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Ten customers, income in thousands of dollars: 22, 25, 27, 30, 31, 34, 38, 45, 70, 240. Mean 56.2, median 32.5, standard deviation 66.03, skew 2.47.</p>
+        <div class="worked"><b>Worked example — the same ten numbers, three bin widths</b>
+          <table class="tbl"><tr><th>bin width</th><th>bars (bin start: count)</th><th>what you see</th></tr>
+          <tr><td>10</td><td>20: 3 · 30: 4 · 40: 1 · 70: 1 · 240: 1</td><td>a hump at 20–40 and two lonely bars far out</td></tr>
+          <tr><td>50</td><td>0: 8 · 50: 1 · 200: 1</td><td>a huge first bar; the hump has vanished</td></tr>
+          <tr><td>100</td><td>0: 9 · 200: 1</td><td>one giant bar and one dot: no shape at all</td></tr></table>
+          <p>All three are "correct", yet they suggest different stories. With only 10 points, no width is reliable; this is why EDA uses the histogram together with the box plot and the raw rows.</p>
+        </div>
+
+        <p><b>Heavy tails and why the mean fails.</b> When a few huge values dominate, as in incomes, response times and counts of clicks, the distribution has a <b>heavy right tail</b>. The mean (56.2) is above 8 of the 10 customers. The cure is often a <b>transformation</b>: apply a function to every value so that equal <i>ratios</i> become equal <i>distances</i>. The logarithm does this: a rise from 10 to 20 and from 100 to 200 are both "doubling", and both add <span class="tex">\log_{10}2=0.301</span>.</p>
+        <div class="eq">y=\log_{10}x,\qquad y=\sqrt{x},\qquad y_\lambda=\begin{cases}\dfrac{x^\lambda-1}{\lambda}&\lambda\neq0\\[4pt]\ln x&\lambda=0\end{cases}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x</span>: the original positive value. <span class="tex">y</span>: the transformed value. <span class="tex">\lambda</span>: the Box–Cox power; <span class="tex">\lambda=1</span> is "no change" (shifted), <span class="tex">\lambda=\tfrac12</span> is like a square root, <span class="tex">\lambda\to0</span> is the log. The family needs <span class="tex">x&gt;0</span>; software picks <span class="tex">\lambda</span> to make the result most symmetric.</div>
+        <div class="worked"><b>Worked example — logs of the ten incomes</b>
+          <p><span class="tex">\log_{10}</span> gives <span class="tex">1.342,\ 1.398,\ 1.431,\ 1.477,\ 1.491,\ 1.531,\ 1.580,\ 1.653,\ 1.845,\ 2.380</span>. Their mean is <span class="tex">1.6130</span>, and <span class="tex">10^{1.6130}=41.02</span>: the <b>geometric mean</b>, a far better "typical income" than 56.2. The median of the logs is <span class="tex">1.5114=\log_{10}32.5</span>: a monotone transformation never changes the median, only the mean.</p>
+          <p>The spread shrinks from sd 66.03 to 0.305 (log units), and the skew drops from 2.47 to 1.75. With ten points one outlier still leans on the tail; the lab below uses 400 incomes to show the clean bell shape.</p>
+          <p>The IQR fence also changes. On the raw scale <span class="tex">Q_3+1.5\,\mathrm{IQR}=43.25+23.25=66.5</span>, so both 70 and 240 are flagged. On the log scale the upper fence is <span class="tex">1.6349+0.2881=1.9229</span>, which is <span class="tex">10^{1.9229}=83.7</span> in dollars: only 240 is flagged, and 70 is now an ordinary high earner.</p>
+        </div>
+
+        <div data-lab="ds-eda-hist"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>With the transform set to "none", move the bin slider from 3 to 60. Find the number of bins where the tail is visible but the bars are not ragged.</li>
+          <li>Press Play and watch the 400 incomes arrive: at what n does the shape stop changing much?</li>
+          <li>Choose log₁₀ income. Compare the mean and median in the readout with the raw ones: which transform makes them agree?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reading the bars as truth.</b> Changing the bin start alone can split or merge a hump. Always try more than one width and a different start.</li>
+          <li><b>Log of zero or negatives.</b> <span class="tex">\log 0</span> is undefined; <code>log1p</code> (<span class="tex">\ln(1+x)</span>) is the usual fix for counts. Box–Cox needs positives; Yeo–Johnson handles zeros and negatives.</li>
+          <li><b>Forgetting to back-transform.</b> A mean of logs is a geometric mean, not an arithmetic mean. An error of 0.1 on a log₁₀ scale is a factor of 1.26, not 0.1 dollars.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Income, counts and latency features:</b> skewed inputs make linear and neural models sensitive to a few huge values. Log or power transforms are standard preprocessing (see <a href="ml-data.html#scaling-transform">scaling and transforms</a>).</li>
+          <li><b>Targets:</b> house prices are often modelled as log-price so errors are relative: being 10% off matters equally for cheap and expensive homes.</li>
+          <li><b>Pipeline view:</b> stage 3 informs stage 6 of feature work: whichever transform you choose here must be fitted on training data only and applied unchanged at serving time.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why does the median of the logged incomes equal the log of the median income?</summary><div class="ans">The log is increasing, so it preserves order. The middle values stay the middle values: median of logs = log₁₀(32.5) = 1.5114. The mean has no such property: the mean of logs is 1.6130 and 10^1.6130 = 41.02, not 56.2.</div></details>
+        <details class="check"><summary>2. A histogram of 10 points has bars 8 and 1 and 1 with width 50. Can you conclude the data are heavily skewed?</summary><div class="ans">Only weakly. With 10 points and wide bins the picture mostly reflects the bin choice. Check a narrower width and the box plot and the skew number; here they agree that the tail is long, but the histogram alone would not prove it.</div></details>
+        <details class="check"><summary>3. Latencies are 5, 10, 20, 40, 80 ms. After a log₂ transform, what is the spacing between neighbours, and why is that useful?</summary><div class="ans">log₂ gives 2.32, 3.32, 4.32, 5.32, 6.32: equal steps of 1, because each value doubles the last. A log scale turns a multiplicative pattern into a straight, evenly spaced one.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A histogram depends on the bin width and start; try several and read the shape together with a box plot and the skew number.</li>
+          <li>Heavy right tails pull the mean away from the median (56.2 versus 32.5); log, square root or Box–Cox transforms make the data more symmetric.</li>
+          <li>Transforms change the mean but not the median, and a flagged outlier can become ordinary (70 → not flagged on the log scale).</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="relationships" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.3</span><h2>Two variables: scatter plots, correlation and its limits</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A tutor wants to know whether hours of study help predict test scores, and which of a dozen columns is worth keeping as a feature. A single number, the correlation, seems to answer both. When is it right, and when does it lie?</div>
+
+        <h3 class="sec">Intuition: do the two move together?</h3>
+        <p>Plot one variable on the horizontal axis and the other on the vertical: a <b>scatter plot</b>. If the cloud slopes upward, large values of one go with large values of the other; if it slopes downward, the opposite; if it is a shapeless blob, nothing links them. The <b>correlation coefficient</b> squeezes this into one number between −1 and +1. But a number cannot see the shape, and shape is where the traps are.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <table class="tbl"><tr><th>hours <span class="tex">x</span></th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr><tr><th>score <span class="tex">y</span></th><td>52</td><td>55</td><td>61</td><td>60</td><td>70</td><td>74</td></tr></table>
+        <p><b>Step 1: centre each variable.</b> The means are <span class="tex">\bar x=3.5</span> and <span class="tex">\bar y=62</span>. <b>Step 2: multiply the two deviations, point by point.</b> A point above both means, or below both, gives a positive product (it "agrees" with an upward trend); a point above one and below the other gives a negative product. <b>Step 3: add up and scale</b> so the answer does not depend on the units.</p>
+        <div class="eq">r=\frac{\sum_{i}(x_i-\bar x)(y_i-\bar y)}{\sqrt{\sum_i(x_i-\bar x)^2}\ \sqrt{\sum_i(y_i-\bar y)^2}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">r</span>: Pearson correlation, always in <span class="tex">[-1,1]</span>. The numerator is <span class="tex">n-1</span> times the covariance. The denominator rescales by both spreads, so <span class="tex">r</span> is the same in hours or minutes, dollars or euros. <span class="tex">r=\pm1</span> means all points lie exactly on a straight line; <span class="tex">r=0</span> means no <i>linear</i> trend.</div>
+        <div class="worked"><b>Worked example — Pearson r by hand</b>
+          <table class="tbl"><tr><th>x</th><th>y</th><th>x − 3.5</th><th>y − 62</th><th>product</th></tr>
+          <tr><td>1</td><td>52</td><td>−2.5</td><td>−10</td><td>25</td></tr><tr><td>2</td><td>55</td><td>−1.5</td><td>−7</td><td>10.5</td></tr><tr><td>3</td><td>61</td><td>−0.5</td><td>−1</td><td>0.5</td></tr>
+          <tr><td>4</td><td>60</td><td>0.5</td><td>−2</td><td>−1</td></tr><tr><td>5</td><td>70</td><td>1.5</td><td>8</td><td>12</td></tr><tr><td>6</td><td>74</td><td>2.5</td><td>12</td><td>30</td></tr></table>
+          <p>Sum of products: <span class="tex">77</span>. Sum of squared x deviations: <span class="tex">17.5</span>. Sum of squared y deviations: <span class="tex">362</span>. So <span class="tex">r=77/\sqrt{17.5\times362}=77/79.59=0.9674</span>. The best straight line has slope <span class="tex">77/17.5=4.4</span> points per hour and intercept <span class="tex">62-4.4\times3.5=46.6</span>.</p>
+        </div>
+        <p><b>Spearman's ρ</b> is the same formula applied to the <i>ranks</i> instead of the values. It asks "do they rise together?" and not "do they lie on a straight line?", so it ignores outlier size and catches any steadily rising curve. Here the score ranks are 1, 2, 4, 3, 5, 6, so two ranks are swapped, <span class="tex">\sum d^2=2</span>, and <span class="tex">\rho=1-\frac{6\times2}{6\times35}=0.9429</span>.</p>
+
+        <h3 class="sec">Where correlation lies: Anscombe's quartet and its friends</h3>
+        <div class="worked"><b>Worked example — four datasets, one set of summary numbers</b>
+          <p>In 1973 Francis Anscombe published four small datasets (11 points each; the values are loaded in the lab). In every one: mean of x = 9, mean of y = 7.50, sd of x = 3.32, sd of y = 2.03, best line <span class="tex">y=3.00+0.50x</span>, and Pearson <span class="tex">r=0.816</span> (0.8164, 0.8162, 0.8163, 0.8165). Yet they look nothing alike: I is a normal noisy line, II is a smooth curve, III is a perfect line plus one outlier, IV is ten points at one x with a single far point creating the whole slope. Spearman exposes some of the difference: <span class="tex">\rho=0.818,\ 0.691,\ 0.991,\ 0.500</span>.</p>
+          <p>Two more traps from the lab. <b>Non-linear dependence:</b> for <span class="tex">y=x^2</span> sampled symmetrically around 0, <span class="tex">y</span> is a perfect function of <span class="tex">x</span> but <span class="tex">r=0</span> and <span class="tex">\rho=0</span>. <b>One bad row:</b> add (7 hours, 20 points) to the tutor's table and Pearson falls from 0.9674 to <span class="tex">-0.2139</span> while Spearman is <span class="tex">0.2143</span>: one mis-entered row flips the sign.</p>
+        </div>
+
+        <div data-lab="ds-eda-scatter"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play on Anscombe I and watch r and the line settle. Then switch to II, III and IV: does the readout of r change? Does the picture?</li>
+          <li>On "Hours vs score" with all points in, click once in the far lower right. How far does r move for one point out of seven?</li>
+          <li>Load the parabola and read Pearson and Spearman. Then click points to add a trend: when does r become non-zero?</li>
+        </ol></div>
+
+        <div class="lab-intro" style="margin:14px 0"><b>Now the whole matrix.</b> With many columns we compute every pair at once and read the table, which is called a correlation matrix. The lab below fills one in, cell by cell.</div>
+        <div data-lab="ds-eda-corr"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and watch the matrix fill. Which pair is strongest, and which cells are near 0 even though you know the columns are related?</li>
+          <li>Drag the threshold from 0.5 up to 0.9: how many pairs remain? How would you use this to pick features?</li>
+          <li>Click the dist / dist² cell. Pearson is near 0 although dist² is computed from dist. Why does Spearman not rescue it?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Always plot first.</b> r = 0.816 describes four very different clouds. A correlation without its scatter plot is a rumour.</li>
+          <li><b>r = 0 is not independence.</b> It means no linear trend. The parabola has r = 0 and a perfect dependence; mutual information (<a href="math-information.html#mutual-info">Module 5.3 of Mathematics</a>) catches it.</li>
+          <li><b>Correlation is not causation.</b> Ice-cream sales and drownings both rise in summer. A third variable can drive both (Module 5 returns to this).</li>
+          <li><b>Small n and many pairs.</b> With 6 columns there are 15 pairs; with 100 columns, 4950. Some will look strong by chance.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Feature selection:</b> drop one of two features with |r| above about 0.9 (redundant) and keep ones that correlate with the target, then confirm with a model; correlation misses interactions and curves.</li>
+          <li><b>Multicollinearity:</b> highly correlated inputs make linear-model coefficients unstable (see <a href="ml-linear.html">linear models</a>).</li>
+          <li><b>Pipeline view:</b> stage 3; a correlation heatmap is a standard first plot, and a drifting correlation structure is a monitoring signal in stage 6.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. If you convert hours to minutes, what happens to r for the tutor's table, and why?</summary><div class="ans">Nothing: r stays 0.9674. Both the numerator and the x-spread in the denominator scale by 60, so they cancel. The slope would change (4.4 per hour becomes 0.0733 per minute), but r is unit-free.</div></details>
+        <details class="check"><summary>2. A dataset has r = 0 between age and spending. Can you say age is irrelevant?</summary><div class="ans">No. r = 0 only rules out a straight-line trend. Spending might rise to middle age and then fall (a hump), giving r near 0 with strong dependence. Plot it or compute a nonlinear measure.</div></details>
+        <details class="check"><summary>3. Why did one added row (7, 20) change Pearson from 0.9674 to −0.2139 but Spearman only to 0.2143?</summary><div class="ans">Pearson uses the size of deviations, so a point far below the line at the far end of x has a huge influence. Spearman uses ranks, where the new point is just the lowest score, so its pull is limited. Even so, ρ fell from 0.9429 to 0.2143: robust is not immune.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li><span class="tex">r</span> measures straight-line association only; Spearman measures monotone association through ranks.</li>
+          <li>Anscombe's quartet: four datasets with identical means, sds, line and r = 0.816, and four different pictures. Plot before you trust a number.</li>
+          <li>A correlation matrix is an overview for feature selection, not a conclusion: check each interesting cell as a scatter plot.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="categorical-eda" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.4</span><h2>Categorical variables and cross-tabs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A product team wants to know which marketing channel brings customers who actually convert to paid plans, and a hospital wants to know which of two treatments works better. Both questions are about categories, not numbers. How do we summarise them, and what can go wrong when we combine groups?</div>
+
+        <h3 class="sec">Intuition: counting replaces averaging</h3>
+        <p>A categorical column (channel, treatment, country) has no mean. We <b>count</b>. A <b>frequency table</b> lists each category with its count and share of the total. A <b>cross-tabulation</b> (cross-tab) counts two categorical columns at once: rows for one, columns for the other. Each cell answers "how many have this row <i>and</i> that column?", and dividing by the row total answers "of those in this row, what share are in that column?", which is usually the question we meant.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Two hundred sign-ups, by channel and whether they converted to a paid plan:</p>
+        <table class="tbl"><tr><th>channel</th><th>converted: no</th><th>converted: yes</th><th>total</th><th>share of all sign-ups</th><th>conversion rate (row %)</th></tr>
+        <tr><td>Ad</td><td>72</td><td>8</td><td>80</td><td>40%</td><td>10.0%</td></tr>
+        <tr><td>Organic</td><td>56</td><td>14</td><td>70</td><td>35%</td><td>20.0%</td></tr>
+        <tr><td>Referral</td><td>24</td><td>24</td><td>48</td><td>24%</td><td>50.0%</td></tr>
+        <tr><td>Partner</td><td>1</td><td>1</td><td>2</td><td>1%</td><td>50.0%</td></tr>
+        <tr><td><b>All</b></td><td>153</td><td>47</td><td>200</td><td>100%</td><td>23.5%</td></tr></table>
+        <div class="worked"><b>Worked example — reading three different percentages</b>
+          <p><b>Row %</b> (conversion rate within each channel): Ad <span class="tex">8/80=10\%</span>, Referral <span class="tex">24/48=50\%</span>. This is the rate to compare channels. <b>Column %</b> (what share of the 47 converters came from each channel): Ad <span class="tex">8/47=17.0\%</span>, Organic <span class="tex">14/47=29.8\%</span>, Referral <span class="tex">24/47=51.1\%</span>, Partner <span class="tex">1/47=2.1\%</span>. <b>Total %</b>: Ad converters are <span class="tex">8/200=4\%</span> of everyone. Three numbers, three questions: always say which one you mean.</p>
+          <p>The Partner row shows a 50% rate on <i>2 people</i>. Its 95% Wilson interval runs from 9% to 91%; Referral's runs from 36% to 64%, and Ad's from 5% to 19%. A <b>rare category</b> has a rate that is mostly noise, so we usually merge categories below a cutoff (say under 5% of rows) into "Other" before plotting or modelling.</p>
+        </div>
+        <div class="eq">\text{row rate}_k=\frac{n_{k,\text{yes}}}{n_{k,\text{yes}}+n_{k,\text{no}}},\qquad \hat p\ \pm\ \text{interval}\ \text{(Wilson)}\ =\frac{\hat p+\frac{z^2}{2n}\pm z\sqrt{\frac{\hat p(1-\hat p)}{n}+\frac{z^2}{4n^2}}}{1+\frac{z^2}{n}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">k</span>: a row category. <span class="tex">n_{k,\text{yes}}, n_{k,\text{no}}</span>: counts in the two columns. <span class="tex">\hat p</span>: the observed rate. <span class="tex">n</span>: the row total. <span class="tex">z=1.96</span> for 95%. The interval shrinks roughly as <span class="tex">1/\sqrt n</span>; full theory in <a href="ds-statistics.html">Module 3</a>.</div>
+
+        <h3 class="sec">Simpson's paradox: a warning about adding groups together</h3>
+        <p>A cross-tab hides a third variable if you ignore it. In 1986 a study compared two kidney-stone treatments (Charig et al.); the counts below are the widely quoted published ones. Treatment A is open surgery, B is a less invasive procedure.</p>
+        <table class="tbl"><tr><th></th><th>Treatment A (successes / patients)</th><th>Treatment B</th></tr>
+        <tr><td>Small stones</td><td>81 / 87 = 93.1%</td><td>234 / 270 = 86.7%</td></tr>
+        <tr><td>Large stones</td><td>192 / 263 = 73.0%</td><td>55 / 80 = 68.8%</td></tr>
+        <tr><td><b>Pooled</b></td><td>273 / 350 = 78.0%</td><td>289 / 350 = 82.6%</td></tr></table>
+        <div class="worked"><b>Worked example — the reversal</b>
+          <p>Within small stones A wins (93.1% versus 86.7%). Within large stones A wins again (73.0% versus 68.8%). Pooled, B wins (82.6% versus 78.0%). Nothing is miscalculated. The cause: A was used mostly on large stones (263 of 350 = 75.1% of its patients) and B mostly on small ones (270 of 350 = 77.1%), and large stones are harder for everyone. The pooled rate is a weighted average, <span class="tex">0.249\times93.1\%+0.751\times73.0\%=78.0\%</span> for A, and the weights differ.</p>
+          <p>If both treatments had been used on half small, half large stones, the pooled rates would be <span class="tex">0.5\times93.1+0.5\times73.0=83.1\%</span> for A and <span class="tex">0.5\times86.7+0.5\times68.8=77.7\%</span> for B: A ahead, agreeing with each group. The paradox is a statement about mixing proportions, not about the treatments.</p>
+        </div>
+        <div class="eq">\text{pooled rate}_A=\sum_g w_{A,g}\, r_{A,g},\qquad \text{pooled rate}_B=\sum_g w_{B,g}\, r_{B,g}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">g</span>: a group (small or large stone). <span class="tex">r_{A,g}</span>: success rate of treatment A within group g. <span class="tex">w_{A,g}</span>: share of A's patients who are in group g (the weights sum to 1). The two treatments can have different weights; that difference alone can reverse the pooled comparison.</div>
+
+        <div data-lab="ds-eda-crosstab"></div>
+        <div data-lab="ds-eda-simpson"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>In the cross-tab, press Play, then set "cells show" to row %. When do the 95% intervals of Ad and Organic stop overlapping?</li>
+          <li>Merge categories under 2% of rows. What happens to Partner, and does the Other rate stay stable?</li>
+          <li>In the Simpson lab press "Real data", then "Equal mix". Then drag A's share of large stones: at what value does the pooled winner flip?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Choosing the wrong percentage.</b> Row % compares groups; column % tells you composition. Mislabelling them reverses a conclusion.</li>
+          <li><b>Rates on tiny groups.</b> 1 of 2 is 50%, 50 of 100 is also 50%; they deserve very different trust.</li>
+          <li><b>Pooling over a confounder.</b> If a variable affects both who gets the treatment and the outcome, pool only after checking each group. Which view is correct depends on the causal story: here the stone size comes <i>before</i> the choice of treatment, so the split is the right comparison.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Segment analysis:</b> a model with 90% overall accuracy may be at 60% on a small segment; cross-tabs of error by segment find it.</li>
+          <li><b>Bias checks and fairness:</b> comparing acceptance rates by group is a cross-tab, and Simpson-type reversals appear when groups apply to departments of different difficulty (see <a href="ml-evaluation.html#interpretability-fairness">fairness metrics</a>).</li>
+          <li><b>Encoding rare categories:</b> merging the rare ones before one-hot or target encoding prevents unstable features (see <a href="ml-data.html#encoding">encoding</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the sign-up table, what is the conversion rate of Organic and what share of all converters came from Organic?</summary><div class="ans">Rate = 14/70 = 20.0% (row %). Share of converters = 14/47 = 29.8% (column %). Different denominators, different questions.</div></details>
+        <details class="check"><summary>2. Hospital X has 90% success on 100 patients and Hospital Y 85% on 1000. Is X better?</summary><div class="ans">Not necessarily. X's 95% Wilson interval is about 83% to 94%, which includes Y's 85% (Y's interval is about 83% to 87%). Also check case mix: if X treats only easy cases, Simpson's paradox could be at work.</div></details>
+        <details class="check"><summary>3. Say in one sentence why A can win both stone sizes and still lose the pooled comparison.</summary><div class="ans">A was given mostly large stones (75% of its patients), which have lower success rates for everyone, while B was given mostly small stones (77% of its patients), so the pooled average is a different mix of easy and hard cases for each treatment.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Categorical EDA is counting: frequency tables, cross-tabs, and the right percentage (row, column or total) for the question.</li>
+          <li>Rare categories give noisy rates: show the interval or merge them (Partner: 1 of 2 = 50%, interval 9% to 91%).</li>
+          <li>Simpson's paradox: A wins both groups (93.1% vs 86.7%, 73.0% vs 68.8%) yet loses pooled (78.0% vs 82.6%). Split by plausible confounders before pooling.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="groups-compare" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.5</span><h2>Comparing groups and the effect of sample size</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery company has two couriers. Courier B looks slower, and the manager wants to know whether to act. How big is the difference, is it more than luck, and why does a data set ten thousand times bigger make even a trivial gap look "significant"?</div>
+
+        <h3 class="sec">Intuition: compare distributions, not just two averages</h3>
+        <p>Two groups can be compared with one number (the difference in means), but the picture adds what the number cannot: whether the groups overlap a lot or hardly at all. <b>Side-by-side box plots</b> put the medians, spreads and outliers of each group on one axis. After the picture comes the arithmetic of two ideas that are easy to mix up: the <b>effect size</b> (how big is the gap, in units of the spread?) and the <b>p-value</b> (how surprising would a gap this big be if there were really no difference?).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Delivery times in minutes, eight deliveries each:</p>
+        <table class="tbl"><tr><th>Courier A</th><td>28</td><td>31</td><td>25</td><td>35</td><td>30</td><td>27</td><td>33</td><td>29</td></tr><tr><th>Courier B</th><td>32</td><td>36</td><td>29</td><td>38</td><td>34</td><td>31</td><td>37</td><td>33</td></tr></table>
+        <div class="worked"><b>Worked example — size of the gap</b>
+          <p>Means: A <span class="tex">=238/8=29.75</span>, B <span class="tex">=270/8=33.75</span>; difference <span class="tex">4.00</span> minutes. Standard deviations: <span class="tex">s_A=3.24</span>, <span class="tex">s_B=3.11</span>. The pooled spread is about 3.17, so the <b>effect size</b> (Cohen's d) is <span class="tex">d=4/3.17=1.26</span>: B is about 1.3 standard deviations slower. Medians (sorted A: 25, 27, 28, 29, 30, 31, 33, 35 gives 29.5; sorted B: 29, 31, 32, 33, 34, 36, 37, 38 gives 33.5) agree: a 4-minute gap.</p>
+        </div>
+        <div class="eq">d=\frac{\bar x_B-\bar x_A}{s_p},\quad s_p=\sqrt{\frac{(n_A-1)s_A^2+(n_B-1)s_B^2}{n_A+n_B-2}},\qquad t=\frac{\bar x_B-\bar x_A}{\sqrt{s_A^2/n_A+s_B^2/n_B}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\bar x_A,\bar x_B</span>: group means. <span class="tex">s_A,s_B</span>: group standard deviations. <span class="tex">n_A,n_B</span>: group sizes. <span class="tex">s_p</span>: pooled standard deviation. <span class="tex">d</span>: effect size, about 0.2 "small", 0.5 "medium", 0.8 "large" by convention (a rule of thumb, not a law). <span class="tex">t</span>: Welch's statistic, the gap measured in standard errors; the denominator is the standard error of the difference.</div>
+        <div class="worked"><b>Worked example — preview of the p-value</b>
+          <p>The standard error of the difference is <span class="tex">\sqrt{10.5/8+9.64/8}=1.587</span>, so <span class="tex">t=4/1.587=2.52</span> with about 14 degrees of freedom, and the two-sided <b>p-value</b> is <span class="tex">0.0245</span>. It says: if both couriers were truly identical, a gap at least this large would occur in about 2.4% of random samples of 8. That is evidence for a difference, not proof, and says nothing about whether 4 minutes matters to customers. (Full machinery in <a href="ds-statistics.html">Module 3, hypothesis tests</a>.)</p>
+        </div>
+
+        <p><b>Effect size and sample size are different dials.</b> The standard error shrinks like <span class="tex">1/\sqrt n</span>, so for the same true effect, the p-value gets smaller as n grows. Two numeric examples (equal sd 1, equal groups):</p>
+        <table class="tbl"><tr><th>true effect d</th><th>n per group</th><th>t</th><th>p-value</th><th>reading</th></tr>
+        <tr><td>0.50 (medium)</td><td>8</td><td>1.00</td><td>0.334</td><td>not "significant", yet a medium effect</td></tr>
+        <tr><td>0.50 (medium)</td><td>64</td><td>2.83</td><td>0.0054</td><td>clearly significant</td></tr>
+        <tr><td>0.05 (tiny)</td><td>10,000</td><td>3.54</td><td>0.0004</td><td>very significant, practically nothing</td></tr></table>
+        <p>So a small p can come from a big effect <i>or</i> a big sample, and a large p from a small effect <i>or</i> a small sample. Report both: the effect size with its interval and the p-value.</p>
+        <p><b>How bins and groups can mislead.</b> A histogram of two groups drawn with a few wide bins can show two identical humps; the same data in narrower bins shows the shift (see the bin-width table in <a href="#distributions-shape">lesson 2.2</a>). Box plots hide multimodality: two humps inside one group look like one wide box. Check the raw points (a strip plot) next to the box, as the lab does.</p>
+
+        <div data-lab="ds-eda-groups"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep d = 0.5, n = 8 and press Play. Watch the p-values of successive draws: how many fall below the dashed 0.05 line, even though the true effect never changes?</li>
+          <li>Raise n to 64, then 200, with d = 0.5. How does the spread of p-values change?</li>
+          <li>Set d = 0.05 and n = 400. Look at p and at the sample d: is a small p the same as an important difference?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"Significant" read as "large".</b> With n = 10,000 per group a difference of 0.05 sd gives p = 0.0004 and is practically irrelevant. Always ask how big.</li>
+          <li><b>"Not significant" read as "no difference".</b> With n = 8 and d = 0.5, p = 0.334 although the effect is real; the test lacked the data (power).</li>
+          <li><b>Comparing means when the groups differ in other ways.</b> Couriers on different routes are not comparable. This is Simpson's paradox again, or confounding.</li>
+          <li><b>Many comparisons.</b> Comparing 20 segments at the 5% level will flag about one by chance (<a href="ds-experiments.html">Module 5</a>).</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Fairness audits:</b> compare error rates or score distributions between groups with box plots, effect sizes and intervals, not only p-values; with a huge dataset every gap is "significant", so size matters most.</li>
+          <li><b>Model comparison:</b> is model B better than A on a test set? The gap in accuracy needs an effect size and an interval, especially on a few hundred test cases.</li>
+          <li><b>Pipeline view:</b> stage 3 gives the first look; stage 4 (test and model) turns it into a proper test with stated assumptions.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Courier A: mean 29.75, sd 3.24. Courier B: mean 33.75, sd 3.11. Is the effect size about 0.5, 1.3 or 4?</summary><div class="ans">About 1.3: the gap of 4 minutes divided by the pooled sd 3.17 is 1.26. It is not 4 (that is the gap in minutes) and not 0.5.</div></details>
+        <details class="check"><summary>2. A study of 20,000 people finds a significant difference (p = 0.001) of 0.5 mmHg blood pressure between two diets. What should you ask?</summary><div class="ans">How large is the effect and does it matter clinically? 0.5 mmHg is far below what anyone feels or what changes risk. A large sample makes tiny, irrelevant effects significant; report the effect size and interval.</div></details>
+        <details class="check"><summary>3. Why can two box plots look identical while the groups are very different?</summary><div class="ans">A box plot shows only five numbers. A group with two clusters (bimodal) and a group with one broad hump can share the same quartiles and median. Plot the points, or a histogram with several bin widths, next to the box.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Compare groups with side-by-side box plots plus the raw points, the difference in means, and an effect size (here d = 1.26 for 4 minutes).</li>
+          <li>The p-value (0.0245 for the couriers) depends on effect size and sample size; at n = 10,000 per group even d = 0.05 gives p = 0.0004.</li>
+          <li>Report effect size with uncertainty; "significant" and "important" are different claims.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.6 ===================== -->
+    <section class="lesson" id="eda-workflow" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">2.6</span><h2>An EDA workflow that ends in a decision</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You are handed a customer file of 200 rows and asked "can we predict who will leave?" You could plot at random for hours. What order of checks finds the problems early, and how do you record what you did so that someone else (or you next month) can trust it?</div>
+
+        <h3 class="sec">Intuition: a routine and a notebook</h3>
+        <p>Good EDA is a short routine repeated on every dataset, and a log of what each step showed and changed. The routine moves from the cheapest checks, which catch the most embarrassing problems, to the more interesting ones: <b>shape, missing values, ranges and errors, distributions, relationships, then a decision</b>. The log has four parts per step: what I looked at, what I found, what I changed, what it implies. At the end, the decision names which rows, columns and transformations go forward to modelling.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>A tiny extract of the file (id, age, income in thousands, tenure in months, churned):</p>
+        <table class="tbl"><tr><th>id</th><th>age</th><th>income</th><th>tenure</th><th>churned</th></tr>
+        <tr><td>1</td><td>34</td><td>38.5</td><td>26</td><td>0</td></tr><tr><td>2</td><td>41</td><td>(blank)</td><td>12</td><td>1</td></tr><tr><td>3</td><td>999</td><td>45.0</td><td>40</td><td>0</td></tr>
+        <tr><td>4</td><td>29</td><td>240.0</td><td>3</td><td>1</td></tr><tr><td>5</td><td>52</td><td>31.2</td><td>60</td><td>0</td></tr></table>
+        <p>Even five rows show three things worth writing down: a blank income, an impossible age (999), and a very large income. The workflow turns them into a checklist.</p>
+        <div class="worked"><b>Worked example — the checklist applied to all 200 rows</b>
+          <p>(Numbers come from the lab's seeded 200-row dataset, illustrative, computed in code.)</p>
+          <p><b>1 Shape.</b> 200 rows, 5 columns. <b>2 Missing.</b> income is blank in 20 rows, <span class="tex">20/200=10\%</span>; the other columns are complete. <b>3 Ranges.</b> ages: 3 impossible values, 999, 999 and 0, all data-entry errors. Mean age with them: 47.35; without: 37.92 (a 9-year distortion from 3 rows). <b>4 Shapes.</b> over the 180 known incomes: mean 45.07, median 38.45, skew 1.46; after log₁₀: skew −0.18, nearly symmetric, so model log income. 7 incomes lie above the IQR fence of 92.7. <b>5 Relationships</b> (clean rows, known income): income–spend r = 0.71, tenure–churn r = −0.42; age–income 0.03, age–spend 0.11, tenure–spend 0.06 and income–churn 0.01 are weak. Longer tenure goes with less churn: a lead, not a cause.</p>
+          <p><b>6 Decision.</b> Drop the 3 bad-age rows (197 left), fill the 20 missing incomes with the median 38.45 and add a "was missing" flag, use log income, and keep tenure as the leading feature. The log line for each step is written as the lab runs.</p>
+        </div>
+        <div class="eq">\text{EDA}:\ \underbrace{\text{shape}\to\text{missing}\to\text{ranges}\to\text{distributions}\to\text{relationships}}_{\text{look, record, change}}\ \to\ \text{decision}</div>
+        <div class="sym"><b>Reading the pipeline.</b> Each arrow is one pass over the data with a question: how big is it, what is absent, what is impossible, what shape is each column, how do columns relate. "Record" means a written line in the log; "change" means a transformation you can reproduce in code (never edit the raw file by hand).</div>
+        <p><b>Outliers: where to draw the line.</b> A rule flags points; you decide what they are. The IQR fence flags values beyond <span class="tex">Q_1-k\,\mathrm{IQR}</span> and <span class="tex">Q_3+k\,\mathrm{IQR}</span> (k = 1.5 is the box-plot default; 3 means "far out"); the z-score rule flags <span class="tex">|x-\bar x|/s&gt;k</span>. The z-score rule is itself pulled by outliers (a 999 inflates both mean and sd), so the IQR rule is more robust. For each flagged point ask: error, rare but real, or a different population? Fix, keep, or model separately.</p>
+
+        <div data-lab="ds-eda-outliers"></div>
+        <div data-lab="ds-eda-log"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>In the outlier lab choose "age" and press Play: move k up to 5: which of the three bad ages (999, 999, 0) is still flagged, and which one escapes? Now choose "income" and watch honest high earners get flagged as k falls.</li>
+          <li>Switch the rule to z-score for age. Is it as sharp as the IQR fence on 200 rows? Look at the mean and sd with all points and without the flagged ones.</li>
+          <li>In the EDA log, press Play and read each log line. Untick "drop rows with impossible ages" and watch the mean age and the decision line change.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Deleting outliers to improve a correlation.</b> Remove a point only with a reason (an impossible value), and write the reason in the log.</li>
+          <li><b>Exploring the test set.</b> If you look at all the data and then choose transforms and features from it, information about the test rows leaks into your choices. Split first, explore the training part.</li>
+          <li><b>Too many looks, one story.</b> The more charts you make, the more chance patterns appear. Mark findings as "to confirm", and test them on held-out data (Module 3 and Module 5).</li>
+          <li><b>No record.</b> An EDA that lives in your head cannot be audited. Keep the code and the log together.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every project:</b> the decision line becomes the data-preparation pipeline (see <a href="ml-data.html#eda">EDA for machine learning</a> and <a href="ml-data.html#data-splitting-pipelines">splits and pipelines</a>).</li>
+          <li><b>Leakage and drift:</b> the ranges and distributions you record are the baseline that production monitoring compares against.</li>
+          <li><b>Pipeline view:</b> EDA is stage 3 of 6, between cleaning (<a href="ds-wrangling.html">Module 1</a>) and statistics, testing and modelling (<a href="ds-statistics.html">Module 3</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why check missing values and ranges before computing correlations?</summary><div class="ans">Because they corrupt the numbers: three bad ages shift the mean age from 37.92 to 47.35, and blanks change which rows enter every correlation. The cheap checks protect all later results.</div></details>
+        <details class="check"><summary>2. Ten ages are about 40 except one value of 999. A rule "flag |z| &gt; 3" flags nothing. Why?</summary><div class="ans">The 999 inflates both the mean (135.9) and the standard deviation (303), and with n values the largest possible z-score is (n−1)/√n, which is 2.85 for n = 10: the rule can never fire. Outliers mask themselves in mean-and-sd rules; IQR fences are far less affected.</div></details>
+        <details class="check"><summary>3. Name the four parts of a good EDA log line.</summary><div class="ans">What was looked at, what was found (with numbers), what was changed (reproducibly in code), and what it implies for the next step or the model.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A routine: shape, missing, ranges, distributions, relationships, then a decision; cheap checks first.</li>
+          <li>Write a log line per step (looked at, found, changed, implies), with numbers: 20 blank incomes (10%), 3 impossible ages, income skew 1.46 → −0.18 after log.</li>
+          <li>Outlier rules flag; you decide: fix errors, keep real rare cases, never delete to make a plot look nicer, and explore only the training data.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 3 (<a href="ds-statistics.html">Statistics for data science</a>) turns the effect sizes, intervals and p-values previewed here into proper tools.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

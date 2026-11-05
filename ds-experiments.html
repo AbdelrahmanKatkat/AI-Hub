@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 · Experiments &amp; causal inference · Data Science</title>
+<meta name="description" content="Randomised experiments, the two-proportion z-test, peeking and sequential tests, multiple comparisons and the false discovery rate, confounding, and difference-in-differences, with hand-computed numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-experiments.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="5">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 5</div>
+    <div class="hero">
+      <div class="big" style="background:#388bfd26">5</div>
+      <div style="flex:1">
+        <h1>Module 5 · Experiments &amp; causal inference</h1>
+        <p>Does the change cause the improvement, or did something else move at the same time? This module shows how a coin flip earns the right to say "cause", how to analyse the result honestly, three ways the analysis goes wrong (peeking, many comparisons, confounding), and what is left when you cannot randomise.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: confidence intervals and hypothesis tests (Module 3)</span><span class="chip">Pipeline stage: test and model</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How to read the labs.</b> Every lab here is a simulation with seeded random numbers, so a run can be replayed, and every one is <i>illustrative</i>: it stands in for a real study. Real experiments also face logging errors, interference between users and changing populations, which no simulation here includes. Where a result is called significant, read it as evidence, not proof.</div>
+
+    <!-- ===================== 5.1 ===================== -->
+    <section class="lesson" id="ab-tests" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">5.1</span><h2>A/B tests: randomisation and the difference in means</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shopping app has built a "recommended for you" row. Product wants to know: does it make people spend more minutes in the app each week? Ten volunteers will try it. Whether to ship the row is the decision. What data would make that decision trustworthy, and why is "compare the people who switched it on with the people who did not" a bad way to get it?</div>
+
+        <h3 class="sec">Intuition: the coin flip as the only reason</h3>
+        <p>Every user has a number we would love to see but never can: how many minutes they would spend <i>with</i> the row, and how many <i>without</i> it. For one person we only ever observe one of the two, because the person either sees the row or does not. This is the basic difficulty of causal questions: the comparison we want is between two worlds, and we live in one.</p>
+        <p>The way around it is to compare <i>groups</i> instead of individuals, and to make the groups interchangeable. If we split users by a fair coin flip, then nothing about a user (age, enthusiasm, device, how bored they are today) can influence which group they land in. The only systematic difference between the groups is the row. Any gap in average minutes beyond chance must be due to the row.</p>
+        <p>Compare this with letting users opt in. People who switch on a new feature tend to be the keen ones, who would spend more minutes anyway. The gap you measure mixes the effect of the row with the keenness of the people who chose it. Randomisation breaks that link, because the coin does not know who is keen.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Name the two groups. <b>Control</b> (A) sees the app as it is; <b>treatment</b> (B) sees the new row. Write <span class="tex">Y</span> for the outcome, here weekly minutes. For user <span class="tex">i</span>, <span class="tex">Y_i(0)</span> is the outcome in the world with no row and <span class="tex">Y_i(1)</span> the outcome with it. The thing we want is the <b>average treatment effect</b>, the average over all users of <span class="tex">Y_i(1)-Y_i(0)</span>.</p>
+        <p>We cannot see that difference for any one person, but we can estimate its average. Because assignment is random, the control group is a fair sample of the whole population, so its average estimates the average of <span class="tex">Y(0)</span>; likewise the treatment group estimates the average of <span class="tex">Y(1)</span>. Subtracting gives the estimator, the <b>difference in means</b>.</p>
+        <div class="worked"><b>Worked example — ten users, one coin each</b>
+          <p>Ten volunteers were assigned by coin flip, five to each arm. Weekly minutes:</p>
+          <table class="tbl"><tr><th>Group</th><th>User 1</th><th>User 2</th><th>User 3</th><th>User 4</th><th>User 5</th><th>Mean</th><th>Variance <span class="tex">s^2</span></th></tr>
+            <tr><td>A (control)</td><td>4</td><td>6</td><td>5</td><td>7</td><td>3</td><td>5</td><td>2.5</td></tr>
+            <tr><td>B (treatment)</td><td>6</td><td>8</td><td>7</td><td>9</td><td>5</td><td>7</td><td>2.5</td></tr></table>
+          <p>Control mean: <span class="tex">(4+6+5+7+3)/5=5</span>. The deviations from 5 are <span class="tex">-1,1,0,2,-2</span>, their squares sum to <span class="tex">1+1+0+4+4=10</span>, and dividing by <span class="tex">n-1=4</span> gives the sample variance 2.5. The treatment arm has the same deviations around its mean 7, so its variance is also 2.5.</p>
+          <p>The estimated effect is <span class="tex">7-5=2</span> minutes per week. How much would that number wobble if the coin had fallen differently? Each arm's mean has variance <span class="tex">s^2/n</span>, and the two arms are independent, so the variances add:</p>
+          <p><span class="tex">\mathrm{SE}=\sqrt{2.5/5+2.5/5}=\sqrt{1}=1</span>. The difference is twice its standard error.</p>
+          <p>Is "twice" enough? With only five users per arm we compare to a <i>t</i> distribution with 8 degrees of freedom, whose two-sided 5% critical value is 2.306, so 2 does not clear it. With hundreds of users per arm the normal value 1.96 applies. Ten volunteers suggest an effect; they do not establish one. See <a href="ds-statistics.html#hypothesis-testing">the hypothesis-testing lesson</a> for the logic of that comparison.</p>
+        </div>
+        <p><b>Why the standard error matters.</b> The standard error shrinks like <span class="tex">1/\sqrt n</span>. To halve it you need four times the users. Cutting the noise in each user's outcome (for example by measuring something less variable) helps just as much as collecting more users.</p>
+        <div class="eq">\hat\tau=\bar Y_B-\bar Y_A,\qquad \mathrm{SE}(\hat\tau)=\sqrt{\frac{s_A^2}{n_A}+\frac{s_B^2}{n_B}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\hat\tau</span>: the estimated average treatment effect. <span class="tex">\bar Y_A,\bar Y_B</span>: mean outcome in the control and treatment arms. <span class="tex">n_A,n_B</span>: users in each arm. <span class="tex">s_A^2,s_B^2</span>: sample variances of the outcome within each arm. <span class="tex">\mathrm{SE}</span>: standard error, the typical size of the random wobble of <span class="tex">\hat\tau</span> across repeated experiments. Under random assignment <span class="tex">\hat\tau</span> is an unbiased estimator of the average treatment effect: averaged over many possible coin flips it equals the truth.</div>
+        <p><b>What randomisation does and does not give you.</b> It gives you an unbiased estimate of the effect on the people in the experiment, as the experiment was run. It does not give you the effect on a different population, a different season, or at a larger scale; and it assumes that one user's assignment does not change another user's outcome (no <i>interference</i>, which fails in marketplaces and social networks).</p>
+
+        <div data-lab="ds-ex-ab"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the assignment on "A coin flip" with effect 1 and watch the blue line. Early on it jumps and the band is wide; later it settles. Roughly how many users does it take before the band excludes zero?</li>
+          <li>Double the noise (sd 8). Replay. Does the band take about four times as many users to reach the same width?</li>
+          <li>Set the true effect to 0 and switch to "Keen users opt in to B". The difference settles at a positive number although the feature does nothing. Why does the coin flip not have this problem?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Comparing adopters with non-adopters.</b> That is an observational comparison, not an experiment; see lesson 5.5.</li>
+          <li><b>Randomising at the wrong unit.</b> If users share a household, a team or a car, assigning by session lets the same person see both versions. Randomise at the unit that the outcome belongs to.</li>
+          <li><b>Reading a difference in means as the effect on every user.</b> It is an average; some users may be helped and others harmed.</li>
+          <li><b>Checking balance after the fact and "fixing" it.</b> Randomisation balances groups on average, not exactly. Check that the split looks right (a sample ratio check), but do not re-draw until you like the groups.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model rollouts:</b> a new ranking or recommendation model is shown to a random share of traffic, and click or revenue metrics are compared with the old model.</li>
+          <li><b>Online versus offline metrics:</b> a model can win on a held-out set (<a href="ml-evaluation.html#metrics-classification">classification metrics</a>) and still lose in an A/B test, which is the only evidence of its effect on behaviour.</li>
+          <li><b>Language-model evaluation:</b> human preference tests randomise which of two answers appears first, for the same reason.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Each arm has 100 users and the outcome has standard deviation 10 in both arms. What is the standard error of the difference in means?</summary><div class="ans"><span class="tex">\sqrt{10^2/100+10^2/100}=\sqrt{2}=1.414</span>.</div></details>
+        <details class="check"><summary>2. Why does random assignment let us read the difference in means as an effect of the treatment?</summary><div class="ans">Because the coin is independent of everything about the user, the two groups have the same distribution of every user characteristic apart from chance. So the average outcome in the control arm estimates what the treated users would have done without treatment, and the gap is attributable to the treatment.</div></details>
+        <details class="check"><summary>3. By what factor must the sample grow to halve the standard error?</summary><div class="ans">Four. The standard error is proportional to <span class="tex">1/\sqrt n</span>, so halving it needs <span class="tex">n</span> multiplied by 4.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A causal effect compares two worlds; randomisation makes two groups that differ, on average, only by the treatment.</li>
+          <li>The estimator is <span class="tex">\bar Y_B-\bar Y_A</span> with standard error <span class="tex">\sqrt{s_A^2/n_A+s_B^2/n_B}</span>. In the table: 7 − 5 = 2, SE = 1.</li>
+          <li>The error shrinks like <span class="tex">1/\sqrt n</span>; randomisation removes bias, not noise.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.2 ===================== -->
+    <section class="lesson" id="ab-analysis" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">5.2</span><h2>Analysing an A/B test end to end</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A sign-up page test ran for two weeks. 4000 visitors saw the old page and 4000 the new one. 200 people signed up on the old page and 248 on the new. Should the team ship the new page, and what should the written result say?</div>
+
+        <h3 class="sec">Intuition: is the gap bigger than luck would make it?</h3>
+        <p>New page: 6.2% sign up. Old page: 5.0%. The gap is 1.2 percentage points (pp). If the pages were truly identical, random assignment alone would still produce some gap, because which visitors landed where is chance. We ask: how large a gap would pure luck typically create, and is ours far beyond that?</p>
+        <p>This is the two-sample version of the test from <a href="ds-statistics.html#hypothesis-testing">hypothesis testing</a>, specialised to conversion rates. The yardstick for "typical luck" is again a standard error, and the result is reported as a gap in standard errors (the <i>z</i> value) and then as an interval for the size of the effect.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the null story.</b> Suppose both pages have the same true sign-up rate. Our best single estimate of that common rate pools all visitors: total sign-ups over total visitors. Under this story the variance of one arm's rate is <span class="tex">\hat p(1-\hat p)/n</span>, and the gap between two independent arms has the two variances added.</p>
+        <div class="worked"><b>Worked example — the sign-up test</b>
+          <table class="tbl"><tr><th>Arm</th><th>Visitors <span class="tex">n</span></th><th>Sign-ups <span class="tex">x</span></th><th>Rate <span class="tex">\hat p=x/n</span></th></tr>
+            <tr><td>Control (old page)</td><td>4000</td><td>200</td><td>5.0%</td></tr>
+            <tr><td>Treatment (new page)</td><td>4000</td><td>248</td><td>6.2%</td></tr></table>
+          <p>Observed lift: <span class="tex">0.062-0.050=0.012</span> (1.2 pp), a relative lift of <span class="tex">0.012/0.050=24\%</span>.</p>
+          <p>Pooled rate: <span class="tex">\hat p=(200+248)/8000=0.056</span>.</p>
+          <p>Standard error under the null: <span class="tex">\sqrt{0.056\times0.944\times(1/4000+1/4000)}=\sqrt{0.052864\times0.0005}=0.005141</span>.</p>
+          <p>Test statistic: <span class="tex">z=0.012/0.005141=2.334</span>. Two-sided p-value: <span class="tex">2(1-\Phi(2.334))=0.0196</span>.</p>
+          <p>So a gap this large would arise about 2% of the time if the pages were identical. At <span class="tex">\alpha=0.05</span> we reject "no difference". That is evidence that the pages differ, not yet a size.</p>
+        </div>
+        <p><b>Step 2: how big is the effect?</b> A p-value says nothing about size. For that we build an interval for the true lift. Here we do <i>not</i> assume the arms share a rate; each arm keeps its own variance:</p>
+        <div class="eq">z=\frac{\hat p_B-\hat p_A}{\sqrt{\hat p(1-\hat p)\left(\frac1{n_A}+\frac1{n_B}\right)}},\qquad (\hat p_B-\hat p_A)\pm z_{1-\alpha/2}\sqrt{\frac{\hat p_A(1-\hat p_A)}{n_A}+\frac{\hat p_B(1-\hat p_B)}{n_B}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\hat p_A,\hat p_B</span>: observed rates in the two arms. <span class="tex">\hat p</span>: the pooled rate, used only inside the test statistic because it is computed under the null. <span class="tex">z_{1-\alpha/2}</span>: the normal quantile, 1.96 for a 95% interval. <span class="tex">n_A,n_B</span>: visitors per arm. The normal approximation needs enough sign-ups and non-sign-ups in each arm (a common rule: at least about 10 of each).</div>
+        <div class="worked"><b>Worked example — the interval</b>
+          <p>Unpooled standard error: <span class="tex">\sqrt{0.05\times0.95/4000+0.062\times0.938/4000}=0.005139</span>. Margin: <span class="tex">1.96\times0.005139=0.010073</span>.</p>
+          <p>95% interval for the lift: <span class="tex">0.012\pm0.0101=[0.0019,\ 0.0221]</span>, that is <b>0.19 to 2.21 percentage points</b>. As a relative lift on the 5.0% base this is about 3.9% to 44.1%.</p>
+          <p><b>A fair report.</b> "The new page converted 6.2% versus 5.0% (4000 visitors per arm). The estimated lift is 1.2 pp, 95% interval 0.19 to 2.21 pp, p = 0.020. The data are compatible with a very small or a fairly large improvement." The interval, not the single number, is the finding. Here it excludes 0, matching the test, but it is wide.</p>
+        </div>
+        <p><b>Step 3: was the test big enough?</b> Sample size should be chosen <i>before</i> the test, from the smallest lift worth detecting, the baseline rate, <span class="tex">\alpha</span> and the power you want (see <a href="ds-statistics.html#errors-power">errors and power</a>). To detect 5.0% versus 6.0% with 80% power and <span class="tex">\alpha=0.05</span>, the usual formula gives <span class="tex">n=\bigl(1.96\sqrt{2\bar p(1-\bar p)}+0.8416\sqrt{p_1(1-p_1)+p_2(1-p_2)}\bigr)^2/(p_2-p_1)^2\approx8158</span> visitors per arm, with <span class="tex">\bar p=0.055</span>. Our 4000 per arm were about half of that, so a true lift of 1 pp would usually be missed, and a lift that <i>is</i> declared significant at this size tends to be an overestimate of the truth (the "winner's curse").</p>
+
+        <div data-lab="ds-ex-ztest"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the defaults and watch the interval. At what planned size does it first stay entirely above zero? Compare with the dotted "planned n" marker.</li>
+          <li>Set the true lift to 0 and press "New draw" several times. How often does the interval at the end exclude zero? What fraction would you expect at α = 0.05?</li>
+          <li>Set the lift to 0.5 pp and plan 4000 users per arm. Run a few draws. The interval is usually wide enough to include zero: a real effect that the test is too small to see.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"p = 0.02, so a 98% chance the new page is better."</b> The p-value is the probability of data this extreme if there were no difference. It is not the probability that the page is better.</li>
+          <li><b>Significant is not important.</b> With a million visitors, a 0.01 pp lift can be significant yet worthless. Judge the interval against the smallest effect that matters.</li>
+          <li><b>Not significant is not "no effect".</b> A wide interval that includes both 0 and a useful lift means the test was inconclusive.</li>
+          <li><b>Mixing up percent and percentage points.</b> 5.0% to 6.2% is +1.2 pp, a 24% relative lift. Say which one.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Conversion and click-through testing</b> for ranking models, ad systems and prompts reduces to exactly this two-proportion comparison.</li>
+          <li><b>Guardrail metrics:</b> a new model must not make latency, error rates or complaints worse; each is tested with an interval and a pre-set tolerance.</li>
+          <li><b>Reporting model improvements:</b> the same interval-first habit applies to a benchmark gain (see <a href="math-statistics.html#intervals-tests">intervals and tests</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Control: 120 of 2000 convert; treatment: 150 of 2000. Compute the pooled z statistic and p-value.</summary><div class="ans">Rates 6.0% and 7.5%, pooled <span class="tex">\hat p=270/4000=0.0675</span>. SE <span class="tex">=\sqrt{0.0675\times0.9325\times(2/2000)}=0.007934</span>. <span class="tex">z=0.015/0.007934=1.891</span>, two-sided p = 0.059: not significant at 5%.</div></details>
+        <details class="check"><summary>2. For the same data, give the 95% interval for the lift. How does it agree with question 1?</summary><div class="ans">Unpooled SE = 0.007930, margin 0.01554, so the interval is 0.015 ± 0.0155 = [−0.05 pp, 3.05 pp]. It just includes 0, agreeing with p = 0.059 being slightly above 0.05. The interval adds that effects from about −0.05 to 3 pp are all compatible with the data.</div></details>
+        <details class="check"><summary>3. Why report the interval and not only the p-value?</summary><div class="ans">The p-value only says whether zero is plausible. The interval shows the whole range of plausible effect sizes, which is what the ship decision needs, and it makes a small, imprecise result look small and imprecise.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Two-proportion test: pooled rate for the null SE, <span class="tex">z=(\hat p_B-\hat p_A)/\mathrm{SE}</span>. Example: <span class="tex">z=2.334</span>, p = 0.0196.</li>
+          <li>Report the lift with an interval: 1.2 pp, 95% interval 0.19 to 2.21 pp.</li>
+          <li>Plan the sample size in advance: 5% to 6% at 80% power needs about 8158 per arm; smaller tests overstate what they find.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.3 ===================== -->
+    <section class="lesson" id="peeking" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">5.3</span><h2>Peeking, stopping early and sequential testing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An experiment is planned for four weeks. A dashboard updates every day. On day nine the test shows p = 0.04. Should the team stop and ship? What goes wrong if "stop when the p-value dips under 0.05" is the rule?</div>
+
+        <h3 class="sec">Intuition: a wandering line will touch any fence eventually</h3>
+        <p>As users arrive, the test statistic <span class="tex">z</span> is not a steady climb toward the truth. If there is no effect at all, it is a random walk-like wander around zero. A single look at the planned end has a 5% chance of landing beyond ±1.96. But if you look many times and stop at the first look beyond ±1.96, you give the wandering line many chances to touch the fence. The more looks, the more likely some look succeeds by luck.</p>
+        <p>That is <b>peeking</b> (or optional stopping): the error rate of a test is guaranteed only for the procedure it was designed for. A fixed-sample test promises 5% false positives if you look <i>once</i>, at the planned sample size. Looking repeatedly and stopping at the first success is a different procedure with a different, larger, false-positive rate.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>How bad is it?</b> Simulate a large number of experiments in which there is truly no effect, look at equally spaced moments, and count how many ever show <span class="tex">|z|&gt;1.96</span>. From 40,000 simulated null experiments per row (illustrative, seed 7):</p>
+        <table class="tbl"><tr><th>Number of equally spaced looks</th><th>1</th><th>2</th><th>5</th><th>10</th><th>20</th></tr>
+          <tr><td>Share with a "significant" result at some look</td><td>5.1%</td><td>8.4%</td><td>14.1%</td><td>19.4%</td><td>25.2%</td></tr></table>
+        <p>With one look the rate is the promised 5% (the 0.1 is simulation noise). With five looks it is about 14%, nearly three times the advertised rate, and with twenty looks about one experiment in four "wins" with no effect at all. These match the classical figures for repeated significance testing.</p>
+        <div class="worked"><b>Worked example — one invented run</b>
+          <p>A four-week test is checked at five equally spaced looks. The z statistic at each look is 0.9, 1.4, 2.1, 1.7, 1.5. A peeker who stops at the first <span class="tex">|z|&gt;1.96</span> stops at look 3 and ships, although at the planned end z is only 1.5 (p = 0.13). The "win" at look 3 was a wiggle.</p>
+          <p>A <b>sequential design</b> would have set stricter boundaries in advance. With an O'Brien–Fleming-type rule for five looks, the boundaries are about 4.56, 3.23, 2.63, 2.28 and 2.04. Look 3 needs <span class="tex">|z|&gt;2.63</span>, and 2.1 does not qualify: the test continues, as it should. A Pocock rule uses one constant, about 2.41, at every look.</p>
+        </div>
+        <p><b>Alpha spending.</b> The idea that makes this rigorous is to treat the 5% as a budget spent over the looks. A boundary at look <span class="tex">j</span> is set so that the total probability of ever crossing, under no effect, is at most 5%. An O'Brien–Fleming-style spending function spends almost nothing early (cumulative 0.00001 at 20% of the data, 0.0019 at 40%, 0.0114 at 60%, 0.0284 at 80%) and saves the rest for the end, so early stops need overwhelming evidence. A Pocock-style function spends faster (0.0148, 0.0262, 0.0354, 0.0432, 0.05 at 20, 40, 60, 80, 100%), which stops earlier more often but gives a lower power at the end. Both are spending 5% in total; they differ in when.</p>
+        <div class="eq">\alpha(t)=2-2\,\Phi\!\left(\frac{z_{1-\alpha/2}}{\sqrt t}\right)\qquad(\text{O'Brien–Fleming type}),\qquad \Pr\bigl(\text{ever cross}\bigr)\le\alpha</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">t</span>: the information fraction, from 0 to 1, the share of the planned sample collected so far. <span class="tex">\alpha(t)</span>: the cumulative false-positive probability allowed to be spent by time <span class="tex">t</span>. <span class="tex">\Phi</span>: the standard normal distribution function. <span class="tex">z_{1-\alpha/2}</span>: 1.96 for <span class="tex">\alpha=0.05</span>. The boundaries themselves come from solving for the cutoffs whose crossing probabilities add up to the spending; this is a preview, and the lab below finds them by simulation.</div>
+        <p>Stopping early also has a cost in <i>accuracy</i>: an experiment that is stopped because the estimate looks large will tend to overstate the effect, because it stopped at a lucky high. Sequential designs say the false-positive rate is controlled; they do not remove this bias in the point estimate.</p>
+
+        <div data-lab="ds-ex-peek"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>With effect 0, 5 looks and "Stop when |z| &gt; 1.96", press Play. Watch the percentage of experiments that have crossed rise at each look. Does it reach about 14%?</li>
+          <li>Switch to Pocock, then to O'Brien–Fleming (same looks). The final share crossing should fall back to about 5%. Which rule makes the first look almost impossible to cross, and why?</li>
+          <li>Raise the true effect to 2.5 with O'Brien–Fleming. Compare the share crossing to the share you would get looking once at the end (the last line of the readout). You pay a price in power for being allowed to peek.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"I only looked, I did not act."</b> The error rate is about the <i>decision rule</i>. If you would have stopped given a good-looking result, you were peeking, even if this time you did not stop.</li>
+          <li><b>Sequential boundaries are not permission to look at any time.</b> The looks and the rule are fixed in advance. Unplanned extra looks again inflate the rate.</li>
+          <li><b>Extending a test that "almost" worked.</b> Adding more data after a disappointing result, and testing again, is peeking with one more look.</li>
+          <li><b>Always-valid p-values and Bayesian monitoring</b> exist for continuous looking, but they are different procedures with their own assumptions, not a way to keep the fixed-sample p-value.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Continuous monitoring</b> of model rollouts and online experiments: experimentation platforms use group-sequential or always-valid methods precisely so dashboards can be watched safely.</li>
+          <li><b>Training-run curves:</b> stopping a run, or choosing a checkpoint, at the best validation score is a form of peeking: the chosen score is optimistic, so a separate test set is needed (<a href="ml-evaluation.html#cross-validation">cross-validation</a>).</li>
+          <li><b>Early stopping of bad variants:</b> bandit-style allocation (see the reinforcement-learning module on bandits) trades off learning and earning without a fixed horizon.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why is the false-positive rate for five looks at |z| &gt; 1.96 about 14% instead of 5%?</summary><div class="ans">Each look has about a 5% chance of crossing, but the experiment is declared a success if <i>any</i> of the looks crosses. The looks are correlated (they share earlier data), so the rate is less than 5 × 5% = 25%, but it is still far above 5%: about 14% in the simulation.</div></details>
+        <details class="check"><summary>2. In the five-look O'Brien–Fleming design above, what would the first look need to show to stop the test?</summary><div class="ans"><span class="tex">|z|&gt;4.56</span>. The rule is very strict early, because the experiment has seen only a fifth of its data and a large z can be produced by chance.</div></details>
+        <details class="check"><summary>3. A team uses a sequential design with the right boundaries and stops at look 2 with a significant result. Is the effect estimate at stopping unbiased?</summary><div class="ans">No. The false-positive rate is controlled, but an experiment that stops early because the estimate crossed a boundary tends to have a high estimate, so the effect is typically overstated. Adjusted estimators and confidence intervals exist for sequential designs.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Looking repeatedly and stopping at the first |z| &gt; 1.96 inflates false positives: about 14% with 5 looks, 25% with 20.</li>
+          <li>Alpha spending treats 5% as a budget across looks; O'Brien–Fleming spends late (first boundary about 4.56 for 5 looks), Pocock spends evenly (about 2.41 each).</li>
+          <li>Plan the looks and the rule in advance; early stopping still tends to overstate the effect.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.4 ===================== -->
+    <section class="lesson" id="multiple-testing" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">5.4</span><h2>Multiple comparisons and the false discovery rate</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A test on the new checkout is run and the team inspects ten metrics: conversion, average basket, returns, speed, and so on. Six of them show p &lt; 0.05. Six wins out of ten, surely the change works? And what if the dashboard had two hundred metrics and segments?</div>
+
+        <h3 class="sec">Intuition: buy enough lottery tickets</h3>
+        <p>A p-value of 0.05 means a 1-in-20 fluke if nothing is going on. Run twenty tests on pure noise and you expect about one to light up. The fluke does not announce itself; it looks exactly like a real result. When you inspect many metrics, many segments (by country, device, new versus returning), or many model variants, the chance that <i>something</i> shows a significant result grows quickly. The question changes from "is this one result a fluke?" to "among all the results I am about to report, how many are flukes?"</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Family-wise error.</b> If you run <span class="tex">m</span> independent tests, all with no real effect, each at level <span class="tex">\alpha</span>, the probability of at least one false positive is</p>
+        <div class="eq">\mathrm{FWER}=1-(1-\alpha)^m</div>
+        <p>For <span class="tex">\alpha=0.05</span>: <span class="tex">m=10</span> gives <span class="tex">1-0.95^{10}=40.1\%</span>, and <span class="tex">m=20</span> gives <span class="tex">1-0.95^{20}=64.2\%</span>.</p>
+        <p><b>Bonferroni.</b> The simplest cure: demand <span class="tex">p\le\alpha/m</span> for each test. Then the chance of any false positive is at most <span class="tex">\alpha</span>, whatever the dependence between tests. The cost is power: for large <span class="tex">m</span> the threshold is tiny and real effects are missed.</p>
+        <p><b>False discovery rate.</b> Often the goal is not "no false positives at all" but "of the things I declare discoveries, a small fraction are false". That fraction is the <b>false discovery proportion</b>, and its expected value is the <b>false discovery rate</b> (FDR). The Benjamini–Hochberg (BH) procedure controls it: sort the p-values, compare the <span class="tex">i</span>-th smallest with the rising line <span class="tex">i\alpha/m</span>, find the <i>largest</i> <span class="tex">i</span> that sits at or below its line, and reject all hypotheses up to that rank.</p>
+        <div class="worked"><b>Worked example — ten metrics</b>
+          <p>The ten p-values, sorted, with <span class="tex">m=10</span> and <span class="tex">\alpha=0.05</span>:</p>
+          <table class="tbl"><tr><th>Rank <span class="tex">i</span></th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th></tr>
+            <tr><td>p-value</td><td>0.001</td><td>0.008</td><td>0.012</td><td>0.021</td><td>0.031</td><td>0.044</td><td>0.19</td><td>0.34</td><td>0.62</td><td>0.88</td></tr>
+            <tr><td>BH line <span class="tex">i\cdot0.05/10</span></td><td>0.005</td><td>0.010</td><td>0.015</td><td>0.020</td><td>0.025</td><td>0.030</td><td>0.035</td><td>0.040</td><td>0.045</td><td>0.050</td></tr>
+            <tr><td>p ≤ line?</td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td></tr></table>
+          <p><b>Uncorrected</b> (p &lt; 0.05): ranks 1 to 6, six "discoveries". <b>Bonferroni</b> threshold <span class="tex">0.05/10=0.005</span>: only rank 1 survives (0.001). <b>BH</b>: the largest rank with p at or below its line is 3 (0.012 ≤ 0.015; at rank 4, 0.021 &gt; 0.020), so ranks 1 to 3 are rejected: three discoveries. BH finds two more than Bonferroni, and rejects three fewer than the uncorrected rule.</p>
+          <p>Reading it: the six uncorrected wins would be expected to contain about <span class="tex">10\times0.05=0.5</span> flukes if all ten were null, and likely more flukes than that suggests when some are real; BH says that among its three discoveries the expected fraction of false ones is at most 5% (under independence or positive dependence of the tests).</p>
+        </div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">m</span>: number of tests. <span class="tex">p_{(i)}</span>: the <span class="tex">i</span>-th smallest p-value. <span class="tex">\alpha</span>: the target level (family-wise for Bonferroni, false discovery for BH). The BH rule is: reject ranks <span class="tex">1,\dots,k^\ast</span> where <span class="tex">k^\ast=\max\{i: p_{(i)}\le i\alpha/m\}</span>. If no rank qualifies, reject nothing.</div>
+        <p>Both methods answer a different question from the single-test p-value. Bonferroni controls the probability of making <i>any</i> mistake (strict, good when each false positive is costly). BH controls the <i>proportion</i> of mistakes among your discoveries (more powerful, good for screening many candidates).</p>
+
+        <div data-lab="ds-ex-multi"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the share of real effects to 0 and press "New draw" a few times, then "Average over 500 draws". The uncorrected rule makes about m·α false positives per draw; Bonferroni and BH make almost none. What does that cost when real effects are present?</li>
+          <li>Set m = 40 and the share of real effects to 25%. Compare how many real effects each rule finds. Which rule misses the most?</li>
+          <li>Make the real effects weak (z about 2). Does BH still beat Bonferroni? What do both do to the weak ones?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The garden of forking paths.</b> Even if you ran only one test in the end, if you chose it after looking at many cuts, the effective <span class="tex">m</span> is the number of cuts you <i>could</i> have run. Decide the primary metric and the segments before the test.</li>
+          <li><b>Correcting only the "interesting" results.</b> The family is everything you looked at and would have reported, not the few that stand out.</li>
+          <li><b>Using BH to say "this specific discovery is true with 95% chance".</b> FDR is an average property of the whole list; any single item may still be false.</li>
+          <li><b>Treating a failed correction as "no effect".</b> A metric that does not survive Bonferroni may still be real; the test just cannot tell it from noise.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Metric dashboards with hundreds of cuts:</b> an experimentation platform that slices every test by country, device and cohort must correct for the cuts or it will "find" segment effects constantly.</li>
+          <li><b>Model comparison and hyper-parameter search:</b> trying 200 configurations and reporting the best test score is a multiple-comparison problem: the best is optimistic (<a href="ml-evaluation.html#hyperparameter-tuning">hyper-parameter tuning</a>).</li>
+          <li><b>Genomics and feature screening:</b> selecting thousands of candidate features or genes uses BH so that the shortlist has a controlled share of false leads.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For 20 tests with no real effect, each at α = 0.05, what is the chance of at least one false positive, and what is the Bonferroni threshold?</summary><div class="ans"><span class="tex">1-0.95^{20}=64.2\%</span>. Bonferroni threshold <span class="tex">0.05/20=0.0025</span>; with it the chance of any false positive (independent tests) is <span class="tex">1-(1-0.0025)^{20}=4.88\%</span>.</div></details>
+        <details class="check"><summary>2. Four p-values: 0.003, 0.011, 0.020, 0.040. Which are rejected by Bonferroni and by BH at 0.05?</summary><div class="ans">Bonferroni threshold 0.05/4 = 0.0125: rejects 0.003 and 0.011 (two). BH lines are 0.0125, 0.025, 0.0375, 0.05; 0.040 ≤ 0.05 at rank 4, so the largest qualifying rank is 4 and BH rejects all four.</div></details>
+        <details class="check"><summary>3. Why is BH more powerful than Bonferroni, and what do you give up?</summary><div class="ans">BH's threshold rises with rank (<span class="tex">i\alpha/m</span> instead of a flat <span class="tex">\alpha/m</span>), so it rejects more. You give up the guarantee of no false positives at all: it controls only the expected share of false discoveries among the rejections.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>With <span class="tex">m</span> null tests at α, P(at least one false positive) = <span class="tex">1-(1-\alpha)^m</span>: 40.1% for 10, 64.2% for 20.</li>
+          <li>Bonferroni (<span class="tex">p\le\alpha/m</span>) controls the family-wise error; BH (largest <span class="tex">i</span> with <span class="tex">p_{(i)}\le i\alpha/m</span>) controls the false discovery rate. Ten-metric table: uncorrected 6, Bonferroni 1, BH 3.</li>
+          <li>Decide the metrics and segments in advance; the family includes everything you could have reported.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.5 ===================== -->
+    <section class="lesson" id="confounding" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">5.5</span><h2>Confounding and why correlation is not causation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An app's analyst notices that users who use the "smart reply" feature have 75% retention, and those who do not have 35%. Management wants to push the feature on everyone. Is smart reply worth 40 points of retention? No experiment was run, only logs. What else could explain the gap?</div>
+
+        <h3 class="sec">Intuition: a third thing pulling both strings</h3>
+        <p>Suppose the people who adopt smart reply are mostly the heavy, engaged "power users". Power users would have stayed anyway. The feature gets credit for what the kind of user did. The kind of user is a <b>confounder</b>: a variable that influences both who gets the treatment and the outcome, creating a statistical link between treatment and outcome even if the treatment does nothing.</p>
+        <p>We can draw this as a picture of causes: a <b>directed acyclic graph</b> (DAG). Each node is a variable; an arrow means "directly influences". Here, <i>power user</i> points to <i>uses feature</i> and to <i>retained</i>; <i>uses feature</i> points to <i>retained</i>. The route treatment ← power user → outcome is a "back door": information flows between treatment and outcome along it even if the direct arrow is removed. Correlation measures all the routes together; only the direct arrow is the effect we want.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Adjust by stratifying.</b> If we know the confounder, we can compare within its levels: power users who adopted with power users who did not, and the same for casual users. Within a level the confounder is held fixed, so it cannot explain a difference. Then average the within-level differences, weighting each level by its share of the population.</p>
+        <div class="worked"><b>Worked example — the smart-reply logs</b>
+          <p>Retained users out of all users, by group (counts are invented for the lesson):</p>
+          <table class="tbl"><tr><th>Group</th><th>Used the feature</th><th>Did not use</th><th>Difference</th></tr>
+            <tr><td>Power users (400)</td><td>270 of 300 = 90%</td><td>85 of 100 = 85%</td><td>+5 pp</td></tr>
+            <tr><td>Casual users (600)</td><td>30 of 100 = 30%</td><td>125 of 500 = 25%</td><td>+5 pp</td></tr>
+            <tr><td><b>All users (1000)</b></td><td><b>300 of 400 = 75%</b></td><td><b>210 of 600 = 35%</b></td><td><b>+40 pp</b></td></tr></table>
+          <p>The naive comparison is 75% − 35% = <b>40 pp</b>. Inside each type of user the gap is only <b>5 pp</b>. Stratified estimate: <span class="tex">0.4\times5+0.6\times5=5</span> pp. Most of the 40 points came from who adopted: 75% of the adopters are power users (300 of 400) against only 17% of the non-adopters (100 of 600).</p>
+          <p>The adjusted figure of 5 pp is a better estimate of the effect, <i>if</i> the assumptions below hold. It is not guaranteed to be right.</p>
+        </div>
+        <div class="eq">\hat\tau_{\text{adj}}=\sum_{z}\frac{n_z}{n}\Bigl(\bar Y_{z,T=1}-\bar Y_{z,T=0}\Bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">z</span>: a level of the confounder (power or casual). <span class="tex">n_z</span>: users at that level, <span class="tex">n</span>: all users. <span class="tex">\bar Y_{z,T=t}</span>: mean outcome (here retention rate) among users at level <span class="tex">z</span> with treatment status <span class="tex">t</span>. The weights <span class="tex">n_z/n</span> make the estimate describe the whole population.</div>
+        <p><b>What adjustment assumes.</b> (1) <i>No unmeasured confounding</i>: every common cause of treatment and outcome is in your adjustment set. If a hidden driver (motivation, income) remains, the estimate is still biased. (2) <i>Overlap</i>: within each level, both treated and untreated users exist, or there is nothing to compare. (3) <i>Right variables</i>: adjust for things that happen <i>before</i> the treatment. Adjusting for a result of the treatment (a "mediator", for example "number of replies sent") can remove part of the effect you want; adjusting for something caused by both treatment and outcome (a "collider") can even create a spurious link. The DAG is how you decide, which is why it is worth drawing.</p>
+        <p>Randomisation (lesson 5.1) is the strongest fix: a coin flip has no arrow from the confounder into the treatment, so the back door is closed for <i>every</i> confounder, measured or not. Observational adjustment is a weaker substitute that works only as well as the confounder list.</p>
+
+        <div data-lab="ds-ex-confound"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the defaults (effect 0.05, s = 0.75) and watch both lines. The red naive line settles far above the true effect; the green stratified line settles near it. How far apart are they at the end?</li>
+          <li>Slide the confounding strength s down toward 0 (random assignment). Watch the red line come down to meet the green one. What does that say about randomisation?</li>
+          <li>Set the true effect to 0 and s to 1. The naive line still reports a large "effect". Describe in one sentence what the feature is really doing.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Simpson's paradox: the sign can flip.</b> Suppose treated and untreated users are split across two groups. Group A: treated 8 of 10 succeed (80%) against 70 of 100 untreated (70%). Group B: treated 30 of 100 (30%) against 2 of 10 untreated (20%). Treatment helps in both groups, yet overall treated users succeed 38 of 110 = 34.5% against 72 of 110 = 65.5% for untreated, because the treated mostly sit in the hard group B. Looking only at the pooled table gives the wrong answer; the right answer depends on the causal story, which is why the DAG, not the arithmetic, decides whether to pool or split.</li>
+          <li><b>"Controlling for everything."</b> More variables are not always better; the wrong ones (mediators, colliders) introduce bias.</li>
+          <li><b>Believing adjustment fixes unmeasured confounding.</b> It cannot. Say which confounders you did not measure.</li>
+          <li><b>Correlation tells you nothing?</b> No: correlation is evidence that a causal link or a common cause exists. It just cannot tell you which.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Observational studies on logged data:</b> measuring a feature's or model's impact from usage logs alone, where users chose or were targeted, needs adjustment and often propensity-score methods built from this idea.</li>
+          <li><b>Spurious features in models:</b> a classifier that predicts disease from the hospital's scanner tag, or a wolf from snow in the background, is exploiting a confounder that will not hold in deployment.</li>
+          <li><b>Off-policy evaluation:</b> estimating how a new recommendation policy would have done from data logged under an old policy corrects for the old policy's targeting, the same confounding problem.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the smart-reply table, what share of adopters are power users, and of non-adopters?</summary><div class="ans">Adopters: 300 of 400 = 75%. Non-adopters: 100 of 600 = 16.7%. The groups are very different in kind, so their retention gap is mostly about who they are.</div></details>
+        <details class="check"><summary>2. Name two assumptions the stratified estimate of 5 pp relies on.</summary><div class="ans">No unmeasured confounding beyond power versus casual (for example, motivation within a group), and overlap: both adopters and non-adopters exist in each stratum. Also that the adjustment variable was determined before the adoption, not as a result of it.</div></details>
+        <details class="check"><summary>3. Why does randomising the treatment remove confounding without knowing what the confounders are?</summary><div class="ans">Because the coin flip is independent of every characteristic of the user, there is no arrow from any confounder into the treatment. The back door is closed for all variables at once, measured or not, so the groups differ only by chance and by the treatment.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A confounder influences both treatment and outcome and creates a link even when the treatment does nothing. DAGs draw the causal story.</li>
+          <li>Stratify on the confounder and average the within-group differences: naive +40 pp became +5 pp.</li>
+          <li>Adjustment needs no unmeasured confounding, overlap, and pre-treatment variables; randomisation removes the problem outright.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 5.6 ===================== -->
+    <section class="lesson" id="quasi-experiments" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">5.6</span><h2>Quasi-experiments: difference-in-differences and natural experiments</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A delivery service launches free delivery in one city, but not in a neighbouring one, and nobody randomised which. Weekly orders in the launch city rose from 100 to 130 (in hundreds). Did free delivery cause an increase of 30? And what, if anything, can we conclude when randomising was never possible?</div>
+
+        <h3 class="sec">Intuition: subtract what would have happened anyway</h3>
+        <p>Two easy comparisons are both wrong. <b>Before versus after</b> in the launch city (130 − 100 = 30) includes everything that changed with time: a holiday season, a general growth trend, weather. <b>Treated versus untreated</b> after the launch (130 versus the neighbour's 95) includes every permanent difference between the cities: size, wealth, habits.</p>
+        <p>The <b>difference-in-differences</b> design uses both comparisons together. The neighbouring city, which did not launch, shows what time alone did. Subtract that change from the launch city's change. What is left is the part that the launch city changed <i>more than</i> the comparison city, which we attribute to the launch under one important assumption.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — free delivery</b>
+          <table class="tbl"><tr><th>Mean weekly orders (hundreds)</th><th>Before</th><th>After</th><th>Change</th></tr>
+            <tr><td>Launch city (treated)</td><td>100</td><td>130</td><td>+30</td></tr>
+            <tr><td>Neighbouring city (control)</td><td>80</td><td>95</td><td>+15</td></tr>
+            <tr><td>Difference between cities</td><td>20</td><td>35</td><td>+15</td></tr></table>
+          <p>The control city grew by 15 with no launch, so growth explains 15 of the treated city's 30. The difference-in-differences estimate is <span class="tex">(130-100)-(95-80)=30-15=\mathbf{15}</span> (hundred orders a week). Read it row-wise (change in the treated minus change in the control) or column-wise (the gap between cities after, 35, minus the gap before, 20): the answer is the same, 15. Both naive numbers were wrong, 30 and 35.</p>
+        </div>
+        <div class="eq">\hat\tau_{\mathrm{DiD}}=\bigl(\bar Y_{T,\text{post}}-\bar Y_{T,\text{pre}}\bigr)-\bigl(\bar Y_{C,\text{post}}-\bar Y_{C,\text{pre}}\bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">T</span> and <span class="tex">C</span>: treated and control units. <span class="tex">\bar Y_{g,\text{pre}},\bar Y_{g,\text{post}}</span>: mean outcome of group <span class="tex">g</span> before and after the intervention date. The estimate is the extra change in the treated group.</div>
+        <p><b>The assumption that does all the work: parallel trends.</b> DiD is valid if, <i>in the absence of the intervention</i>, the treated group's outcome would have changed by the same amount as the control's. The gap between the groups may be large (20 here) but it must stay constant over time. This is untestable after the fact, because we never see the treated city without the launch. What we can do is look at <b>several periods before</b> the launch: if the two lines moved together then, parallel trends is plausible; if they were already diverging, DiD is suspect. The lab draws the dashed "counterfactual" line the assumption implies.</p>
+        <p>A second assumption is <b>no anticipation and no spillover</b>: people do not change behaviour before the launch, and the launch does not change the control city (for example by customers crossing the border). The groups should also be stable in composition across the two periods.</p>
+        <p><b>Other designs when you cannot randomise.</b></p>
+        <ul>
+          <li><b>Interrupted time series.</b> There is only one group, observed for many periods before and after an intervention. Fit the pre-trend, project it forward as the counterfactual, and read the effect as the jump or slope change. The assumption is that the pre-trend would have continued and that nothing else changed on the same date. With no control group, any other event at that moment is mixed into the effect.</li>
+          <li><b>Natural experiments.</b> Something outside anyone's control, such as a lottery, a policy cut-off date, a server outage or a rule that applies from a threshold, assigns treatment in a way that is "as good as random". They are valuable but rare, and the case that it is as good as random must be argued from how the assignment worked, not assumed.</li>
+        </ul>
+        <p>All of these are weaker than a randomised experiment. They identify a causal effect only <i>given</i> assumptions about what would have happened otherwise. State them, show the checks you can (pre-period trends, other controls), and say what would have to be true for the conclusion to fail.</p>
+
+        <div data-lab="ds-ex-did"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults, wait until all twelve weeks are in. The DiD readout should land near the true effect (6), while the naive before/after number is much larger. Where does the extra come from?</li>
+          <li>Change the shared trend to <span class="tex">0</span> and then to <span class="tex">2*sin(t/2)</span>. As long as both groups share it, DiD stays close to the true effect, but the naive numbers move. Why?</li>
+          <li>Set "extra trend in treated group" to 0.5. The two lines now drift apart even before the policy. The readout says how far DiD is off. What would you look at in real data to spot this?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Treating DiD as a randomised result.</b> It is valid only under parallel trends; a confident-looking number can still be biased.</li>
+          <li><b>Choosing a control group that was picked <i>because</i> it looks similar after the fact.</b> That can leak the outcome into the design. Choose controls from what was known before.</li>
+          <li><b>Regression to the mean.</b> If the treated unit was chosen because it was doing unusually badly, it would have improved anyway, which DiD attributes to the policy. Check how units were selected.</li>
+          <li><b>Ignoring noise.</b> A DiD with few units and weeks has wide uncertainty; report an interval, not just 15.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Rollouts without randomisation:</b> a feature, a model or a policy launched in one region or on one platform first, evaluated against regions not yet launched.</li>
+          <li><b>Policy evaluation:</b> the effect of a content-moderation rule, a pricing change or a regulation (for example on how an AI product is used) is often estimated by DiD or interrupted time series.</li>
+          <li><b>Staggered launches</b> let a platform compare early and late adopters, an idea that modern DiD estimators extend carefully.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Treated group: 50 before, 58 after. Control group: 40 before, 44 after. Compute the DiD estimate.</summary><div class="ans"><span class="tex">(58-50)-(44-40)=8-4=4</span>.</div></details>
+        <details class="check"><summary>2. If the treated group's outcome was already growing 2 units per period faster than the control's, would DiD over- or under-state the effect?</summary><div class="ans">It would overstate it, because the extra growth that would have happened anyway is counted as the intervention's effect. The estimate is biased upward by about 2 units per period of elapsed time. This is a violation of parallel trends.</div></details>
+        <details class="check"><summary>3. What can you check in the data to judge whether parallel trends is plausible, and what can you not check?</summary><div class="ans">You can plot the two groups over several periods before the intervention and see whether they moved together. You cannot check the assumption for the post period, because the treated group's no-intervention outcome is never observed.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>DiD = (treated change) − (control change): 30 − 15 = 15 in the table. Before/after (30) and after-only (35) were both wrong.</li>
+          <li>It needs parallel trends, no anticipation and no spillover; check pre-period trends, but the post-period counterfactual cannot be checked.</li>
+          <li>Interrupted time series and natural experiments help when randomising is impossible, but they identify an effect only under stated assumptions.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 6 (<a href="ds-features.html">Feature engineering &amp; data pipelines</a>) turns raw records into model-ready features, and the leakage traps there are the modelling cousin of the peeking and confounding traps in this module.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

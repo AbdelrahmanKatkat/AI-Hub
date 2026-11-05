@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 · Predictive modelling in practice · Data Science</title>
+<meta name="description" content="Train, validation and test splits, cross-validation, baselines, choosing metrics, tuning without fooling yourself, and explaining models: the practice of honest predictive modelling, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-modelling.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="7">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 7</div>
+    <div class="hero">
+      <div class="big" style="background:#39c5cf26">7</div>
+      <div style="flex:1">
+        <h1>Module 7 · Predictive modelling in practice</h1>
+        <p>Anyone can fit a model that looks good on the data it has seen. The skill is in finding out, honestly, how it will do on data it has not seen, what it must beat, which number to judge it by, how to tune it without cheating, and what it has actually learned. These six lessons are the habits that separate a trustworthy model from a flattering one.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: <a href="ml-foundations.html">ML foundations</a>, <a href="math-statistics.html">statistics</a></span><span class="chip">Pipeline stage: test and model</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+    <div class="callout"><b>How this module relates to Machine Learning.</b> The <a href="ml-evaluation.html">ML evaluation module</a> explains the maths of each metric and the theory of validation. Here we stay on the practitioner's side: what to do on a real project, in what order, and which mistakes cost the most. Where a deeper treatment exists we link to it, for example <a href="ml-evaluation.html#metrics-classification">classification metrics</a>, <a href="ml-evaluation.html#cross-validation">cross-validation</a> and <a href="ml-evaluation.html#hyperparameter-tuning">hyperparameter tuning</a>. Leakage, the usual reason a score is too good to be true, is covered in <a href="ds-features.html#leakage">Module 6</a>.</div>
+
+    <!-- ===================== 7.1 ===================== -->
+    <section class="lesson" id="split-validate" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">7.1</span><h2>Train, validation and test splits</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A subscription company wants to predict which customers will cancel next month, so it can phone the likely ones. A model is trained on every customer record it has and scores 99% on those same records. The head of retention asks: "So how many cancellations will it catch next month?" What can you honestly answer, and which part of the data must you hide from the model to answer it?</div>
+
+        <h3 class="sec">Intuition: you cannot grade a student with the exam they studied</h3>
+        <p>A model can memorise. If you score it on the rows it learned from, a model that has simply copied the answers looks perfect, and tells you nothing about a new customer. The score that matters is the one on rows the model has never seen, standing in for next month's customers.</p>
+        <p>So we hold some rows back before training. In practice one hold-back is not enough, because we need rows for two different jobs: choosing between ideas (this model or that one, this setting or that one) and giving a final, honest grade. If we use the same rows for both jobs, the grade is no longer honest, for a reason lesson 7.5 makes concrete. Hence three sets:</p>
+        <ul>
+          <li><b>Train</b>: the model learns its parameters from these rows.</li>
+          <li><b>Validation</b>: you compare models and settings on these rows, as often as you like.</li>
+          <li><b>Test</b>: touched <b>once</b>, at the very end, to report the final number. It is the exam, sealed until the day.</li>
+        </ul>
+        <p>Where this sits in the data science loop: this is the "test and model" stage, and it must be decided <i>before</i> exploring features, because any step that looks at all the rows (scaling, imputing, choosing features) can leak information from the held-out rows into training.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: a small printed split.</b> Ten customers, ordered by sign-up month, with 1 meaning "cancelled the next month". We keep time order and take the oldest six rows to train, the next two to validate and the newest two to test (a 60 / 20 / 20 split):</p>
+        <div class="worked"><b>Worked example, a time-based split of 10 rows</b>
+          <table class="tbl"><thead><tr><th>row</th><th>sign-up month</th><th>cancelled</th><th>set</th></tr></thead><tbody>
+            <tr><td>1</td><td>Jan</td><td>0</td><td>train</td></tr><tr><td>2</td><td>Feb</td><td>0</td><td>train</td></tr><tr><td>3</td><td>Mar</td><td>1</td><td>train</td></tr><tr><td>4</td><td>Apr</td><td>0</td><td>train</td></tr><tr><td>5</td><td>May</td><td>0</td><td>train</td></tr><tr><td>6</td><td>Jun</td><td>0</td><td>train</td></tr>
+            <tr><td>7</td><td>Jul</td><td>1</td><td>validation</td></tr><tr><td>8</td><td>Aug</td><td>0</td><td>validation</td></tr>
+            <tr><td>9</td><td>Sep</td><td>1</td><td>test</td></tr><tr><td>10</td><td>Oct</td><td>1</td><td>test</td></tr></tbody></table>
+          <p>Cancellation rate in train: 1 of 6 = <span class="tex">0.1667</span>. In validation: 1 of 2 = 0.50. In test: 2 of 2 = 1.00. The rate drifts upward over time. A model that learned "about one customer in six cancels" will be badly surprised by the test months, and that surprise is exactly what the test set exists to reveal. If we had shuffled randomly instead, the future would have leaked into training and the test would look rosier than reality.</p>
+        </div>
+        <p><b>Step 2: why random splits can mislead when positives are rare.</b> Take 100 rows with 10 positives. A random 60 / 20 / 20 split puts 20 rows in the test set. How many positives does it hold? The expected number is <span class="tex">20\times0.10=2</span>, but chance moves it. Counting combinations (the hypergeometric distribution, see <a href="math-probability.html">probability</a>):</p>
+        <div class="worked"><b>Worked example, chance in a small test set</b>
+          <p>Probability the 20 test rows contain <b>no</b> positives at all: <span class="tex">\binom{90}{20}/\binom{100}{20}=0.0951</span>, about 9.5%. Probability of exactly one positive: <span class="tex">0.2679</span>. So in roughly 36% of random splits the test set holds one positive or none, and recall measured on it is either meaningless or a coin toss between 0% and 100%.</p>
+          <p>A <b>stratified</b> split avoids this: split the positives and the negatives separately in the same 60 / 20 / 20 proportions. Ten positives become 6 / 2 / 2 and the ninety negatives become 54 / 18 / 18, every time, in every set.</p>
+        </div>
+
+        <p><b>Formal view.</b> Let the full labelled data be <span class="tex">D</span> with <span class="tex">n</span> rows. Partition it into disjoint sets:</p>
+        <div class="eq">D = D_{\text{train}} \cup D_{\text{val}} \cup D_{\text{test}}, \qquad D_{\text{train}}\cap D_{\text{val}}=D_{\text{val}}\cap D_{\text{test}}=D_{\text{train}}\cap D_{\text{test}}=\varnothing</div>
+        <div class="eq">\hat\theta=\arg\min_\theta \sum_{(x,y)\in D_{\text{train}}}\ell\bigl(f_\theta(x),y\bigr), \qquad \widehat{\text{err}}_{\text{test}}=\frac{1}{|D_{\text{test}}|}\sum_{(x,y)\in D_{\text{test}}}\ell\bigl(f_{\hat\theta}(x),y\bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">D</span>: all labelled rows. <span class="tex">D_{\text{train}},D_{\text{val}},D_{\text{test}}</span>: the three disjoint sets. <span class="tex">\theta</span>: the model's parameters; <span class="tex">\hat\theta</span>: the values found by training. <span class="tex">f_\theta(x)</span>: the prediction for input <span class="tex">x</span>. <span class="tex">\ell</span>: the loss on one row (the cost of one prediction). <span class="tex">|D_{\text{test}}|</span>: number of rows in the test set. <span class="tex">\widehat{\text{err}}_{\text{test}}</span>: the average loss on the test set, our estimate of future error. Typical shares: 60 / 20 / 20, or 80 / 10 / 10 for large data.</div>
+        <p><b>Which split?</b> Use a <b>random</b> split when rows are independent and the future will look like the past. Use a <b>stratified</b> split when a class is rare, or when you must keep a group's share equal. Use a <b>time-based</b> split whenever time matters (sales, churn, sensors, fraud): train on the past, test on the future, as the model will really be used. Use a <b>group</b> split when several rows belong to one person or machine: all rows of a customer must land in the same set, otherwise the model recognises the customer rather than the pattern.</p>
+
+        <div data-lab="ds-md-split"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Choose "random" and watch several reshuffles. Read the list of test-set positive counts. How much does it jump around, and what would that do to a recall figure measured on the test set?</li>
+          <li>Switch to "stratified" and watch the same counts. Then switch to "time-based" and compare the positive rate of the training and test boxes: which one drifts, and why does shuffling hide that drift?</li>
+          <li>Lower the train share to 40% and raise validation to 30%. What do you gain (a more stable validation number) and what do you lose (less data to learn from)?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Peeking at the test set.</b> Every time you look at the test score and then change something, the test set becomes part of the tuning. Look once. The worked numbers in lesson 7.5 show how large the effect is.</li>
+          <li><b>Preprocessing before splitting.</b> Computing a mean, a scaler or a feature selection on all rows lets test information into training. Split first, then fit the preprocessing on the training rows only (see <a href="ds-features.html#leakage">leakage</a>).</li>
+          <li><b>Duplicates and near-duplicates.</b> The same customer, image or sentence appearing in train and test makes the test score optimistic. Deduplicate and split by group.</li>
+          <li><b>Random split on time data.</b> It answers "how well can I interpolate between known days", not "how well can I forecast".</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every supervised project</b> from a spreadsheet classifier to a language model has a held-out evaluation set that training never touches.</li>
+          <li><b>Benchmarks</b> keep test labels private so that no one can tune on them; a public leaderboard slowly turns its own test set into a tuning set.</li>
+          <li><b>Large language models</b> need their test data to be absent from the training text, a leakage problem on web scale (<a href="ml-evaluation.html">ML evaluation</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A dataset has 1000 rows. You split 70 / 15 / 15. How many rows are in each set?</summary><div class="ans">700 train, 150 validation, 150 test (700 + 150 + 150 = 1000).</div></details>
+        <details class="check"><summary>2. Why can a random 20-row test set from 100 rows with 10 positives hold no positives, and how likely is it?</summary><div class="ans">Each row has only a 10% chance of being positive, so a sample of 20 can easily miss them all. The probability is <span class="tex">\binom{90}{20}/\binom{100}{20}=0.0951</span>, about 9.5%. A stratified split would put exactly 2 positives in the test set every time.</div></details>
+        <details class="check"><summary>3. You are predicting next week's demand from three years of daily sales. Should you split randomly? What would you do instead?</summary><div class="ans">No. A random split puts days from the future into training, so the model is judged on days sandwiched between known days, which is easier than forecasting. Train on the earliest period, validate on the next, and test on the most recent, preserving time order.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Score on rows the model has not seen: train to fit, validation to choose, test once to report.</li>
+          <li>Rare classes need stratified splits; time data needs time-based splits; repeated entities need group splits.</li>
+          <li>Split first, then preprocess using only the training rows.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.2 ===================== -->
+    <section class="lesson" id="cross-validation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">7.2</span><h2>Cross-validation and honest error estimates</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A hospital has only 10 patients' stay lengths to learn from. Holding back 2 for validation leaves a noisy 2-row exam, and the number you get depends heavily on which 2 you happened to pick. Can every row take a turn as the exam, so that we use all the data both to learn and to be graded, without ever grading a model on rows it trained on?</div>
+
+        <h3 class="sec">Intuition: rotate the exam</h3>
+        <p>With little data a single validation set is a lottery. <b>Cross-validation</b> fixes it by splitting the data into <span class="tex">k</span> equal parts called <b>folds</b>. In round 1, fold 1 is the exam and the other folds are the textbook. In round 2, fold 2 is the exam. After <span class="tex">k</span> rounds every row has been in an exam exactly once, and we average the <span class="tex">k</span> scores. Each individual score is honest, because the exam rows were never in training for that round.</p>
+        <p>It costs <span class="tex">k</span> trainings instead of one, and it gives something a single split cannot: the <b>spread</b> of the <span class="tex">k</span> scores, a hint of how much the estimate itself could wobble.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>We use a deliberately trivial model so the arithmetic is visible: it predicts the average of its training targets. Ten stay lengths in days, five folds of two rows (rows 1-2, 3-4, 5-6, 7-8, 9-10):</p>
+        <div class="worked"><b>Worked example, 5-fold cross-validation, error = mean absolute error</b>
+          <table class="tbl"><thead><tr><th>row</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th></tr></thead><tbody>
+            <tr><td>stay (days)</td><td>12</td><td>15</td><td>11</td><td>18</td><td>14</td><td>20</td><td>13</td><td>17</td><td>16</td><td>19</td></tr>
+            <tr><td>fold</td><td>1</td><td>1</td><td>2</td><td>2</td><td>3</td><td>3</td><td>4</td><td>4</td><td>5</td><td>5</td></tr></tbody></table>
+          <p>The total is 155. Fold 1 held out: the other eight rows sum to 128, so the model predicts <span class="tex">128/8=16</span>. Errors on rows 1 and 2: <span class="tex">|12-16|=4</span> and <span class="tex">|15-16|=1</span>, mean <b>2.5</b>.</p>
+          <table class="tbl"><thead><tr><th>fold</th><th>held-out rows</th><th>training mean</th><th>absolute errors</th><th>fold MAE</th></tr></thead><tbody>
+            <tr><td>1</td><td>12, 15</td><td>16.000</td><td>4.000, 1.000</td><td>2.5</td></tr>
+            <tr><td>2</td><td>11, 18</td><td>15.750</td><td>4.750, 2.250</td><td>3.5</td></tr>
+            <tr><td>3</td><td>14, 20</td><td>15.125</td><td>1.125, 4.875</td><td>3.0</td></tr>
+            <tr><td>4</td><td>13, 17</td><td>15.625</td><td>2.625, 1.375</td><td>2.0</td></tr>
+            <tr><td>5</td><td>16, 19</td><td>15.000</td><td>1.000, 4.000</td><td>2.5</td></tr></tbody></table>
+          <p>Cross-validated MAE: <span class="tex">(2.5+3.5+3.0+2.0+2.5)/5=2.70</span> days. The five folds disagree: their sample standard deviation is <span class="tex">0.570</span>, so a rough standard error of the average is <span class="tex">0.570/\sqrt5=0.255</span> days. We should write "2.70 ± about 0.26 days (n = 10 rows)", not "2.70". That ± is the honest part. (The folds are not fully independent, since they share training rows, so even this is a little too optimistic.)</p>
+          <p><b>Leave-one-out</b> (<span class="tex">k=n=10</span>): ten rounds, each holding out one row. Errors: 3.889, 0.556, 5.000, 2.778, 1.667, 5.000, 2.778, 1.667, 0.556, 3.889, mean <b>2.778</b>. It uses the most training data per round but costs <span class="tex">n</span> fits, and its fold scores are highly correlated.</p>
+        </div>
+        <p><b>Formal definition.</b> Assign each row a fold <span class="tex">\kappa(i)\in\{1,\dots,k\}</span>. Let <span class="tex">\hat f^{-j}</span> be the model trained on all rows <i>not</i> in fold <span class="tex">j</span>. Then:</p>
+        <div class="eq">\text{CV}_k=\frac1k\sum_{j=1}^{k}\underbrace{\frac{1}{|F_j|}\sum_{i\in F_j}\ell\bigl(\hat f^{-j}(x_i),\,y_i\bigr)}_{\text{score of fold }j},\qquad \widehat{\text{SE}}=\frac{s}{\sqrt k},\quad s^2=\frac{1}{k-1}\sum_{j}(\text{score}_j-\text{CV}_k)^2</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">k</span>: number of folds. <span class="tex">F_j</span>: the set of rows in fold <span class="tex">j</span>, with <span class="tex">|F_j|</span> rows. <span class="tex">\hat f^{-j}</span>: the model trained without fold <span class="tex">j</span>. <span class="tex">\ell</span>: loss on one row. <span class="tex">\text{CV}_k</span>: the cross-validated error. <span class="tex">s</span>: sample standard deviation of the fold scores. <span class="tex">\widehat{\text{SE}}</span>: rough standard error of <span class="tex">\text{CV}_k</span>.</div>
+        <p><b>Choosing k.</b> Small <span class="tex">k</span> (2 or 3) trains on little data, so scores are pessimistic. Large <span class="tex">k</span> trains on nearly all data but is costly and its folds are strongly correlated. Five or ten is the usual compromise. For classification use <b>stratified</b> folds so each fold keeps the class mix; for time data use rolling windows that always train on the past (<a href="ds-timeseries.html">Module 8</a>); for repeated entities use group folds.</p>
+        <p><b>When you also tune: nested cross-validation.</b> If you use CV to choose a setting and then quote the best CV score, that score is biased upward (lesson 7.5). The honest version nests two loops: an <i>outer</i> loop of <span class="tex">k_o</span> folds provides the test fold; inside each outer round, an <i>inner</i> loop of <span class="tex">k_i</span> folds chooses the setting using only the outer training rows. The outer scores are untouched by the tuning. Cost with <span class="tex">c</span> settings: <span class="tex">k_o\,(c\,k_i+1)</span> fits. With 5 outer folds, 3 inner folds and 4 settings that is <span class="tex">5\times(4\times3+1)=65</span> trainings.</p>
+
+        <div data-lab="ds-md-kfold"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Let the lab run one full cycle with k = 5 and match the printed table: the orange bars should reproduce 2.5, 3.5, 3.0, 2.0, 2.5 and a mean of 2.70.</li>
+          <li>Change the values (for example, make row 6 equal to 60) and watch the fold that contains it. Which fold's error jumps, and what happens to the spread?</li>
+          <li>Set k = 10 (leave-one-out) and then k = 2. How do the number of bars, the mean and the spread change?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Preprocessing outside the loop.</b> Scaling or imputing on all rows before cross-validating leaks the held-out fold into each round. Put preprocessing <i>inside</i> every round (a pipeline, <a href="ds-features.html#pipelines">Module 6</a>).</li>
+          <li><b>Quoting the average without the spread.</b> "CV accuracy 0.91" and "0.91, with fold scores from 0.78 to 0.99" are different facts.</li>
+          <li><b>Reporting the best CV score after a large search as if it were a test score.</b> It is the maximum of many noisy numbers; use nested CV or a final untouched test set.</li>
+          <li><b>Shuffled folds on grouped or time data.</b> Rows from one patient in both train and held-out folds, or the future inside the training folds, make every fold flattering.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model selection on small data:</b> medical, scientific and tabular problems with hundreds of rows almost always use 5- or 10-fold CV.</li>
+          <li><b>AutoML tools</b> run CV inside every search step and report the fold spread.</li>
+          <li><b>Deep learning</b> rarely cross-validates large models because one training run is too costly; it relies on a single large validation split.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. You run 10-fold cross-validation on 1000 rows. How many models are trained and how many rows does each train on?</summary><div class="ans">Ten models, each trained on 900 rows and scored on the remaining 100. Every row is scored exactly once.</div></details>
+        <details class="check"><summary>2. Five fold scores are 0.80, 0.84, 0.82, 0.78, 0.86. Report the CV estimate and its rough standard error.</summary><div class="ans">Mean = 0.82. Deviations are −0.02, 0.02, 0, −0.04, 0.04; squares sum to 0.004; <span class="tex">s=\sqrt{0.004/4}=0.0316</span>; <span class="tex">\widehat{SE}=0.0316/\sqrt5=0.0141</span>. Report 0.82 ± about 0.014.</div></details>
+        <details class="check"><summary>3. You tune with 5 outer folds, 3 inner folds and 6 candidate settings. How many model fits are needed?</summary><div class="ans"><span class="tex">5\times(6\times3+1)=95</span>: for each outer fold, 6 settings times 3 inner folds, plus one final refit on the outer training rows.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>k-fold CV lets every row be an exam row once; always report the average <i>and</i> the spread.</li>
+          <li>Preprocessing and tuning belong inside the loop; use nested CV when you also pick settings.</li>
+          <li>Match the fold scheme to the data: stratified for classes, groups for repeated entities, rolling windows for time.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.3 ===================== -->
+    <section class="lesson" id="baselines" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">7.3</span><h2>Baselines before complex models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A clinic builds a model to flag the 6% of patients who have a condition, and proudly reports "94% accuracy". A colleague replies: "A rule that says everyone is healthy also scores 94%." Is 94% good? And for a house-price model with an error of 7 thousand, how do you know whether 7 is good or bad before you have anything to compare it with?</div>
+
+        <h3 class="sec">Intuition: a score means nothing alone</h3>
+        <p>A number such as "accuracy 94%" or "error 7" is only meaningful next to the score of something dumb and cheap. That dumb thing is a <b>baseline</b>. If your clever model cannot beat the baseline by a margin that matters, the clever model has added cost and risk and no value. Baselines also catch bugs: a model that scores below the baseline, or far above what seems possible, usually has a mistake in the pipeline, not a breakthrough.</p>
+        <p>Three baselines to build, in order of effort:</p>
+        <ol>
+          <li><b>Constant baseline.</b> For regression, predict the training mean (or median) for every row. For classification, predict the most common training class. It uses no features at all.</li>
+          <li><b>Rule or simple-heuristic baseline.</b> "Predict next week = this week", "flag any transaction above 5000", or whatever the business does today. Beating the current process is the real goal.</li>
+          <li><b>Simple model baseline.</b> A linear or logistic regression, or a small tree (<a href="ml-linear.html">linear models</a>), with sensible features. It is fast, hard to get badly wrong, and often within a few points of fancier models.</li>
+        </ol>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Classification under imbalance.</b> Take 1000 patients, 60 of whom are sick. The "everyone is healthy" baseline is right on 940 of them:</p>
+        <div class="worked"><b>Worked example, a baseline that beats a headline number</b>
+          <p>Baseline accuracy <span class="tex">=940/1000=0.94</span>. Recall (the share of sick patients found) <span class="tex">=0/60=0</span>. It is 94% accurate and completely useless.</p>
+          <p>A real model that catches 40 sick patients with 10 false alarms has accuracy <span class="tex">(40+930)/1000=0.97</span>. That is only three points above the baseline, yet it is the model that does the job. Accuracy hid it; recall (0 versus 0.667) shows it. The metric lesson (7.4) works through this table in full.</p>
+        </div>
+        <p><b>Regression and a learning curve.</b> Eight houses, with prices in thousands. We train on the first six and test on the last two, which are bigger houses:</p>
+        <div class="worked"><b>Worked example, mean baseline versus a line</b>
+          <table class="tbl"><thead><tr><th>size m²</th><th>50</th><th>60</th><th>70</th><th>80</th><th>90</th><th>100</th><th>110</th><th>120</th></tr></thead><tbody>
+            <tr><td>price</td><td>150</td><td>170</td><td>200</td><td>210</td><td>250</td><td>260</td><td>290</td><td>300</td></tr>
+            <tr><td>set</td><td>train</td><td>train</td><td>train</td><td>train</td><td>train</td><td>train</td><td>test</td><td>test</td></tr></tbody></table>
+          <p>Mean baseline: the training mean price is <span class="tex">1240/6=206.67</span>. Test errors: <span class="tex">290-206.67=83.33</span> and <span class="tex">300-206.67=93.33</span>. RMSE <span class="tex">=\sqrt{(83.33^2+93.33^2)/2}=88.47</span>, MAE <span class="tex">=88.33</span>.</p>
+          <p>Linear baseline fitted by least squares on the six training rows: price <span class="tex">=35.24+2.2857\times\text{size}</span>. Predictions for 110 and 120 m² are 286.67 and 309.52, errors <span class="tex">3.33</span> and <span class="tex">-9.52</span>, RMSE <b>7.13</b>, MAE 6.43. The line cuts the error from 88.47 to 7.13, a twelve-fold improvement. Any fancier model has to beat <b>7.13</b>, not 88.47. (n = 2 test rows is a very small test; the numbers illustrate the method, they do not prove a gap.)</p>
+        </div>
+        <p><b>Formal view.</b> Judge a model by its improvement over a baseline, in the same metric on the same held-out rows:</p>
+        <div class="eq">\text{skill}=1-\frac{\text{err}(\text{model})}{\text{err}(\text{baseline})}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\text{err}(\cdot)</span>: the chosen error metric (RMSE, MAE, 1 − accuracy, ...) on held-out rows. <span class="tex">\text{skill}=0</span> means no better than the baseline; <span class="tex">1</span> would be a perfect model; negative means worse. In the house example, skill <span class="tex">=1-7.13/88.47=0.919</span>. For a regression baseline that predicts the mean, the RMSE equals the standard deviation of the targets around that mean, and the ratio <span class="tex">1-\text{MSE}_{\text{model}}/\text{MSE}_{\text{baseline}}</span> is the familiar <span class="tex">R^2</span> measured on held-out rows.</div>
+
+        <p><b>The cost of skipping baselines.</b> Teams that jump to a complex model often spend weeks to gain a point or two over a straight line, then cannot explain, monitor or maintain it. And without a baseline there is no way to notice that a pipeline bug is producing an impossibly good score. The lab below adds a second lesson: how the gap between a flexible model and a simple one depends on the amount of data.</p>
+
+        <div data-lab="ds-md-baseline"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the sick share at 6%, sensitivity at 60% and specificity at 95%. Compare the model's running accuracy with the do-nothing baseline. Is the model "better" by accuracy? By recall?</li>
+          <li>Raise the sick share to 30%. What happens to the baseline's accuracy, and why does the model now look better by accuracy?</li>
+          <li>Drop sensitivity to 5% and specificity to 100%. How close is this model to the baseline, and which numbers in the readout reveal it?</li>
+        </ol></div>
+
+        <div data-lab="ds-md-learning"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Let the learning curve fill in with degree 6. At about 10 rows, which is lower, the training error or the validation error? Why is the validation error so high?</li>
+          <li>Watch the gap between training and validation error as rows are added. Does it shrink? What does it approach, and what is the noise floor?</li>
+          <li>Set the degree to 2 and compare it with the straight-line validation curve. With plenty of data, does the flexible model beat the line, and by how much? With very few rows, which wins?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Using accuracy as the headline on imbalanced data.</b> Always compare with the majority-class rate, and report a metric on the rare class (lesson 7.4).</li>
+          <li><b>Strawman baselines.</b> Comparing against a random guess is easy to beat. Compare against what is cheaply possible: the mean, last week's value, yesterday's rule, a plain linear model.</li>
+          <li><b>Baseline tuned less than the model.</b> If the fancy model got a week of tuning and the baseline none, the comparison is rigged. Give each a fair, equal effort.</li>
+          <li><b>A "too good" score.</b> If a first model massively outperforms any baseline, suspect leakage before celebrating (<a href="ds-features.html#leakage">Module 6</a>).</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Papers and leaderboards:</b> a method is only reported with its baselines, from "always predict the most frequent label" to the previous best model.</li>
+          <li><b>Forecasting:</b> the "naive" forecast (tomorrow equals today) is the standard bar; many sophisticated models fail to beat it (<a href="ds-timeseries.html">Module 8</a>).</li>
+          <li><b>Learning-curve diagnosis:</b> a validation curve still falling at the right edge says "more data will help"; one that has flattened above the noise floor says "the model is too simple, or the features are missing" (<a href="ml-evaluation.html#learning-curves-diagnosis">learning curves</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A fraud model reports 98% accuracy on 5000 transactions, 100 of which are fraud. What does the "never fraud" baseline score and what is its recall?</summary><div class="ans">4900 of 5000 are legitimate, so the baseline is <span class="tex">4900/5000=0.98</span> accurate with recall 0 (it finds 0 of 100 frauds). The 98% model has shown no advantage until you see its recall.</div></details>
+        <details class="check"><summary>2. Test prices are 290 and 300; the training mean is 206.67. Compute the mean baseline's MAE.</summary><div class="ans"><span class="tex">(83.33+93.33)/2=88.33</span>.</div></details>
+        <details class="check"><summary>3. A baseline has RMSE 20 and your model has RMSE 15 on the same held-out rows. What is the skill score?</summary><div class="ans"><span class="tex">1-15/20=0.25</span>: a 25% reduction in error over the baseline.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A score only means something next to a baseline: majority class or mean, then the current rule, then a simple linear model.</li>
+          <li>Report skill relative to the baseline, on the same held-out rows, with equal tuning effort.</li>
+          <li>Under class imbalance, accuracy can equal the do-nothing baseline; look at recall and precision.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.4 ===================== -->
+    <section class="lesson" id="metrics-choice" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">7.4</span><h2>Choosing metrics: accuracy, precision, recall, RMSE and MAE</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A screening model gives each patient a score from 0 to 1. Above what score should the clinic call a patient back for a test? A missed illness may cost a life; a needless call-back costs an hour. Which single number should the team put on the dashboard, and how does the answer change when illness is rare?</div>
+
+        <h3 class="sec">Intuition: errors come in kinds, and kinds have prices</h3>
+        <p>A yes/no model can be wrong in two different ways. It can raise a <b>false alarm</b> (flag a healthy patient) or <b>miss</b> a real case. Which hurts more depends on the decision, not on the maths. A metric is just a way of counting those two mistakes, and different metrics weigh them differently. Choosing the metric is therefore choosing what you care about, and it should be settled with the business owner <i>before</i> comparing models.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The confusion matrix.</b> Count the model's outputs against the truth in a 2×2 table. "Positive" is the rare thing you are looking for.</p>
+        <table class="tbl"><thead><tr><th></th><th>flagged positive</th><th>flagged negative</th></tr></thead><tbody>
+          <tr><td><b>actually positive</b></td><td>TP (true positive)</td><td>FN (false negative, a miss)</td></tr>
+          <tr><td><b>actually negative</b></td><td>FP (false positive, a false alarm)</td><td>TN (true negative)</td></tr></tbody></table>
+        <div class="worked"><b>Worked example, 1000 patients, 60 sick</b>
+          <table class="tbl"><thead><tr><th></th><th>flagged</th><th>not flagged</th><th>total</th></tr></thead><tbody>
+            <tr><td>sick</td><td>TP = 40</td><td>FN = 20</td><td>60</td></tr>
+            <tr><td>healthy</td><td>FP = 10</td><td>TN = 930</td><td>940</td></tr></tbody></table>
+          <ul>
+            <li><b>Accuracy</b> = share of all cases right: <span class="tex">(40+930)/1000=0.970</span>. The do-nothing baseline scores <span class="tex">940/1000=0.940</span>.</li>
+            <li><b>Precision</b> = of those flagged, how many are really sick: <span class="tex">40/(40+10)=0.800</span>.</li>
+            <li><b>Recall</b> (sensitivity) = of the sick, how many were found: <span class="tex">40/(40+20)=0.667</span>.</li>
+            <li><b>Specificity</b> = of the healthy, how many were cleared: <span class="tex">930/940=0.989</span>.</li>
+            <li><b>F1</b> = harmonic mean of precision and recall: <span class="tex">2\times0.8\times0.6667/(0.8+0.6667)=0.727</span>.</li>
+          </ul>
+          <p>Accuracy 0.97 looks superb, yet a third of the sick patients were missed. Recall tells that story.</p>
+        </div>
+        <div class="eq">\text{precision}=\frac{TP}{TP+FP},\quad \text{recall}=\frac{TP}{TP+FN},\quad F_1=\frac{2\,\text{precision}\cdot\text{recall}}{\text{precision}+\text{recall}},\quad \text{accuracy}=\frac{TP+TN}{TP+FP+FN+TN}</div>
+        <div class="sym"><b>Symbols.</b> TP, FP, FN, TN: counts of true positives, false positives, false negatives and true negatives. Precision answers "when it raises the alarm, how often is it right?"; recall answers "of the real cases, how many did it catch?". The <b>harmonic</b> mean in F1 is dragged towards the smaller of the two, so you cannot hide a poor recall behind a good precision.</div>
+
+        <p><b>The threshold moves the matrix.</b> Most models output a score, and the decision "flag if score ≥ <span class="tex">t</span>" is a separate choice. Take ten scored cases (positives are the real cases):</p>
+        <div class="worked"><b>Worked example, three thresholds on ten cases</b>
+          <table class="tbl"><thead><tr><th>score</th><th>0.95</th><th>0.90</th><th>0.80</th><th>0.70</th><th>0.60</th><th>0.50</th><th>0.40</th><th>0.30</th><th>0.20</th><th>0.10</th></tr></thead><tbody>
+            <tr><td>truth</td><td>1</td><td>1</td><td>0</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td><td>0</td></tr></tbody></table>
+          <table class="tbl"><thead><tr><th>threshold</th><th>TP</th><th>FP</th><th>FN</th><th>TN</th><th>precision</th><th>recall</th><th>cost: 1 per FP, 5 per FN</th></tr></thead><tbody>
+            <tr><td>0.75</td><td>2</td><td>1</td><td>3</td><td>4</td><td>0.667</td><td>0.400</td><td>1 + 15 = 16</td></tr>
+            <tr><td>0.55</td><td>4</td><td>1</td><td>1</td><td>4</td><td>0.800</td><td>0.800</td><td>1 + 5 = 6</td></tr>
+            <tr><td>0.35</td><td>5</td><td>2</td><td>0</td><td>3</td><td>0.714</td><td>1.000</td><td>2 + 0 = 2</td></tr></tbody></table>
+          <p>Lowering the threshold raises recall (fewer misses) at the price of precision (more false alarms), a trade-off that cannot be escaped, only chosen. When a miss is five times worse than a false alarm, the lowest-cost threshold of the three is 0.35. Change the costs and the best threshold moves; that is the whole point of writing the costs down.</p>
+        </div>
+
+        <p><b>Regression metrics.</b> For numeric predictions the errors are <span class="tex">e_i=y_i-\hat y_i</span>:</p>
+        <div class="eq">\text{MAE}=\frac1n\sum_i |e_i|,\qquad \text{RMSE}=\sqrt{\frac1n\sum_i e_i^2}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">y_i</span>: true value; <span class="tex">\hat y_i</span>: prediction; <span class="tex">e_i</span>: error on row <span class="tex">i</span>; <span class="tex">n</span>: number of rows. MAE is the typical miss in the original units. RMSE squares first, so large misses count much more.</div>
+        <div class="worked"><b>Worked example, one outlier</b>
+          <p>Five errors: 1, 2, 1, 2 and 10. MAE <span class="tex">=16/5=3.2</span>; RMSE <span class="tex">=\sqrt{(1+4+1+4+100)/5}=4.690</span>. Without the 10, MAE is 1.5 and RMSE is 1.581. One bad miss lifts RMSE by 3.1 but MAE by only 1.7. Choose RMSE when big misses are disproportionately costly (a forecast that is far too low empties the shelf), MAE when every unit of error costs the same and you want a robust, easy-to-explain number.</p>
+        </div>
+
+        <div data-lab="ds-md-threshold"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Sweep and watch TP, FP, FN, TN change as the threshold falls. At which thresholds does recall reach 1? What happens to precision there?</li>
+          <li>Set the cost of a miss to 20 and the cost of a false alarm to 1. Where does the cheapest threshold go? Then swap the costs and see it move the other way.</li>
+          <li>Reduce the share of positives to 5% and watch accuracy at a middle threshold. Is accuracy still a good summary when positives are rare?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Accuracy on imbalanced data.</b> It can match the do-nothing baseline (0.94 versus 0.97 above). Look at precision, recall or both.</li>
+          <li><b>Optimising a metric nobody cares about.</b> If the cost of a miss is 5 and a false alarm 1, F1 treats them as equal and picks a different threshold from the cost.</li>
+          <li><b>Comparing models at different thresholds.</b> Fix the operating point (for example, recall ≥ 0.9) before comparing, or compare whole precision-recall curves.</li>
+          <li><b>RMSE versus MAE confusion.</b> RMSE is never smaller than MAE; quoting one in place of the other changes the number. State which you used, and the unit.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Medical and safety screening</b> choose a recall target first, then tune the threshold to meet it and report the precision that results.</li>
+          <li><b>Fraud and spam filters</b> set the threshold from the cost of a blocked genuine user versus a missed bad one.</li>
+          <li><b>Forecasting and pricing</b> use MAE, RMSE or business-weighted losses; the choice determines what the model is trained to minimise (<a href="ml-evaluation.html#metrics-regression">regression metrics</a>, <a href="ml-evaluation.html#metrics-classification">classification metrics</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A model has TP = 30, FP = 10, FN = 20, TN = 940. Compute precision, recall and F1.</summary><div class="ans">Precision <span class="tex">=30/40=0.75</span>; recall <span class="tex">=30/50=0.60</span>; F1 <span class="tex">=2(0.75)(0.60)/(1.35)=0.667</span>.</div></details>
+        <details class="check"><summary>2. For the model above, the "always negative" baseline scores what accuracy, and what is the model's accuracy?</summary><div class="ans">There are 1000 cases with 50 positives, so the baseline is 950/1000 = 0.950. The model: (30 + 940)/1000 = 0.970.</div></details>
+        <details class="check"><summary>3. Errors are 3, 3, 3 and 3. Compute MAE and RMSE. Then change one error to 11 (3, 3, 3, 11) and compute them again.</summary><div class="ans">First case: both are 3. Second case: MAE <span class="tex">=20/4=5</span>; RMSE <span class="tex">=\sqrt{(9+9+9+121)/4}=\sqrt{37}=6.083</span>. The outlier moves RMSE further than MAE.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Read the confusion matrix first; precision, recall, F1 and accuracy are all arithmetic on its four cells.</li>
+          <li>The threshold is a decision separate from the model; choose it from the costs of misses and false alarms.</li>
+          <li>RMSE punishes large errors, MAE treats errors evenly; pick the one that matches how the business pays for error.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.5 ===================== -->
+    <section class="lesson" id="tuning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">7.5</span><h2>Hyperparameter tuning without fooling yourself</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You try twenty settings of a model and pick the one with the best validation score, 0.786. You are asked to promise a score on new data. Is 0.786 a fair promise? Suppose that in truth every one of the twenty settings is equally good, with real accuracy 0.70. What number do you expect to see as the best one?</div>
+
+        <h3 class="sec">Intuition: the winner of a lottery is lucky</h3>
+        <p>A <b>hyperparameter</b> is a setting you choose before training: the depth of a tree, the strength of a penalty, the number of neighbours. The model cannot learn it by itself, so you try several values and keep the one that scores best on validation data.</p>
+        <p>The trap is that each validation score is a noisy measurement of the model's real quality, because the validation set is finite. If you take the <i>best</i> of many noisy numbers, you tend to pick the one whose noise happened to be favourable. The more settings you try, the more favourable the winner's noise. So the winning validation score is optimistic, and the optimism grows with the number of tries. The test set, which was not used to choose, has independent noise and shows the true level.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Suppose every setting has real accuracy <span class="tex">0.70</span> and the validation set has <span class="tex">n=100</span> rows. One setting's measured accuracy is a random variable with standard deviation <span class="tex">\sigma=\sqrt{0.70\times0.30/100}=0.0458</span>. The expected maximum of <span class="tex">m</span> independent normal measurements sits <span class="tex">E_m</span> standard deviations above the mean (<span class="tex">E_m</span> is a known quantity for normal variables, computed numerically here):</p>
+        <div class="worked"><b>Worked example, the expected best of m equal settings</b>
+          <table class="tbl"><thead><tr><th>settings tried m</th><th>1</th><th>2</th><th>5</th><th>10</th><th>20</th><th>50</th><th>100</th></tr></thead><tbody>
+            <tr><td>expected best, in σ</td><td>0</td><td>0.564</td><td>1.163</td><td>1.539</td><td>1.868</td><td>2.249</td><td>2.508</td></tr>
+            <tr><td>times σ = 0.0458: inflation</td><td>0.000</td><td>0.026</td><td>0.053</td><td>0.071</td><td>0.086</td><td>0.103</td><td>0.115</td></tr>
+            <tr><td>expected best validation score</td><td>0.700</td><td>0.726</td><td>0.753</td><td>0.771</td><td>0.786</td><td>0.803</td><td>0.815</td></tr></tbody></table>
+          <p>With twenty equally good settings the best validation score is, on average, <b>0.786</b>, about 8.6 points above the real 0.70, and nothing about the model has improved. A fresh test set would show about 0.70 for whichever setting you picked. That is exactly the 0.786 in the question: an honest promise is 0.70, not 0.786. Using fewer, larger validation rows shrinks <span class="tex">\sigma</span>: with <span class="tex">n=1000</span> rows it is 0.0145 and the same twenty tries inflate the score by only 0.027.</p>
+        </div>
+        <p><b>The formal statement.</b> Let the setting be <span class="tex">\lambda</span> from a set <span class="tex">\Lambda</span> of <span class="tex">m</span> candidates and <span class="tex">\hat s(\lambda)</span> the measured validation score:</p>
+        <div class="eq">\hat\lambda=\arg\max_{\lambda\in\Lambda}\hat s_{\text{val}}(\lambda),\qquad \mathbb E\bigl[\max_\lambda \hat s_{\text{val}}(\lambda)\bigr]\;\ge\;\max_\lambda \mathbb E\bigl[\hat s_{\text{val}}(\lambda)\bigr]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\lambda</span>: one setting (a vector of hyperparameters). <span class="tex">\Lambda</span>: the set of settings you try. <span class="tex">\hat s_{\text{val}}(\lambda)</span>: its measured score on the validation set. <span class="tex">\hat\lambda</span>: the chosen setting. The inequality says the expected maximum of the measurements is at least the maximum of the true expected scores, with a gap that grows with <span class="tex">m</span> and with measurement noise. Honest reporting needs a score from data that played no part in the choice: the test set, or the outer loop of nested CV (lesson 7.2).</div>
+
+        <p><b>Which settings to try: grid versus random search.</b> A <b>grid search</b> tries every combination of a few chosen values per hyperparameter: 4 values for each of 3 hyperparameters costs <span class="tex">4^3=64</span> trainings, and only 4 distinct values of each hyperparameter are ever examined. A <b>random search</b> draws each trial's values independently from a range: 16 trials examine 16 distinct values of every hyperparameter. When only one or two hyperparameters really matter (the usual case), random search tries many more useful values of those for the same budget, and it is easy to extend by simply running more trials. Grid search is still sensible when there are one or two hyperparameters and each run is cheap.</p>
+        <p>Practical order: pick a sensible search range (often on a log scale for rates and penalties), use cross-validation or a validation set, start with a coarse random search, look at where the good scores cluster, narrow the range, then evaluate the winner <i>once</i> on the test set.</p>
+
+        <div data-lab="ds-md-tuning"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the spread at 0, so every configuration is equally good. Watch the yellow best-so-far line climb above the true 0.70 as configurations arrive, while the orange test rings stay around 0.70.</li>
+          <li>Raise the configurations to 100, then drop the validation rows from 1000 to 100. Which change inflates the winner's score more? Compare with the 200-study average in the caption line.</li>
+          <li>Give the configurations a real spread (0.03). Now the winner is partly genuinely better. Does its test score stay close to its validation score, or still fall short?</li>
+        </ol></div>
+
+        <div data-lab="ds-md-search"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the budget at 9 and y mattering little. Compare how many distinct x values each panel tried, and the best score each found.</li>
+          <li>Raise the budget to 36. Does the grid's advantage or the random search's advantage change?</li>
+          <li>Set "how much y matters" to 1. When both hyperparameters matter, how does the picture change for the two methods?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reporting the tuned validation score as the final result.</b> It is the maximum of many noisy numbers; report the untouched test score (or the nested-CV score).</li>
+          <li><b>Tuning on the test set "just a little".</b> Each peek makes the test set part of the search. If it has been used for choosing, it is now a validation set; you need a new test set.</li>
+          <li><b>Chasing differences smaller than the noise.</b> If two settings differ by less than the standard error of the validation score (0.046 above), they are tied; prefer the simpler or cheaper one.</li>
+          <li><b>Giving the model an enormous search space.</b> A big enough search will find a lucky setting on any dataset. Keep the number of tries in the report.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>AutoML and tuning libraries</b> run random search, Bayesian search or successive halving; all of them still need an untouched final test set.</li>
+          <li><b>Leaderboards</b> reward the best of thousands of submissions on a public set, so the top score is optimistic; the hidden private set often reorders the ranking.</li>
+          <li><b>Deep learning</b> tunes learning rate, batch size and architecture on a validation split; reproducing a paper's number often fails because it was tuned on the test set (<a href="ml-evaluation.html#hyperparameter-tuning">hyperparameter tuning</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A grid search over 5 values of each of 4 hyperparameters needs how many trainings? How many distinct values of one hyperparameter are tried?</summary><div class="ans"><span class="tex">5^4=625</span> trainings, and only 5 distinct values of each hyperparameter. A random search with 625 trials would try 625 distinct values of each.</div></details>
+        <details class="check"><summary>2. With 20 equal settings and a validation set of 100 rows, the expected best validation accuracy is 0.786 although the real accuracy is 0.70. What should you report to a stakeholder?</summary><div class="ans">The test-set score of the chosen model, about 0.70, with its uncertainty. The 0.786 is inflated by selecting the maximum of 20 noisy values.</div></details>
+        <details class="check"><summary>3. You tuned with 5-fold CV and the best CV accuracy is 0.82. Why is 0.82 not a good estimate of future accuracy, and what would give a fairer one?</summary><div class="ans">The same folds were used to pick the setting, so 0.82 is the best of several noisy scores. A fairer estimate comes from nested cross-validation or an untouched test set evaluated once.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The best of many noisy validation scores is optimistic; the more settings, the more inflation, and the noisier the validation set, the more inflation.</li>
+          <li>Random search spends the same budget on more distinct values of the hyperparameters that matter.</li>
+          <li>Tune on validation (or inner CV) and report on data that played no part in the choice.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.6 ===================== -->
+    <section class="lesson" id="model-explanation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--teal)">7.6</span><h2>Explaining models: feature importance and partial dependence</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A lender's model declines a loan application. The applicant, the regulator and the risk team all ask the same thing: which inputs drove the decision, and what would the model have said if the income had been higher? How can we look inside a model that is too complicated to read as a formula?</div>
+
+        <h3 class="sec">Intuition: poke the model and watch</h3>
+        <p>We often cannot read a model's inner workings, but we can always <b>poke it</b>. Two pokes cover most needs:</p>
+        <ul>
+          <li><b>Permutation importance</b> asks: "How much worse would the model be if this feature carried no information?" Shuffle one column among the rows, which destroys its link to the target while keeping its values, and measure how much the error rises. A big rise means the model relies on that feature.</li>
+          <li><b>Partial dependence</b> asks: "How does the prediction change, on average, as this one feature changes?" Set the feature to a value for every row, average the predictions, and repeat for a range of values to draw a curve.</li>
+        </ul>
+        <p>Both are <i>model-agnostic</i>: they only call the model's prediction function, so they work for trees, ensembles and neural networks alike.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Take a fixed model <span class="tex">f(a,b)=10+4a+b</span> and eight rows (the model is a stand-in for any model; its prediction function is all we use):</p>
+        <div class="worked"><b>Worked example, permutation importance on 8 rows</b>
+          <table class="tbl"><thead><tr><th>row</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr></thead><tbody>
+            <tr><td>a</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td></tr>
+            <tr><td>b</td><td>5</td><td>3</td><td>6</td><td>2</td><td>7</td><td>1</td><td>8</td><td>4</td></tr>
+            <tr><td>true y</td><td>17</td><td>19</td><td>29</td><td>27</td><td>37</td><td>35</td><td>47</td><td>43</td></tr>
+            <tr><td>prediction</td><td>19</td><td>21</td><td>28</td><td>28</td><td>37</td><td>35</td><td>46</td><td>46</td></tr></tbody></table>
+          <p>Baseline error: absolute errors are 2, 2, 1, 1, 0, 0, 1, 3, so MAE <span class="tex">=10/8=1.25</span>.</p>
+          <p><b>Shuffle a.</b> Rotate the column down by three rows, so row 1 receives a = 4, row 2 gets 5, then 6, 7, 8, 1, 2, 3. The new predictions are 31, 33, 40, 40, 49, 15, 26, 26; absolute errors 14, 14, 11, 13, 12, 20, 21, 17, so MAE <span class="tex">=122/8=15.25</span>. Importance of a <span class="tex">=15.25-1.25=14.00</span>.</p>
+          <p><b>Shuffle b</b> the same way (b becomes 2, 7, 1, 8, 4, 5, 3, 6). Predictions 16, 25, 23, 34, 34, 39, 41, 48; absolute errors 1, 6, 6, 7, 3, 4, 6, 5, MAE <span class="tex">=38/8=4.75</span>. Importance of b <span class="tex">=3.50</span>.</p>
+          <p>Feature a matters four times as much as b here, in line with its larger coefficient and wider range. One shuffle is a single random draw; real tools repeat the shuffle many times and average, as the lab does, because one rotation can be lucky or unlucky.</p>
+        </div>
+        <div class="worked"><b>Worked example, partial dependence on a</b>
+          <p>The mean of b over the eight rows is 4.5. Set <span class="tex">a=1</span> for every row: the average prediction is <span class="tex">10+4(1)+4.5=18.5</span>. For <span class="tex">a=3</span>: 26.5; for <span class="tex">a=5</span>: 34.5; for <span class="tex">a=7</span>: 42.5. Each step of 2 in a raises the average prediction by 8, so the partial dependence curve is a straight line with slope 4, the model's coefficient. For a model with interactions or bends, the curve would bend, which is where partial dependence earns its keep.</p>
+        </div>
+        <p><b>Formal definitions.</b> For a fitted model <span class="tex">f</span>, a metric <span class="tex">M</span> (error: lower is better) and feature <span class="tex">j</span>:</p>
+        <div class="eq">\text{PI}_j=\frac1R\sum_{r=1}^{R}M\bigl(f,\;X^{(\pi_{r,j})},\;y\bigr)\;-\;M(f,X,y),\qquad \text{PD}_j(v)=\frac1n\sum_{i=1}^{n}f\bigl(x_{i,1},\dots,\underbrace{v}_{\text{feature }j},\dots,x_{i,p}\bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">X</span>: the table of feature values (<span class="tex">n</span> rows, <span class="tex">p</span> features). <span class="tex">X^{(\pi_{r,j})}</span>: the table with column <span class="tex">j</span> shuffled by random permutation number <span class="tex">r</span>. <span class="tex">R</span>: number of repeats. <span class="tex">M(f,X,y)</span>: the error of model <span class="tex">f</span> on the table. <span class="tex">\text{PI}_j</span>: the permutation importance of feature <span class="tex">j</span>, the average rise in error. <span class="tex">v</span>: a chosen value for feature <span class="tex">j</span>; <span class="tex">\text{PD}_j(v)</span> is the average prediction when every row is forced to <span class="tex">v</span> in that feature. Computing both on <b>held-out</b> rows reports what the model uses to generalise, rather than what it memorised.</div>
+
+        <p><b>The limits (read this part twice).</b> Importance and partial dependence describe the <i>model</i>, not the world.</p>
+        <ul>
+          <li><b>Not causation.</b> If the model uses a feature, shuffling it hurts, even if the feature is only a proxy for the real cause. Raising a feature's value in the real world need not change the outcome.</li>
+          <li><b>Correlated features share credit.</b> If two columns carry the same information, shuffling one leaves the other to cover for it, so each looks less important than the pair truly is. And when a feature is shuffled alone, the shuffled rows can be unrealistic combinations (a 5-year-old with a 40-year work history), on which the model's behaviour is meaningless.</li>
+          <li><b>Averages hide groups.</b> A flat partial dependence line can hide one group rising and another falling; the thin individual lines (ICE curves) in the lab reveal that.</li>
+          <li><b>Overfit models explain noise.</b> A model that has latched on to a meaningless column will report that column as important; the importance is faithful to the model, not to reality.</li>
+        </ul>
+
+        <div data-lab="ds-md-explain"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Let several rounds run with w = 0. Which feature is most important? Why is c's importance essentially zero? Then look at the partial dependence of b: why is it a curve, not a line?</li>
+          <li>Raise w to 2. The model now reads c, although the truth never did. What happens to c's importance and to the baseline error? What does that say about "importance equals truth"?</li>
+          <li>Choose c in the partial-dependence selector. With w = 2 the average prediction rises with c. Is it valid to tell someone "raise c to raise the outcome"?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reading importance as causation.</b> A model that uses "number of hospital visits" to predict illness does not show that visits cause illness.</li>
+          <li><b>Using only one shuffle.</b> A single permutation can mislead (the example above is one draw); repeat and average, and look at the spread.</li>
+          <li><b>Importance on training rows.</b> An overfit model can look reliant on noise features there. Compute it on validation or test rows.</li>
+          <li><b>Averages that hide structure.</b> Always look at the individual curves behind a partial dependence line.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Regulated decisions</b> (credit, insurance, hiring) require reasons for an adverse outcome; importance and partial dependence are the standard first tools (<a href="ml-evaluation.html#interpretability-fairness">interpretability and fairness</a>).</li>
+          <li><b>Debugging:</b> a model that puts large importance on an ID column, a timestamp or a hospital name is usually leaking; this is one of the quickest leakage detectors (<a href="ds-features.html#leakage">Module 6</a>).</li>
+          <li><b>Scientific discovery:</b> importance rankings guide which variables to study next, always followed by experiments before causal claims (<a href="ds-experiments.html">Module 5</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A model's MAE is 2.0 on validation. Shuffling feature x raises it to 5.5 and shuffling feature z raises it to 2.1. Which is more important and by how much?</summary><div class="ans">x: importance 5.5 − 2.0 = 3.5. z: 2.1 − 2.0 = 0.1. The model relies heavily on x and barely on z.</div></details>
+        <details class="check"><summary>2. For f(a,b) = 10 + 4a + b with mean b = 4.5, what is the partial dependence at a = 6?</summary><div class="ans"><span class="tex">10+4(6)+4.5=38.5</span>.</div></details>
+        <details class="check"><summary>3. Two features carry the same information. Why can both receive low permutation importance even though the information is vital?</summary><div class="ans">When one is shuffled the model still has the other copy, so the error barely rises. Importance is shared between the two, and each looks small. Shuffle them together (a group), or drop one, to see their joint effect.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Permutation importance: shuffle a column and measure the rise in held-out error; partial dependence: set a feature to each value and average the predictions.</li>
+          <li>Both explain what the model uses, not what causes the outcome in the world.</li>
+          <li>Repeat shuffles, use held-out rows, look at individual curves, and beware correlated features.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 8 (<a href="ds-timeseries.html">Time series &amp; forecasting</a>) applies the split and cross-validation ideas of lessons 7.1 and 7.2 to data ordered in time, where the future must never leak into training.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

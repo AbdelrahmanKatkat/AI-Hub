@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · Visualisation &amp; storytelling · Data Science</title>
+<meta name="description" content="Visual encodings, choosing the right chart, honest axes, colour-blind safe palettes and contrast, dashboards, and turning a chart into an argument, taught from a decision with small printed tables and hand-checked numbers.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-visualisation.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#388bfd26">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · Visualisation &amp; storytelling</h1>
+        <p>A chart is an argument made of shapes and colours. This module shows which visual channels the eye reads accurately, which chart answers which question, how axes and colours can mislead or include everyone, what a dashboard should hold, and how to turn one chart into a headline a decision-maker can act on.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: <a href="ds-eda.html#relationships">scatter plots and correlation</a>, <a href="ds-statistics.html#confidence-intervals">confidence intervals</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <!-- ===================== 4.1 ===================== -->
+    <section class="lesson" id="encodings" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.1</span><h2>Visual encodings: position, length, colour and area</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A regional manager has the weekly sales of five shops, in thousands of dollars: A 62, B 55, C 48, D 41, E 34. She must decide which shop to visit first and how far ahead A really is. The numbers fit in one line, so why does it matter whether you draw them as dots, bars, circles or a pie?</div>
+
+        <p>Pipeline stage: <b>communicate</b> (and explore). The loop is ask and collect, clean and prepare, explore, test and model, communicate, deploy and monitor; this module lives in the fifth stage, but you will use it in the third as well.</p>
+
+        <h3 class="sec">Intuition: the eye is a measuring instrument with uneven accuracy</h3>
+        <p>Drawing a chart means translating each number into something visible: a position, a length, a colour, a size. These visible properties are called <b>channels</b>, and the shape that carries them is a <b>mark</b> (a dot, a bar, a circle). The surprising fact, measured in perception experiments by Cleveland and McGill in 1984 and refined since, is that people read some channels precisely and others only roughly.</p>
+        <p>Think of it like rulers. Position along a shared scale is a ruler with fine tick marks: you can say that one dot is a little above another. Length from a common baseline is almost as good. Angle and area are like a ruler with no tick marks: you can tell that one is bigger, but not by how much. Colour is hardly a ruler for quantities at all; it is wonderful for saying <i>which group</i> something belongs to.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The ranking.</b> From most to least accurate for reading a quantity: (1) position on a common scale, (2) position on non-aligned scales, (3) length, (4) angle or slope, (5) area, (6) volume, (7) colour intensity or saturation. For distinguishing categories the order flips: hue is excellent and position along an axis is only so-so. Good charts spend the best channels on the most important numbers.</p>
+        <p><b>Why area misleads.</b> Psychologists describe the perceived size of a stimulus with Stevens' power law: perceived ≈ (true size)<sup>β</sup>. The exponent β is about 1 for length, about 0.7 for area and about 0.6 for volume (typical textbook values; they vary between studies). An exponent below 1 means big things are <i>under</i>-estimated, so people read circle sizes as less different than they really are.</p>
+        <div class="eq">\text{perceived} \approx \text{true}^{\,\beta},\qquad \beta_{\text{length}}\approx 1,\ \ \beta_{\text{area}}\approx 0.7,\ \ \beta_{\text{volume}}\approx 0.6</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\text{true}</span>: the real ratio between two quantities, for example 62 ÷ 34. <span class="tex">\text{perceived}</span>: the ratio a viewer feels. <span class="tex">\beta</span>: the exponent of the channel. A circle of radius <span class="tex">r</span> has area <span class="tex">\pi r^2</span>, so if you choose the radius proportional to the value, the <i>area</i> grows as the value squared.</div>
+
+        <div class="worked"><b>Worked example — five shops</b>
+          <table class="tbl"><tr><th>shop</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>total</th></tr>
+          <tr><td>weekly sales (thousand $)</td><td>62</td><td>55</td><td>48</td><td>41</td><td>34</td><td>240</td></tr>
+          <tr><td>share of total</td><td>25.8%</td><td>22.9%</td><td>20.0%</td><td>17.1%</td><td>14.2%</td><td>100%</td></tr>
+          <tr><td>pie slice angle</td><td>93.0°</td><td>82.5°</td><td>72.0°</td><td>61.5°</td><td>51.0°</td><td>360°</td></tr></table>
+          <p>True ratio A ÷ E = 62 ÷ 34 = <b>1.8235</b>. With position or length (β = 1) a viewer feels about 1.82. With circles whose <i>area</i> is proportional to sales, the feeling is 1.8235<sup>0.7</sup> = <b>1.52</b>: the gap looks smaller than it is. With the common bug of making the <i>radius</i> proportional to sales, the drawn area ratio is 1.8235² = <b>3.33</b> and the feeling is 3.33<sup>0.7</sup> = <b>2.32</b>: the gap looks bigger than it is. So the circle for A has radius 1.8235 times E's under the bug, but only <span class="tex">\sqrt{1.8235}=1.35</span> times E's when drawn honestly.</p>
+          <p>Pie angles are 360° × share: A is 25.8% × 360° = 93.0°. B and C differ by 10.5°; the same difference on a bar chart is a 7-unit step against a shared baseline, which the eye resolves easily.</p>
+        </div>
+
+        <p><b>Pie charts and their limits.</b> A pie encodes values as angles (and area), channels ranked fourth and fifth. A pie is acceptable when there are two to five slices, the point is the share of a whole, and the labels carry the numbers. It fails when slices are nearly equal (34%, 33%, 33% have angles 122.4°, 118.8°, 118.8°, indistinguishable by eye) or when there are many slices. A sorted bar chart of the same shares is almost always at least as good.</p>
+
+        <div data-lab="ds-vz-encode"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and read the five captions as they appear. At which stage can you say how much bigger A is than E most easily: dots, bars, colour, or circles?</li>
+          <li>Switch the circle rule to "radius proportional to value". The same numbers now look much more different. Compare the perceived ratio in the readout with the true 1.824.</li>
+          <li>Edit the numbers to 50, 49, 48, 47, 46. Which encoding still lets you see that the first is bigger than the last?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Radius instead of area.</b> Scaling a circle's radius by the value inflates the difference quadratically; scale the area, or better, use a bar.</li>
+          <li><b>3D bars and pies.</b> Volume and perspective are the worst channels, and tilting hides the true angles and lengths.</li>
+          <li><b>Colour for quantity without a legend.</b> A viewer cannot read a number from a shade. Use colour for category or emphasis, and put the number in position or length.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model comparison:</b> a leaderboard drawn as bars from zero lets you read accuracy gaps; the same scores as bubbles hide them.</li>
+          <li><b>Learning curves and loss plots:</b> position along two aligned axes is why a training/validation curve is read at a glance.</li>
+          <li><b>Attention and saliency maps:</b> they use colour intensity, the weakest channel for quantity, so they show where, not how much; a colour bar is essential.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A designer doubles the radius of a circle to show "twice the sales". By how much does its area grow, and what would a viewer feel?</summary><div class="ans">Area grows 2² = 4 times. By Stevens' law the felt ratio is about 4<sup>0.7</sup> = 2.64, so the chart exaggerates a 2× change as roughly 2.6×.</div></details>
+        <details class="check"><summary>2. Shares of 34%, 33% and 33% are drawn as a pie. What are the slice angles, and is a pie a good choice?</summary><div class="ans">0.34 × 360° = 122.4°, and 0.33 × 360° = 118.8° twice. The slices differ by 3.6° and 0°, which the eye cannot resolve. A bar chart would show 34 against 33 as a visible step on a shared baseline, so bars are better.</div></details>
+        <details class="check"><summary>3. Shop A sold 62 and shop E sold 34. Drawn honestly as circles (area proportional to sales), how many times larger is A's radius than E's?</summary><div class="ans">Area ratio 62 ÷ 34 = 1.8235, so the radius ratio is √1.8235 = 1.35.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A chart maps numbers to channels; position on a common scale is read most accurately, then length, then angle, area and colour.</li>
+          <li>Use position or length for quantities; use hue for categories and emphasis.</li>
+          <li>Never scale a circle's radius by the value, and limit pies to a few clearly different slices.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 ===================== -->
+    <section class="lesson" id="choosing-charts" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.2</span><h2>Choosing the right chart for the question</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have eight weeks of sales and ad spend, a list of customer waiting times, and shares of web traffic by channel. Your manager asks five different questions about them. Is there one chart type that answers all five?</div>
+
+        <p>Pipeline stage: <b>explore</b> and <b>communicate</b>.</p>
+
+        <h3 class="sec">Intuition: start from the question, not the chart menu</h3>
+        <p>Spreadsheet software offers a menu of chart types, which invites you to pick one you like. Experienced analysts do the opposite: they write the question first, because the question tells you which channel needs the best position. Almost every business question falls into one of five families. Name the family and the chart nearly chooses itself.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <table class="tbl"><tr><th>question family</th><th>example</th><th>usual chart</th><th>why</th></tr>
+        <tr><td>comparison</td><td>which shop sells most?</td><td>bar chart (sorted)</td><td>length from a shared zero</td></tr>
+        <tr><td>composition</td><td>share of traffic per channel</td><td>bars, a stacked bar, or a pie with few slices</td><td>parts that add to a whole</td></tr>
+        <tr><td>distribution</td><td>how are waiting times spread?</td><td>histogram or box plot</td><td>shows shape, centre, spread, outliers</td></tr>
+        <tr><td>relationship</td><td>do ad-heavy weeks sell more?</td><td>scatter plot</td><td>two numeric variables, one point per row</td></tr>
+        <tr><td>trend</td><td>how are sales moving?</td><td>line chart</td><td>time runs left to right; slope is visible</td></tr></table>
+        <p><b>Lines are for ordered quantities, bars for categories.</b> A line segment says "between these two points the value changed smoothly", which is true for time and false for shops. A bar says "this category has this amount".</p>
+
+        <div class="worked"><b>Worked example — one table, five charts</b>
+          <table class="tbl"><tr><th>week</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+          <tr><td>ad spend (thousand $)</td><td>3</td><td>2</td><td>5</td><td>4</td><td>6</td><td>8</td><td>7</td><td>9</td></tr>
+          <tr><td>sales (units)</td><td>120</td><td>126</td><td>131</td><td>129</td><td>140</td><td>147</td><td>152</td><td>158</td></tr></table>
+          <p><b>Trend question</b> ("how are sales moving?"): a line of sales against week. A least-squares line through the eight points has slope <b>5.42 units per week</b> and intercept 113.5; the mean is 137.875.</p>
+          <p><b>Relationship question</b> ("do ad-heavy weeks sell more?"): a scatter of sales against ad spend. The correlation is <b>r = 0.943</b> and the fitted slope is <b>5.20 units per thousand dollars</b> (intercept 109.26). Because both columns rise over the eight weeks, part of this link may just be time; a scatter shows it, a causal claim needs the methods of the <a href="ds-experiments.html">experiments module</a>.</p>
+          <p><b>Distribution question</b> (twelve waiting times in minutes: 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 22, 31): the mean is 11.67 but the median is 9.5, so the shape is right-skewed. A histogram with bins of width 3 starting at 4 gives counts 3, 3, 3, 1, 0, 0, 1, 0, 1 (sum 12), which shows a tall block of short waits and a thin tail. A bar chart of the twelve values, in arrival order, would show nothing about shape.</p>
+        </div>
+
+        <div class="eq">r=\frac{\sum_i (x_i-\bar x)(y_i-\bar y)}{\sqrt{\sum_i (x_i-\bar x)^2\,\sum_i (y_i-\bar y)^2}},\qquad \hat y=a+bx,\ \ b=\frac{\sum_i (x_i-\bar x)(y_i-\bar y)}{\sum_i (x_i-\bar x)^2}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_i,y_i</span>: the two values for row <span class="tex">i</span> (ad spend and sales). <span class="tex">\bar x,\bar y</span>: their means. <span class="tex">r</span>: correlation, from −1 to 1. <span class="tex">\hat y=a+bx</span>: the fitted line with intercept <span class="tex">a</span> and slope <span class="tex">b</span> (units of <span class="tex">y</span> per unit of <span class="tex">x</span>). For the trend line, <span class="tex">x</span> is the week number.</div>
+
+        <div data-lab="ds-vz-choose"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>With "trend" selected, switch from line to bar, histogram and pie. Read the fit verdict and say in one sentence what each wrong chart hides.</li>
+          <li>Choose "distribution" and the histogram, then move the bin slider from 3 to 20. At what number of bins does the shape stop being clear (too few or too many)?</li>
+          <li>Choose "relationship" and type nothing in the data box. Which chart type shows the outliers? Then choose "comparison" and type five numbers of your own to see the bars respond.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Line charts for unordered categories.</b> A line connecting shops implies a trend from A to E that does not exist.</li>
+          <li><b>Pie charts for trends or many parts.</b> Twelve months as slices cannot show direction.</li>
+          <li><b>Too few or too many histogram bins.</b> One bin hides the shape; one bin per value hides it in noise. Try several widths before deciding.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model diagnostics:</b> a histogram of residuals (distribution), a scatter of predicted against actual (relationship), a line of validation loss against epoch (trend), bars of metric by model (comparison).</li>
+          <li><b>Dashboards of data quality:</b> distribution plots of each feature reveal drift; see <a href="ds-eda.html#distributions-shape">distribution shapes</a>.</li>
+          <li><b>Embedding plots:</b> a 2-D scatter of reduced embeddings is a relationship chart, but distances after the reduction are only approximate.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Which chart answers "how are customer waiting times spread out?"</summary><div class="ans">A histogram (or box plot): it bins one numeric variable and shows centre, spread and skew. Here the mean 11.67 sits above the median 9.5, which the right tail of the histogram makes visible.</div></details>
+        <details class="check"><summary>2. Why is a line chart a poor choice for the five shops?</summary><div class="ans">Shops have no natural order, so the line suggests a continuous change between them that does not exist. A bar chart, sorted by value, shows each shop's amount by length.</div></details>
+        <details class="check"><summary>3. Twelve waiting times range from 4 to 31. With bins of width 3 starting at 4, how many fall in the first three bins, and how do you know the counts are right?</summary><div class="ans">[4,7) holds 4, 5, 6 (3 values); [7,10) holds 7, 8, 9 (3); [10,13) holds 10, 11, 12 (3). The full counts 3, 3, 3, 1, 0, 0, 1, 0, 1 sum to 12, matching the number of rows.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Name the question family first: comparison, composition, distribution, relationship or trend.</li>
+          <li>Bars for categories, lines for ordered time, histograms for shape, scatters for two numeric variables.</li>
+          <li>Check that the chart's marks add up to the table: counts to n, parts to the whole.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 ===================== -->
+    <section class="lesson" id="honest-axes" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.3</span><h2>Honest axes, scales and baselines</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two versions of a product scored 52 and 55 in a satisfaction survey. One slide shows two bars of nearly equal height; another shows the second bar two and a half times as tall as the first. Both slides use the same two numbers. Which one lies, and how would you measure the lie?</div>
+
+        <p>Pipeline stage: <b>communicate</b>. This is where a correct analysis can still mislead.</p>
+
+        <h3 class="sec">Intuition: what does the eye compare?</h3>
+        <p>A bar encodes its value by <i>length</i>, measured from the baseline. If the baseline is not zero, the length stops being proportional to the number, and the eye, which compares lengths, gets the wrong ratio. A line or dot encodes its value by <i>position</i>, not length, so a non-zero baseline is acceptable there as long as the axis is labelled: the viewer reads positions against ticks, not against a missing bottom edge.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Truncated bars.</b> Edward Tufte defined the <b>lie factor</b> as the size of the effect shown in the graphic divided by the size of the effect in the data. For two bars with values <span class="tex">A</span> and <span class="tex">B</span> and baseline <span class="tex">b</span>, the drawn heights are <span class="tex">A-b</span> and <span class="tex">B-b</span>.</p>
+        <div class="eq">\text{lie factor}=\frac{\text{effect shown}}{\text{effect in data}}=\frac{(B-A)/(A-b)}{(B-A)/A}=\frac{A}{A-b}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">A,B</span>: the two values. <span class="tex">b</span>: the baseline where the bars start. <span class="tex">(B-A)/(A-b)</span>: how much taller bar B looks than bar A in the picture. <span class="tex">(B-A)/A</span>: how much bigger B really is. A lie factor of 1 is honest; Tufte suggested anything outside 0.95 to 1.05 is a distortion.</div>
+        <div class="worked"><b>Worked example — 52 versus 55</b>
+          <table class="tbl"><tr><th>baseline b</th><th>height of A</th><th>height of B</th><th>B looks taller by</th><th>true difference</th><th>lie factor</th></tr>
+          <tr><td>0</td><td>52</td><td>55</td><td>5.8%</td><td>5.77%</td><td>1</td></tr>
+          <tr><td>40</td><td>12</td><td>15</td><td>25%</td><td>5.77%</td><td>4.33</td></tr>
+          <tr><td>48</td><td>4</td><td>7</td><td>75%</td><td>5.77%</td><td>13</td></tr>
+          <tr><td>50</td><td>2</td><td>5</td><td>150%</td><td>5.77%</td><td>26</td></tr></table>
+          <p>With baseline 50 the bars have heights 2 and 5, a ratio of 2.5, while the truth is 55 ÷ 52 = 1.0577. The effect shown is (5 − 2) ÷ 2 = 150%, the real effect is 3 ÷ 52 = 5.77%, and the lie factor is 150 ÷ 5.77 = <b>26</b>, which equals <span class="tex">A/(A-b)=52/2</span>.</p>
+        </div>
+        <p><b>Log scales, used with care.</b> On a log axis, equal distances mean equal <i>ratios</i>, not equal differences. That is the right choice when growth is multiplicative, when values span orders of magnitude, or when you care about percentage change. Constant percentage growth then plots as a straight line whose slope is the log of the growth factor. The price: readers who assume a linear axis misjudge sizes, so label the axis "log scale", mark the powers of ten, and never use a log axis for bars (a bar's length from zero has no meaning, since zero is at minus infinity).</p>
+        <div class="worked"><b>Worked example — 50% growth per step</b>
+          <table class="tbl"><tr><th>step t</th><th>0</th><th>2</th><th>4</th><th>6</th><th>8</th><th>10</th></tr>
+          <tr><td>y = 100 × 1.5<sup>t</sup></td><td>100</td><td>225</td><td>506.3</td><td>1139.1</td><td>2562.9</td><td>5766.5</td></tr></table>
+          <p>On a linear axis the last three points tower over the first three. On a log₁₀ axis each step moves up by the same amount, log₁₀ 1.5 = <b>0.1761</b> decades, a straight line. The doubling time is ln 2 ÷ ln 1.5 = <b>1.71 steps</b>. Over ten steps the value is multiplied by 57.67.</p>
+        </div>
+        <p><b>Dual axes.</b> A chart with two y-axes lets you stretch either series freely, so you decide where the lines cross. Two series that move together (park visitors and ice-cream sales, both driven by the weather, with correlation <b>r = 0.974</b>) can be made to overlap exactly, and two series that have nothing to do with each other can be made to look locked together. The correlation itself does not depend on the axes; only the visual impression does. If you must compare two series, use two small charts stacked with a shared time axis, or index both to 100 at the start.</p>
+
+        <div data-lab="ds-vz-axis"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and watch the baseline of the left chart rise from 0. Read the lie factor as it climbs. At what baseline does it reach 13?</li>
+          <li>Change A to 100 and B to 103. How high must the baseline go before B looks twice as tall as A?</li>
+          <li>Set the baseline to 0 by hand and confirm the two charts then agree.</li>
+        </ol></div>
+
+        <div data-lab="ds-vz-scale"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With 100*1.5^t, compare the two panels. Which makes the early growth visible?</li>
+          <li>Type 100+200*t (steady additions). Now the linear panel is a straight line and the log panel curves. What does a straight line on each axis tell you?</li>
+          <li>Type 5*t^2+1 and compare the doubling time reported with the 1.5 case.</li>
+        </ol></div>
+
+        <div data-lab="ds-vz-dual"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and watch the lines cross, uncross and cross again while r stays at 0.974.</li>
+          <li>Set the right axis to 0 and 700, then to 0 and 1400. Which setting makes the lines look more alike? Which is "right"?</li>
+          <li>Write one sentence for each axis choice that a careless reader would take away.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>A non-zero baseline on bars.</b> The one rule with almost no exceptions: bars start at zero. Lines and dots may start elsewhere if the axis is clearly labelled.</li>
+          <li><b>Breaking an axis silently.</b> An axis break (a jagged cut) must be marked; otherwise readers assume a continuous scale.</li>
+          <li><b>Dual axes to "prove" a link.</b> The crossing point is a free choice. Report the correlation, and remember it is not causation.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Reporting model gains:</b> an accuracy of 92.1% versus 92.4% on a bar chart cropped at 92 looks like a breakthrough; on a zero axis it is a 0.3 percentage point nudge, often inside the noise.</li>
+          <li><b>Loss curves on log axes:</b> training loss over orders of magnitude of steps is read on log scales, and scaling-law plots are straight lines on log-log axes.</li>
+          <li><b>Two metrics on one chart:</b> precision and recall on separate axes can hide a trade-off; plot the precision-recall curve instead.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Values 52 and 55 are shown as bars with baseline 48. What is the lie factor?</summary><div class="ans">Heights are 4 and 7, so B looks 75% taller. The truth is 3 ÷ 52 = 5.77%. Lie factor = 75 ÷ 5.77 = 13, which equals A ÷ (A − b) = 52 ÷ 4.</div></details>
+        <details class="check"><summary>2. On a log₁₀ axis, is the distance from 100 to 1000 larger, smaller or equal to the distance from 1000 to 10000?</summary><div class="ans">Equal: each is one factor of 10, one decade. Equal distances on a log axis mean equal ratios, not equal differences (900 versus 9000).</div></details>
+        <details class="check"><summary>3. A dual-axis chart makes two series look tightly linked. You rescale the right axis by a factor of two. What happens to the correlation r?</summary><div class="ans">Nothing: correlation is unchanged by any positive rescaling or shift of either variable. For the park visitors and ice-cream sales series, r stays 0.974 whatever the axes. Only the visual impression changes.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Bars must start at zero, because their length is the encoding. The lie factor for a truncated bar is A ÷ (A − baseline).</li>
+          <li>Log axes make equal ratios equal distances; label them clearly and avoid log bars.</li>
+          <li>Dual axes let the author choose where lines cross; the correlation, not the picture, is the fact.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 ===================== -->
+    <section class="lesson" id="colour-accessibility" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.4</span><h2>Colour, contrast and colour-blind safe palettes</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A public health team publishes a line chart with five series in red, green, blue, orange and purple. About 1 in 12 men and 1 in 200 women have some form of colour-vision deficiency. Roughly how many readers cannot tell the red line from the green one, and how should the team fix it?</div>
+
+        <p>Pipeline stage: <b>communicate</b>, especially for public-facing analytics.</p>
+
+        <h3 class="sec">Intuition: colour carries three different jobs</h3>
+        <p>Colour is used to label categories (this line is Alpha), to encode an ordered quantity (darker means more) and to show a deviation from a middle value (red above, blue below). Each job needs a different kind of palette, and each can fail in two ways: viewers with colour-vision differences confuse hues, and any viewer struggles when the colour is too close to the background.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>How many people?</b> One in 12 men is about 8.3%, one in 200 women is 0.5%. In an audience of 1,000 men and 1,000 women that is roughly 83 + 5 = 88 readers, nearly one in twenty-two, for whom a red and a green line of equal lightness can look the same. Not a rare case.</p>
+        <p><b>Three kinds of palette.</b> A <b>categorical</b> palette uses clearly different hues for unordered groups, and should stay under about five to eight colours. A <b>sequential</b> palette runs from light to dark in one hue (or a gentle multi-hue path) so that lightness increases with the value. A <b>diverging</b> palette has two hues meeting at a pale neutral midpoint, used when zero or a target is meaningful, such as error above and below zero.</p>
+        <p><b>Colour-vision deficiency.</b> In red-green deficiency (deuteranopia or protanopia) reds and greens of similar lightness collapse to the same yellowish-brown. A simulation turns each colour into the colour a deficient viewer sees by a 3 × 3 matrix applied to linear RGB (here the matrices of Machado, Oliveira and Fernandes, 2009, at full severity). Distance between two colours is measured in the CIE Lab space, where a difference of ΔE around 10 or more is easy to see and a few units is hard.</p>
+        <div class="worked"><b>Worked example — red against green</b>
+          <p>The default red #D62728 and green #2CA02C are 119.8 ΔE apart for a typical viewer, but under deuteranopia they become (139, 124, 31) and (150, 136, 56) and the gap collapses to <b>7.3</b>. The smallest gap among the five default colours (red, green, blue, orange, purple) is 38.2 for typical vision, <b>7.3</b> under deuteranopia and <b>4.8</b> under protanopia.</p>
+          <p>The Okabe-Ito palette was designed to stay distinguishable under these conditions. Using five of its colours (orange #E69F00, sky blue #56B4E9, bluish green #009E73, blue #0072B2, vermillion #D55E00) the smallest gap is 26.4 (typical), <b>18.4</b> (deuteranopia), <b>24.6</b> (protanopia) and 16.2 (tritanopia, where the default palette scores 17.8, slightly better; no palette wins everywhere). It is not magic; it is a fix that was measured.</p>
+        </div>
+        <p><b>Contrast ratio.</b> Text and marks need enough lightness difference from the background. The WCAG (Web Content Accessibility Guidelines) ratio uses the relative luminance of each colour.</p>
+        <div class="eq">L=0.2126\,R+0.7152\,G+0.0722\,B,\quad c_{\text{lin}}=\begin{cases}c/12.92 &amp; c\le 0.04045\\ \left(\dfrac{c+0.055}{1.055}\right)^{2.4} &amp; \text{otherwise}\end{cases},\quad \text{ratio}=\frac{L_1+0.05}{L_2+0.05}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">R,G,B</span>: the red, green and blue values of the colour as fractions from 0 to 1, each first converted to linear light by <span class="tex">c_{\text{lin}}</span>. <span class="tex">L</span>: relative luminance, 0 for black and 1 for white. <span class="tex">L_1</span> is the lighter colour and <span class="tex">L_2</span> the darker. The ratio runs from 1 (identical) to 21 (black on white). The usual targets are 4.5 for normal text and 3 for large text and graphical marks.</div>
+        <div class="worked"><b>Worked example — Okabe-Ito on white and on the site's dark background</b>
+          <table class="tbl"><tr><th>colour</th><th>hex</th><th>vs white #FFFFFF</th><th>vs dark #0D1117</th></tr>
+          <tr><td>black</td><td>#000000</td><td>21.00</td><td>1.11</td></tr>
+          <tr><td>orange</td><td>#E69F00</td><td>2.25</td><td>8.40</td></tr>
+          <tr><td>sky blue</td><td>#56B4E9</td><td>2.31</td><td>8.20</td></tr>
+          <tr><td>bluish green</td><td>#009E73</td><td>3.42</td><td>5.53</td></tr>
+          <tr><td>yellow</td><td>#F0E442</td><td>1.32</td><td>14.31</td></tr>
+          <tr><td>blue</td><td>#0072B2</td><td>5.19</td><td>3.65</td></tr>
+          <tr><td>vermillion</td><td>#D55E00</td><td>3.87</td><td>4.89</td></tr>
+          <tr><td>reddish purple</td><td>#CC79A7</td><td>3.06</td><td>6.18</td></tr></table>
+          <p>Hue-safe does not mean contrast-safe. On white, orange, sky blue and yellow all fall below 3:1 and fail as thin lines or small text; on the dark background only black and blue come close to failing (black is 1.11, blue 3.65 passes 3). Pick a palette for the background you will actually use, and use thicker marks, outlines or direct labels for the pale colours.</p>
+          <p>As a sanity check, the lightest grey that passes 4.5 on white is #767676 at 4.54; #777777 gives 4.48 and fails.</p>
+        </div>
+        <p><b>Redundant encoding.</b> Never let colour be the only carrier of meaning. Add a second cue: different markers or line styles, direct labels at the line ends, or a pattern. Then the chart survives colour blindness, greyscale printing and a poor projector.</p>
+        <p><b>Sequential ramps.</b> A good sequential ramp has monotonic luminance. The viridis ramp runs from luminance 0.019 (dark purple) to 0.782 (yellow) with no reversal. The rainbow (jet) ramp climbs from 0.015 to 0.928 and then falls to 0.045: two different values have the same lightness, and in greyscale they look identical.</p>
+
+        <div data-lab="ds-vz-cvd"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Pick deuteranopia and watch the colours morph. In which palette do two lines become hard to separate? Read the smallest gap for both palettes.</li>
+          <li>Switch redundant encoding on. Can you identify every line without colour now?</li>
+          <li>Press Tour to cycle through the four types of vision, five seconds each. Notice which palette keeps a larger smallest gap in each.</li>
+        </ol></div>
+
+        <div data-lab="ds-vz-ramp"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Compare viridis and rainbow in the greyscale panel and the luminance curve. Which one stays readable?</li>
+          <li>Choose the diverging ramp and edit the field so that its values are all positive, for example exp(-(x^2+y^2)). What does the colour at the middle of the ramp mean here, and why is a diverging ramp wrong for this field?</li>
+          <li>Press Play and follow the probe: where in the field does a colour near the middle of the ramp occur?</li>
+        </ol></div>
+
+        <div data-lab="ds-vz-contrast"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Click each Okabe-Ito swatch on the white background and note which pass 3:1.</li>
+          <li>Change the background to #0D1117 and repeat. Which swatches change from fail to pass?</li>
+          <li>Press Sweep: at what ratio does text stop being comfortable to read?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Red-green as good versus bad.</b> The most common failure; use blue and orange, and add icons or labels.</li>
+          <li><b>Rainbow ramps for continuous values.</b> They add false boundaries and their lightness is not ordered.</li>
+          <li><b>Checking on one screen only.</b> Colours and contrast shift between projectors, phones, printers and dark mode.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Segmentation and saliency overlays:</b> class colours must be distinguishable by all viewers, and a heat overlay needs a luminance-monotonic ramp so that "hotter" always looks "stronger".</li>
+          <li><b>Confusion matrices:</b> a sequential ramp from light (few) to dark (many) keeps the reading order; a diverging ramp suits the difference between two models' matrices.</li>
+          <li><b>Fairness dashboards:</b> a public-facing report that fails colour-vision users excludes part of the audience it is meant to serve.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is the contrast ratio of black text on a white background?</summary><div class="ans">White has L = 1 and black L = 0, so the ratio is (1 + 0.05) ÷ (0 + 0.05) = 21, the maximum possible.</div></details>
+        <details class="check"><summary>2. Grey text #777777 on white measures 4.48 : 1. Is it acceptable for normal body text?</summary><div class="ans">No. The threshold for normal text is 4.5 and 4.48 is just below it. #767676 (4.54) is the lightest grey that passes. It would pass for large text and graphics, which need 3.</div></details>
+        <details class="check"><summary>3. Why is a red line plus a green line a poor pair for a public chart? Give the numbers.</summary><div class="ans">For a typical viewer red #D62728 and green #2CA02C are 119.8 ΔE apart, but under deuteranopia they are only 7.3 apart, below the rough threshold of 10 for easy discrimination. Use blue and orange, and add markers or direct labels.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Pick the palette by job: categorical, sequential or diverging; keep categories to a handful.</li>
+          <li>Test under colour-vision simulation and for contrast: 4.5:1 for text, 3:1 for graphics.</li>
+          <li>Add a second cue (marker, label, pattern) so colour is never the only carrier of meaning.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 ===================== -->
+    <section class="lesson" id="dashboards" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.5</span><h2>Dashboards: what to show and what to leave out</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A sales director opens a dashboard every Monday. Total revenue is up 10% over the quarter, so everything looks fine. Is it? What would you put on the dashboard so that she can decide where to act, and what would you leave off?</div>
+
+        <p>Pipeline stage: <b>communicate</b> and <b>monitor</b>: a dashboard is a chart that is looked at repeatedly.</p>
+
+        <h3 class="sec">Intuition: a dashboard is a cockpit, not a warehouse</h3>
+        <p>A pilot's instruments show a few numbers that decide what to do next. A dashboard works the same way. Start from two things: <b>who</b> is looking, and <b>what decision</b> they make with it. Anything that does not change a decision is clutter. A good dashboard has a small number of key performance indicators (KPIs), each with a comparison (against a goal or last period), and lets the viewer filter and drill down to find <i>where</i> a number comes from.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>A KPI is an aggregate over a filtered set of rows.</b> Let the table have one row per order. A filter <span class="tex">F</span> (a region, a product line, a date range) keeps some rows; each KPI is computed over the rows that remain.</p>
+        <div class="eq">\text{Revenue}(F)=\sum_{i\in F}v_i,\qquad \text{Orders}(F)=|F|,\qquad \text{AOV}(F)=\frac{\text{Revenue}(F)}{\text{Orders}(F)},\qquad g=\frac{x_{\text{last}}-x_{\text{first}}}{x_{\text{first}}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">F</span>: the set of rows that pass the current filters. <span class="tex">v_i</span>: the dollar value of order <span class="tex">i</span>. <span class="tex">|F|</span>: the number of rows kept. AOV: average order value. <span class="tex">g</span>: growth between the first and last period of a series <span class="tex">x</span>. Note that AOV is a ratio of two sums, not an average of averages.</div>
+        <div class="worked"><b>Worked example — eight orders</b>
+          <table class="tbl"><tr><th>order</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+          <tr><td>region</td><td>North</td><td>South</td><td>East</td><td>North</td><td>South</td><td>East</td><td>South</td><td>North</td></tr>
+          <tr><td>value ($)</td><td>240</td><td>90</td><td>310</td><td>150</td><td>130</td><td>70</td><td>110</td><td>200</td></tr></table>
+          <p>All rows: revenue $1,300, 8 orders, AOV 1300 ÷ 8 = <b>$162.50</b>. Filter to South: rows 2, 5 and 7, revenue 90 + 130 + 110 = <b>$330</b>, 3 orders, AOV 330 ÷ 3 = <b>$110</b>. The same dashboard shows a different story after one click, which is the whole point of a filter, and the reason a filter must always be visible on screen.</p>
+        </div>
+        <div class="worked"><b>Worked example — a filter that changes the story</b>
+          <table class="tbl"><tr><th>revenue (thousand $)</th><th>Jan</th><th>Feb</th><th>Mar</th><th>growth Jan to Mar</th></tr>
+          <tr><td>North</td><td>50</td><td>48</td><td>45</td><td>−10.0%</td></tr>
+          <tr><td>South</td><td>20</td><td>28</td><td>36</td><td>+80.0%</td></tr>
+          <tr><td>East</td><td>30</td><td>31</td><td>29</td><td>−3.3%</td></tr>
+          <tr><td><b>all regions</b></td><td>100</td><td>107</td><td>110</td><td><b>+10.0%</b></td></tr></table>
+          <p>The headline KPI, +10%, is true and hides two regions that are shrinking. The average of the three regional growth rates is (−10 + 80 − 3.3) ÷ 3 = 22.2%, which is <i>not</i> the total's 10%, because the regions have different sizes. Ratios must be recomputed from the sums, never averaged.</p>
+        </div>
+        <p><b>What to leave out.</b> Limit the page to about five to seven KPIs and a few charts. Prefer one number plus its comparison to a gauge or a 3-D dial. Show the same time window everywhere. Put the most important item at the top-left, where the eye lands first. Each extra widget costs attention and must earn its place by changing a decision.</p>
+        <p><b>Filters and drill-down.</b> A filter that changes every tile at once is powerful and dangerous: if viewers forget the filter, they misread the page. Show the active filter in words near the title. Drill-down means starting from the overview (all regions) and clicking into a part (South, then South software), so the dashboard answers "where?" after the KPI raises a question.</p>
+
+        <div data-lab="ds-vz-dash"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Tour. Watch every tile and chart ease to new values as the filter changes. Read the caption each time: which filters reverse the headline story?</li>
+          <li>Filter to North: the growth tile turns red. Then click the South bar to drill to South. Compare the two growth figures with the all-region figure (+29%).</li>
+          <li>Change the monthly goal from 110 to 90. How many of six months reach the goal for all regions? For North alone?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Averaging averages.</b> Recompute ratios from sums. The mean of regional growth rates (22.2%) is not the overall growth (10%).</li>
+          <li><b>Hidden filters.</b> A global filter that is not shown makes every number a possible misreading. Always display the active filters in words.</li>
+          <li><b>Metric overload.</b> Fifteen tiles mean none of them is read. If a number never changes a decision, remove it.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model monitoring dashboards:</b> a few KPIs (accuracy, latency, drift score) with alert thresholds, filtered by segment, since an overall metric can hide a failing subgroup.</li>
+          <li><b>Experiment dashboards:</b> A/B test metrics sliced by platform or country expose Simpson-style reversals; see the <a href="ds-experiments.html">experiments module</a>.</li>
+          <li><b>Business intelligence:</b> tools such as Looker, Tableau and Power BI are filtered aggregates over a table, exactly the sums and ratios above.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the table, what is East's growth from January to March?</summary><div class="ans">(29 − 30) ÷ 30 = −3.3%. East is shrinking slightly even though the all-region total grew 10%.</div></details>
+        <details class="check"><summary>2. In the eight-order table, filtering to North gives which revenue and average order value?</summary><div class="ans">North rows are orders 1, 4 and 8: 240 + 150 + 200 = $590 over 3 orders, AOV 590 ÷ 3 = $196.67.</div></details>
+        <details class="check"><summary>3. Why can the average of the three regional growth rates differ from the total's growth rate?</summary><div class="ans">The regions have different sizes, so each rate deserves a different weight. The mean of (−10%, +80%, −3.3%) is 22.2%, but the total went from 100 to 110, which is +10%. Always recompute from the summed values.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Design from the audience and their decision; show few KPIs with a comparison each.</li>
+          <li>Every KPI is an aggregate over the filtered rows; recompute ratios from sums.</li>
+          <li>Show the active filters, and offer drill-down so the dashboard can answer "where?".</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.6 ===================== -->
+    <section class="lesson" id="storytelling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">4.6</span><h2>Telling the story: from chart to argument</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A product team tested a new sign-up button. Of the users who saw version A, 4.8% signed up; of those who saw B, 6.1%. A stakeholder has thirty seconds. What chart and what one sentence should the analyst bring, and how sure can she be?</div>
+
+        <p>Pipeline stage: <b>communicate</b>, the last step before a decision.</p>
+
+        <h3 class="sec">Intuition: the chart is the evidence, the headline is the claim</h3>
+        <p>A lawyer does not hand the jury a pile of documents; she states what they show, then points at the strongest exhibit. A data story does the same. The <b>headline</b> states the finding as a sentence ("B converts 1.3 points better than A"), not a topic ("Conversion by variant"). The chart is built to carry that single argument: emphasis on what matters, annotation of the key number, and the uncertainty drawn in, so that nobody has to take the claim on trust.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The argument in four moves.</b> (1) Finding first: say what you learned. (2) One chart that carries it: remove everything that does not support the finding. (3) Emphasise and annotate: colour the key mark, mute the rest, write the number on the chart. (4) Show uncertainty and the limits: an interval, the sample size, and the assumption behind it.</p>
+        <p><b>The headline must be earned by the data.</b> For a difference of two proportions, the standard error of the difference and a 95% interval (normal approximation, assumptions: independent users, a large enough sample) are:</p>
+        <div class="eq">d=\hat p_B-\hat p_A,\qquad \mathrm{SE}=\sqrt{\frac{\hat p_A(1-\hat p_A)}{n}+\frac{\hat p_B(1-\hat p_B)}{n}},\qquad d\pm 1.96\,\mathrm{SE}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\hat p_A,\hat p_B</span>: observed conversion rates (0.048 and 0.061). <span class="tex">n</span>: users per variant (equal here). <span class="tex">d</span>: the observed difference. <span class="tex">\mathrm{SE}</span>: standard error, the typical sampling wobble of <span class="tex">d</span>. <span class="tex">1.96</span>: the normal multiplier for 95%. If the interval excludes 0, the data are evidence for a real difference; if it includes 0, the honest headline is "too early to call".</div>
+        <div class="worked"><b>Worked example — the same chart at four sample sizes</b>
+          <table class="tbl"><tr><th>n per variant</th><th>d</th><th>SE</th><th>95% interval for d</th><th>includes 0?</th><th>honest headline</th></tr>
+          <tr><td>500</td><td>0.013</td><td>0.01435</td><td>−0.0151 to 0.0411</td><td>yes</td><td>too early to call</td></tr>
+          <tr><td>1000</td><td>0.013</td><td>0.01015</td><td>−0.0069 to 0.0329</td><td>yes</td><td>too early to call</td></tr>
+          <tr><td>2000</td><td>0.013</td><td>0.00718</td><td>−0.0011 to 0.0271</td><td>yes (barely)</td><td>too early to call</td></tr>
+          <tr><td>4000</td><td>0.013</td><td>0.00507</td><td>0.0031 to 0.0229</td><td>no</td><td>B is 1.3 points better (0.3 to 2.3)</td></tr></table>
+          <p>For n = 1000: SE = √(0.048 × 0.952 ÷ 1000 + 0.061 × 0.939 ÷ 1000) = √0.000102975 = 0.01015, so the interval is 0.013 ± 1.96 × 0.01015 = −0.0069 to 0.0329. The same two bars, with the same 1.3-point gap, support a confident headline only at n = 4000 (z = 2.56). Without the interval on the chart the reader cannot tell the four rows apart.</p>
+        </div>
+        <p><b>Choosing the one chart.</b> Ask: if the stakeholder saw only this, would they reach the right conclusion? Cut anything that does not help. Put the rate bars from a zero baseline (see <a href="#honest-axes">honest axes</a>) and the difference with its interval beside them, with zero marked.</p>
+        <p><b>Words on the page.</b> Title: the finding. Subtitle: the context (what, who, when, n). Annotation: the key numbers on the marks. Footnote: assumptions and source. Keep the tone calibrated: "evidence for", "consistent with", not "proves".</p>
+
+        <div data-lab="ds-vz-story"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Play and read the five captions. Notice what each step adds: emphasis, number, headline, interval.</li>
+          <li>With n = 1000 the automatic headline says "too early to call". Slide n up to 4000 and watch the headline and the interval change when zero leaves the interval.</li>
+          <li>Type your own headline such as "B crushes A". Compare it with the interval at n = 1000. Is it supported?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Topic titles instead of findings.</b> "Conversion by variant" forces the reader to find the point; write the point.</li>
+          <li><b>Overclaiming.</b> A headline stronger than the interval allows. If the interval includes zero, say so.</li>
+          <li><b>Hiding uncertainty to look decisive.</b> Intervals and sample sizes belong on the chart, not in an appendix; leaving them out turns a hypothesis into a claim.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Reporting model improvements:</b> "Model B improves F1 by 1.2 points (95% CI 0.4 to 2.0, 5 seeds)" is a finding with its uncertainty; a bar chart of two F1 scores alone is not.</li>
+          <li><b>Model cards and evaluation reports:</b> the headline result, the one plot that carries it, and the known limits, as taught in the <a href="ds-production.html">production module</a>.</li>
+          <li><b>Forecast communication:</b> fan charts draw the uncertainty into the picture so that decision-makers see the range, not just a line.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At n = 2000 per variant, does the 95% interval for the difference include zero? Give the interval.</summary><div class="ans">SE = 0.00718, so the interval is 0.013 ± 1.96 × 0.00718 = −0.0011 to 0.0271. It includes zero (barely), so the honest headline is still "too early to call".</div></details>
+        <details class="check"><summary>2. Write the automatic headline the lab produces at n = 4000.</summary><div class="ans">"Variant B converts 1.3 points better than A (95% CI 0.3 to 2.3)", from d = 0.013 and the interval 0.0031 to 0.0229.</div></details>
+        <details class="check"><summary>3. Why is "Conversion rate by variant" a weak chart title?</summary><div class="ans">It names the topic but states no finding, so the reader has to extract the conclusion from the bars. A good title is the sentence you want them to leave with, supported by the interval on the chart.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>State the finding as the headline and build one chart that carries it: emphasis, annotation, then uncertainty.</li>
+          <li>The headline must be earned: if the interval includes zero, say "too early to call".</li>
+          <li>Put sample size and intervals in the picture, and use calibrated language ("evidence for").</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 5 (<a href="ds-experiments.html">Experiments &amp; causal inference</a>) shows how to design the A/B tests whose results you now know how to present.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

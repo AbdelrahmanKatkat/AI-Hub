@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 · Time series &amp; forecasting · Data Science</title>
+<meta name="description" content="Trend, seasonality and noise; moving averages and exponential smoothing; autoregression and differencing; honest rolling-origin backtests; forecast intervals; and machine-learning forecasts with lag features, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-timeseries.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="8">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 8</div>
+    <div class="hero">
+      <div class="big" style="background:#3fb95026">8</div>
+      <div style="flex:1">
+        <h1>Module 8 · Time series &amp; forecasting</h1>
+        <p>Most business questions are about tomorrow: how much stock, how many staff, how much power. When rows have an order in time, the old habits of shuffling and random splitting quietly break. This module teaches how to see the structure in a series, build simple forecasts that are hard to beat, score them honestly, state how unsure they are, and finally hand the job to a machine-learning model without fooling yourself.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Pipeline stage: test and model</span><span class="chip">Needs: <a href="math-probability.html#joint-covariance">covariance and correlation</a>, <a href="ml-evaluation.html#metrics-regression">regression metrics</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How to read this module</b>
+      All series in the labs are simulated with seeded random numbers, so a run can be repeated; they stand in for real demand, energy or traffic data and are <b>illustrative</b>. Every number in the printed tables was computed in code and is quoted exactly. ARIMA is introduced here for intuition only: you will learn what its parts mean and how to read the plots, not how to estimate it by hand.</div>
+
+    <!-- ===================== 8.1 ===================== -->
+    <section class="lesson" id="ts-structure" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.1</span><h2>Time series structure: trend, seasonality and noise</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop manager must decide how much stock to order for next quarter. Last year's demand was 20, 28, 18, 12 (in hundreds of units, quarter by quarter). Is demand going up? Is the dip every fourth quarter real? And how can she tell a genuine pattern from luck?</div>
+
+        <h3 class="sec">Intuition: a series is a sum of slow and fast stories</h3>
+        <p>A <b>time series</b> is a list of measurements taken in order at regular times: daily sales, hourly electricity load, weekly clinic visits. The order is the whole point. Two values next to each other in time are usually related, which breaks the assumption of independent rows that you used in earlier modules.</p>
+        <p>Almost every series mixes three stories. A <b>trend</b> is the slow drift of the level (the shop is growing). A <b>seasonal</b> pattern repeats at a fixed length (every fourth quarter is the festive peak). The <b>residual</b> or noise is whatever is left over, which should look like random jitter with no pattern. Splitting a series into these three parts is called <b>decomposition</b>, and it is the quickest way to understand a series before forecasting it. This is stage 3 of the data science loop (explore) feeding stage 4 (model).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Here are three years of quarterly demand for the shop (Q1 is the first quarter). Look at it first: demand rises across the years, and the second quarter is always the high one.</p>
+        <table class="tbl"><tr><th>t</th><th>Year · quarter</th><th>Demand y</th></tr>
+          <tr><td>1</td><td>1 · Q1</td><td>20</td></tr><tr><td>2</td><td>1 · Q2</td><td>28</td></tr><tr><td>3</td><td>1 · Q3</td><td>18</td></tr><tr><td>4</td><td>1 · Q4</td><td>12</td></tr>
+          <tr><td>5</td><td>2 · Q1</td><td>24</td></tr><tr><td>6</td><td>2 · Q2</td><td>33</td></tr><tr><td>7</td><td>2 · Q3</td><td>22</td></tr><tr><td>8</td><td>2 · Q4</td><td>15</td></tr>
+          <tr><td>9</td><td>3 · Q1</td><td>28</td></tr><tr><td>10</td><td>3 · Q2</td><td>38</td></tr><tr><td>11</td><td>3 · Q3</td><td>25</td></tr><tr><td>12</td><td>3 · Q4</td><td>18</td></tr></table>
+
+        <p><b>Step 1: estimate the trend by averaging away the season.</b> If you average exactly one full cycle (four quarters), every season is represented once, so the seasonal ups and downs cancel and what remains is the level. Because four is even, the window is centred between quarters; the standard fix gives half weight to the two end points (a "2×4 moving average"):</p>
+        <div class="eq">T_t = \tfrac{1}{4}\left(\tfrac12 y_{t-2} + y_{t-1} + y_t + y_{t+1} + \tfrac12 y_{t+2}\right)</div>
+        <div class="worked"><b>Worked example — the trend</b>
+          <p>For t = 3: <span class="tex">T_3 = (0.5\cdot20 + 28 + 18 + 12 + 0.5\cdot24)/4 = 80/4 = 20.000</span>. For t = 4: <span class="tex">(0.5\cdot28+18+12+24+0.5\cdot33)/4 = 84.5/4 = 21.125</span>. Continuing gives the trend values 20.000, 21.125, 22.250, 23.125, 24.000, 25.125, 26.125, 26.875 for t = 3 to 10. The trend is missing at the two ends because the window needs two quarters on each side. It rises by roughly 1 per quarter.</p>
+        </div>
+
+        <p><b>Step 2: the seasonal pattern.</b> Subtract the trend (additive model) and average the leftovers by quarter. The detrended values <span class="tex">y_t - T_t</span> for t = 3 to 10 are −2.000, −9.125, 1.750, 9.875, −2.000, −10.125, 1.875, 11.125.</p>
+        <div class="worked"><b>Worked example — the seasonal indices</b>
+          <p>Average by quarter: Q1 (t = 5, 9): <span class="tex">(1.750+1.875)/2 = 1.8125</span>. Q2 (t = 6, 10): <span class="tex">(9.875+11.125)/2=10.5000</span>. Q3 (t = 3, 7): <span class="tex">(-2.000-2.000)/2=-2.0000</span>. Q4 (t = 4, 8): <span class="tex">(-9.125-10.125)/2=-9.6250</span>. These sum to 0.6875, not 0, so subtract their mean 0.1719 from each to force the seasonal effects to net to zero over a cycle:</p>
+          <p><b>Q1 +1.6406, Q2 +10.3281, Q3 −2.1719, Q4 −9.7969.</b> Meaning: a typical second quarter sits about 10.3 hundred units above the trend; a typical fourth quarter about 9.8 below.</p>
+        </div>
+
+        <p><b>Step 3: the residual.</b> What is left after removing trend and season: <span class="tex">R_t = y_t - T_t - S_t</span>.</p>
+        <div class="worked"><b>Worked example — one decomposed value</b>
+          <p>t = 7 (year 2, Q3): demand 22, trend 24.000, seasonal −2.1719. Residual = 22 − 24.000 − (−2.1719) = <b>0.172</b>. All eight residuals are 0.172, 0.672, 0.109, −0.453, 0.172, −0.328, 0.234, 0.797: tiny next to the swings of ±10, so trend plus season explains almost everything in this series. Decision: order for the next Q1 (t = 13) using the trend continued at its average rise of about 0.98 per quarter (26.875 + 3 × 0.98 ≈ 29.8) plus the Q1 effect (+1.64), so roughly 31.5 hundred units. (The trend continuation is a guess; lesson 8.5 shows how unsure it is.)</p>
+        </div>
+
+        <p><b>Additive or multiplicative?</b> In an <b>additive</b> series <span class="tex">y_t = T_t + S_t + R_t</span> the seasonal swing has the same size at any level. In a <b>multiplicative</b> series <span class="tex">y_t = T_t \times S_t \times R_t</span> the swing grows with the level: a shop that doubles also doubles its December jump. Look at the plot: if the wiggles widen as the series climbs, use the multiplicative form (equivalently, take logarithms, which turn products into sums).</p>
+
+        <p><b>Autocorrelation: how a series resembles its own past.</b> The correlation between <span class="tex">y_t</span> and <span class="tex">y_{t-k}</span> is the <b>autocorrelation at lag k</b>. Plotting it for lag 1, 2, 3, … gives the ACF.</p>
+        <div class="eq">r_k = \frac{\sum_{t=k+1}^{n} (y_t-\bar y)(y_{t-k}-\bar y)}{\sum_{t=1}^{n} (y_t-\bar y)^2}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">y_t</span>: value at time t. <span class="tex">\bar y</span>: mean of the whole series. <span class="tex">k</span>: lag, the number of steps back. <span class="tex">n</span>: series length. <span class="tex">r_k</span>: autocorrelation at lag k, between −1 and 1. <span class="tex">T_t, S_t, R_t</span>: trend, seasonal and residual parts. For pure noise, about 95% of the <span class="tex">r_k</span> fall within <span class="tex">\pm 1.96/\sqrt n</span>.</div>
+        <div class="worked"><b>Worked example — the ACF of the shop's demand</b>
+          <p>The mean of the twelve values is 23.4167. Computing the ratio above gives <span class="tex">r_1 = 0.0986</span>, <span class="tex">r_2 = -0.6885</span>, <span class="tex">r_3 = -0.0222</span>, <span class="tex">r_4 = 0.5321</span>. Reading it: at lag 2 the series is on the opposite side of its mean (peak versus trough, a half-cycle apart) and the correlation is strongly negative; at lag 4 it is a full cycle apart and the correlation is strongly positive. A big bar at lag 4 is the fingerprint of a season of length 4. With only n = 12 the noise band is wide (±0.57), so treat this as a sketch, not a measurement.</p>
+        </div>
+
+        <p><b>Stationarity, intuitively.</b> A series is <b>stationary</b> if its behaviour does not depend on when you look: roughly constant mean, constant spread, and a correlation pattern that depends only on the lag. A series with a trend or a season is not stationary. Most simple forecasting models either assume stationarity or first remove what breaks it (by differencing, lesson 8.3).</p>
+
+        <div data-lab="ds-ts-decompose"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set noise to 0 and watch the trend (orange) and the repeating seasonal pattern appear 6 months behind the data. Why does the trend lag?</li>
+          <li>Switch to the multiplicative model and increase the slope. The seasonal swing widens with the level; what happens to the residual if you decompose it with the wrong (additive) model?</li>
+          <li>Raise the noise to the maximum. How does the residual panel change, and can you still see the seasonal shape in the seasonal panel?</li>
+        </ol></div>
+
+        <div data-lab="ds-ts-acf"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Choose "Pure noise" and sweep the lag. Why do the bars stay inside the grey band?</li>
+          <li>Choose "Season of length 12" and find the lags with big positive and big negative bars. How are they related to 12?</li>
+          <li>Choose the AR(1) series and drag φ from 0 to 0.95. How does the scatter on the left change shape?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Shuffling or ignoring order.</b> A mean, histogram or random split that ignores time can hide the trend and season entirely.</li>
+          <li><b>Mistaking trend for autocorrelation.</b> A steady trend makes the ACF decay slowly and look strong at every lag; remove the trend before reading it.</li>
+          <li><b>Seeing seasons that are not there.</b> Three years of data give only three examples per season. State the evidence ("three cycles"), not a certainty.</li>
+          <li><b>Wrong season length.</b> Hourly data may have a 24-hour and a 168-hour (weekly) season. Check the ACF at both.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Demand, energy and traffic forecasting:</b> utilities and retailers decompose load into trend, daily and weekly seasonality before modelling.</li>
+          <li><b>Anomaly detection:</b> a large residual after removing trend and season is the standard way to flag an outage or a fraud spike.</li>
+          <li><b>Deep forecasters:</b> models such as N-BEATS and Prophet-style systems build a decomposition into their structure; you will read their outputs more easily after this lesson.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Sales of ice cream swing by ±30 units when the shop sells 100 a week, and by ±60 when it sells 200. Additive or multiplicative?</summary><div class="ans">Multiplicative: the swing is a constant 30% of the level, so it grows with the level.</div></details>
+        <details class="check"><summary>2. In the shop's table, t = 8 has demand 15, trend 25.125 and seasonal −9.7969. What is the residual?</summary><div class="ans">15 − 25.125 − (−9.7969) = −0.328. Matches the printed residual list.</div></details>
+        <details class="check"><summary>3. Why does the shop's ACF have a large positive bar at lag 4 and a large negative one at lag 2?</summary><div class="ans">The season has length 4. Four quarters apart means the same point of the cycle (similar values, positive correlation); two quarters apart means opposite points (a peak against a trough, negative correlation).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A series is trend + season + residual (or the product); decompose it before forecasting.</li>
+          <li>A centred average over one full cycle removes the season and reveals the trend; the leftover pattern gives the seasonal indices.</li>
+          <li>The ACF <span class="tex">r_k</span> measures resemblance to the past at lag k; a peak at lag m means a season of length m.</li>
+          <li>Stationary means a stable mean, spread and correlation structure; trends and seasons break it.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.2 ===================== -->
+    <section class="lesson" id="smoothing" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.2</span><h2>Moving averages and exponential smoothing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A café sold 50, 54, 49, 57, 55, 60, 58, 63 coffees (in hundreds) over eight weeks. The owner must order for week 9. Last week's 63 looks too high to trust, and the first weeks look too old. What is the best single number for the current level, and how do you update it each week?</div>
+
+        <h3 class="sec">Intuition: average away the noise, but not the news</h3>
+        <p>Each week's sales are the true level plus random noise. One week alone is a noisy estimate, so average several. But if the level is moving, old weeks mislead. Smoothing is a compromise between steadiness (average a lot) and responsiveness (react to the latest).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Moving average.</b> Average the latest <span class="tex">w</span> values. A long window is calm but slow; a short window is jumpy but quick.</p>
+        <div class="worked"><b>Worked example — a 3-week moving average</b>
+          <p>Week 3: <span class="tex">(50+54+49)/3=51.0000</span>. Week 4: <span class="tex">(54+49+57)/3=53.3333</span>. Then 53.6667, 57.3333, 57.6667 and, for week 8, <span class="tex">(60+58+63)/3 = 60.3333</span>. The forecast for week 9 is 60.3333. Every value in the window counts equally, and a value from three weeks ago drops out abruptly.</p>
+        </div>
+
+        <p><b>Simple exponential smoothing (SES).</b> Instead of dropping old weeks, fade them gradually. Keep one number, the <b>level</b> <span class="tex">\ell_t</span>, and nudge it toward each new observation by a fraction <span class="tex">\alpha</span>:</p>
+        <div class="eq">\ell_t = \alpha\, y_t + (1-\alpha)\,\ell_{t-1}, \qquad \hat y_{t+h\mid t} = \ell_t \ \text{ for every } h \ge 1</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">y_t</span>: observation at time t. <span class="tex">\ell_t</span>: the smoothed level after seeing <span class="tex">y_t</span>. <span class="tex">\alpha\in(0,1]</span>: smoothing weight (how much to trust the newest value). <span class="tex">\hat y_{t+h\mid t}</span>: forecast made at time t for h steps ahead. Start with <span class="tex">\ell_1 = y_1</span>. Unrolled, <span class="tex">\ell_t=\alpha y_t+\alpha(1-\alpha)y_{t-1}+\alpha(1-\alpha)^2y_{t-2}+\dots</span>: weights that shrink geometrically, never abruptly.</div>
+        <div class="worked"><b>Worked example — SES with α = 0.5, step by step</b>
+          <p><span class="tex">\ell_1 = 50</span>. <span class="tex">\ell_2 = 0.5\cdot54 + 0.5\cdot50 = 52.0000</span>. <span class="tex">\ell_3 = 0.5\cdot49+0.5\cdot52 = 50.5000</span>. <span class="tex">\ell_4=0.5\cdot57+0.5\cdot50.5=53.7500</span>. <span class="tex">\ell_5 = 54.3750</span>, <span class="tex">\ell_6=57.1875</span>, <span class="tex">\ell_7 = 57.5938</span>, <span class="tex">\ell_8=60.2969</span>. Forecast for week 9 (and every later week): <b>60.2969</b>.</p>
+          <p>With α = 0.2 the levels are 50, 50.8000, 50.4400, 51.7520, 52.4016, 53.9213, 54.7370, 56.3896: calm, but by week 8 it is well below the recent sales. With α = 0.8 they are 50, 53.2000, 49.8400, 55.5680, 55.1136, 59.0227, 58.2045, 62.0409: jumpy.</p>
+          <p>Which α is best? Score each by its one-step errors, the sum of squared differences between each week's actual and the previous level. Over weeks 2 to 8: α = 0.2 gives 215.472, α = 0.5 gives <b>130.341</b>, α = 0.8 gives 133.147. A moderate α wins here. In practice software picks α by minimising exactly this error.</p>
+        </div>
+
+        <p><b>Holt's linear trend.</b> SES forecasts a flat line, so a rising series makes it lag behind. Holt's method keeps a second number, the <b>trend</b> (slope) <span class="tex">b_t</span>, with its own weight <span class="tex">\beta</span>:</p>
+        <div class="eq">\ell_t=\alpha y_t+(1-\alpha)(\ell_{t-1}+b_{t-1}),\quad b_t=\beta(\ell_t-\ell_{t-1})+(1-\beta)b_{t-1},\quad \hat y_{t+h\mid t}=\ell_t+h\,b_t</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">b_t</span>: estimated slope per step. <span class="tex">\beta\in[0,1]</span>: how fast the slope estimate updates. <span class="tex">\ell_{t-1}+b_{t-1}</span>: where the level is expected to be before seeing <span class="tex">y_t</span>. <span class="tex">h\,b_t</span>: the slope applied for h steps.</div>
+        <div class="worked"><b>Worked example — Holt with α = 0.5, β = 0.3</b>
+          <p>Start with <span class="tex">\ell_1=50</span> and <span class="tex">b_1 = 54-50 = 4</span> (a common starting choice). Week 2: <span class="tex">\ell_2=0.5\cdot54+0.5(50+4)=54.0000</span>, <span class="tex">b_2=0.3(54-50)+0.7\cdot4=4.0000</span>. Week 3: <span class="tex">\ell_3=0.5\cdot49+0.5(54+4)=53.5000</span>, <span class="tex">b_3=0.3(53.5-54)+0.7\cdot4=2.6500</span>. Continuing to week 8 gives <span class="tex">\ell_8=62.2937</span>, <span class="tex">b_8=1.8594</span>. Forecast for week 9: <span class="tex">62.2937+1.8594=64.1531</span>; for week 11: <span class="tex">62.2937+3\cdot1.8594=67.8719</span>. Unlike SES, the forecast keeps climbing. (Eight points cannot reliably tell a true trend from a lucky run; this shows the mechanics, not a validated forecast.)</p>
+        </div>
+
+        <div data-lab="ds-ts-smooth"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Choose "Level that jumps at t = 50" and set the window to 5, then 15. Count roughly how many steps each takes to settle at the new level; then do the same with α = 0.1 and α = 0.6.</li>
+          <li>Choose "A steady upward trend": the orange and green lines trail below the data. Switch on Holt and move β; what does too large a β do?</li>
+          <li>Raise the noise level and find the α that gives the lowest one-step MAE in the readout. Does the best α rise or fall as the noise grows?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Smoothing is not forecasting the future shape.</b> SES gives a flat forecast for every horizon, so it cannot show a season or a trend.</li>
+          <li><b>Tuning α on the same data you report.</b> Choose α by backtesting (lesson 8.4), not by eyeballing the picture.</li>
+          <li><b>A centred moving average is a lagging estimate at the edge.</b> It needs future points; at the live end you can only use a trailing window, which lags.</li>
+          <li><b>Tiny samples.</b> The eight weeks above show how the formulas work; they do not prove which α is right for the café.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Baselines:</b> SES and Holt are the strong, cheap baselines every fancier forecaster must beat (<a href="ds-modelling.html#baselines">Baselines before complex models</a>).</li>
+          <li><b>Optimisers:</b> the exponentially weighted average inside momentum and Adam is the same update <span class="tex">\ell_t=\alpha y_t+(1-\alpha)\ell_{t-1}</span>.</li>
+          <li><b>Monitoring:</b> exponentially smoothed error rates drive drift alerts in production systems (<a href="ds-production.html#drift-monitoring">Monitoring: drift and alerts</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What does SES do when α = 1?</summary><div class="ans">ℓ_t = y_t: the level is just the last observation, so the forecast is "same as last time" (the naive forecast). With α near 0 the level barely moves.</div></details>
+        <details class="check"><summary>2. With α = 0.2 and ℓ₂ = 50.8, the next observation is 49. What is ℓ₃?</summary><div class="ans">0.2·49 + 0.8·50.8 = 9.8 + 40.64 = 50.44, matching the printed α = 0.2 list.</div></details>
+        <details class="check"><summary>3. Why does SES lag behind a steadily rising series, and what fixes it?</summary><div class="ans">Its forecast is a weighted average of past values, all of which are lower than the next one, so it is always behind. Holt's method adds a slope term b, and forecasts ℓ + h·b.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A moving average weights the last w values equally; SES weights all past values with geometrically fading weights through <span class="tex">\ell_t=\alpha y_t+(1-\alpha)\ell_{t-1}</span>.</li>
+          <li>Large α reacts fast and chases noise; small α is calm and slow; choose it by out-of-sample error.</li>
+          <li>SES forecasts a flat line; Holt adds a trend term, <span class="tex">\hat y=\ell+h\,b</span>.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.3 ===================== -->
+    <section class="lesson" id="arima-intuition" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.3</span><h2>ARIMA intuition: autoregression and differencing</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A clinic logs the average wait in minutes each week: today's wait tends to resemble last week's, but it also drifts back toward a typical value. How can one simple formula capture "tomorrow remembers today a little"? And what do you do when the numbers climb steadily and have no typical value at all?</div>
+
+        <div class="callout warn"><b>Scope of this lesson</b>ARIMA is introduced for intuition: what each part means, how to read the ACF, and how to forecast by hand in the simplest case. Estimating a full ARIMA model (maximum likelihood, order selection, diagnostics) is done by software and is not derived here.</div>
+
+        <h3 class="sec">Intuition: the present remembers the past</h3>
+        <p>In many series, the value now is partly explained by the value just before it. A warm day tends to be followed by another warm day; a long queue by another long queue. An <b>autoregressive</b> (AR) model writes this directly: the next value is a fraction of how far the last value was from the average, plus fresh noise.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>AR(1).</b> The model with memory of one step:</p>
+        <div class="eq">y_t - \mu = \phi\,(y_{t-1}-\mu) + \varepsilon_t</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">y_t</span>: value at time t. <span class="tex">\mu</span>: the long-run mean the series returns to. <span class="tex">\phi</span>: the memory coefficient; for a stable series <span class="tex">|\phi|&lt;1</span>. <span class="tex">\varepsilon_t</span>: new random noise at time t, unrelated to the past. The one-step forecast drops the noise: <span class="tex">\hat y_t=\mu+\phi(y_{t-1}-\mu)</span>. For a stationary AR(1), the ACF is <span class="tex">r_k=\phi^k</span>, and <span class="tex">\hat r_1</span> from the data is a quick estimate of <span class="tex">\phi</span>.</div>
+        <div class="worked"><b>Worked example — ten weeks of waiting time</b>
+          <p>Weekly waits: 52, 55, 53, 49, 48, 51, 54, 57, 55, 52. Mean <span class="tex">\bar y = 52.6</span>. The lag-1 sum of products is 35.04 and the sum of squares 70.40, so <span class="tex">\hat r_1 = 35.04/70.40 = 0.4977</span>. Round to <span class="tex">\phi = 0.5</span> for hand arithmetic.</p>
+          <table class="tbl"><tr><th>Week t</th><th>Last week y(t−1)</th><th>Forecast 52.6 + 0.5·(y(t−1) − 52.6)</th><th>Actual y(t)</th><th>Error</th></tr>
+            <tr><td>2</td><td>52</td><td>52.300</td><td>55</td><td>+2.700</td></tr><tr><td>3</td><td>55</td><td>53.800</td><td>53</td><td>−0.800</td></tr><tr><td>4</td><td>53</td><td>52.800</td><td>49</td><td>−3.800</td></tr>
+            <tr><td>5</td><td>49</td><td>50.800</td><td>48</td><td>−2.800</td></tr><tr><td>6</td><td>48</td><td>50.300</td><td>51</td><td>+0.700</td></tr><tr><td>7</td><td>51</td><td>51.800</td><td>54</td><td>+2.200</td></tr>
+            <tr><td>8</td><td>54</td><td>53.300</td><td>57</td><td>+3.700</td></tr><tr><td>9</td><td>57</td><td>54.800</td><td>55</td><td>+0.200</td></tr><tr><td>10</td><td>55</td><td>53.800</td><td>52</td><td>−1.800</td></tr></table>
+          <p>The sum of squared errors is 52.51, an RMSE of 2.415 minutes. Simply repeating last week's value ("naive") gives an RMSE of 2.789. So the AR(1) forecast is a little better, on these nine one-step forecasts that were fitted on the same weeks (an in-sample comparison, so it flatters the model; lesson 8.4 does it honestly).</p>
+          <p><b>Looking further ahead.</b> The last week was 52, which is 0.6 below the mean. The forecast h weeks ahead is <span class="tex">52.6 + 0.5^h(52-52.6)</span>: 52.3000, 52.4500, 52.5250, 52.5625, 52.5813, 52.5906. The deviation halves each step, so the forecast decays back toward the mean 52.6: an AR(1) has a short memory.</p>
+          <p><b>Honest caveat.</b> With ten points the sample ACF is noisy (here <span class="tex">\hat r_2=-0.25</span> and <span class="tex">\hat r_3=-0.56</span>, while a true AR(1) with φ = 0.5 would give 0.25 and 0.125). It is a mechanics example, not strong evidence of an AR(1).</p>
+        </div>
+
+        <p><b>Differencing: handling trend.</b> Some series have no typical value: they climb. An AR model needs a stable mean, so we model the <b>change</b> instead. The first difference is <span class="tex">\Delta y_t=y_t-y_{t-1}</span>.</p>
+        <div class="worked"><b>Worked example — a drifting series</b>
+          <p>Monthly active users (thousands): 100, 103, 105, 104, 108, 111, 112, 115, 117, 120. The level keeps rising, and its lag-1 autocorrelation is a high 0.6639 (the trend alone creates this). The differences are 3, 2, −1, 4, 3, 1, 3, 2, 3: small numbers hovering around their mean 2.2222. After differencing, the series is far closer to stationary. A forecast for the next two months that continues the average change is 120 + 2.2222 = <b>122.2222</b> and 120 + 2·2.2222 = <b>124.4444</b>. Forecast the differences, then add them back up (integrate): that is the "I".</p>
+        </div>
+
+        <p><b>Putting the letters together.</b> An <b>ARIMA(p, d, q)</b> model has three dials. <span class="tex">p</span>: how many past values feed the autoregression (AR). <span class="tex">d</span>: how many times to difference the series first (I, "integrated"). <span class="tex">q</span>: how many past <i>forecast errors</i> feed in as well (MA, "moving average of errors", a different idea from the moving average smoother). The AR(1) above is ARIMA(1,0,0); the drifting series, forecast by its mean change, is ARIMA(0,1,0) with drift; a seasonal variant also differences at the season length (such as 12 months).</p>
+        <p><b>Reading the ACF to choose.</b> A slow, steady decay across many lags suggests a trend and a need to difference (d = 1). After the series looks steady: bars that decay gradually like <span class="tex">\phi^k</span> point to AR terms; bars that stop abruptly after lag q point to MA terms. Read these as hints, then compare candidate models by backtest.</p>
+
+        <div data-lab="ds-ts-arima"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Pick the AR(1) series with φ = 0.7 and compare the blue ACF bars with the orange φ^k line. Then set φ to 0.1 and to −0.7: what happens to the bars and to the forecast dots?</li>
+          <li>Pick the random walk with drift, tick "Difference once", and watch the ACF. Why do the bars collapse into the band?</li>
+          <li>Tick "Difference once" on the AR(1) series. Why does r(1) go negative, and why is differencing here a mistake?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Over-differencing.</b> Differencing a series that is already steady injects negative autocorrelation and extra noise.</li>
+          <li><b>Reading a noisy ACF too literally.</b> With few points many bars cross the band by chance; use it as a sketch.</li>
+          <li><b>AR forecasts forget quickly.</b> Beyond a few steps an AR(1) forecast is just the mean; it cannot predict a far-future trend.</li>
+          <li><b>MA means two things.</b> "Moving average smoother" (lesson 8.2) and "MA(q) model of past errors" are different tools with the same initials.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Strong classical baselines:</b> ARIMA and its seasonal cousins are what deep forecasting models are compared against in published benchmarks.</li>
+          <li><b>Autoregression everywhere:</b> language models predict the next token from previous ones, the same "next value given the past" idea at a vastly larger scale.</li>
+          <li><b>Feature ideas:</b> the lags that an ACF reveals tell you which lag features to give a machine-learning model (lesson 8.6).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With μ = 52.6 and φ = 0.5, last week's wait was 54. What is this week's forecast?</summary><div class="ans">52.6 + 0.5·(54 − 52.6) = 52.6 + 0.7 = 53.3 minutes (row t = 7 of the table).</div></details>
+        <details class="check"><summary>2. What value of d does a random walk with drift need, and why?</summary><div class="ans">d = 1. A random walk has no fixed mean, but its first differences are a steady series around the drift, so one difference makes it stationary.</div></details>
+        <details class="check"><summary>3. Why does an AR(1) forecast many steps ahead approach the mean?</summary><div class="ans">The gap from the mean is multiplied by φ at every step, and φ^h shrinks to 0 when |φ| &lt; 1, so the memory of the last value fades away.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>AR(1): <span class="tex">y_t-\mu=\phi(y_{t-1}-\mu)+\varepsilon_t</span>; the ACF decays like <span class="tex">\phi^k</span> and multi-step forecasts decay to the mean.</li>
+          <li>Differencing, <span class="tex">\Delta y_t=y_t-y_{t-1}</span>, turns a trending series into a steadier one; forecasts are then added back up.</li>
+          <li>ARIMA(p, d, q) = p autoregressive terms, d differences, q error terms; use the ACF as a hint and a backtest as the judge.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.4 ===================== -->
+    <section class="lesson" id="backtesting" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.4</span><h2>Backtesting: rolling-origin evaluation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have three forecasting methods and twelve months of sales. Which one will be best next quarter? You cannot wait for next quarter, so you must replay the past: pretend to be in an earlier month, forecast, and compare with what really happened. How do you do that without cheating?</div>
+
+        <h3 class="sec">Intuition: replay history, one honest step at a time</h3>
+        <p>A forecast is always made at a moment in time, using only what is known up to then. To judge a method fairly we repeat that moment many times in the past. Each repetition is a <b>forecast origin</b>: train on everything before the origin, forecast the next few steps, and score against the true values. Then move the origin forward and repeat. This is <b>rolling-origin evaluation</b> (also called time-series cross-validation or backtesting).</p>
+        <div class="callout warn"><b>Never shuffle a time series before splitting.</b>A random split puts future points in the training set and past points in the test set. The model then interpolates between a past and a future neighbour, which is impossible in real use, so the score is far too optimistic. Always split by time: train on the earlier part, test on the later part.</div>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Twelve months of sales (thousands): 42, 45, 43, 48, 50, 49, 53, 55, 54, 58, 60, 59. Three simple methods: <b>naive</b> (repeat the last value), <b>mean</b> (average of everything so far) and <b>drift</b> (last value plus the average slope so far). The first origin trains on 6 months and forecasts month 7; then the origin moves forward one month at a time.</p>
+        <div class="worked"><b>Worked example — one-step rolling origin</b>
+          <table class="tbl"><tr><th>Train on months</th><th>Forecast month</th><th>Actual</th><th>Naive</th><th>Mean</th><th>Drift</th></tr>
+            <tr><td>1–6</td><td>7</td><td>53</td><td>49</td><td>46.17</td><td>50.40</td></tr><tr><td>1–7</td><td>8</td><td>55</td><td>53</td><td>47.14</td><td>54.83</td></tr><tr><td>1–8</td><td>9</td><td>54</td><td>55</td><td>48.13</td><td>56.86</td></tr>
+            <tr><td>1–9</td><td>10</td><td>58</td><td>54</td><td>48.78</td><td>55.50</td></tr><tr><td>1–10</td><td>11</td><td>60</td><td>58</td><td>49.70</td><td>59.78</td></tr><tr><td>1–11</td><td>12</td><td>59</td><td>60</td><td>50.64</td><td>61.80</td></tr></table>
+          <p>The first row by hand: naive = 49 (the last of the six). Mean = (42+45+43+48+50+49)/6 = 277/6 = 46.17. Drift = 49 + (49 − 42)/5 = 50.40, where the average slope is the total rise over the five gaps. Absolute errors: naive 4, 2, 1, 4, 2, 1 (MAE <b>2.3333</b>); drift 2.60, 0.17, 2.86, 2.50, 0.22, 2.80 (MAE <b>1.8577</b>); mean 6.83, 7.86, 5.88, 9.22, 10.30, 8.36 (MAE <b>8.0752</b>). The mean method is poor because the series trends and it keeps looking back at old, low values. Drift beats naive by a margin: its error is 0.796 times the naive error. With only six forecasts the ranking between drift and naive could change with different data, so treat it as evidence, not proof.</p>
+        </div>
+
+        <p><b>Error grows with the horizon.</b> For a multi-step forecast, compute the error separately for each horizon <span class="tex">h</span>, using all origins where the true value exists:</p>
+        <div class="eq">\mathrm{MAE}(h)=\frac{1}{M_h}\sum_{o}\bigl|\,y_{o+h}-\hat y_{o+h\mid o}\bigr|</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">o</span>: forecast origin, the last time point the model may see. <span class="tex">h</span>: how many steps ahead. <span class="tex">\hat y_{o+h\mid o}</span>: forecast for time o+h made at origin o. <span class="tex">M_h</span>: number of origins that have an actual value h steps ahead (it shrinks as h grows because the data run out). In this example the naive MAE is 2.3333, 3.4000, 5.0000, 6.6667 at h = 1, 2, 3, 4 (from 6, 5, 4, 3 origins). Drift gives 1.8577, 2.3708, 3.3524, 4.9698. The further the target, the larger the error for both, so report error by horizon, not one lump.</div>
+
+        <p><b>Details that matter.</b> The window can be <b>expanding</b> (train on everything before the origin, as above) or <b>rolling</b> (a fixed-length recent window, useful if old data are no longer relevant). Choose the horizon that matches the decision: weekly stock orders need an h of about 1 to 4 weeks. Compare against a baseline: a useful scale-free number is the error divided by the naive method's error on the same origins (a value below 1 means you beat naive). And tune any parameters (such as α) inside each training window only, never using the test months.</p>
+
+        <div data-lab="ds-ts-backtest"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the origin step forward with "naive". Which horizons have the largest bars at the end?</li>
+          <li>Switch to "Seasonal naive". The series has a yearly cycle; does repeating the same month last year beat the plain naive method? Does it need a longer training size to start?</li>
+          <li>Raise the horizon to 12 and see how the error bars grow. Then pick the drift method and compare.</li>
+        </ol></div>
+
+        <div data-lab="ds-ts-shuffle"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>With the honest split, press Play and read the final error. Then switch to the shuffled split and compare.</li>
+          <li>Change the seed of the shuffle. Does the shuffled error stay small, whichever points are picked?</li>
+          <li>Raise the noise. Which score is more affected, and why does the shuffled one still look better than the honest one?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Shuffling or k-fold with random folds.</b> The most common error in time-series work; it leaks the future.</li>
+          <li><b>Tuning on the test period.</b> If you adjust settings after seeing the later months, the test is no longer unseen (<a href="ml-evaluation.html#cross-validation">cross-validation</a> explains the same idea for ordinary data).</li>
+          <li><b>One origin only.</b> A single train/test cut can be lucky or unlucky; several origins give a distribution of errors.</li>
+          <li><b>Mixing horizons.</b> One overall MAE hides that long-horizon forecasts are much worse.</li>
+          <li><b>Using information not available then.</b> Revised or back-filled data may not have existed at the origin date.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Every deployed forecast:</b> retailers, grid operators and hospitals judge models by rolling-origin error, by horizon, against a naive baseline.</li>
+          <li><b>MLOps:</b> production monitoring is a live, never-ending backtest (<a href="ds-production.html#drift-monitoring">Monitoring</a>).</li>
+          <li><b>Leakage hunting:</b> a suspiciously good score on a time series is the first sign of a future-peeking feature (<a href="ds-features.html#leakage">Data leakage</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Why is it wrong to randomly split 12 months into 9 train and 3 test months?</summary><div class="ans">Test months would sit between training months, so the model sees both the past and the future of each test point. That is interpolation, not forecasting, and the error is optimistically small. Split by time instead.</div></details>
+        <details class="check"><summary>2. In the table, what is the mean method's forecast when training on months 1–6, and its error?</summary><div class="ans">(42+45+43+48+50+49)/6 = 46.17; the actual month 7 is 53, so the absolute error is 6.83.</div></details>
+        <details class="check"><summary>3. The naive MAE is 2.3333 at h = 1 and 6.6667 at h = 4. Why does it rise?</summary><div class="ans">The further ahead the target, the more the series can move (trend, noise) after the last known value, and the forecast cannot react to it. Note also that fewer origins (3 instead of 6) support h = 4, so that number is itself less certain.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Backtest by rolling the origin: train on the past only, forecast ahead, score, move forward.</li>
+          <li>Never shuffle a time series before splitting; split by time.</li>
+          <li>Report error by horizon and compare with a naive baseline; error rises as the horizon grows.</li>
+          <li>Tune inside each training window; the later part must stay unseen.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.5 ===================== -->
+    <section class="lesson" id="forecast-uncertainty" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.5</span><h2>Forecast intervals and probabilistic forecasts</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The model says next month's sales will be 59 thousand. How much stock should you buy? If you order exactly 59 you will run out about half the time. The decision depends on how far wrong the forecast might be, not only on the forecast itself.</div>
+
+        <h3 class="sec">Intuition: a forecast is a range of futures</h3>
+        <p>The future is not one number. A single <b>point forecast</b> is the middle of many possible outcomes. A <b>prediction interval</b> gives the range likely to contain the real value, such as "80% of the time the value falls between 55 and 63". Two properties are worth feeling in your gut: the interval is wider than the noise you see in the data (it also reflects what you do not know), and it <b>widens as you look further ahead</b>, because each extra step adds more uncertainty. Plotted over time this shape is called a <b>fan chart</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Use the sales series from lesson 8.4 (42, 45, 43, 48, 50, 49, 53, 55, 54, 58, 60, 59) and the naive forecast, which says "59, whatever the horizon". The one-step changes are 3, −2, 5, 2, −1, 4, 2, −1, 4, 2, −1; the root mean square of these eleven changes is <span class="tex">\sigma = \sqrt{85/11}=2.7798</span>. If every step adds independent noise of size <span class="tex">\sigma</span>, then after <span class="tex">h</span> steps the spread of the error is <span class="tex">\sigma\sqrt h</span>, because independent variances add (<span class="tex">h\sigma^2</span>).</p>
+        <div class="eq">\hat y_{T+h}\ \pm\ z\,\sigma\sqrt{h},\qquad z=0.6745\ (50\%),\ 1.2816\ (80\%),\ 1.96\ (95\%)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\hat y_{T+h}</span>: point forecast h steps after the last observed time T. <span class="tex">\sigma</span>: standard deviation of the one-step error. <span class="tex">\sqrt h</span>: the widening factor for a random-walk-type forecast. <span class="tex">z</span>: the standard normal multiplier for the chosen coverage level. The assumptions: errors are independent, roughly normal, and have a constant spread, and <span class="tex">\sigma</span> is estimated from very few points (here n = 11).</div>
+        <div class="worked"><b>Worked example — the widening fan</b>
+          <table class="tbl"><tr><th>Horizon h</th><th>σ√h</th><th>80% half-width (1.2816·σ√h)</th><th>80% interval around 59</th><th>95% half-width (1.96·σ√h)</th></tr>
+            <tr><td>1</td><td>2.780</td><td>3.563</td><td>55.44 to 62.56</td><td>5.448</td></tr><tr><td>2</td><td>3.931</td><td>5.038</td><td>53.96 to 64.04</td><td>7.705</td></tr>
+            <tr><td>3</td><td>4.815</td><td>6.171</td><td>52.83 to 65.17</td><td>9.437</td></tr><tr><td>4</td><td>5.560</td><td>7.125</td><td>51.88 to 66.13</td><td>10.897</td></tr></table>
+          <p>The 80% interval one month out is 55.44 to 62.56, about 7.1 wide; four months out it is about 14.3 wide, twice as wide (since <span class="tex">\sqrt4=2</span>). Because n = 11, even σ itself is uncertain, so these intervals are probably too narrow; real intervals should be wider when the standard deviation is estimated from so little data.</p>
+        </div>
+
+        <p><b>Quantile forecasts.</b> Instead of a middle value and a symmetric band, a model can output chosen <b>quantiles</b>: the 0.1, 0.5 and 0.9 quantiles say "10% of the time the value will be below this". Quantiles answer decisions directly: to run out of stock only 10% of the time, stock the 0.9 quantile. A quantile forecast is scored with the <b>pinball loss</b>:</p>
+        <div class="eq">L_\tau(y,\hat q)=\begin{cases}\tau\,(y-\hat q) &amp; y\ge \hat q\\ (1-\tau)\,(\hat q-y) &amp; y&lt;\hat q\end{cases}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\tau</span>: the quantile level, between 0 and 1. <span class="tex">y</span>: the actual value. <span class="tex">\hat q</span>: the forecast for the <span class="tex">\tau</span>-quantile. Under-forecasting is charged <span class="tex">\tau</span> per unit; over-forecasting is charged <span class="tex">1-\tau</span>. At <span class="tex">\tau=0.5</span> it is half the absolute error.</div>
+        <div class="worked"><b>Worked example — pinball loss</b>
+          <p>Actual sales y = 60. For τ = 0.9 a forecast <span class="tex">\hat q=58</span> is too low: loss = 0.9·(60−58) = <b>1.8</b>. A forecast <span class="tex">\hat q=64</span> is too high: loss = 0.1·(64−60) = <b>0.4</b>. For a high quantile, being above is cheap and being below is costly, which pushes the best 0.9 forecast above the median. At τ = 0.5, <span class="tex">\hat q=58</span> costs 0.5·2 = 1.0.</p>
+        </div>
+
+        <p><b>Calibration: do the promises hold?</b> An 80% interval is <b>calibrated</b> if about 80% of real outcomes land inside it. Check this with a backtest (lesson 8.4): count the share of actuals inside the intervals. If only 60% land inside, the intervals are over-confident (too narrow); if 98% do, they are needlessly wide. Both hurt planning. See also <a href="ml-evaluation.html#calibration-uncertainty">calibration and uncertainty</a> in the ML module.</p>
+
+        <div data-lab="ds-ts-fan"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave σ equal in both sliders and let several hundred futures arrive. Does the share inside the 80% interval settle near 80%?</li>
+          <li>Set the assumed σ to half of the true σ. Read the coverage. What does it mean for an inventory plan built on this fan?</li>
+          <li>Set the assumed σ to double the true σ. What is gained and what is lost?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reporting only the point forecast.</b> Decisions such as safety stock depend on the spread.</li>
+          <li><b>Mistaking confidence for prediction intervals.</b> An interval for the average is far narrower than an interval for one future value.</li>
+          <li><b>Intervals from the training fit.</b> The in-sample error is smaller than real forecast error; take σ from backtest errors by horizon.</li>
+          <li><b>Normal and constant-spread assumptions.</b> Demand is often skewed and the noise grows with the level; check calibration on a backtest.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Inventory and capacity planning:</b> safe-stock and server-capacity decisions are set from a chosen quantile of the forecast.</li>
+          <li><b>Probabilistic deep forecasters:</b> models such as DeepAR and quantile-regression networks output distributions or quantiles trained with a pinball-type loss.</li>
+          <li><b>Weather ensembles:</b> forecasting centres run many simulated futures and report the spread, exactly like the lab.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With σ = 2.7798, what is the spread of the naive forecast error 9 months ahead?</summary><div class="ans">σ√9 = 3 × 2.7798 = 8.34. It is three times the one-step spread, not nine times.</div></details>
+        <details class="check"><summary>2. For τ = 0.1, actual y = 60 and a forecast of 64, what is the pinball loss?</summary><div class="ans">The forecast is above the actual, so loss = (1 − 0.1)·(64 − 60) = 0.9 · 4 = 3.6. A low quantile that sits above the outcome is heavily penalised.</div></details>
+        <details class="check"><summary>3. You build 80% intervals, and in a backtest of 100 forecasts only 60 actuals fall inside. What does that tell you?</summary><div class="ans">The intervals are over-confident: too narrow for the real uncertainty (60% against a promised 80%). Widen them, for example by using the backtest error spread rather than the training fit.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A forecast is a distribution of futures; give an interval, not just a point.</li>
+          <li>Under a random-walk-type model the interval half-width grows like <span class="tex">z\sigma\sqrt h</span>, so the fan widens with the horizon.</li>
+          <li>Quantile forecasts answer decisions directly and are scored with the pinball loss.</li>
+          <li>Check calibration in a backtest: an 80% interval should hold about 80% of outcomes.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.6 ===================== -->
+    <section class="lesson" id="ml-forecasting" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--green)">8.6</span><h2>Machine-learning forecasts and their pitfalls</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A grocery chain has thousands of products and wants one model that forecasts them all, using prices, holidays and weather as well as past sales. Gradient-boosted trees and neural networks do not understand "time". How do you turn a series into the table they expect, and how do you avoid fooling yourself along the way?</div>
+
+        <h3 class="sec">Intuition: slide a window, make a table</h3>
+        <p>A regression model needs rows of inputs and a label. A series becomes such a table by <b>sliding a window</b>: for each day, the inputs are the previous few values (the <b>lag features</b>) and the label is the value to predict. Once the series is a table, any regressor can be used, and extra columns (day of week, holiday, price) can be added. This is stage 2 and 4 of the data science loop, and it extends the lag and window features of <a href="ds-features.html#time-features">date and time features</a>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example — from 8 days to 6 rows</b>
+          <p>Daily sales: day 1 to 8 = 10, 12, 13, 15, 14, 16, 18, 19. With two lags, the first day that has both lags is day 3, so 8 − 2 = <b>6 rows</b>:</p>
+          <table class="tbl"><tr><th>Predict day</th><th>lag 2: y(t−2)</th><th>lag 1: y(t−1)</th><th>Label y(t)</th></tr>
+            <tr><td>3</td><td>10</td><td>12</td><td>13</td></tr><tr><td>4</td><td>12</td><td>13</td><td>15</td></tr><tr><td>5</td><td>13</td><td>15</td><td>14</td></tr>
+            <tr><td>6</td><td>15</td><td>14</td><td>16</td></tr><tr><td>7</td><td>14</td><td>16</td><td>18</td></tr><tr><td>8</td><td>16</td><td>18</td><td>19</td></tr></table>
+          <p>With only lag 1 as input and ordinary least squares, the six rows give the line <span class="tex">\hat y = 2.2143 + 0.9286\,y_{t-1}</span>. For day 9: 2.2143 + 0.9286·19 = <b>19.857</b>. (Six rows are far too few for a real model; the point is the mechanics.) In general <span class="tex">n</span> observations and <span class="tex">k</span> lags give <span class="tex">n-k</span> rows. The table can also hold rolling means, the day of week, a holiday flag and a price.</p>
+        </div>
+        <div class="eq">\hat y_t = f\bigl(y_{t-1},\,y_{t-2},\dots,y_{t-k},\ \text{known-ahead features}\bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">y_{t-j}</span>: the value j steps before the target. <span class="tex">k</span>: the number of lags. <span class="tex">f</span>: any learner (linear model, random forest, gradient boosting, neural network). "Known-ahead features" are inputs whose future values you will really know at forecast time, like the calendar or a planned price, not the weather you cannot yet know.</div>
+
+        <p><b>Pitfall 1: leakage in lags.</b> Every feature in a row must be computed from information available <i>before</i> the label's time. The classic slip is a rolling or centred average that includes the label itself or a later day.</p>
+        <div class="worked"><b>Worked example — a leaky feature</b>
+          <p>A centred 3-day average for day 3 uses days 2, 3 and 4: (12 + 13 + 15)/3 = 13.3333, and the label is 13. Day 4: (13+15+14)/3 = 14.0000 with label 15. Day 5: (15+14+16)/3 = 15.0000 with label 14. Day 6: (14+16+18)/3 = 16.0000 with label 16. The feature contains one third of the answer plus tomorrow's value, so it tracks the label closely and test error plummets. At forecast time you do not have day 4 when predicting day 3, so the feature cannot be built, and the real model is a fiction. A safe version averages only days before the target: the days t−3 to t−1.</p>
+        </div>
+
+        <p><b>Pitfall 2: shuffling and the split.</b> The rows of the table look independent, so it is tempting to use a random train/test split. Do not: neighbouring rows overlap (they share most of their lags), so a shuffled split leaks. Split by time and backtest with a rolling origin (lesson 8.4). Leave a gap if a feature spans several days.</p>
+        <p><b>Pitfall 3: forecasting several steps ahead.</b> A model trained for one step needs tomorrow's value to predict the day after. Two honest options: feed its own forecast back in as the lag (recursive, errors compound), or train a separate model for each horizon (direct, no compounding but more models).</p>
+        <p><b>Pitfall 4: trends and extrapolation.</b> A tree-based model predicts averages of training labels, so it cannot forecast values larger than any it has seen, and a trending series will be underpredicted. Fix by predicting the change (a difference) or the ratio to a recent level, then adding it back.</p>
+        <p><b>Pitfall 5: beating the baseline.</b> Always compare with naive, seasonal naive and exponential smoothing in the same backtest. A complex model that cannot beat them is not worth deploying.</p>
+        <p><b>Global models (a preview).</b> With thousands of related series (products, stores, sensors), one model can be trained on all of them together, with an identifier or static features per series. It learns shared patterns and helps series with little history. You will meet this in production-scale systems; the same leakage and backtesting rules apply, with the origin moving across all series at once.</p>
+
+        <div data-lab="ds-ts-lags"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Slide the window with k = 1, then k = 7 (the seasonal period of the simulated daily series). Which gives the lower test MAE, and why?</li>
+          <li>Tick the leaky feature and compare the test MAE with and without it. Which version would you trust in production?</li>
+          <li>Raise the noise. Does the model's advantage over the naive "same as yesterday" forecast grow or shrink?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Look-ahead in rolling features.</b> Shift rolling windows so they end at t−1, not t.</li>
+          <li><b>Random splits and overlapping rows.</b> They leak even if each feature looks innocent.</li>
+          <li><b>Scaling on all the data.</b> Fit scalers on the training period only (<a href="ds-features.html#leakage">leakage</a>).</li>
+          <li><b>Features not known ahead.</b> Tomorrow's weather observation is not available today; only its forecast is.</li>
+          <li><b>Forgetting the baseline.</b> A fancy model is only impressive if it beats seasonal naive on a rolling-origin backtest.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Retail demand:</b> gradient-boosted trees on lag, calendar and price features are a standard winner in forecasting competitions such as the M5 retail challenge.</li>
+          <li><b>Sensors and energy:</b> lagged readings plus weather forecasts feed regressors predicting load or machine failure.</li>
+          <li><b>Foundation models for time series:</b> recent pretrained forecasters take a window of past values as a token sequence, the same sliding-window idea.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A series of 100 days is turned into a table with 7 lags. How many rows?</summary><div class="ans">100 − 7 = 93 rows. The first 7 days have no complete set of lags.</div></details>
+        <details class="check"><summary>2. Why does a centred 3-day average feature cause leakage?</summary><div class="ans">It includes the day being predicted and the day after. At forecast time those values do not exist, so the feature cannot be computed, yet in a backtest it makes the model look excellent.</div></details>
+        <details class="check"><summary>3. Why might a random forest underpredict a series that keeps rising?</summary><div class="ans">A forest outputs averages of training labels, so it never predicts beyond the largest value it saw. Predicting the change from the last value (or removing the trend first) lets it handle growth.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Sliding a window turns a series into a table: k lags give <span class="tex">n-k</span> rows, and any regressor can then be used.</li>
+          <li>Every feature must come from before the label's time; split by time and backtest with a rolling origin, never shuffle.</li>
+          <li>Plan multi-step forecasts (recursive or direct), handle trends by predicting changes, and always beat a naive baseline.</li>
+          <li>Global models train one learner across many series (a preview); the same honesty rules apply.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Next is Module 9, <a href="ds-production.html">Communicating, deploying &amp; responsible data science</a>, where a forecast leaves the notebook: monitoring drift, documenting models and thinking about fairness and privacy. Revisit <a href="ds-modelling.html">Predictive modelling in practice</a> for the general ideas of validation and baselines.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

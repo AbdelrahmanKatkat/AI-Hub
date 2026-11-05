@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · Statistics for data science · Data Science</title>
+<meta name="description" content="Samples and populations, the sampling distribution and the central limit theorem, confidence intervals, hypothesis tests, power and sample size, and the bootstrap: how to state what a sample of data does and does not tell you, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-ds.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-ds-statistics.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="ds" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="data-science.html">Data Science</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#2f81f726">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · Statistics for data science</h1>
+        <p>You almost never see the whole population: a few hundred customers stand in for millions, one A/B test for every future visitor. Statistics is the discipline of saying how far a sample can be trusted. This module sits in the <b>test and model</b> stage of the data science loop (ask and collect, clean and prepare, explore, test and model, communicate, deploy and monitor), and it reaches back to the first stage, because a sample is only as good as the way it was collected.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: <a href="math-probability.html#lln-clt">probability and the CLT</a>, <a href="math-statistics.html#intervals-tests">intervals and tests</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> The mathematics module already derived the central limit theorem, the confidence-interval formula and the t-test in general. Here every lesson starts from a decision, prints a tiny table, and does the arithmetic on it. All labs are <i>illustrative</i> simulations with seeded random numbers, so a run can be repeated: they show what the long-run behaviour of the procedures looks like, not the result of a real study. One small table is reused across lessons 3.3, 3.4 and 3.6, so you can compare three ways of answering the same question.</div>
+
+    <!-- ===================== 3.1 ===================== -->
+    <section class="lesson" id="sampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.1</span><h2>Populations, samples &amp; sampling bias</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A shop owner wants to know the average weekly spend per customer to plan stock. The shop's app can message customers and a survey there collects 4 answers within an hour. Cheap, quick, and the average is £73.25. Can she plan on that number? And if she waits a month and collects 4 000 app answers, does the number become trustworthy?</div>
+
+        <h3 class="sec">Intuition: taste the soup, but stir it first</h3>
+        <p>To judge a pot of soup you taste one spoonful. That works only if the pot is well stirred. If all the salt sank to the bottom and you skim the top, a thousand spoonfuls from the top will all agree with each other and all be wrong. In data work the pot is the <b>population</b>: every customer, every transaction, every future user you care about. The spoonful is the <b>sample</b>. Stirring is <b>random sampling</b>: giving every member of the population a known, non-zero chance of being picked, by a mechanism that does not depend on what you are measuring.</p>
+        <p>Two things can go wrong with a sample. It can be <i>noisy</i>: a small random spoonful happens to be unrepresentative, and the next spoonful differs. That error shrinks as the sample grows, and the rest of this module measures it. Or it can be <i>biased</i>: the way you picked members tilts the answer in one direction every time. That error does <b>not</b> shrink as the sample grows. It is the more dangerous one, because a large biased sample looks very precise.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Definitions first.</b> The <b>population</b> is the whole group the question is about. The <b>sampling frame</b> is the actual list you can draw from (customers with the app installed, phone numbers that are listed, rows that were logged). The <b>sample</b> is the rows you really measured. Trouble starts when the frame differs from the population (<b>coverage bias</b>), when who ends up in the sample depends on the quantity you measure (<b>selection bias</b>, for example people with strong opinions answer surveys), or when people who were picked do not respond (<b>non-response bias</b>). A <b>convenience sample</b> takes whoever is easiest to reach.</p>
+        <div class="worked"><b>Worked example: twelve customers</b>
+          <p>A tiny shop has exactly 12 customers, so we can know the truth. Weekly spend in £, and whether the customer uses the app:</p>
+          <table class="tbl"><thead><tr><th>customer</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th></tr></thead>
+          <tbody><tr><td>spend (£)</td><td>12</td><td>15</td><td>18</td><td>22</td><td>25</td><td>30</td><td>34</td><td>41</td><td>55</td><td>63</td><td>80</td><td>95</td></tr>
+          <tr><td>app user?</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr></tbody></table>
+          <p><b>The truth.</b> The population mean is <span class="tex">\mu=490/12=40.83</span> (the eight non-app customers total 197, the four app users total 293).</p>
+          <p><b>Convenience sample.</b> The survey reaches only the four app users: <span class="tex">\bar x=(55+63+80+95)/4=73.25</span>. That is £32.42 too high. The app users are a different kind of customer, and they are the only ones the survey can see.</p>
+          <p><b>Random sample.</b> Draw 4 customers by lot, say customers 2, 5, 8 and 11 (spends 15, 25, 41, 80): <span class="tex">\bar x=161/4=40.25</span>, only £0.58 below the truth. A different random draw would give a different number, but the draws scatter <i>around</i> 40.83, while the convenience sample is always 73.25.</p>
+          <p><b>A bigger convenience sample.</b> Add as many app answers as you like: the average of the app users converges to 73.25, the average of <i>their</i> group. The error stays at £32.42, however large the sample.</p>
+        </div>
+        <p>The lab below does this at a larger scale: 2 000 customers, 20% of them app users, and two samples growing in parallel. The slider says how reachable the non-app customers are for the convenience survey. At 0% the survey only ever sees app users.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <p>For a simple random sample of size <span class="tex">n</span> from a population of <span class="tex">N</span> units, every subset of size <span class="tex">n</span> is equally likely. Then the sample mean is an <b>unbiased</b> estimator of the population mean. For a non-random sample the expected value of the sample mean is the mean of the group you could reach:</p>
+        <div class="eq">\mathbb{E}[\bar x_{\text{random}}] = \mu, \qquad \mathbb{E}[\bar x_{\text{convenience}}] = \mu_{\text{reachable}} \neq \mu \quad\text{(bias } = \mu_{\text{reachable}}-\mu)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\bar x</span>: the sample mean, the average of the <span class="tex">n</span> measured values. <span class="tex">\mu</span>: the population mean, the number you want. <span class="tex">\mathbb{E}[\cdot]</span>: the average over many repetitions of the sampling procedure. <span class="tex">\mu_{\text{reachable}}</span>: the mean of the part of the population the procedure can actually select. Bias is the gap between the two; it does not depend on <span class="tex">n</span>.</div>
+        <p>This is the sampling counterpart of what the mathematics module calls <a href="math-statistics.html#bias-variance">bias and variance</a>: random sampling removes bias, and a larger <span class="tex">n</span> removes variance. Only a better <i>design</i> removes bias.</p>
+
+        <div data-lab="ds-st-sampling"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the reachability slider at 0% and press play. Watch the green (random) and red (convenience) running averages: both wiggle at first, then green settles onto the dashed true mean while red settles onto a higher value.</li>
+          <li>Let it run past 500 customers. The red line is steadier than green at the end, yet farther from the truth. Precision is not accuracy.</li>
+          <li>Drag reachability to 30%, then 100%. At 100% the "convenience" sample is just a random one, and the two lines agree.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"More data fixes it."</b> More rows from the same biased process give a smaller noise and the same bias. The convenience sample above is off by £32.42 at n = 4 and at n = 4 000.</li>
+            <li><b>Survivorship bias</b> is selection bias in time: analysing only the customers who stayed, the loans that were repaid, or the models that were deployed. The ones that left are missing from the frame.</li>
+            <li><b>Self-selection.</b> A review site shows the people angry or delighted enough to write. Their average says little about the average customer.</li>
+            <li><b>Random is not "whatever came first".</b> The first 1 000 rows of a log are tied to one time of day or one day of week. Randomness is a procedure, such as a random number generator, not an impression.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Training-set bias.</b> A model learns the population its training data represents. A face dataset collected from public web photos under-represents some groups, and the model's accuracy on them is lower no matter how many more web photos are added.</li>
+            <li><b>Survey and label design.</b> Human ratings gathered from a convenient pool of annotators bake the pool's views into the labels. Reward models and preference data inherit this directly.</li>
+            <li><b>Train/serve skew.</b> If the sampling frame for training (logged traffic from the old system) differs from the population the model will face, offline metrics are biased estimates of live performance.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the twelve-customer table, a random sample happens to contain customers 9, 10, 11, 12. Does that mean random sampling was biased?</summary><div class="ans">No. Random sampling is unbiased as a <i>procedure</i>: averaged over all possible samples the sample mean equals 40.83. That particular draw (probability 1 in 495 for 4 of 12) gives 73.25 by bad luck, which is noise, and it is rare. The convenience sample gives 73.25 every single time.</div></details>
+        <details class="check"><summary>2. A hospital audits the quality of care by surveying patients who returned for a follow-up visit. Name the bias.</summary><div class="ans">Selection (survivorship) bias in the sampling frame: patients who did badly, moved, or lost trust do not return, so they are absent. The returning patients are probably happier than the typical patient, so satisfaction is overestimated, and surveying more returning patients does not repair it.</div></details>
+        <details class="check"><summary>3. With a random sample, why does the error shrink as n grows, but with a convenience sample it does not?</summary><div class="ans">Random sampling error is noise around the right centre, μ, and averaging more values reduces noise. A convenience sample is centred on μ<sub>reachable</sub>, the wrong centre; more values only pin down that wrong centre more tightly.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A sample estimates a population only if it was selected by a mechanism unrelated to what you measure.</li>
+          <li>Noise shrinks with <span class="tex">n</span>; bias does not. A large convenience sample is precisely wrong.</li>
+          <li>Always ask: who could not have ended up in this sample? Name the frame, and name who is missing.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 ===================== -->
+    <section class="lesson" id="sampling-distribution" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.2</span><h2>The sampling distribution &amp; the central limit theorem</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You compute one average from one sample of 36 orders and get £22. If a colleague repeated the study with another 36 orders, they would get a different number. How different? By how much would the answer wobble, and what do you gain by collecting four times as many orders?</div>
+
+        <h3 class="sec">Intuition: the wobble of the average</h3>
+        <p>An average computed from data is a random thing, because the data are. Imagine repeating the entire study again and again, each time with a fresh random sample of the same size, and writing down each average. Those averages form their own distribution, called the <b>sampling distribution</b> of the mean. Nobody ever sees it in real life (you get one sample), but it is exactly what tells you how much one average can be trusted. Its centre is the true mean. Its spread, the <b>standard error</b>, says how far a typical sample average lands from the truth.</p>
+        <p>Averaging smooths out extremes: one huge order in a sample of 36 moves the average by only a thirty-sixth of its size. So averages vary less than single values, and the more values you average, the less they vary.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: every possible sample, counted</b>
+          <p>A tiny population of six orders (in £10 units): <span class="tex">\{1,2,3,4,5,20\}</span>. One order is large, so the population is skewed. Its mean is <span class="tex">\mu=35/6=5.833</span> and its standard deviation (dividing by the population size 6) is <span class="tex">\sigma=6.4657</span>.</p>
+          <p>Take samples of <span class="tex">n=2</span> with replacement. There are 36 equally likely ordered pairs. Their means, with how many pairs give each:</p>
+          <table class="tbl"><thead><tr><th>mean</th><th>1</th><th>1.5</th><th>2</th><th>2.5</th><th>3</th><th>3.5</th><th>4</th><th>4.5</th><th>5</th><th>10.5</th><th>11</th><th>11.5</th><th>12</th><th>12.5</th><th>20</th></tr></thead>
+          <tbody><tr><td>pairs</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>4</td><td>3</td><td>2</td><td>1</td><td>2</td><td>2</td><td>2</td><td>2</td><td>2</td><td>1</td></tr></tbody></table>
+          <p>Add them up (1 + 2 + 3 + 4 + 5 + 4 + 3 + 2 + 1 + 2 + 2 + 2 + 2 + 2 + 1 = 36). The average of all 36 sample means is exactly 5.833, equal to <span class="tex">\mu</span>: the sample mean is unbiased. The standard deviation of the 36 sample means is 4.5720, and the formula <span class="tex">\sigma/\sqrt{n}=6.4657/\sqrt{2}=4.5720</span> matches to all digits. With <span class="tex">n=4</span> the formula gives <span class="tex">6.4657/2=3.2329</span>: doubling the sample size from 2 to 4 shrank the standard error by a factor of <span class="tex">\sqrt{2}</span> (4.572 to 3.233).</p>
+          <p>The orders in the original table: 36 orders with <span class="tex">\sigma=12</span> give <span class="tex">\mathrm{SE}=12/\sqrt{36}=2</span>; with 144 orders, <span class="tex">12/\sqrt{144}=1</span>. <b>Four times as much data halves the standard error.</b> That is why halving the uncertainty is expensive.</p>
+        </div>
+        <p>The surprise is the <i>shape</i>. The population is wildly skewed, and the n = 2 sample means already have a cluster near 1 to 5 and a small group around 10 to 12. With larger n the shape smooths into a bell, whatever the population looks like.</p>
+
+        <h3 class="sec">The formal statement</h3>
+        <div class="eq">\mathbb{E}[\bar X]=\mu,\qquad \mathrm{SE}(\bar X)=\frac{\sigma}{\sqrt{n}},\qquad \frac{\bar X-\mu}{\sigma/\sqrt{n}}\ \xrightarrow{\ n\to\infty\ }\ \mathcal{N}(0,1)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\bar X</span>: the sample mean, treated as a random quantity (capital letters are random, small letters are the numbers you observed). <span class="tex">\mu,\sigma</span>: the population mean and standard deviation. <span class="tex">n</span>: the sample size. <span class="tex">\mathrm{SE}</span>: the standard error, the standard deviation of <span class="tex">\bar X</span> across repeated samples. The arrow says that, for independent draws from a population with finite variance, the standardised mean approaches the standard normal distribution as <span class="tex">n</span> grows (the central limit theorem, proved in <a href="math-probability.html#lln-clt">Module 3 of the mathematics topic</a>).</div>
+        <p>How big must <span class="tex">n</span> be? The theorem is a limit, not a promise at any given size. For mildly skewed data, <span class="tex">n\approx30</span> is often enough; for heavy skew (the lognormal choice in the lab) it can take hundreds. The standard error formula holds for <i>every</i> n; only the bell shape needs a large one. And <span class="tex">\sigma</span> is usually unknown, so in practice you estimate it with the sample standard deviation <span class="tex">s</span>.</p>
+
+        <div data-lab="ds-st-sampling-dist"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep "skewed (exponential)" and n = 1. The green histogram of means copies the population. Now set n = 5, then 30: the bars narrow around the dashed centre, and the purple normal curve fits them better.</li>
+          <li>Compare the readout's "SD of the sample means" with σ/√n. Change n from 25 to 100 and see the standard deviation fall by about half.</li>
+          <li>Switch to "very skewed (lognormal)" and n = 5. The means are still lopsided; raise n and watch how much larger n has to be before the bell appears. Then try "two humps" and "flat".</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Standard deviation versus standard error.</b> σ describes how spread out single values are; SE describes how spread out <i>averages</i> are. Quoting the SD of the data as the uncertainty of the mean overstates it by <span class="tex">\sqrt{n}</span>.</li>
+            <li><b>"The CLT makes my data normal."</b> It does not. The raw data keep their skewed shape; only the distribution of the <i>average</i> approaches a bell.</li>
+            <li><b>Dependent data.</b> The formula assumes independent draws. Ten rows from the same user, or consecutive days of one time series, carry less information than ten independent rows, so the true SE is larger than σ/√n.</li>
+            <li><b>The formula is for the mean.</b> Medians, ratios and model metrics have different standard errors (lesson 3.6 gets them by resampling).</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Every confidence interval and test</b> in the next lessons is built from this standard error.</li>
+            <li><b>Mini-batch gradients.</b> A batch of size <span class="tex">B</span> averages <span class="tex">B</span> per-example gradients, so its noise falls like <span class="tex">1/\sqrt{B}</span>: four times the batch halves the gradient noise, the same law.</li>
+            <li><b>Evaluation noise.</b> An accuracy measured on 1 000 test items has a standard error of about <span class="tex">\sqrt{p(1-p)/1000}</span>, around 1.4 percentage points at 90% accuracy. Differences smaller than that are not evidence of a better model.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Order values have σ = 12. A study uses n = 9. What is the standard error, and what n makes it 1?</summary><div class="ans">SE = 12/√9 = 4. For SE = 1 you need √n = 12, so n = 144: sixteen times as many orders as 9 to shrink the error four-fold.</div></details>
+        <details class="check"><summary>2. In the six-order population, why is the average of the 36 sample means exactly 5.833, while any single sample mean can be as large as 20?</summary><div class="ans">Unbiasedness is about the long-run average over all samples: each order appears equally often, so the mean of the sample means equals μ = 35/6 = 5.833. A single sample (two copies of the order of 20) can land far away, which is why SE = 4.572 is large for n = 2.</div></details>
+        <details class="check"><summary>3. A colleague says "my data are skewed, so I cannot use the standard error formula." What is wrong?</summary><div class="ans">σ/√n is the standard deviation of the sample mean for any population with finite variance and independent draws, normal or not. Skew only affects whether the sampling distribution is close to a bell at small n, which matters when converting SE into probabilities.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The sampling distribution is what you would see by repeating the whole study; its spread, <span class="tex">\sigma/\sqrt{n}</span>, is the standard error.</li>
+          <li>Four times the data halves the error, and the bell shape of the means arrives with larger <span class="tex">n</span> whatever the population looks like.</li>
+          <li>Independence is part of the assumption: correlated rows are worth fewer than their count.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 ===================== -->
+    <section class="lesson" id="confidence-intervals" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.3</span><h2>Confidence intervals &amp; what they mean</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A clinic promises patients a waiting time of "about 7 minutes". An analyst times 8 random patients and gets an average of 8.475 minutes. What range of true average waits is consistent with this sample, and what exactly can be claimed about that range?</div>
+
+        <h3 class="sec">Intuition: a net that is thrown, not a target that moves</h3>
+        <p>The true average wait is one fixed number, even though we do not know it. We build a range around the sample average wide enough that, <i>if we repeated the whole procedure many times</i>, most of the ranges we built would contain the fixed number. Think of throwing a net at a fixed fish: you cannot say after one throw that this net has a 95% chance of containing the fish (it either does or does not), but you can say that your throwing technique catches the fish 95 throws in 100.</p>
+        <p>From lesson 3.2 we know the sample average lands within about two standard errors of the truth about 95% of the time. Flip that around: the truth lies within about two standard errors of the sample average about 95% of the time. That is the whole idea.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: 8 waiting times (reused in 3.4 and 3.6)</b>
+          <table class="tbl"><thead><tr><th>patient</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr></thead>
+          <tbody><tr><td>wait (min)</td><td>7.2</td><td>9.1</td><td>6.4</td><td>8.8</td><td>10.3</td><td>7.9</td><td>8.5</td><td>9.6</td></tr></tbody></table>
+          <p><b>Step 1, the mean.</b> The values sum to 67.8, so <span class="tex">\bar x=67.8/8=8.475</span>.</p>
+          <p><b>Step 2, the sample standard deviation.</b> Squared deviations from 8.475: 1.6256, 0.3906, 4.3056, 0.1056, 3.3306, 0.3306, 0.0006, 1.2656, total 11.355. Divide by <span class="tex">n-1=7</span>: variance 1.6221, so <span class="tex">s=1.2736</span>.</p>
+          <p><b>Step 3, the standard error.</b> <span class="tex">\mathrm{SE}=s/\sqrt{8}=1.2736/2.8284=0.4503</span>.</p>
+          <p><b>Step 4, the multiplier.</b> We estimated σ by s from only 8 values, which adds extra uncertainty, so the multiplier comes from the t distribution with 7 degrees of freedom, not the normal: <span class="tex">t^*_{0.975,7}=2.3646</span> (compare 1.96).</p>
+          <p><b>Step 5, the interval.</b> Margin of error <span class="tex">2.3646\times0.4503=1.0648</span>, so the 95% confidence interval is <span class="tex">8.475\pm1.065</span>, that is <b>[7.41, 9.54] minutes</b>.</p>
+          <p>Using 1.96 by mistake would give [7.59, 9.36]: too narrow, and in the long run it would cover the truth less than 95% of the time. A 90% interval from the same data is [7.62, 9.33]; a 99% interval is [6.90, 10.05]. Higher confidence costs width. The promised 7 minutes is outside the 95% interval and inside the 99% one.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\bar x \;\pm\; t^{*}_{n-1}\,\frac{s}{\sqrt{n}} \qquad\text{(or } \bar x \pm z^{*}\,\tfrac{\sigma}{\sqrt{n}}\text{ when }\sigma\text{ is known)}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\bar x</span>: the sample mean. <span class="tex">s</span>: the sample standard deviation (divide by <span class="tex">n-1</span>). <span class="tex">n</span>: sample size. <span class="tex">s/\sqrt{n}</span>: the estimated standard error. <span class="tex">t^*_{n-1}</span>: the critical value of the t distribution with <span class="tex">n-1</span> degrees of freedom that leaves <span class="tex">(1-\text{level})/2</span> in each tail (2.3646 for 95% and n = 8). <span class="tex">z^*</span>: the same for the normal (1.960 for 95%). The whole term after ± is the <b>margin of error</b>.</div>
+        <p><b>What a 95% interval means.</b> The procedure "collect a random sample, compute <span class="tex">\bar x\pm t^*s/\sqrt n</span>" produces an interval that contains the true mean in 95% of repetitions, assuming random sampling and a roughly bell-shaped sampling distribution. The 95% belongs to the <i>procedure</i>. The particular interval [7.41, 9.54] either contains the true mean or does not; there is no probability left to attach once the numbers are written down.</p>
+        <p><b>The common misreading.</b> "There is a 95% probability that the true mean lies between 7.41 and 9.54" treats μ as random and the interval as fixed, the opposite of the frequentist set-up. The answer to the question people really want (the probability of a value given the data) needs a prior and is the Bayesian credible interval from <a href="math-statistics.html#map-bayes">MAP and Bayes</a>. A defensible plain-language reading is: "values from 7.4 to 9.5 are the ones the data do not rule out at the 5% level."</p>
+        <p>The width is driven by three things, which the lab lets you move: bigger <span class="tex">n</span> makes it narrower (by <span class="tex">1/\sqrt{n}</span>), higher confidence makes it wider, and noisier data (bigger <span class="tex">s</span>) make it wider.</p>
+
+        <div data-lab="ds-st-ci"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>At n = 10 and 95%, let 100 or more studies arrive. Count the red rows (misses): about 5%. Watch the tally in the readout wander and then settle near 95%.</li>
+          <li>Change the level to 80%, then 99%. Red rows become frequent, then almost vanish, and the bars get shorter, then longer.</li>
+          <li>Set n = 3: the intervals are huge and sometimes fall off the axis (the t multiplier is 4.30), but the coverage is still about 95%. Then n = 100: narrow bars, same coverage.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"95% of the data lie in the interval."</b> No: the interval is for the <i>mean</i>. About 95% of individual patients would fall within roughly ±2s of the mean, a much wider range (here about 5.9 to 11.0).</li>
+            <li><b>Two intervals overlapping means no difference.</b> Not exactly: the proper comparison uses the interval of the <i>difference</i>. Overlap is a rough check only.</li>
+            <li><b>Ignoring the assumptions.</b> The interval says nothing about bias: a perfectly computed interval from a convenience sample is a precise statement about the wrong population (lesson 3.1).</li>
+            <li><b>Using 1.96 with tiny n.</b> With n = 8 the right multiplier is 2.36; with n = 3 it is 4.30.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Reporting model metrics.</b> "Accuracy 0.874" means little; "0.874, 95% CI [0.861, 0.887] on 3 000 test items" says how much to trust it. See <a href="ml-evaluation.html">ML evaluation</a>.</li>
+            <li><b>Benchmark leaderboards.</b> Two models separated by less than the interval widths are statistically tied. Many published gains are inside the noise.</li>
+            <li><b>A/B tests</b> report a confidence interval for the lift, which is what drives a launch decision (Module 5).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Recompute the interval if the same mean and s came from n = 32 patients. (t* for 31 degrees of freedom is 2.0395.)</summary><div class="ans">SE = 1.2736/√32 = 0.2251; margin = 2.0395 × 0.2251 = 0.459; interval 8.475 ± 0.459 = [8.02, 8.93]. Four times the patients gave about half the margin (1.065 down to 0.459, a little less than half, because t* also shrank).</div></details>
+        <details class="check"><summary>2. True or false: "the true mean has a 95% chance of being in [7.41, 9.54]."</summary><div class="ans">False in the frequentist reading. The true mean is a fixed number, so it is either in the interval or not. The 95% describes how often this method produces intervals that contain it. (If you want a probability statement about μ you need a Bayesian model with a prior.)</div></details>
+        <details class="check"><summary>3. The clinic promised 7 minutes. Does the 95% interval support the promise?</summary><div class="ans">7 lies outside [7.41, 9.54], so average waits of 7 minutes are not among the values the data are consistent with at the 5% level: the sample is evidence the promise is not met. With only 8 patients, the plausible range is still wide: 7.4 to 9.5.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Interval = estimate ± multiplier × standard error; for a mean from a small sample use <span class="tex">t^*</span> with <span class="tex">n-1</span> degrees of freedom: here [7.41, 9.54].</li>
+          <li>"95%" describes the long-run behaviour of the procedure, not the chance that one interval holds the truth.</li>
+          <li>Width falls as <span class="tex">1/\sqrt{n}</span>, rises with confidence and noise, and says nothing about bias.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 ===================== -->
+    <section class="lesson" id="hypothesis-testing" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.4</span><h2>Hypothesis tests: null, alternative, test statistic &amp; p-value</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The clinic claims its average wait is 7 minutes. Our 8 patients averaged 8.475. Is that just the normal wobble of a small sample, or is the claim hard to believe? We need a rule that turns "how far from the claim?" into a number that can be compared with a threshold chosen in advance.</div>
+
+        <h3 class="sec">Intuition: innocent until the data are surprising</h3>
+        <p>A hypothesis test is a proof by contradiction made probabilistic. Assume the claim is true (the <b>null hypothesis</b>, <span class="tex">H_0</span>). Ask: if it were true, how surprising would data like ours be? If very surprising, doubt the claim. If unremarkable, you have not shown the claim is wrong. Like a court, the test never "proves innocence": failing to reject <span class="tex">H_0</span> only says the evidence was not strong enough.</p>
+        <p>"Surprising" needs a scale. Here the scale is the standard error from 3.2: a sample average more than two or three standard errors from the claimed value is hard to blame on chance.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: the one-sample t-test by hand</b>
+          <p>Same 8 waits as in 3.3: <span class="tex">\bar x=8.475</span>, <span class="tex">s=1.2736</span>, <span class="tex">\mathrm{SE}=0.4503</span>.</p>
+          <p><b>1. Hypotheses.</b> <span class="tex">H_0:\mu=7</span> (the claim). <span class="tex">H_1:\mu\neq7</span> (two-sided: we care about waits that are shorter or longer than promised).</p>
+          <p><b>2. Significance level.</b> Choose <span class="tex">\alpha=0.05</span> <i>before</i> looking at the data.</p>
+          <p><b>3. Test statistic.</b> How many standard errors is the sample mean from the claim? <span class="tex">t=\dfrac{8.475-7}{0.4503}=3.2756</span>, with <span class="tex">n-1=7</span> degrees of freedom.</p>
+          <p><b>4. The p-value.</b> If <span class="tex">H_0</span> were true, the t statistic would follow the t distribution with 7 degrees of freedom. The chance of a statistic at least as far from 0 as 3.2756, in either direction, is <span class="tex">p=2\,P(T_7\ge3.2756)=0.0136</span> (one-sided, 0.0068).</p>
+          <p><b>5. Decision.</b> 0.0136 &lt; 0.05, so reject <span class="tex">H_0</span>: the data are hard to reconcile with a true mean of 7. Equivalently the critical value is 2.3646 and 3.2756 exceeds it, which matches the 95% interval of 3.3, [7.41, 9.54], which excludes 7.</p>
+          <p><b>Contrast.</b> Suppose the clinic had claimed 8 minutes. Then <span class="tex">t=(8.475-8)/0.4503=1.0549</span>, <span class="tex">p=0.3265</span>: not unusual if the true mean were 8, so we do not reject. That is not a demonstration that the mean <i>is</i> 8; 8 is simply inside the interval along with many other values.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">t=\frac{\bar x-\mu_0}{s/\sqrt{n}},\qquad p\text{-value}=P\bigl(|T_{n-1}|\ge |t_{\text{obs}}|\;\big|\;H_0\bigr),\qquad \text{reject }H_0\text{ if }p\le\alpha</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\mu_0</span>: the value claimed by <span class="tex">H_0</span> (7). <span class="tex">t</span>: the test statistic, the distance of <span class="tex">\bar x</span> from <span class="tex">\mu_0</span> in units of standard error. <span class="tex">T_{n-1}</span>: a random variable that follows the t distribution with <span class="tex">n-1</span> degrees of freedom, which is how <span class="tex">t</span> behaves <i>if</i> <span class="tex">H_0</span> holds and the data are roughly normal or <span class="tex">n</span> is large. <span class="tex">t_{\text{obs}}</span>: the value computed from our data. <span class="tex">\alpha</span>: the significance level, the false-alarm rate you accept (lesson 3.5).</div>
+        <p><b>What the p-value is.</b> The probability, computed <i>assuming <span class="tex">H_0</span> is true</i>, of getting data at least as extreme as ours. It is <b>not</b> the probability that <span class="tex">H_0</span> is true. For us, "if the true mean were 7, only 1.4% of samples of 8 would land this far from 7 or farther." The test statistic compares data against a model; it does not rank the model against alternatives.</p>
+        <p>The lab reveals the same 8 values one by one. With only 2 or 3 values the t distribution has heavy tails, so even a large gap gives a modest t; as values accumulate the curve tightens and the standard error shrinks. You can edit the list and the claimed value, or simulate 30 values with a chosen true mean.</p>
+
+        <div data-lab="ds-st-pvalue"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the default data and μ₀ = 7. Watch the t statistic and p-value move as each value arrives; the final values are t = 3.276 and p = 0.0136.</li>
+          <li>Change μ₀ to 8: p becomes 0.3265, and the red tail area covers most of the curve. Then μ₀ = 8.5: t is almost 0 and p is near 1.</li>
+          <li>Set the true mean slider to 7 and press Simulate several times (then play). With no real effect, p still sometimes dips below 0.05 on the way. Do you see why stopping at the first dip would be cheating?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"p = 0.0136 means a 1.4% chance that H0 is true."</b> No. It is P(data this extreme | H0), not P(H0 | data). Getting P(H0 | data) needs a prior (Bayes' rule).</li>
+            <li><b>"p &gt; 0.05 means no effect."</b> It means the data are not surprising under H0. With n = 8 even a real difference of 0.5 minutes may not show.</li>
+            <li><b>Statistical versus practical significance.</b> With 100 000 patients a 0.02-minute difference gives a p-value far below 0.001. Report the size of the effect and its interval, not only p.</li>
+            <li><b>p-hacking and peeking.</b> Trying many hypotheses, subgroups or stopping times until p &lt; 0.05 turns a 5% false-alarm rate into a much larger one (<a href="ds-experiments.html#peeking">Module 5</a>).</li>
+            <li><b>Choosing sides after seeing the data.</b> A one-sided p of 0.0068 is justified only if you committed to the direction beforehand.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>A/B test analysis:</b> does the new ranking model change click-through, or is the difference noise? The test statistic and p-value are the same recipe with a difference of two proportions.</li>
+            <li><b>Model comparison:</b> paired t-tests or permutation tests on per-fold scores decide whether model B is really better than A.</li>
+            <li><b>Feature screening:</b> t-tests and their relatives rank thousands of candidate features, which is where multiple-comparison corrections become essential.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A sample of n = 25 has x̄ = 52 and s = 10. Test H0: μ = 50. What are t and the decision at α = 0.05?</summary><div class="ans">SE = 10/√25 = 2, so t = (52 − 50)/2 = 1.00 with 24 degrees of freedom. The two-sided p-value is 0.327, well above 0.05, so we do not reject H0: a 2-unit gap is within ordinary sampling wobble here.</div></details>
+        <details class="check"><summary>2. Under H0 and α = 0.05, in how many of 1 000 independent studies of a true null will you wrongly reject?</summary><div class="ans">About 50. By construction, when H0 is true the p-value is below 0.05 in about 5% of studies, which is exactly the false-alarm rate α.</div></details>
+        <details class="check"><summary>3. Our p-value is 0.0136. Which is correct: (a) H0 has a 1.36% chance of being true; (b) if H0 were true, data this extreme would arise about 1.36% of the time?</summary><div class="ans">(b). The p-value conditions on H0 being true. Statement (a) reverses the conditioning and is the classic misreading.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>State <span class="tex">H_0</span>, <span class="tex">H_1</span> and <span class="tex">\alpha</span> first; compute <span class="tex">t=(\bar x-\mu_0)/\mathrm{SE}</span>; read the p-value from the t distribution: here t = 3.2756, p = 0.0136.</li>
+          <li>The p-value is the probability of data this extreme or more <i>if H0 is true</i>; it is not the probability that H0 is true, and not an effect size.</li>
+          <li>Failing to reject is not confirming; report the effect and its interval alongside p.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 ===================== -->
+    <section class="lesson" id="errors-power" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.5</span><h2>Type I &amp; II errors, power &amp; sample size</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A team plans to test whether a redesigned checkout page raises average basket value by £5. Each basket varies with a standard deviation of £10. If they test 25 customers, how likely is the test to detect a real £5 gain? How many customers do they need to be reasonably sure, and how should they decide that <i>before</i> running anything?</div>
+
+        <h3 class="sec">Intuition: two ways to be wrong</h3>
+        <p>A smoke alarm can fail in two ways. It can ring with no fire (a <b>false alarm</b>), or stay silent during a real fire (a <b>miss</b>). You can make it more sensitive and have more false alarms, or less sensitive and have more misses. Statistical tests are alarms for effects, with the same trade-off:</p>
+        <table class="tbl"><thead><tr><th></th><th>H<sub>0</sub> is true (no effect)</th><th>H<sub>1</sub> is true (real effect)</th></tr></thead>
+        <tbody><tr><td><b>reject H<sub>0</sub></b></td><td>type I error (false alarm), probability <span class="tex">\alpha</span></td><td>correct: a detection, probability <b>power</b> <span class="tex">1-\beta</span></td></tr>
+        <tr><td><b>do not reject</b></td><td>correct</td><td>type II error (a miss), probability <span class="tex">\beta</span></td></tr></tbody></table>
+        <p>You choose <span class="tex">\alpha</span> directly (usually 0.05). <span class="tex">\beta</span> is not chosen; it is determined by the true effect, the noise, the sample size and <span class="tex">\alpha</span>. That is why planning matters: power is something you buy with sample size.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: power of the checkout test</b>
+          <p>Suppose the true gain is <span class="tex">\delta=5</span>, one basket has <span class="tex">\sigma=10</span> (assume it is known, so a z-test), and <span class="tex">n=25</span>, <span class="tex">\alpha=0.05</span> two-sided.</p>
+          <p><b>The null world.</b> The sample mean has SE = <span class="tex">10/\sqrt{25}=2</span>. We reject when the sample mean is beyond <span class="tex">1.96\times2=3.92</span> from 0.</p>
+          <p><b>The real world.</b> The sample mean is centred on 5 with the same SE of 2. The distance of its centre from the rejection line, in SE units, is <span class="tex">5/2=2.5</span>. The chance of landing beyond 3.92: <span class="tex">P(\bar X&gt;3.92)=P(Z&gt;(3.92-5)/2)=P(Z&gt;-0.54)=0.7054</span> (the far tail below -3.92 adds almost nothing).</p>
+          <p><b>So power = 70.5%</b> and the type II error rate is <span class="tex">\beta=29.5\%</span>: roughly 3 real £5 improvements out of 10 would be missed with 25 customers.</p>
+          <table class="tbl"><thead><tr><th>n</th><th>16</th><th>25</th><th>31</th><th>32</th><th>50</th><th>100</th></tr></thead>
+          <tbody><tr><td>SE = 10/√n</td><td>2.500</td><td>2.000</td><td>1.796</td><td>1.768</td><td>1.414</td><td>1.000</td></tr>
+          <tr><td>power</td><td>51.6%</td><td>70.5%</td><td>79.5%</td><td>80.7%</td><td>94.2%</td><td>99.9%</td></tr></tbody></table>
+          <p><b>Choosing n.</b> A common target is 80% power. Solving gives <span class="tex">n=\bigl((1.96+0.8416)\cdot10/5\bigr)^2=31.4</span>, so round up to <b>32</b> (check: 31 gives 79.5%, just short; 32 gives 80.7%).</p>
+          <p><b>A smaller effect.</b> If the true gain is only £2, power at n = 25 is just 17.0%, and 80% power needs <span class="tex">((1.96+0.8416)\cdot10/2)^2=196.2</span>, so <b>197</b> customers. Halving the effect needs four times the data.</p>
+          <p><b>The cost of many tests.</b> With <span class="tex">\alpha=0.05</span> and 20 tests of true nulls, the chance of at least one false alarm is <span class="tex">1-0.95^{20}=64.2\%</span> (Module 5 handles this).</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{power}=1-\beta=P\Bigl(\,|\bar X|&gt;z_{1-\alpha/2}\tfrac{\sigma}{\sqrt n}\ \Big|\ \mu=\delta\Bigr)\approx\Phi\!\Bigl(\tfrac{\delta}{\sigma/\sqrt n}-z_{1-\alpha/2}\Bigr),\qquad n\approx\frac{(z_{1-\alpha/2}+z_{1-\beta})^{2}\,\sigma^{2}}{\delta^{2}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\alpha</span>: the type I error rate (the false-alarm probability when H0 is true). <span class="tex">\beta</span>: the type II error rate (missing a real effect); power is <span class="tex">1-\beta</span>. <span class="tex">\delta</span>: the true effect size you want to be able to detect. <span class="tex">\sigma</span>: the standard deviation of one observation. <span class="tex">z_{1-\alpha/2}</span>: the normal cut-off for a two-sided test (1.960 for <span class="tex">\alpha=0.05</span>); <span class="tex">z_{1-\beta}</span>: the cut-off for the target power (0.8416 for 80%). <span class="tex">\Phi</span>: the standard normal cumulative distribution. The first expression is a close approximation that drops the tail in the wrong direction; the lab uses the exact two-tail expression.</div>
+        <p>Power rises with the effect size <span class="tex">\delta</span>, with the sample size <span class="tex">n</span>, and with <span class="tex">\alpha</span> (a more lenient test detects more, with more false alarms); it falls with the noise <span class="tex">\sigma</span>. The combination <span class="tex">\delta/(\sigma/\sqrt n)</span>, the effect in SE units, is what matters. With a t-test the numbers are slightly lower because s must be estimated.</p>
+
+        <div data-lab="ds-st-power"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults (δ = 5, σ = 10, n = 25, α = 0.05) read off the power, 70.5%, and let experiments accumulate. The share of green (detected) experiments settles near that number.</li>
+          <li>Slide n up to 32: the two curves narrow, the blue curve leaves the rejection region, and power crosses the 80% line on the lower plot.</li>
+          <li>Set δ = 0. The blue curve sits on the red one and the "power" equals α: every rejection is a false alarm. Then set α to 0.01 with δ = 5, n = 25: false alarms drop to 1% but power falls to 47.0%.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Choosing n after seeing the data.</b> Sample size is fixed in advance from the smallest effect worth detecting. Collecting until the result "looks significant" invalidates the error rates.</li>
+            <li><b>Underpowered tests.</b> A study with 17% power finds real effects only one time in six; the effects it does find tend to be overestimates (the winner's curse).</li>
+            <li><b>"Not significant, so no effect."</b> With low power a non-significant result is nearly uninformative. Report the interval.</li>
+            <li><b>Power of what effect?</b> Power is computed for an assumed true effect. If you guess a large δ to get a small n, the study is likely underpowered for the realistic one.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Experiment planning:</b> online-experiment platforms ask for the minimum detectable effect and return the number of users and days needed, exactly the formula above applied to proportions (<a href="ds-experiments.html#ab-tests">Module 5</a>).</li>
+            <li><b>Test-set size:</b> to detect a 1-point accuracy gain between two models you need a test set of thousands of items; a few hundred cannot resolve it.</li>
+            <li><b>Safety and regression tests:</b> a failure rate of 1 in 1 000 needs thousands of trials before the test has any power to see a doubling.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the checkout test (δ = 5, σ = 10, n = 25), what are α, β and power?</summary><div class="ans">α = 5% (chosen), power = 70.5%, so β = 29.5%. About 3 in 10 real £5 improvements would be missed.</div></details>
+        <details class="check"><summary>2. You want 80% power to detect δ = 2.5 with σ = 10 and α = 0.05. What n?</summary><div class="ans">n = ((1.96 + 0.8416) × 10 / 2.5)² = (11.206)² = 125.6, so 126. Compare 32 for δ = 5: halving the effect quadruples the sample.</div></details>
+        <details class="check"><summary>3. Why can you not make both α and β as small as you like with a fixed n?</summary><div class="ans">Moving the rejection line outward lowers α (fewer false alarms) but pushes more of the real-effect curve inside the "do not reject" region, raising β. Only increasing n (narrower curves) or reducing noise lowers both at once.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li><span class="tex">\alpha</span> is the false-alarm rate you set; power <span class="tex">1-\beta</span> is the detection rate you must plan for: here 70.5% at n = 25, 80.7% at n = 32.</li>
+          <li>Power grows with effect size and sample size and shrinks with noise; halving the effect needs four times the sample.</li>
+          <li>Choose <span class="tex">n</span> before the experiment from the smallest effect that matters, never after peeking at the results.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 ===================== -->
+    <section class="lesson" id="bootstrap" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--blue)">3.6</span><h2>The bootstrap: uncertainty without formulas</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 8 waiting times and want the uncertainty of their <i>median</i>, or of some ratio or model metric that has no neat standard-error formula. You cannot go back and collect thousands of new samples. Can the one sample you have be used to imitate repeating the study?</div>
+
+        <h3 class="sec">Intuition: treat the sample as a small stand-in population</h3>
+        <p>The sampling distribution of 3.2 needs fresh samples from the population, which you do not have. The best available picture of the population is the sample itself. So pretend the 8 values <i>are</i> the population, and draw new samples of size 8 from it. Each new sample is made by picking a value, writing it down and putting it back, 8 times. This is sampling <b>with replacement</b>, so a value can appear twice or three times and another not at all. Compute your statistic on every resample, and the spread of those statistics stands in for the spread of the real sampling distribution. That is the <b>bootstrap</b>: pulling yourself up by your own data.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: one resample, then ten thousand</b>
+          <p>Original data (positions 1 to 8): 7.2, 9.1, 6.4, 8.8, 10.3, 7.9, 8.5, 9.6; mean 8.475, median (average of the 4th and 5th sorted values 8.5 and 8.8) = 8.65.</p>
+          <p><b>One resample.</b> Pick positions at random with replacement: 1, 1, 8, 6, 5, 4, 4, 2. The resample is 7.2, 7.2, 9.6, 7.9, 10.3, 8.8, 8.8, 9.1, with mean <span class="tex">68.9/8=8.6125</span>. Position 1 appears twice, 4 appears twice, and 3 and 7 not at all. The chance a given value is missing from a resample of 8 is <span class="tex">(7/8)^8=34.4\%</span>, so about a third of the data are left out each time and about 65.6% of the distinct values (5.25 of 8) appear.</p>
+          <p><b>Many resamples.</b> Repeat 10 000 times (seeded generator, seed 1) and keep each mean. The 10 000 means average 8.472, and their standard deviation, the <b>bootstrap standard error</b>, is 0.419, close to the formula's 0.450 (the bootstrap resamples from the sample itself, which uses the divide-by-<i>n</i> variance, and is slightly narrower). Sort the means; the 2.5th and 97.5th percentiles are <b>7.64</b> and <b>9.27</b>. That is the <b>percentile bootstrap interval</b>: [7.64, 9.27], against the formula's [7.41, 9.54] from 3.3. For a mean with tiny n the bootstrap interval is a little too narrow.</p>
+          <p><b>A statistic without a formula.</b> The sample median is 8.65. Its bootstrap percentile interval is [7.20, 9.60], much wider and jumpier, because the median of 8 values can only take values such as 7.2 or 9.6 that are themselves data points: with this little data the bootstrap gives a crude answer. The same code, with a different statistic, works for medians, correlations, AUC, or a model's accuracy.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">x^{*(b)}=\bigl(x_{J_1},\dots,x_{J_n}\bigr),\ J_i\sim\text{Uniform}\{1..n\};\quad \hat\theta^{*(b)}=T\bigl(x^{*(b)}\bigr),\ b=1..B;\qquad \text{CI}_{95}=\bigl[\,q_{0.025},\,q_{0.975}\,\bigr]\text{ of }\{\hat\theta^{*(b)}\}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_1..x_n</span>: the original sample. <span class="tex">J_i</span>: a random position chosen uniformly from 1 to <span class="tex">n</span>, independently for each slot (with replacement). <span class="tex">x^{*(b)}</span>: the <span class="tex">b</span>-th resample, also of size <span class="tex">n</span>. <span class="tex">T</span>: the statistic of interest (mean, median, a model metric). <span class="tex">\hat\theta^{*(b)}</span>: its value on resample <span class="tex">b</span>. <span class="tex">B</span>: the number of resamples (1 000 to 10 000 is typical). <span class="tex">q_{0.025},q_{0.975}</span>: the 2.5th and 97.5th percentiles of the resampled statistics. <span class="tex">\mathrm{SE}_{\text{boot}}</span> is their standard deviation. Resampling is a computer simulation; with <span class="tex">n=8</span> there are only <span class="tex">\binom{15}{8}=6435</span> different resamples (with <span class="tex">n=3</span> only 10).</div>
+        <p><b>When the bootstrap fails.</b> It works by assuming the sample looks like the population, so it fails when the sample cannot show the feature that drives the statistic:</p>
+        <ul>
+          <li><b>Extreme statistics</b> such as the maximum: a resample can never exceed the largest value you have, and the observed maximum is picked in 65.6% of resamples (<span class="tex">1-(7/8)^8</span>), so the bootstrap puts the whole uncertainty below the observed maximum (here an interval of [9.1, 10.3] with 10.3 as its top end). The true maximum could be far larger.</li>
+          <li><b>Very small n</b> (a handful of values): the resamples have too few distinct outcomes, and rare events in the population are likely not in the sample at all.</li>
+          <li><b>Heavy tails</b> (infinite variance, e.g. Cauchy-like data): the mean does not settle as n grows, and the bootstrap distribution of the mean does not converge to the right shape.</li>
+          <li><b>Dependent data</b> (time series, grouped rows): resampling single rows destroys the dependence; resample whole blocks or whole groups instead.</li>
+          <li><b>Biased samples:</b> no resampling can repair a sample that missed part of the population (lesson 3.1).</li>
+        </ul>
+        <p>The lab starts with the 8 waits. Resamples are drawn at a slow pace (one value at a time, so you can see circles stack on repeated values); speed up to build the histogram. At 10 000 resamples the readout matches the numbers above. Edit the list, or switch to the maximum to see it fail.</p>
+
+        <div data-lab="ds-st-bootstrap"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play at the default speed. Watch one value at a time being drawn and its circle stack; after the eighth draw the resample's mean drops into the histogram. Notice values with two circles and values with none.</li>
+          <li>Raise resamples per second to about 50 and let it pass 10 000. The 95% interval settles near [7.64, 9.27]; compare with the formula interval printed next to it.</li>
+          <li>Switch the statistic to "maximum". The histogram becomes a spike on the observed maximum, 10.3 (about 66% of resamples hit it), and the interval is [9.1, 10.3]: it can never extend above the largest value you have, which is false precision. Now switch to "median" and see the lumpy shape. Finally replace the data with "1, 2, 100" and look at the mean: only 10 distinct resamples exist.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Resampling without replacement</b> just returns the original sample every time; the replacement creates the variation.</li>
+            <li><b>Resampling the wrong unit.</b> If rows are grouped (several rows per customer), resample customers, not rows. Otherwise the interval is too narrow.</li>
+            <li><b>Treating it as magic.</b> It cannot create information: with 8 values the bootstrap interval is still unreliable, and it cannot fix bias.</li>
+            <li><b>Too few resamples.</b> A few dozen resamples give noisy percentiles; use at least 1 000 for an interval, more for tails.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Model uncertainty on small datasets:</b> bootstrapping the test set gives an interval for accuracy, F1 or AUC without any formula; see <a href="math-statistics.html#resampling">resampling</a> in the mathematics module and <a href="ml-evaluation.html">ML evaluation</a>.</li>
+            <li><b>Bagging and random forests</b> train each model on a bootstrap resample and average them: the same trick, used to reduce variance rather than measure it.</li>
+            <li><b>Comparing two models:</b> resample the test items once, score both models on the same resample, and read the interval of the difference.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. How many values of the original sample of 8 does an average resample leave out?</summary><div class="ans">Each value is missed with probability (7/8)^8 = 0.3436, so on average 8 × 0.3436 ≈ 2.7 of the 8 values are left out of each resample (and about 5.3 distinct values appear).</div></details>
+        <details class="check"><summary>2. Why can resampling without replacement not be used for the bootstrap?</summary><div class="ans">Drawing all n values without replacement just reorders the original sample, so every resample has the same mean (8.475) and no spread. Replacement is what produces different resamples and therefore an estimate of variability.</div></details>
+        <details class="check"><summary>3. A bootstrap interval for the maximum of a sample is squeezed against the observed maximum (here [9.1, 10.3], with 10.3 as its upper end). Why is that wrong?</summary><div class="ans">A resample cannot contain anything larger than the observed maximum, so the bootstrap cannot see the possibility that the population has larger values. The true maximum is typically larger than the sample's, and the real uncertainty is much greater than the bootstrap suggests.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Resample the sample with replacement, recompute the statistic, and repeat: the spread of the results estimates its uncertainty (here [7.64, 9.27] for the mean, 10 000 resamples).</li>
+          <li>It works for any statistic, with no standard-error formula, but it assumes the sample looks like the population.</li>
+          <li>It fails for extremes such as the maximum, for tiny n, heavy tails, dependent rows and biased samples.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 4 (<a href="ds-visualisation.html">Visualisation &amp; storytelling</a>) shows how to put these intervals and tests into a chart honestly. Module 5 (<a href="ds-experiments.html">Experiments &amp; causal inference</a>) applies power, p-values and intervals to A/B tests, including peeking and multiple comparisons.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>
