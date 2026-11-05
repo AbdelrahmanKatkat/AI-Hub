@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 6 · Prompting, retrieval &amp; agents · Generative AI</title>
+<meta name="description" content="How a language model is put to work: prompts and in-context examples, structured outputs by masking logits, embeddings and retrieval, retrieval-augmented generation, tool-using agents, and context windows and memory, with printed toy numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-applications.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="6">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 6</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">6</div>
+      <div style="flex:1">
+        <h1>Module 6 · Prompting, retrieval &amp; agents</h1>
+        <p>A trained language model is only a function from a context to a distribution over the next token. Everything in this module is a way of choosing what goes into that context, and what to do with what comes out: examples that steer it, a grammar that forces valid structure, retrieved documents that supply facts it never learned, tools it can call, and a window that bounds all of it. In the six stages of the pipeline (collect and tokenise, pretrain, align, adapt and compress, generate, evaluate and guard), this module lives in <b>generate</b>, and it costs no training at all: only tokens read and written.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: <a href="gen-language.html#decoding-sampling">decoding and sampling</a>, <a href="math-probability.html#conditional-bayes">conditional probability</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works, and what is not claimed.</b> There is no real language model in your browser. Wherever a lab stands in for one, it uses a small, explicit toy rule that is printed on the page (for example "logit = base + α·count"), and the caption says <i>illustrative</i>. The mechanisms that <i>are</i> real are the ones you can compute exactly: softmax, masking and renormalising logits, cosine similarity, recall at k, the product <span class="tex">p^n</span>, and the token sums of a growing context. Nothing here describes a particular commercial model, product or benchmark, and statements about what real systems tend to do are hedged. Every number in a worked example was computed in code first.</div>
+
+    <!-- ===================== 6.1 ===================== -->
+    <section class="lesson" id="prompting-icl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.1</span><h2>Prompting &amp; in-context learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You ask a model to label the review "It arrived on Tuesday." as positive, negative or neutral. With no help it hesitates. You add three labelled examples to the prompt and its answer changes. You reorder the same three examples and the answer changes again. No weight was updated. How can text alone change behaviour, why does the order matter, and what can a prompt never fix?</div>
+
+        <h3 class="sec">Intuition: the prompt is the evidence the model conditions on</h3>
+        <p>A language model, from <a href="gen-language.html#decoding-sampling">decoding and sampling</a>, turns a context into a probability for each possible next token. Change the context and you change those probabilities. A <b>prompt</b> is simply a context you wrote on purpose. It can say what you want (an instruction), show what you want (examples), or both. Nothing is stored when you do this: the model's parameters are exactly what they were, and the moment the text is gone so is the effect. That is why it is called <b>in-context learning</b>. The "learning" is a change in behaviour caused by the context, not a change in the weights.</p>
+        <p>Think of a new colleague handed a task with a few finished samples clipped to it. The samples tell them the format, the tone, and what a "positive" label looks like in your office. They did not change as a person, but their answer changes. Like that colleague, the model can also be distracted: whichever sample was clipped last may feel most relevant.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Three common shapes of prompt.</b> A <b>zero-shot</b> prompt has an instruction and the input, with no examples. A <b>few-shot</b> prompt adds <span class="tex">k</span> worked examples (input and answer pairs) before the real input. A <b>chain-of-thought</b> prompt asks the model to write its intermediate reasoning before the final answer, or shows examples that do. The word "shot" just means "example".</p>
+        <p><b>A toy model of the effect.</b> A real model's response to examples cannot be written as a short formula, so the lab below uses a deliberately simple stand-in. For each label <span class="tex">l</span> it keeps a score, a <b>logit</b>. The score starts at a <i>base</i> value that depends on the input, then each example labelled <span class="tex">l</span> adds a pull <span class="tex">\alpha</span> to that label, and the most recent example adds a small extra <i>recency bonus</i> <span class="tex">\beta</span> to its label. A softmax then turns scores into probabilities. This is <i>illustrative</i>: it reproduces the idea that examples shift a distribution and that order can matter, not the way any real model works inside.</p>
+        <div class="worked"><b>Worked example: three labels, three examples</b>
+          <p>Input: "It arrived on Tuesday." Base logits for (positive, negative, neutral): <span class="tex">(0.4,\ 0.2,\ 0.9)</span>. Take <span class="tex">\alpha=0.8</span> and <span class="tex">\beta=0.5</span>.</p>
+          <p><b>Zero-shot.</b> Softmax of <span class="tex">(0.4,0.2,0.9)</span>: the exponentials are 1.4918, 1.2214, 2.4596, with sum 5.1728. Probabilities: <b>0.2884, 0.2361, 0.4755</b>. Neutral leads, but weakly.</p>
+          <p><b>Order A: positive, positive, negative.</b> Counts: positive 2, negative 1, neutral 0; the last example is negative. Logits: positive <span class="tex">0.4+2(0.8)=2.0</span>; negative <span class="tex">0.2+1(0.8)+0.5=1.5</span>; neutral <span class="tex">0.9</span>. Exponentials 7.3891, 4.4817, 2.4596, sum 14.3304. Probabilities: <b>0.5156, 0.3127, 0.1716</b>.</p>
+          <p><b>Order B: negative, positive, positive.</b> The same three examples, but the last one is positive. Logits: positive <span class="tex">0.4+1.6+0.5=2.5</span>; negative <span class="tex">0.2+0.8=1.0</span>; neutral 0.9. Exponentials 12.1825, 2.7183, 2.4596, sum 17.3604. Probabilities: <b>0.7017, 0.1566, 0.1417</b>.</p>
+          <p>Same examples, same counts; reordering moved the probability of "positive" from 51.6% to 70.2%. That is what <b>prompt sensitivity</b> means: the answer depends on details of the prompt that a person would call irrelevant.</p>
+          <p><b>What a prompt cannot overcome.</b> Take the input "Broken on arrival. Awful." with base logits <span class="tex">(-1.0,\ 2.0,\ 0.0)</span>: probabilities 0.0420, 0.8438, 0.1142. Add three positive examples: positive becomes <span class="tex">-1+3(0.8)+0.5=1.9</span>, so the probabilities become 0.4435, 0.4902, 0.0663. Even three examples pushing the other way only close the gap to 4.7 percentage points. Strong evidence in the input is hard to talk away.</p>
+        </div>
+        <p><b>Chain of thought, in numbers.</b> Many problems need several small steps. If the answer is demanded in one token, the model has to do all the steps "in one go". Asking it to write the steps lets each written token be a step whose result later tokens can read. As a toy calculation with <i>assumed</i> numbers: suppose a one-shot answer is right 50% of the time, while writing three steps, each right with probability 0.9, gives <span class="tex">0.9^3=0.729</span>. The same arithmetic also shows the cost: every extra step is another chance to go wrong (lesson 6.5 returns to <span class="tex">p^n</span>), and written reasoning is read back by the model whether or not it is correct. Whether chain-of-thought prompting helps, and by how much, depends on the model and the task.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <p>A prompt with instruction <span class="tex">I</span>, examples <span class="tex">d_1,\dots,d_k</span> and input <span class="tex">x</span> is concatenated into one token sequence. The model's answer distribution is its ordinary conditional distribution given that sequence:</p>
+        <div class="eq">p_\theta\big(y \mid I, d_1,\dots,d_k, x\big), \qquad \text{toy rule: } z_l = b_l(x) + \alpha\, n_l + \beta\,\mathbf 1[\text{last example has label } l], \quad p_l=\frac{e^{z_l}}{\sum_m e^{z_m}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\theta</span>: the model's weights, which do not change. <span class="tex">y</span>: the answer. <span class="tex">I</span>, <span class="tex">d_i</span>, <span class="tex">x</span>: instruction, the <span class="tex">i</span>-th example and the input. The right-hand side is the <i>toy</i> rule, not a law: <span class="tex">b_l(x)</span> the base logit of label <span class="tex">l</span> for this input, <span class="tex">n_l</span> how many examples carry label <span class="tex">l</span>, <span class="tex">\alpha</span> the pull of one example, <span class="tex">\beta</span> the recency bonus, <span class="tex">\mathbf 1[\cdot]</span> equal to 1 if the condition holds and 0 otherwise.</div>
+
+        <div data-lab="gen-ap-fewshot"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the defaults (2 positive, 1 negative) and press play. Watch the three bars move as each example chip lights up. Then set the order to "neutral, negative, positive" and compare the final bars. Same counts, different answer.</li>
+          <li>Set β to 0. The order effect disappears completely in this toy, because order only entered through β. Real models do not have such a clean switch.</li>
+          <li>Choose the input "Broken on arrival. Awful.", add four positive examples and no others. How far does the negative bar fall, and does it ever lose?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"The model learned from my examples."</b> Nothing was stored. The next request that lacks the examples behaves as before.</li>
+            <li><b>Trusting one prompt.</b> A prompt that works on five tests may fail on a reworded input. Evaluate a prompt on many held-out inputs, as you would a model (see <a href="gen-multimodal.html#evaluating-generators">evaluating generators</a>).</li>
+            <li><b>Believing a prompt can add what the model lacks.</b> It cannot supply knowledge the model does not have, newer than its training data, or a guarantee of exact format. Retrieval (6.3, 6.4) supplies facts; constrained decoding (6.2) supplies format.</li>
+            <li><b>Examples that are all alike.</b> If every example has the same label, the model may copy the label instead of reading the input. Balanced and varied examples reduce that risk.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Every application.</b> Classification, extraction, rewriting and question answering are often first built as a prompt, because it costs a few tokens instead of a training run.</li>
+            <li><b>Prompt versus fine-tuning.</b> If a prompt must carry a long set of instructions or many examples on every call, the repeated tokens cost money and time; adapting the weights (see <a href="gen-efficiency.html#lora">low-rank adaptation</a>) moves that behaviour out of the prompt.</li>
+            <li><b>Evaluation.</b> Because outputs vary with prompt wording, comparisons between models are only meaningful when the prompt is held fixed or varied systematically.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the toy rule with the ambiguous input, use only one positive example. What are the three probabilities?</summary><div class="ans">Logits: positive <span class="tex">0.4+0.8+0.5=1.7</span>, negative 0.2, neutral 0.9. Exponentials 5.4739, 1.2214, 2.4596, sum 9.1549. Probabilities <b>0.5979, 0.1334, 0.2687</b>. One example is already enough to move "positive" from 28.8% to 59.8% in this toy.</div></details>
+        <details class="check"><summary>2. Why does the order of examples matter in the toy, and why is that only a caricature of real models?</summary><div class="ans">The recency bonus β adds to the label of the last example only, so changing which example is last changes the logits. Real models are sensitive to order, wording and formatting for reasons that are not a single tidy bonus, and the size and direction of such effects differ from model to model and task to task.</div></details>
+        <details class="check"><summary>3. Three positive examples are added to "Broken on arrival. Awful." Which label wins and by how much?</summary><div class="ans">Negative still wins with 0.4902 against positive 0.4435, a gap of 0.0467. The input's own evidence (base logit 2.0 for negative) is strong enough that three examples with α = 0.8 and β = 0.5 only close most of the distance.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A prompt changes the context, hence the next-token distribution; no weights change and nothing is remembered afterwards.</li>
+          <li>Zero-shot, few-shot and chain-of-thought differ in what the context contains: instruction, examples, or written reasoning.</li>
+          <li>Outputs can be sensitive to order and wording, so test a prompt on many inputs; prompts do not add knowledge or guarantee format.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.2 ===================== -->
+    <section class="lesson" id="structured-outputs" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.2</span><h2>Structured outputs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A program must parse the model's reply as <code>{"n": 7, "ok": true}</code>. One stray word before the brace, one missing quote, and the parser crashes. You can ask politely for valid JSON, but "ask politely" is a probability, not a guarantee. How do you make it <i>impossible</i> for the model to produce anything outside the format, and what does that still not guarantee?</div>
+
+        <h3 class="sec">Intuition: do not ask the model to behave, take away its wrong options</h3>
+        <p>At every step a language model assigns a probability to every token in its vocabulary, and one is drawn. If the next token must be a colon, a model that is "almost always" right still puts some probability on a word, a quote or an end-of-text marker. Over many steps the small leaks add up. The fix is not a better request but a <b>filter</b>: before drawing, look at what the format allows at this exact point, set every other token's score to minus infinity, rescale what is left, and draw from that.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>A schema and a grammar.</b> A <b>JSON schema</b> is a description of the shape of the data you will accept: which keys, which value types. Our toy schema is an object with a required key <code>"n"</code> whose value is the digit <code>7</code> or <code>0</code>, and an optional key <code>"ok"</code> whose value is <code>true</code> or <code>false</code>. Such a schema can be turned into a <b>grammar</b>: a small state machine. In each state a few tokens are legal; each legal token leads to a next state. The lab's machine has ten states: state 0 allows only <code>{</code>, state 1 only <code>"n"</code>, state 2 a colon, state 3 a digit, state 4 a comma or a closing brace, and so on up to the end-of-text marker.</p>
+        <p><b>The mechanism.</b> The model produces logits <span class="tex">z_t</span> for each vocabulary token <span class="tex">t</span>. Let <span class="tex">A_s</span> be the set of tokens the grammar allows in state <span class="tex">s</span>. <b>Masking</b> sets <span class="tex">z_t=-\infty</span> for every token not in <span class="tex">A_s</span>. Because <span class="tex">e^{-\infty}=0</span>, those tokens get probability 0 in the softmax, and the softmax automatically <b>renormalises</b>: the remaining probabilities are divided by their sum so that they add to 1.</p>
+        <div class="worked"><b>Worked example: the state that wants true or false</b>
+          <p>The vocabulary has 11 tokens. In grammar state 7 the allowed tokens are <code>true</code> and <code>false</code>. The toy model's logits (its base preferences, plus a bonus of 4 for the tokens that are legal in this state), and the raw probability each logit gives (the sum of the exponentials is 276.02):</p>
+          <table class="tbl"><thead><tr><th>token</th><th>{</th><th>}</th><th>"n"</th><th>"ok"</th><th>:</th><th>,</th><th>7</th><th>0</th><th>true</th><th>false</th><th>&lt;eos&gt;</th></tr></thead>
+          <tbody><tr><td>logit</td><td>−1.0</td><td>0.5</td><td>−0.5</td><td>0.2</td><td>1.0</td><td>0.1</td><td>0.6</td><td>0.3</td><td>5.2</td><td>4.4</td><td>0.9</td></tr>
+          <tr><td>raw probability</td><td>0.0013</td><td>0.0060</td><td>0.0022</td><td>0.0044</td><td>0.0098</td><td>0.0040</td><td>0.0066</td><td>0.0049</td><td>0.6567</td><td>0.2951</td><td>0.0089</td></tr></tbody></table>
+          <p><b>Without a mask.</b> The legal mass is <span class="tex">0.6567+0.2951=0.9518</span>, so the chance of drawing something illegal at this single step is <span class="tex">1-0.9518=0.0482</span>, about one in twenty.</p>
+          <p><b>With the mask.</b> The nine illegal logits become <span class="tex">-\infty</span>. The legal probabilities are divided by 0.9518: <span class="tex">0.6567/0.9518=0.6900</span> for <code>true</code> and <span class="tex">0.2951/0.9518=0.3100</span> for <code>false</code>. The model's own preference between the two (about 2.2 to 1) is kept. Only the leak is gone.</p>
+          <p><b>Over a whole output.</b> If you sample the raw distribution at every step, the output happens to follow the grammar only by chance. Summing over both legal shapes of output (with and without <code>"ok"</code>), the probability that a raw sample is valid at every step is <b>0.1959</b> at temperature 1. That is about <span class="tex">1/0.1959=5.10</span> attempts on average, and the chance that at least one of 3 attempts is valid is <span class="tex">1-(1-0.1959)^3=0.4801</span>. With the mask the probability is exactly 1, because every step draws from legal tokens only.</p>
+        </div>
+        <p><b>Validation and retries.</b> If you cannot mask (for example the format is checked after the fact), the fallback is <b>validate and retry</b>: parse the output against the schema, and on failure ask again, possibly including the error message. If each attempt is valid independently with probability <span class="tex">p</span>, the expected number of attempts is <span class="tex">1/p</span> and the chance that at least one of <span class="tex">r</span> attempts succeeds is <span class="tex">1-(1-p)^r</span>. Each retry costs another full generation.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">z'_t = \begin{cases} z_t &amp; t\in A_s \\ -\infty &amp; t\notin A_s\end{cases}\qquad p'(t)=\frac{e^{z'_t/T}}{\sum_u e^{z'_u/T}}=\frac{p(t)\,\mathbf 1[t\in A_s]}{\sum_{u\in A_s}p(u)}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">s</span>: the current grammar state. <span class="tex">A_s</span>: tokens the grammar allows in state <span class="tex">s</span>. <span class="tex">z_t</span>: the model's logit for token <span class="tex">t</span>; <span class="tex">z'_t</span> the masked logit. <span class="tex">T</span>: temperature. <span class="tex">p(t)</span>: the unmasked probability; <span class="tex">p'(t)</span> the masked, renormalised one. <span class="tex">\mathbf 1[\cdot]</span>: 1 when true, else 0. The denominator <span class="tex">\sum_{u\in A_s}p(u)</span> is the <i>legal mass</i> (0.9518 in the example).</div>
+        <p>Two honest remarks. First, renormalising at each step is a <i>local</i> rule: it is not the same thing as asking for the model's distribution over complete outputs conditioned on being valid, which can differ when some legal choices lead to states that are harder to finish validly. Second, real systems compile a schema into constraints over the model's <i>subword tokens</i>, not over characters, and one token can cover several characters of the grammar; that bookkeeping is the hard engineering part and is hidden in this toy, whose vocabulary has one token per grammar symbol.</p>
+
+        <div data-lab="gen-ap-grammar"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep "constrained" and press play. Follow the four phases of each token: raw probabilities, the mask cutting the illegal bars to zero, the legal bars growing back to sum to 1, then a draw.</li>
+          <li>Switch to "unconstrained" and watch the attempt counter. Lower the logit bonus to 2 and see how often an output is spoiled. Compare the "valid chance" line with the fraction of valid outputs over time.</li>
+          <li>Pick the token <code>&lt;eos&gt;</code> and add 4 to its logit. In constrained mode the end marker is still never sampled early. In unconstrained mode it is, and the output is cut short.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Valid is not correct.</b> A mask guarantees <i>syntax</i>. <code>{"n": 0}</code> is perfectly valid when the right answer was 7. Check the values too.</li>
+            <li><b>Greedy dead ends.</b> A grammar that allows a token which cannot be completed legally (for example an opening quote with no way to close it) can trap the decoder. Good grammars only allow prefixes that can still be completed.</li>
+            <li><b>A mask changes the distribution.</b> If the model strongly wants a token the grammar forbids, the remaining tokens may have tiny raw probability and the renormalised choice can look confident while resting on little evidence. A low legal mass is a warning sign worth logging.</li>
+            <li><b>Constraints cost something.</b> Each step needs the allowed set computed, which adds work per token; the amount depends on the implementation.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Tool integrations.</b> When a model must produce the arguments of a function call (lesson 6.5), constraining to the function's schema removes a whole class of parsing failures.</li>
+            <li><b>Extraction pipelines.</b> Turning free text into table rows requires every field to parse; masking plus a validator is the usual combination.</li>
+            <li><b>The same trick elsewhere.</b> Banning tokens, forcing a prefix, or blocking a word list are all special cases of editing logits before sampling (see <a href="gen-language.html#decoding-sampling">decoding and sampling</a>).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At some state the allowed tokens have logits 2.0 and 1.0, and one disallowed token has logit 5.0 (no other tokens). What are the probabilities without and with the mask?</summary><div class="ans">Exponentials: 7.389, 2.718, 148.413; sum 158.52. Without the mask: allowed tokens get 0.0466 and 0.0171 and the disallowed one gets <b>0.9362</b>. With the mask the third becomes 0 and the allowed ones are <span class="tex">7.389/10.107=0.7311</span> and <span class="tex">2.718/10.107=0.2689</span>. The model "wanted" the illegal token, and the mask silently overrides that.</div></details>
+        <details class="check"><summary>2. Unconstrained decoding is valid with probability 0.4 per attempt, independently. What is the chance that three attempts give at least one valid output, and the expected number of attempts?</summary><div class="ans"><span class="tex">1-0.6^3=0.784</span>. Expected attempts <span class="tex">1/0.4=2.5</span>. Even three retries leave a 21.6% chance of failure.</div></details>
+        <details class="check"><summary>3. The output is valid against the schema yet the answer is wrong. Which part of the system failed?</summary><div class="ans">Not the format machinery: the mask did its job and only restricts structure. The wrong value came from the model's distribution over legal tokens (or from the prompt or retrieved context). Semantic checks, such as comparing a field with a trusted source, are separate from syntactic ones.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Constrained decoding sets illegal logits to <span class="tex">-\infty</span> and renormalises, so the output is valid by construction.</li>
+          <li>Without a mask, validity is a product of per-step chances (0.1959 in the toy), so validate and retry costs <span class="tex">1/p</span> attempts on average.</li>
+          <li>The mask guarantees syntax, not truth, and real systems must align grammars with subword tokens.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.3 ===================== -->
+    <section class="lesson" id="retrieval-embeddings" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.3</span><h2>Retrieval with embeddings</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A help centre has 10 000 articles. A customer types "can I send my order back?" Keyword search finds nothing, because every article says "return". How can a machine find text by <i>meaning</i>? And once the articles are long, in which pieces should they be cut so that the right piece can be found?</div>
+
+        <h3 class="sec">Intuition: meaning as position, search as nearest neighbour</h3>
+        <p>An <b>embedding model</b> turns a piece of text into a list of numbers, a vector, so that texts with similar meaning land close together and unrelated texts land far apart. (<a href="gen-language.html#embeddings-lm">Embeddings</a> in the language-modelling module covers how such vectors are learned; here we only use them.) Searching is then geometry: embed the query, find the stored vectors nearest to it, return their texts. "Send my order back" and "return policy" never share a word, but a good model places them near each other.</p>
+        <p>What does "near" mean? Two options. <b>Distance</b> asks how far apart the points are. <b>Cosine similarity</b> asks how closely the two <i>arrows</i> point in the same direction, ignoring how long they are. For text, direction usually carries the meaning and length is an accident (a longer passage can give a longer vector), so cosine is the common choice.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: three chunks and a query</b>
+          <p>To keep the arithmetic visible we use vectors with three numbers that were written by hand for this page (real embeddings have hundreds or thousands of numbers and come from a trained model). Query <span class="tex">q=(0.8,\ 0.1,\ 0.6)</span>.</p>
+          <table class="tbl"><thead><tr><th>chunk</th><th>vector</th><th>q · chunk</th><th>length</th><th>cosine</th><th>distance to q</th></tr></thead>
+          <tbody><tr><td>A</td><td>(0.9, 0.2, 0.5)</td><td>0.72 + 0.02 + 0.30 = 1.040</td><td>1.0488</td><td><b>0.9867</b></td><td>0.173</td></tr>
+          <tr><td>B</td><td>(0.1, 0.9, 0.3)</td><td>0.08 + 0.09 + 0.18 = 0.350</td><td>0.9539</td><td>0.3651</td><td>1.105</td></tr>
+          <tr><td>C</td><td>(0.7, 0.1, 0.8)</td><td>0.56 + 0.01 + 0.48 = 1.050</td><td>1.0677</td><td>0.9785</td><td>0.224</td></tr></tbody></table>
+          <p>The length of <span class="tex">q</span> is <span class="tex">\sqrt{0.64+0.01+0.36}=1.0050</span>. Cosine for A: <span class="tex">1.040/(1.0050\times1.0488)=0.9867</span>. Ranking by cosine: A, C, B. Ranking by raw dot product: C (1.050), A (1.040), B. <b>The two rankings disagree on the top two</b> because C is a longer vector, and a dot product rewards length. If you scale every vector to length 1 first, dot product and cosine become the same number.</p>
+        </div>
+        <p><b>Many vectors: indexes.</b> Comparing the query with every stored vector (a <b>flat</b> scan) costs <span class="tex">N\times d</span> multiply-adds for <span class="tex">N</span> vectors of <span class="tex">d</span> numbers. For one million vectors of 768 numbers that is <span class="tex">768\,000\,000</span> per query. An <b>approximate nearest-neighbour</b> (ANN) index trades a little accuracy for a lot of speed. One family, an <i>inverted file</i>, groups vectors into clusters, then compares the query only with the centroids and scans the few closest clusters. With 1 000 clusters of about 1 000 vectors, scanning the 10 closest clusters needs <span class="tex">1\,000+10\times1\,000=11\,000</span> vector comparisons, which is <span class="tex">8\,448\,000</span> multiply-adds, about 91 times fewer. The price is <b>recall</b>: if the true nearest vector sits in a cluster you did not probe, you miss it. Graph-based indexes are another common family, with the same speed-for-recall trade.</p>
+        <p><b>Chunking.</b> A document is rarely embedded whole: one vector for a long document is a blur of everything in it. So it is cut into <b>chunks</b> that are embedded separately. Small chunks are precise but may split a fact from its context. Large chunks keep context but average several topics into one vector and send more irrelevant text on to the model. <b>Overlap</b> repeats a few sentences between neighbouring chunks so a fact on a boundary is not cut in half.</p>
+        <p>The chunk lab below uses a toy corpus: 24 sentences in 8 topics of 3 sentences, each sentence a made-up 8-number vector. A chunk's vector is the mean of its sentences' vectors (a stand-in; real systems embed the chunk text). There are 40 queries; for each, the answer needs two specific adjacent sentences. We score <b>recall</b>: the fraction of those needed sentences that appear in the top <span class="tex">k</span> chunks. With <span class="tex">k=1</span> and query noise 0.8, no overlap, the lab gives:</p>
+        <table class="tbl"><thead><tr><th>chunk size</th><th>1</th><th>2</th><th>3</th><th>4</th><th>6</th><th>12</th></tr></thead>
+        <tbody><tr><td>recall</td><td>0.21</td><td>0.50</td><td><b>0.85</b></td><td>0.53</td><td>0.60</td><td>0.68</td></tr>
+        <tr><td>sentences sent to the model</td><td>1</td><td>2</td><td>3</td><td>4</td><td>6</td><td>12</td></tr></tbody></table>
+        <p>Size 3 wins here only because the toy topics are exactly 3 sentences long, so chunks line up with them. Real documents do not have that tidy structure, so the best size is found by measuring on your own questions, not by a rule.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">\cos(\mathbf u,\mathbf v)=\frac{\mathbf u\cdot\mathbf v}{\lVert\mathbf u\rVert\,\lVert\mathbf v\rVert}=\cos\theta,\qquad \text{retrieve}_k(q)=\operatorname{top-}k_{\,c\in\text{index}}\ \cos\big(f(q),\ f(c)\big)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\mathbf u,\mathbf v</span>: two vectors. <span class="tex">\mathbf u\cdot\mathbf v=\sum_i u_iv_i</span>: dot product. <span class="tex">\lVert\mathbf u\rVert=\sqrt{\sum_i u_i^2}</span>: length. <span class="tex">\theta</span>: the angle between them, so cosine runs from −1 (opposite) to 1 (same direction). <span class="tex">f</span>: the embedding model, text to vector. <span class="tex">q</span>: the query text. <span class="tex">c</span>: a chunk. "top-k": the <span class="tex">k</span> chunks with the highest score. See the <a href="math-linear-algebra.html">linear algebra module</a> for dot products and angles.</div>
+
+        <div data-lab="gen-ap-cosine"></div>
+        <div data-lab="gen-ap-chunks"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>In the cosine lab, stretch chunk A by 3. Watch its dot product triple while its cosine does not move. Then sweep the query between the two printed presets and note where the ranking flips.</li>
+          <li>In the chunk lab, press play and watch which chunks turn green for each query. Then drag the chunk size from 1 up to 12 and read the yellow dot on the recall curve and the grey bars (sentences sent).</li>
+          <li>Set chunk size 4 and add overlap 2. Does the recall recover? Then raise the query noise to 1.5: what happens to every size?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Mixing metrics.</b> Using a dot product on vectors a model trained for cosine (or the reverse) quietly changes the ranking. Normalise, or follow the model's documentation.</li>
+            <li><b>Embeddings from different models.</b> Vectors from two models live in different spaces; comparing them is meaningless. Re-embed everything when you change the model.</li>
+            <li><b>Similar is not relevant.</b> A chunk can be about the right topic and still not contain the answer ("how to use the returns portal" versus "the return window is 30 days").</li>
+            <li><b>One number for chunk size.</b> The best size depends on how your documents and questions look; test several, and measure recall on questions with known answers.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Search and recommendation.</b> Semantic search, near-duplicate detection and "more like this" are nearest-neighbour search on embeddings.</li>
+            <li><b>The first half of RAG.</b> Lesson 6.4 plugs this retriever in front of a generator.</li>
+            <li><b>Contrastive training.</b> Many embedding models are trained so that matching pairs have high cosine and mismatched pairs low; see <a href="gen-multimodal.html#multimodal-models">multimodal models</a> for the same idea across images and text.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is the cosine of (1, 0) and (1, 1)?</summary><div class="ans"><span class="tex">1/(1\times\sqrt2)=0.7071</span>, which is cos 45°. The angle between the arrows is 45 degrees.</div></details>
+        <details class="check"><summary>2. A flat scan over 200 000 vectors of 384 numbers: how many multiply-adds per query?</summary><div class="ans"><span class="tex">200\,000\times384=76\,800\,000</span>. An index that compares the query with only 1% as many vectors would need about 768 000, ignoring the cost of choosing which to scan.</div></details>
+        <details class="check"><summary>3. Why can a very large chunk fail to be retrieved even though it contains the answer?</summary><div class="ans">Its vector is an average over several topics, so it points between them and is not close to a query about only one. In the toy lab, size 12 with k = 1 reaches only 0.68, even though the chunk is 12 sentences long. A large chunk also sends many irrelevant sentences to the generator.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An embedding turns text into a vector; retrieval ranks stored vectors by cosine to the query vector.</li>
+          <li>Cosine ignores length, a dot product does not, and the two can rank differently (A versus C above).</li>
+          <li>Approximate indexes scan a small part of the vectors for a large speed-up at some cost in recall; chunk size trades precision against context and must be measured.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.4 ===================== -->
+    <section class="lesson" id="rag-pipeline" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.4</span><h2>Retrieval-augmented generation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A company assistant must answer from the company's own documents, which the model never saw in training and which change every week. You build a pipeline: search the documents, hand the best pieces to the model, let it answer and cite. Some answers are wrong. How do you tell whether the <i>search</i> failed or the <i>answer</i> failed, and why must you measure them separately?</div>
+
+        <h3 class="sec">Intuition: an open-book exam with a slow librarian</h3>
+        <p>A closed-book exam asks the model to answer from memory (its weights). <b>Retrieval-augmented generation</b>, RAG, makes it an open-book exam: a librarian (the retriever) fetches a few pages, and the model writes the answer with those pages in front of it. The facts live in an index you can update without retraining, and the pages can be quoted, so the answer can point to its source. But two people now share the job, and a wrong answer can be the fault of either: the librarian brought the wrong pages, or the model misread the right ones. Measuring the whole pipeline by a single "was the answer good?" hides which one to fix.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The stages.</b> (1) <b>Index</b>: split documents into chunks, embed them (lesson 6.3). (2) <b>Retrieve</b>: embed the query, fetch the top <span class="tex">K</span> chunks by similarity; fast and approximate. (3) <b>Rerank</b> (optional): a slower, more careful scorer reorders those <span class="tex">K</span> candidates. (4) <b>Generate</b>: put the top <span class="tex">k</span> chunks into the prompt with the question and instructions to answer only from them and to cite. (5) <b>Check</b>: verify that claims are supported.</p>
+        <p><b>Measuring retrieval.</b> Suppose that for a test question a person has marked which chunks hold the needed facts. Then retrieval can be scored without any model: <b>recall at k</b> is the fraction of the relevant chunks that appear in the top <span class="tex">k</span>; <b>precision at k</b> is the fraction of the top <span class="tex">k</span> that are relevant; the <b>reciprocal rank</b> is one over the rank of the first relevant chunk, and its average over questions is the <b>MRR</b>.</p>
+        <div class="worked"><b>Worked example: ten chunks, three relevant</b>
+          <p>Question: "How long can I return an item, and who pays shipping?" The ten chunks are D1 shipping times, D2 return window (30 days), D3 gift cards, D4 how to use the returns portal, D5 who pays return shipping, D6 warranty terms, D7 store locations, D8 privacy notice, D9 sale items: exceptions, D10 contact us. A person marks <b>D2, D5 and D9</b> as relevant (3 chunks). The first-stage retriever ranks them
+          <span class="tex">\text{D4, D2, D7, D5, D1, D9, D3, D8, D6, D10}</span>
+          (the relevant ones sit at positions 2, 4 and 6). A reranker reorders them as D2, D5, D9, D4, D1, D7, … (relevant at positions 1, 2 and 3).</p>
+          <table class="tbl"><thead><tr><th>k</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr></thead>
+          <tbody><tr><td>retriever: relevant in top k</td><td>0</td><td>1</td><td>1</td><td>2</td><td>2</td><td>3</td></tr>
+          <tr><td>retriever recall@k</td><td>0</td><td>1/3 = 0.333</td><td>0.333</td><td>2/3 = 0.667</td><td>0.667</td><td><b>1</b></td></tr>
+          <tr><td>retriever precision@k</td><td>0</td><td>0.500</td><td>0.333</td><td>0.500</td><td>0.400</td><td>0.500</td></tr>
+          <tr><td>reranked: relevant in top k</td><td>1</td><td>2</td><td>3</td><td>3</td><td>3</td><td>3</td></tr>
+          <tr><td>reranked recall@k</td><td>0.333</td><td>0.667</td><td><b>1</b></td><td>1</td><td>1</td><td>1</td></tr>
+          <tr><td>reranked precision@k</td><td>1.000</td><td>1.000</td><td>1.000</td><td>0.750</td><td>0.600</td><td>0.500</td></tr></tbody></table>
+          <p>Reciprocal rank: retriever <span class="tex">1/2=0.5</span> (first relevant at position 2), reranked <span class="tex">1/1=1</span>. To give the generator all three facts, the retriever needs <span class="tex">k=6</span> (so six chunks, three of them irrelevant), the reranked list only <span class="tex">k=3</span>. The reranker did not find anything new; it moved what was already in the candidate list to the top.</p>
+        </div>
+        <p><b>Measuring the answer separately.</b> Retrieval metrics say nothing about whether the generator used the pages well. Answer quality has its own measures: <i>faithfulness</i> or <i>groundedness</i> (is every claim supported by the supplied chunks?), <i>correctness</i> against a reference answer, and <i>citation accuracy</i> (does each cited chunk really support its sentence?). These are usually judged by people or by a model-as-judge whose agreement with people should itself be checked. Recall@k never decreases as <span class="tex">k</span> grows, but answer quality need not follow, because extra, irrelevant chunks can distract or contradict. To show the shape, the lab uses an <b>assumed</b> rule (not a measurement): quality = 0.1 + 0.8 × recall − 0.03 × (number of irrelevant chunks in the context). Then for the retriever with <span class="tex">k=4</span>: <span class="tex">0.1+0.8(0.667)-0.03(2)=0.573</span>; for the reranked list with <span class="tex">k=3</span>: <span class="tex">0.1+0.8-0=0.900</span>; for the retriever with <span class="tex">k=10</span>, where recall is 1 but seven chunks are irrelevant: <span class="tex">0.9-0.21=0.690</span>. Full recall, yet lower quality than the tight context.</p>
+        <p><b>Failure modes.</b> The needed chunk was never retrieved (low recall: bad embeddings, bad chunking, the question needs two documents). It was retrieved but ignored or misread. Chunks conflict, or are out of date. A chunk lacks the context that makes it meaningful. The model answers from memory when the pages do not contain the answer, and presents it as if it came from the source. And <b>retrieved text is untrusted</b>: a document can contain sentences that look like instructions. In a defensive design the retrieved text is handled as <i>data to be quoted</i>, never as commands; the system's permissions do not depend on what a document says; and the answer is checked against the sources. (Lesson 6.5 returns to this when a model can act.)</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">\text{recall@}k=\frac{\lvert \text{top}_k\cap R\rvert}{\lvert R\rvert},\qquad \text{precision@}k=\frac{\lvert \text{top}_k\cap R\rvert}{k},\qquad \text{MRR}=\frac1{\lvert Q\rvert}\sum_{q\in Q}\frac1{\text{rank}_q}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\text{top}_k</span>: the first <span class="tex">k</span> chunks of the ranking. <span class="tex">R</span>: the set of chunks marked relevant for this question. <span class="tex">\lvert\cdot\rvert</span>: the number of items in a set. <span class="tex">\cap</span>: the items two sets share. <span class="tex">Q</span>: the set of test questions. <span class="tex">\text{rank}_q</span>: the position of the first relevant chunk for question <span class="tex">q</span>. A pipeline's end-to-end answer score is measured separately, and does not follow from these.</div>
+
+        <div data-lab="gen-ap-rag"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the retriever ranking and press play: k sweeps from 1 to 10. Watch recall (blue) rise and never fall, while the assumed answer quality (orange) peaks and then declines.</li>
+          <li>Switch to "after a reranker". The rows glide into the new order. How small can k be now while recall is still 1?</li>
+          <li>Untick D9 and tick D3 instead (a what-if about which chunks matter). Read the new recall numbers and MRR in the readout.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>One score for everything.</b> "The answer was wrong" does not say which stage to fix. Log the retrieved chunks with every answer so you can recompute recall@k offline.</li>
+            <li><b>Recall without labels.</b> You need questions with known relevant chunks; building that set is real work and is the foundation of every later improvement.</li>
+            <li><b>A bigger k is not free.</b> More chunks cost tokens, raise latency and can dilute the model's attention; the best k is measured, not maximal.</li>
+            <li><b>A citation is a claim, not proof.</b> A model can attach a real source to a sentence the source does not support. Verify citations against the text.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Enterprise assistants.</b> Question answering over policies, manuals and tickets, with answers that must be traceable to documents.</li>
+            <li><b>Freshness without retraining.</b> Updating the index updates what the system can say; the model's weights stay fixed.</li>
+            <li><b>Hallucination.</b> Grounding reduces unsupported answers when the right text is retrieved and used; see <a href="gen-multimodal.html#hallucination-factuality">hallucination and factuality</a> for what remains.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For one question there are 3 relevant chunks, at ranks 1, 3 and 7. What are recall@5, precision@5 and the reciprocal rank?</summary><div class="ans">Two relevant chunks are in the top 5 (ranks 1 and 3). Recall@5 = 2/3 = 0.667. Precision@5 = 2/5 = 0.4. The first relevant chunk is at rank 1, so the reciprocal rank is 1.</div></details>
+        <details class="check"><summary>2. Recall@k is 1 but the answer is wrong. Give two possible causes.</summary><div class="ans">The generator ignored or misread the evidence (the right chunk was in the context but not used); the context also held many irrelevant or conflicting chunks that distracted it; or the relevant chunk lacked context and was ambiguous. Retrieval recall says only that the evidence was <i>present</i>.</div></details>
+        <details class="check"><summary>3. Why measure retrieval and answer quality separately?</summary><div class="ans">They fail for different reasons and are fixed in different places: chunking, embeddings and rerankers for retrieval; prompts, model choice and verification for generation. A single end-to-end score cannot say which to change, while retrieval metrics need no model call and can be tracked cheaply.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>RAG = retrieve (and optionally rerank), then generate from the retrieved text; the index can change without retraining.</li>
+          <li>Retrieval is scored with recall@k, precision@k and MRR against labelled relevant chunks; answers are scored separately for faithfulness and correctness.</li>
+          <li>Recall@k only goes up with k, but answer quality may not; treat retrieved text as data to quote, never as instructions to obey.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.5 ===================== -->
+    <section class="lesson" id="tool-use-agents" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.5</span><h2>Tools &amp; agents</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Ask "What do 3 notebooks and 2 pens cost?" and the model has two problems: it does not know this shop's prices, and doing arithmetic by writing digits is less reliable than a calculator. Give it a price lookup and a calculator and let it decide when to use them. How does that loop work, what does each step cost, and why does a ten-step task fail far more often than a one-step task?</div>
+
+        <h3 class="sec">Intuition: a model that can ask the world, one step at a time</h3>
+        <p>A model that only writes text cannot look anything up or change anything. <b>Tool use</b> (also called <b>function calling</b>) fixes that with a protocol: the model writes a structured request, such as "call <code>lookup</code> with <code>item = notebook</code>"; ordinary program code runs the tool and writes the result back into the context; the model reads it and decides what to do next. The request is structured text, so lesson 6.2's constrained decoding is how it is made reliable. An <b>agent</b> is this loop run several times, with the model choosing which tool to call, and when to stop.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The ReAct loop.</b> The pattern called <b>ReAct</b> interleaves <i>Reasoning</i> and <i>Acting</i>: <b>Thought</b> (the model writes what it needs next), <b>Action</b> (a tool call), <b>Observation</b> (the tool's output, written by the program, not by the model). Repeat until the model writes an <b>Answer</b>. The lab below shows this loop with two real, deterministic tools, a price lookup and a calculator. The "agent" in the lab is a fixed script, <i>not</i> a language model, because there is no model in your browser; what is real is the tools, the trace and the token accounting.</p>
+        <div class="worked"><b>Worked example: the default trace, and what it costs</b>
+          <p>Task: 3 notebooks and 2 pens. Prices come from the lookup tool (notebook 4, pen 1.5). The trace is: Thought 1, Action <code>lookup("notebook")</code>, Observation 4; Thought 2, Action <code>lookup("pen")</code>, Observation 1.5; Thought 3, Action <code>calc("3*4+2*1.5")</code>, Observation 15; then Answer "The total is 15." That is <b>4 model calls</b>.</p>
+          <p><b>Token accounting.</b> Estimate tokens as characters divided by 4, rounded up (a rough rule of thumb for English text). The prompt with the tool descriptions is 120 tokens. Every model call re-reads the whole prompt plus everything written so far: call 1 reads 120; after thought, action and observation (9 + 5 + 1 = 15 tokens) call 2 reads 135; after another 7 + 4 + 1 = 12 call 3 reads 147; after 13 + 5 + 1 = 19 call 4 reads 166. Total input read: <span class="tex">120+135+147+166=568</span> tokens. Total written by the model (thoughts, actions and the answer): <span class="tex">9+5+7+4+13+5+4=47</span>.</p>
+          <p><b>Quadratic growth.</b> If every call reads a fixed prompt of <span class="tex">P</span> tokens plus all the <span class="tex">s</span> tokens added by each earlier step, the total input after <span class="tex">n</span> calls is <span class="tex">nP+s\,(0+1+\dots+(n-1))=nP+s\,n(n-1)/2</span>. With <span class="tex">P=500</span> and <span class="tex">s=150</span>: <span class="tex">n=5</span> gives <span class="tex">2500+1500=4000</span> (not 2500), and <span class="tex">n=10</span> gives <span class="tex">5000+6750=11\,750</span> (not 5000). Doubling the steps more than doubles the cost. (Servers can reuse earlier computation with a KV cache; see <a href="gen-transformer.html#cost-and-kv-cache">cost and the KV cache</a>. That lowers the compute but not the context length.)</p>
+          <p><b>Errors compound.</b> If each step is right with probability <span class="tex">p</span> and steps fail independently, the whole run is right with probability <span class="tex">p^n</span>. With <span class="tex">p=0.95</span>: <span class="tex">n=5</span> gives 0.7738, <span class="tex">n=10</span> gives 0.5987, <span class="tex">n=20</span> gives 0.3585. The run drops below 50% between 13 steps (<span class="tex">0.95^{13}=0.5133</span>) and 14 steps (<span class="tex">0.95^{14}=0.4877</span>). Other rows, for <span class="tex">n=5,10,20</span>: <span class="tex">p=0.9</span> gives 0.5905, 0.3487, 0.1216; <span class="tex">p=0.99</span> gives 0.9510, 0.9044, 0.8179. A step success rate that looks excellent, 95%, is a coin flip over fourteen steps.</p>
+          <p><b>Retries.</b> If a failed step can be detected and retried once, the per-step success becomes <span class="tex">1-(1-0.95)^2=0.9975</span>, and ten steps succeed with <span class="tex">0.9975^{10}=0.9753</span>. The expected number of calls per step rises to <span class="tex">(1-0.05^2)/0.95=1.05</span>. Retries only help for failures you can <i>detect</i> (a timeout, a failed validation); a confident wrong answer looks like a success.</p>
+        </div>
+        <p><b>Error handling is design.</b> In the first lab, inject an error at step 2 and compare "retries once" with "does not retry". The scripted agent without retry carries on with a missing price, and the calculator rejects the expression. A real agent needs rules for this: validate tool arguments, set timeouts, cap the number of steps, report failures honestly rather than guessing, and ask a person before any step that cannot be undone.</p>
+        <p><b>Safety, conceptually.</b> A tool turns text into action, so the system's authority should not be whatever the text says. Everything that comes back from a tool, a web page, an email or a retrieved document is <i>untrusted data</i> that may contain instruction-like sentences (this is called <b>prompt injection</b>). A model does not reliably separate instructions from data inside one context. Defensive design therefore relies on layers outside the model: give each tool the least permission it needs; keep trusted instructions and untrusted content clearly separated and labelled; never let content alone authorise a sensitive action; require confirmation for irreversible steps; log every call. No single layer is complete, so assume some injected text will get through and limit what it can do.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">P(\text{run correct})=\prod_{i=1}^{n}p_i=p^n,\qquad \text{input tokens}(n)=\sum_{j=1}^{n}\Big(P+s\,(j-1)\Big)=nP+\frac{s\,n(n-1)}{2},\qquad n^\ast=\frac{\ln 0.5}{\ln p}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">n</span>: the number of sequential steps (model calls). <span class="tex">p_i</span>: the chance step <span class="tex">i</span> is right; <span class="tex">p</span> when all are equal. The product assumes steps fail independently, which real loops need not satisfy: one wrong observation can make every later step wrong, or a later step can notice and repair an earlier mistake. <span class="tex">P</span>: tokens in the fixed prompt. <span class="tex">s</span>: tokens each step adds to the context. <span class="tex">n^\ast</span>: the number of steps at which success falls to 50%.</div>
+
+        <div data-lab="gen-ap-react"></div>
+        <div data-lab="gen-ap-compound"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>In the trace lab, change the quantities and watch the calculator expression change. Then inject an error at step 3 with and without retry and read the final answer and the cost.</li>
+          <li>In the compounding lab, set p to 0.95 and n to 14, press play, and watch the green bars fall below half. Compare with the orange line <span class="tex">p^k</span>; the bars are 200 seeded runs and wobble around it.</li>
+          <li>Raise attempts per step to 2 and see the survival curve flatten; then read the tokens-per-successful-run line, which counts the extra calls.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"95% accurate per step is good."</b> Multiply: over 14 steps it is a coin flip. Long loops need checks between steps, not just a good model.</li>
+            <li><b>Cost grows faster than steps.</b> Every call re-reads the history, so total input tokens grow roughly with the square of the number of steps unless history is trimmed.</li>
+            <li><b>Believing the observation.</b> A tool can return stale, wrong or hostile text. Check results that matter, especially before an irreversible action.</li>
+            <li><b>No stopping rule.</b> A loop without a step limit and a failure exit can run, and spend, indefinitely.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Coding and task assistants.</b> Run a command, read the output, edit, test, repeat. The same <span class="tex">p^n</span> logic explains why short, verifiable steps work better than long unchecked ones.</li>
+            <li><b>Function calling.</b> The arguments of a tool call are produced as structured output (lesson 6.2); the schema is the contract between model and program.</li>
+            <li><b>Evaluation.</b> Agents are scored by task success over many runs, along with cost and the rate of harmful or irreversible actions, not by the quality of one transcript.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. An agent takes 8 sequential steps, each right with probability 0.9, independently. What is the chance the whole run is right?</summary><div class="ans"><span class="tex">0.9^8=0.4305</span>, less than half.</div></details>
+        <details class="check"><summary>2. With P = 200 prompt tokens and s = 100 tokens added per step, how many input tokens are read in total over 4 calls?</summary><div class="ans"><span class="tex">4(200)+100\cdot4\cdot3/2=800+600=1400</span>. Check call by call: 200 + 300 + 400 + 500 = 1400.</div></details>
+        <details class="check"><summary>3. Why might the formula p^n be too pessimistic, and why might it be too optimistic?</summary><div class="ans">Too pessimistic if later steps can detect and repair earlier errors, or if some errors do not matter for the final answer. Too optimistic if errors are correlated (one wrong observation poisons every later step), or if the per-step probability falls as the context grows longer and more cluttered.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A tool-using agent loops Thought, Action, Observation; the program, not the model, runs the tools and writes the observations.</li>
+          <li>Success of <span class="tex">n</span> independent steps is <span class="tex">p^n</span> (0.95 per step falls below 50% at 14 steps), and input tokens grow like <span class="tex">nP+sn(n-1)/2</span>.</li>
+          <li>Design for failure: detectable errors, retries, step limits, least privilege, untrusted observations, and a person in the loop for irreversible steps.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 6.6 ===================== -->
+    <section class="lesson" id="context-memory" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">6.6</span><h2>Context &amp; memory</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A conversation runs for 24 turns and about 3 800 tokens in total. In turn 3 you told the assistant something important. The model can read only 1 500 tokens at once. At turn 24, what does it actually see, what has been lost, and what can a system do about it?</div>
+
+        <h3 class="sec">Intuition: the model has a desk, not a warehouse</h3>
+        <p>The <b>context window</b> is the maximum number of tokens the model can read in one call: instructions, history, retrieved pages, tool results and the reply all share it. Anything outside the window does not exist for the model on that call, however important it was. A chat product has to decide, on every turn, <i>which</i> past text goes back onto the desk. Three standard answers: throw away the oldest turns (<b>truncation</b>), replace old turns by a short <b>summary</b>, or file old turns in a <b>memory store</b> and bring back the ones that look relevant to the new question (retrieval, exactly as in lesson 6.3).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: 24 turns, a 1 500-token window</b>
+          <p>The lab's conversation has these token lengths for turns 1 to 24: 146, 128, 220, 210, 115, 240, 217, 99, 113, 181, 206, 234, 68, 103, 160, 175, 215, 173, 152, 106, 80, 224, 138, 102. They add up to <b>3 805</b> tokens. Reserve 40 tokens for the new question, leaving 1 460.</p>
+          <p><b>Truncation.</b> Fill from the newest turn backwards while the total fits. The newest nine turns (16 to 24) total <span class="tex">175+215+173+152+106+80+224+138+102=1365</span>. Adding turn 15 (160) would make 1 525, over 1 460, so turns 1 to 15 are dropped: 2 440 tokens, including the fact in turn 3. The model cannot use it.</p>
+          <p><b>Summary.</b> Reserve 150 tokens for a summary, so the window budget is 1 310. The newest eight turns fit (1 190 tokens; turn 16 would make 1 365). Now 16 turns, 2 615 tokens, are left out and the summary of 150 tokens stands in for them. In the lab's <i>assumed</i> rule, the summary keeps a fraction <span class="tex">\min(1, 150/2615)=0.057</span> of the left-out detail. A short summary of a long history cannot keep much.</p>
+          <p><b>Memory store.</b> Reserve 300 tokens for recalled turns, so the budget is 1 160; the newest seven turns fit (975 tokens). The 17 older turns are stored with their vectors. The question's vector is compared with each by cosine (as in 6.3) and the best two are brought back: in the lab, turns 3 and 6. The fact turn is retrieved. The memory only helps if the question resembles the stored turn; with a vague question (raise the vagueness slider) the right turn can be missed.</p>
+          <p><b>Position.</b> Even when a fact is inside the window, reports on some systems suggest it can be used less reliably when it sits in the middle of a long context than near the start or the end; how strong this is depends on the model, the task and the context length. The lab draws an <b>assumed</b> U-shaped curve, recall <span class="tex">=0.55+0.45(2x-1)^2</span> where <span class="tex">x</span> is the relative position (0 start, 1 end), purely to let you see where a fact falls. For a fact in turn 3 while the conversation has only reached turn 10 (window of 8 turns, 1 395 tokens), the fact is at relative position 0.079 and the assumed value is 0.869. It is an illustration, not a measurement.</p>
+        </div>
+        <p><b>Why not simply a bigger window?</b> A larger window helps, but it has costs: the attention computation and the KV cache grow with length (see <a href="gen-transformer.html#cost-and-kv-cache">cost and the KV cache</a>), every extra token read costs time and money on every call (lesson 6.5's quadratic sum), and, as above, more text on the desk does not guarantee that each part is used equally well. Good systems also curate what goes in: put instructions and the key facts where they are least likely to be lost, drop duplicates, and keep tool outputs short.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">\text{window}=\Big\{\,i\ \Big|\ s\le i\le n\Big\},\quad s=\min\Big\{\,s\ \Big|\ \sum_{i=s}^{n}\ell_i\ \le\ W-R-M\Big\},\qquad \text{summary share}\approx\min\Big(1,\frac{S}{\sum_{i&lt;s}\ell_i}\Big)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">n</span>: the newest turn. <span class="tex">\ell_i</span>: the token length of turn <span class="tex">i</span>. <span class="tex">W</span>: the window size in tokens. <span class="tex">R</span>: tokens reserved for the new question and reply. <span class="tex">M</span>: tokens reserved for a summary or recalled memories (0 for truncation). <span class="tex">s</span>: the oldest turn that still fits; turns before it are outside the window. <span class="tex">S</span>: the summary's size in tokens. The last expression is the lab's assumed retention rule, not a law.</div>
+
+        <div data-lab="gen-ap-context"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with "truncate" and watch the grey (dropped) part grow from the left and swallow the star. Find the window size at which the fact in turn 3 survives to turn 24.</li>
+          <li>Switch to "summarise" and move the summary size. Then switch to "memory store" and raise the question vagueness until the star's turn is no longer recalled.</li>
+          <li>Move the key fact to turn 12 with a 1 500-token window and watch where its dot lies on the assumed position curve while the window slides.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"It said it remembers."</b> A model can claim to remember something that has left the window. If it is not in the context (or retrieved into it), the model has nothing to read; any detail it gives is a guess.</li>
+            <li><b>Summaries are lossy.</b> A summary silently drops details, and what it keeps was chosen by a model; errors in a summary then persist for the rest of the conversation.</li>
+            <li><b>Memory retrieval can miss.</b> A memory store is only as good as the retrieval over it (lesson 6.3); a vague question can fetch the wrong turns.</li>
+            <li><b>Privacy.</b> A stored memory outlives the conversation. Decide what may be kept, for how long, and who can see it; let people inspect and delete it.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Long conversations and assistants.</b> Every chat system needs a policy for old turns: truncate, summarise, store and retrieve, or a mix.</li>
+            <li><b>Agents.</b> Long tool traces fill the window quickly, so agents prune or summarise observations and write progress notes outside the context.</li>
+            <li><b>RAG and memory are the same machinery.</b> Both retrieve by similarity into a limited window; the difference is where the stored text came from, documents or past turns.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Turns of 100, 200, 300 and 400 tokens (oldest to newest), window 800, reserve 100 for the question, truncation. Which turns are in the window and how many tokens are dropped?</summary><div class="ans">Budget 700. Fill from the newest: 400, then 300 gives 700, which fits exactly; adding 200 would make 900. So the window holds turns 3 and 4, and turns 1 and 2 (300 tokens) are dropped.</div></details>
+        <details class="check"><summary>2. A 150-token summary replaces 2 615 tokens of history. Why is it risky to rely on it for exact details?</summary><div class="ans">It is under 6% of the original size (0.057), so most of the detail cannot be kept. It keeps what a summarising step judged important, and exact values (a name, a number, a date) are easily dropped or altered. Keep exact facts that matter in a separate store.</div></details>
+        <details class="check"><summary>3. Name one reason a larger context window does not fully solve the problem.</summary><div class="ans">Any of: compute and memory grow with context length; every extra token is paid for again on every call; the model may use information in the middle of a long context less reliably (on some systems and tasks); and long contexts hold more distracting or contradictory text.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The context window is a fixed token budget; text outside it does not exist for the model on that call.</li>
+          <li>Truncation forgets the oldest turns, summaries keep a lossy fraction, and a memory store brings back the turns whose vectors are closest to the question.</li>
+          <li>Longer windows cost more and may not be used evenly; the position curve in the lab is an assumption for illustration.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 7 (<a href="gen-latent.html">Latent-variable &amp; adversarial generators</a>) leaves text behind and asks how a model can create images and other continuous data by learning a hidden code: VAEs, GANs and normalising flows. The retrieval and agent ideas of this module return in Module 9, where hallucination, evaluation and running generative systems in production are treated.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

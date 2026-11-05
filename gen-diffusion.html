@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 · Diffusion &amp; flow matching · Generative AI</title>
+<meta name="description" content="How diffusion and flow-matching generators work: the forward noising formula, learning to predict the noise, DDPM and DDIM sampling, the score and SDE view, classifier-free guidance, latent diffusion and flow matching, all on a one-dimensional toy where the exact denoiser is known, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-diffusion.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="8">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 8</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">8</div>
+      <div style="flex:1">
+        <h1>Module 8 · Diffusion &amp; flow matching</h1>
+        <p>Destroying data with noise is easy, and so is knowing exactly how it was destroyed. A diffusion model learns to undo one small piece of that destruction, and generation is then a long walk from pure noise back to data. Flow matching reaches a similar goal with straight lines. This module sits in the <b>generate</b> stage of the pipeline (collect and tokenise, pretrain, align, adapt and compress, generate, evaluate and guard), with its training loop in the <b>pretrain</b> stage. It gives the general theory; the image-specific overview, with the U-Net and a pixel-level lab, is in <a href="cv-generative.html#diffusion-images">Computer Vision, lesson 8.3</a>.</p>
+        <div class="chips"><span class="chip">8 lessons</span><span class="chip">≈ 4 hours</span><span class="chip">Needs: <a href="math-probability.html#distributions">the normal distribution</a>, <a href="math-information.html#cross-entropy-kl">cross-entropy and KL</a>, <a href="gen-foundations.html#families-of-generators">the families of generators</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> This is the most mathematical module of the topic, so every idea is first met on the smallest case where everything can be computed exactly: <b>one number</b> instead of an image, drawn from a <b>two-bump distribution</b>, <span class="tex">p_{\text{data}}(x)=\tfrac12\mathcal N(x;-1,s^2)+\tfrac12\mathcal N(x;+1,s^2)</span> with a default width <span class="tex">s=0.3</span>. For this distribution the best possible denoiser, the score and the flow-matching velocity all have closed forms, so the arrows and paths in the labs are <i>exact</i>, not hand-drawn, and no network has to be trained. A real model replaces these exact formulas by a trained network that only approximates them. All labs are <i>illustrative</i> simulations with seeded random numbers, so a run can be repeated, and none of them says anything about the speed or quality of any particular commercial system.
+      <br><b>Two conventions to keep apart.</b> In lessons 8.1 to 8.7 (diffusion) <span class="tex">x_0</span> is the <b>data</b>, <span class="tex">x_T</span> is noise and the formula is <span class="tex">x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon</span>. In lesson 8.8 (flow matching) the roles flip: <span class="tex">x_0</span> is the <b>noise</b>, <span class="tex">x_1</span> is the data and <span class="tex">x_t=(1-t)x_0+t\,x_1</span>. Both conventions are common in the literature, so it is worth noticing which one a paper uses.</div>
+
+    <!-- ===================== 8.1 ===================== -->
+    <section class="lesson" id="forward-noising" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.1</span><h2>The forward noising process</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>To teach a model to generate data, we first need a way to turn data into noise in a precise, controlled manner, so that the model can later learn to run it backwards. If the noising takes 1 000 small steps, do we really have to simulate all 1 000 to make one training example, or is there a shortcut that jumps straight to step 500?</div>
+
+        <h3 class="sec">Intuition: shake the sand picture a little at a time</h3>
+        <p>Imagine a drawing made of sand on a tray. Shake the tray gently: the drawing blurs a little. Shake it again and again: eventually nothing is left but a flat, random-looking layer of sand. Diffusion models use exactly this idea on numbers. At every step the data are <b>shrunk slightly toward zero</b> and a <b>small amount of random noise</b> is added. After enough steps the original data are gone and only noise remains, whatever the data looked like. The path from data to noise is cheap and needs no learning. The hard part, the part a network learns, is the way back.</p>
+        <p>The shortcut exists because of a pleasant property of Gaussian noise: adding independent normal noise several times gives the same result as adding one larger dose of normal noise. So 500 small shake steps are equivalent to a single big one, with a formula we can write down.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>One step.</b> Pick a tiny number <span class="tex">\beta_t</span> between 0 and 1 for each step <span class="tex">t=1,2,\dots,T</span>. Write <span class="tex">\alpha_t=1-\beta_t</span>. The forward step is</p>
+        <div class="eq">x_t=\sqrt{\alpha_t}\,x_{t-1}+\sqrt{\beta_t}\,z_t,\qquad z_t\sim\mathcal N(0,1)\ \text{independent for every }t</div>
+        <p>The weights satisfy <span class="tex">(\sqrt{\alpha_t})^2+(\sqrt{\beta_t})^2=1</span>, so the step shrinks the signal and adds noise in a balanced way, and the total variance does not blow up. Define the running product <span class="tex">\bar\alpha_t=\alpha_1\alpha_2\cdots\alpha_t</span> ("alpha-bar"), the fraction of the signal power still left after <span class="tex">t</span> steps.</p>
+        <div class="worked"><b>Worked example: two steps by hand</b>
+          <p>Take <span class="tex">\alpha_1=0.9,\ \alpha_2=0.8</span> (so <span class="tex">\beta_1=0.1,\ \beta_2=0.2</span>), one data value <span class="tex">x_0=1</span>, and noise draws <span class="tex">z_1=0.5,\ z_2=-1</span>.</p>
+          <p><b>Step by step.</b> <span class="tex">x_1=\sqrt{0.9}\cdot1+\sqrt{0.1}\cdot0.5=0.94868+0.15811=1.1068</span>. Then <span class="tex">x_2=\sqrt{0.8}\cdot1.1068+\sqrt{0.2}\cdot(-1)=0.89443\cdot1.1068-0.44721=0.5427</span>.</p>
+          <p><b>Unrolled.</b> Substituting <span class="tex">x_1</span> into the second line gives <span class="tex">x_2=\sqrt{\alpha_1\alpha_2}\,x_0+\sqrt{\alpha_2\beta_1}\,z_1+\sqrt{\beta_2}\,z_2=0.84853\,x_0+0.28284\,z_1+0.44721\,z_2</span>. The two noise coefficients combine in variance: <span class="tex">0.28284^2+0.44721^2=0.08+0.20=0.28</span>, which is exactly <span class="tex">1-\bar\alpha_2=1-0.72</span>.</p>
+          <p><b>Closed form.</b> So <span class="tex">x_2=\sqrt{0.72}\,x_0+\sqrt{0.28}\,\epsilon</span> where <span class="tex">\epsilon</span> is one standard normal variable. For these particular draws <span class="tex">\epsilon=(0.28284\cdot0.5+0.44721\cdot(-1))/\sqrt{0.28}=-0.57789</span>, and <span class="tex">0.84853\cdot1+0.52915\cdot(-0.57789)=0.5427</span>, the same number as the two-step computation.</p>
+        </div>
+        <p>This is the general rule, proved by induction: if <span class="tex">x_{t-1}=\sqrt{\bar\alpha_{t-1}}x_0+\sqrt{1-\bar\alpha_{t-1}}\,\epsilon'</span>, then one more step adds noise of variance <span class="tex">\alpha_t(1-\bar\alpha_{t-1})+\beta_t=\alpha_t-\bar\alpha_t+1-\alpha_t=1-\bar\alpha_t</span>.</p>
+        <div class="eq">x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon,\quad \epsilon\sim\mathcal N(0,1)\qquad\Longleftrightarrow\qquad q(x_t\mid x_0)=\mathcal N\!\big(\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)\big)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_0</span>: a clean data value (in this module: a number; for an image: all its pixels, with the same formula applied to each). <span class="tex">x_t</span>: the noisy version after <span class="tex">t</span> steps. <span class="tex">\beta_t\in(0,1)</span>: the noise amount at step <span class="tex">t</span>, chosen by us (the <b>schedule</b>). <span class="tex">\alpha_t=1-\beta_t</span>. <span class="tex">\bar\alpha_t=\prod_{i\le t}\alpha_i</span>: how much signal power survives, from 1 at <span class="tex">t=0</span> down toward 0. <span class="tex">\epsilon</span>: a single standard normal draw that stands for all the noise added so far. <span class="tex">\mathcal N(m,v)</span>: a normal distribution with mean <span class="tex">m</span> and variance <span class="tex">v</span>. The <b>signal-to-noise ratio</b> is <span class="tex">\mathrm{SNR}(t)=\bar\alpha_t/(1-\bar\alpha_t)</span>: signal power over noise power.</div>
+        <p><b>Schedules.</b> The numbers <span class="tex">\beta_t</span> are a design choice. A common original choice is a <b>linear</b> schedule with <span class="tex">T=1000</span>, <span class="tex">\beta</span> rising from <span class="tex">10^{-4}</span> to <span class="tex">0.02</span>. A <b>cosine</b> schedule defines <span class="tex">\bar\alpha_t\propto\cos^2\!\big(\tfrac{t/T+0.008}{1.008}\cdot\tfrac\pi2\big)</span> directly, and destroys the signal more slowly at the start. Computed values:</p>
+        <table class="tbl"><thead><tr><th>step t</th><th>0</th><th>100</th><th>250</th><th>500</th><th>750</th><th>1000</th></tr></thead><tbody>
+          <tr><td>linear: ᾱ<sub>t</sub></td><td>1</td><td>0.8970</td><td>0.5241</td><td>0.0786</td><td>0.0034</td><td>0.00004</td></tr>
+          <tr><td>linear: √ᾱ<sub>t</sub></td><td>1</td><td>0.9471</td><td>0.7239</td><td>0.2803</td><td>0.0579</td><td>0.0064</td></tr>
+          <tr><td>linear: √(1−ᾱ<sub>t</sub>)</td><td>0</td><td>0.3209</td><td>0.6899</td><td>0.9599</td><td>0.9983</td><td>1.0000</td></tr>
+          <tr><td>linear: SNR</td><td>∞</td><td>8.710</td><td>1.101</td><td>0.0853</td><td>0.0034</td><td>0.00004</td></tr>
+          <tr><td>cosine: ᾱ<sub>t</sub></td><td>1</td><td>0.9721</td><td>0.8470</td><td>0.4938</td><td>0.1443</td><td>≈ 0 (2·10⁻⁹)</td></tr>
+          <tr><td>cosine: SNR</td><td>∞</td><td>34.83</td><td>5.537</td><td>0.976</td><td>0.1686</td><td>≈ 0</td></tr></tbody></table>
+        <p>The linear schedule passes <span class="tex">\bar\alpha=0.5</span> at step 260, the cosine one at step 497. At step 1 000 the linear schedule leaves <span class="tex">\bar\alpha_T=4\cdot10^{-5}</span>, so <span class="tex">x_T</span> is, for practical purposes, pure noise <span class="tex">\mathcal N(0,1)</span>: exactly the distribution we will start sampling from.</p>
+        <p><b>The two-bump data.</b> If the data are the mixture above, each bump stays a bump and just moves and widens: the marginal of <span class="tex">x_t</span> is <span class="tex">p_t(x)=\sum_k\tfrac12\mathcal N\big(x;\ \sqrt{\bar\alpha_t}\,m_k,\ \bar\alpha_t s^2+1-\bar\alpha_t\big)</span> with centres <span class="tex">m_k=\mp1</span>. The centres shrink toward 0 like <span class="tex">\sqrt{\bar\alpha_t}</span> while the bumps widen from <span class="tex">s</span> toward 1 until they overlap into one bell.</p>
+        <p><b>Checked by simulation.</b> For <span class="tex">x_0=1</span>, I ran the one-step-at-a-time recipe with the linear schedule for 200 000 independent runs (seed 3). At <span class="tex">t=100</span>: mean 0.9473 and variance 0.1033, against the closed form 0.9471 and 0.1030. At <span class="tex">t=500</span>: 0.2849 and 0.9178 against 0.2803 and 0.9214. At <span class="tex">t=1000</span>: 0.0055 and 1.0008 against 0.0064 and 1.0000. The differences are within the sampling error of 200 000 runs. The lab below repeats this comparison live with 1 000 points.</p>
+
+        <div data-lab="gen-df-forward"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the linear schedule. Watch the shaded bands (the closed-form prediction) and the coloured paths (the step-by-step simulation): they agree at every step, and in the right-hand panel the bars follow the green closed-form curve. Note the step at which the two bumps stop being visibly separate.</li>
+          <li>Switch to the cosine schedule and compare the green ᾱ<sub>t</sub> curve in the lower strip. At step 500 the linear schedule has kept 7.9% of the signal power, the cosine one 49%.</li>
+          <li>Choose "my formula" and type <span class="tex">1-u</span>, then <span class="tex">(1-u)^2</span>. Each is a valid ᾱ(u) because it starts at 1. Which one removes the signal faster early on? (Press Reset after editing to restart the run.)</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"T is a physical time."</b> It is just the number of steps we chose. What matters is the profile of <span class="tex">\bar\alpha_t</span>, which says how much signal is left at each noise level.</li>
+            <li><b>The closed form is not an approximation.</b> It is exact for Gaussian noise (the check above), which is why training never simulates the chain.</li>
+            <li><b>A schedule that stops too early.</b> If <span class="tex">\bar\alpha_T</span> is not close to 0, some signal remains in <span class="tex">x_T</span>, while sampling starts from pure noise. That mismatch is a known failure mode of badly chosen schedules.</li>
+            <li><b>Mixing up conventions.</b> Here <span class="tex">x_0</span> is data and <span class="tex">t</span> grows toward noise. In flow matching (lesson 8.8) it is the other way round.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>Every diffusion model is trained by taking a clean example, drawing a random <span class="tex">t</span> and a random <span class="tex">\epsilon</span>, and building <span class="tex">x_t</span> with the closed form. For an image the same formula is applied to every pixel (or every latent value, lesson 8.7), with independent noise per value.</li>
+            <li>The schedule decides how much of the model's effort goes to coarse structure (high noise) and to fine detail (low noise). Choosing and re-weighting schedules is an active design topic in image, audio and video generators.</li>
+            <li>The SNR is the natural "dial" that later lessons use: samplers move from low SNR to high SNR.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For α₁ = 0.9 and α₂ = 0.8, what are ᾱ₂, √ᾱ₂ and √(1−ᾱ₂)?</summary><div class="ans">ᾱ₂ = 0.9·0.8 = 0.72, √0.72 = 0.8485 and √(1−0.72) = √0.28 = 0.5292. After two steps 84.85% of the amplitude of x₀ is kept and the noise has standard deviation 0.5292.</div></details>
+        <details class="check"><summary>2. With ᾱ_t = 0.64, x₀ = 2 and ε = −0.5, compute x_t and the SNR.</summary><div class="ans">√0.64 = 0.8 and √0.36 = 0.6, so x_t = 0.8·2 + 0.6·(−0.5) = 1.6 − 0.3 = 1.3. SNR = 0.64 / 0.36 = 1.778.</div></details>
+        <details class="check"><summary>3. In the linear schedule at step 500, ᾱ = 0.0786. If x₀ has variance 1, what share of the variance of x₅₀₀ comes from the data?</summary><div class="ans">Var(x_t) = ᾱ·Var(x₀) + (1−ᾱ) = 0.0786·1 + 0.9214 = 1. The data contribute 0.0786, i.e. 7.9%; the remaining 92.1% is noise. That is why the two bumps are nearly indistinguishable at step 500.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Each forward step is <span class="tex">x_t=\sqrt{\alpha_t}x_{t-1}+\sqrt{\beta_t}z_t</span>; the whole chain collapses to <span class="tex">x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\,\epsilon</span> (verified step by step: 0.5427 both ways).</li>
+          <li>The schedule <span class="tex">\bar\alpha_t</span> sets how fast the signal is destroyed; SNR = <span class="tex">\bar\alpha_t/(1-\bar\alpha_t)</span> measures what is left.</li>
+          <li>For the two-bump toy, <span class="tex">p_t</span> is again a two-component mixture with centres <span class="tex">\pm\sqrt{\bar\alpha_t}</span> and variance <span class="tex">\bar\alpha_t s^2+1-\bar\alpha_t</span>, which is what makes the exact labs possible.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.2 ===================== -->
+    <section class="lesson" id="noise-prediction-loss" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.2</span><h2>Learning to predict the noise</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We can make a noisy <span class="tex">x_t</span> from any clean <span class="tex">x_0</span>. What should a network be trained to output when it sees <span class="tex">x_t</span> and the noise level <span class="tex">t</span>, and what loss should it minimise? And since several different clean values could have produced the same <span class="tex">x_t</span>, what is the <i>best possible</i> answer?</div>
+
+        <h3 class="sec">Intuition: the answer key is something we put in ourselves</h3>
+        <p>Training data for the denoiser come for free: take a clean example, add noise <span class="tex">\epsilon</span> that <i>we</i> draw, and keep a note of it. Now we have a question (the noisy value) and its answer key (the noise we added). A network is trained to reproduce the answer key. That is plain regression, with no game and no hidden target.</p>
+        <p>There is a catch that makes the problem interesting. The network sees only <span class="tex">x_t</span>, but the same <span class="tex">x_t</span> could have arisen from different <span class="tex">(x_0,\epsilon)</span> pairs: a value near 0 might be the left bump plus a positive push or the right bump plus a negative push. The network cannot know which, so the best it can do is to output the <i>average</i> noise over all pairs that fit. Learning that average, for every <span class="tex">x_t</span> and every noise level, is the entire task.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Predicting the noise is equivalent to predicting the clean data, because the formula <span class="tex">x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon</span> can be solved either way: <span class="tex">\hat x_0=(x_t-\sqrt{1-\bar\alpha_t}\,\hat\epsilon)/\sqrt{\bar\alpha_t}</span>. Many systems use the noise target; others predict <span class="tex">x_0</span> or a related combination, and each is a rearrangement of the same information.</p>
+        <div class="worked"><b>Worked example: one training step, with the exact answer for two-point data</b>
+          <p>Let the data be the two numbers <span class="tex">-1</span> and <span class="tex">+1</span>, equally likely (the case <span class="tex">s\to0</span> of our toy). Take <span class="tex">\bar\alpha=0.5</span>, so <span class="tex">\sqrt{\bar\alpha}=\sqrt{1-\bar\alpha}=0.7071</span>. Draw <span class="tex">x_0=+1</span> and <span class="tex">\epsilon=-0.8</span>:</p>
+          <p><span class="tex">x_t=0.7071\cdot1+0.7071\cdot(-0.8)=0.7071-0.5657=0.1414</span>. The training question is "here is 0.1414 at this noise level, what noise was added?" and the answer key says <span class="tex">-0.8</span>.</p>
+          <p><b>Best possible answer.</b> By Bayes' rule the probability that this <span class="tex">x_t</span> came from the +1 data point is <span class="tex">\sigma\big(2\sqrt{\bar\alpha}\,x_t/(1-\bar\alpha)\big)=\sigma(0.4)=0.599</span>, so the expected clean value is <span class="tex">\mathbb E[x_0\mid x_t]=\tanh\big(\sqrt{\bar\alpha}\,x_t/(1-\bar\alpha)\big)=\tanh(0.2)=0.1974</span>. The corresponding expected noise is <span class="tex">\epsilon^*=(x_t-\sqrt{\bar\alpha}\,0.1974)/\sqrt{1-\bar\alpha}=(0.1414-0.1396)/0.7071=0.0026</span>. A value near 0 carries almost no clue about which bump it came from, so the best guess for the noise is about 0, not <span class="tex">-0.8</span>.</p>
+          <p><b>Loss at the best answer.</b> <span class="tex">(-0.8-0.0026)^2=0.644</span>. Even a perfect model pays this on this particular sample: the loss cannot reach zero, only its average over all samples is minimised.</p>
+          <p><b>One gradient step of a toy model.</b> Let the model be <span class="tex">\epsilon_\theta(x)=a\,x</span> with <span class="tex">a=0.3</span>. It predicts <span class="tex">0.3\cdot0.1414=0.0424</span>, loss <span class="tex">(-0.8-0.0424)^2=0.7097</span>. The gradient is <span class="tex">\partial L/\partial a=-2(\epsilon-ax)\,x=-2(-0.8424)(0.1414)=+0.2383</span>. With learning rate 0.5: <span class="tex">a\leftarrow0.3-0.5\cdot0.2383=0.1809</span>; the new prediction is 0.0256 and the new loss 0.6816, lower than 0.7097.</p>
+        </div>
+        <p>Averaging over many samples and random noise levels gives the training objective, often called the <b>simple loss</b>:</p>
+        <div class="eq">L(\theta)=\mathbb E_{t,\;x_0,\;\epsilon}\Big[\big\lVert\epsilon-\epsilon_\theta\big(\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon,\ t\big)\big\rVert^2\Big],\qquad \epsilon^*(x,t)=\mathbb E\big[\epsilon\mid x_t=x\big]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\theta</span>: the network's parameters. <span class="tex">\epsilon_\theta(x_t,t)</span>: the network's guess of the noise, given the noisy input and the step <span class="tex">t</span>. <span class="tex">\mathbb E_{t,x_0,\epsilon}</span>: the average over a random step <span class="tex">t</span> (typically uniform in 1..T), a random data point and fresh noise. <span class="tex">\lVert\cdot\rVert^2</span>: the sum of squares over all components (all pixels). <span class="tex">\epsilon^*</span>: the exact minimiser of the loss, the conditional mean of the noise given the noisy value. For a two-point or Gaussian-mixture data distribution it has a closed form, which is what the labs draw as the green curve.</div>
+        <p><b>The link to the score.</b> The slope of the log-density of the noisy data is minus the expected noise, scaled:</p>
+        <div class="eq">\nabla_x\log p_t(x)=-\frac{\mathbb E[\epsilon\mid x_t=x]}{\sqrt{1-\bar\alpha_t}}\quad\Longleftrightarrow\quad \epsilon^*(x,t)=-\sqrt{1-\bar\alpha_t}\;\nabla_x\log p_t(x)</div>
+        <p>Check with data <span class="tex">x_0\sim\mathcal N(0,1)</span>: then <span class="tex">x_t\sim\mathcal N(0,1)</span> for every <span class="tex">t</span>, the score is <span class="tex">-x</span>, and the best noise guess is the regression slope <span class="tex">\mathrm{Cov}(\epsilon,x_t)/\mathrm{Var}(x_t)\cdot x=\sqrt{1-\bar\alpha_t}\,x</span>, which equals <span class="tex">-\sqrt{1-\bar\alpha_t}\cdot(-x)</span>. So a network that predicts the noise is secretly learning the score of the noised data. Lesson 8.5 uses this.</p>
+        <p>In the lab the model is not a neural network but a piecewise-linear curve with 41 knots, trained by stochastic gradient descent, which is enough to show the mechanics.</p>
+
+        <div data-lab="gen-df-loss"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the noise level at 250 and press play. The orange curve starts flat at 0 and bends toward the green curve while the loss falls. Read the floor: at step 250 with <span class="tex">s=0.3</span> the best possible loss is about 0.51, not 0.</li>
+          <li>Move the noise level to 20 (very little noise). The best possible loss is now about 0.95, close to the value 1 of always guessing 0. Then move it to 950: the floor is essentially 0. Explain why in terms of how much of <span class="tex">x_t</span> is the data and how much is the noise you are asked to find.</li>
+          <li>Set the width <span class="tex">s</span> to 0 (two-point data) and watch the green curve become a smooth S-shape at a middle noise level: that is the <span class="tex">\tanh</span> from the worked example.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"The loss should go to zero."</b> It cannot, for the reason in the worked example; the floor depends on the noise level. Never compare loss values across different <span class="tex">t</span> as if they measured the same thing.</li>
+            <li><b>Not conditioning on t.</b> The best noise guess for the same <span class="tex">x_t</span> is different at different noise levels. The network must receive <span class="tex">t</span> (typically as an embedding) or it averages over levels.</li>
+            <li><b>Confusing the target with the prediction.</b> The target <span class="tex">\epsilon</span> is the noise actually drawn; the prediction is an average over everything that could have been drawn. They differ, and that is fine.</li>
+            <li><b>One noisy sample at a time.</b> A single sample's loss may go up after an update; only the average over many samples falls.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>This regression is the whole training loop of a diffusion model: sample a clean example, a step <span class="tex">t</span> and noise, form <span class="tex">x_t</span>, and take a gradient step on the squared error. Pretraining sees an enormous number of such steps, but each one is as simple as the worked example.</li>
+            <li>The network is conditioned on <span class="tex">t</span> and, for text-to-image models, on the prompt (lessons 8.6 and 8.7). Its backbone is a U-Net or a transformer.</li>
+            <li>The same pretraining-stage view as language models applies: a large dataset, a simple self-supervised loss (no human labels), and a compute budget (<a href="gen-training.html#scaling-laws">scaling laws</a> gives the general accounting).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With ᾱ = 0.36, x₀ = 2 and ε = −0.5: compute x_t. If the network answers ε̂ = 0, what clean value x̂₀ does that imply? And if it answers ε̂ = −0.5?</summary><div class="ans">√0.36 = 0.6, √0.64 = 0.8, x_t = 0.6·2 + 0.8·(−0.5) = 0.8. With ε̂ = 0: x̂₀ = 0.8/0.6 = 1.333. With ε̂ = −0.5: x̂₀ = (0.8 + 0.4)/0.6 = 2.0, the true value. A perfect noise guess gives a perfect clean guess.</div></details>
+        <details class="check"><summary>2. The true noise was ε = −0.5 and the model said 0.2. What is the squared error for this sample?</summary><div class="ans">(−0.5 − 0.2)² = 0.49.</div></details>
+        <details class="check"><summary>3. Why can the average training loss not reach 0 even for a perfect network?</summary><div class="ans">The network sees only x_t. Different pairs (x₀, ε) give the same x_t, so it can only output their average noise. The leftover variance of ε around that average is irreducible. It is large when the data stand out little from the noise at low noise levels (floor about 0.95 at step 20 in the lab) and nearly zero when the noise dominates (floor about 0 at step 950).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Training data are made by us: noise <span class="tex">\epsilon</span> is the answer key and <span class="tex">x_t</span> is the question. The loss is <span class="tex">\mathbb E\lVert\epsilon-\epsilon_\theta(x_t,t)\rVert^2</span>.</li>
+          <li>The best possible predictor is the conditional mean <span class="tex">\epsilon^*=\mathbb E[\epsilon\mid x_t]</span>, and it equals <span class="tex">-\sqrt{1-\bar\alpha_t}</span> times the score of the noised data.</li>
+          <li>The loss has a floor (here 0.644 on the example sample, and about 0.51 on average at step 250) because one noisy value cannot reveal its own noise exactly.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.3 ===================== -->
+    <section class="lesson" id="ddpm-sampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.3</span><h2>Sampling with DDPM</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We have a noise predictor. To generate, we start from pure noise and want to walk back to data. What exactly is one backward step, why does each step <i>add fresh noise</i> when the goal is to remove it, and what happens if we use far fewer than 1 000 steps?</div>
+
+        <h3 class="sec">Intuition: undo the shrink, then admit what you do not know</h3>
+        <p>A forward step shrank the data by <span class="tex">\sqrt{\alpha_t}</span> and added a little noise. A backward step should undo the shrink and take out the noise. But the noise predictor only gives its <i>best average guess</i>: the true noise could differ. So the backward step moves the particle to where the guess says it should be, and then adds back a small random kick equal to the amount of uncertainty that remains. This keeps the cloud of particles as spread out as the real distribution at that noise level. If you removed the kick, every particle would drift toward the middle of the data and the variety would collapse.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>For a small forward step, the exact backward distribution is close to a normal distribution, <span class="tex">p(x_{t-1}\mid x_t)\approx\mathcal N(\mu_\theta(x_t,t),\ \sigma_t^2)</span>. The <b>DDPM</b> (denoising diffusion probabilistic model) update, with <span class="tex">\hat\epsilon=\epsilon_\theta(x_t,t)</span>, is</p>
+        <div class="eq">x_{t-1}=\frac{1}{\sqrt{\alpha_t}}\Big(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\,\hat\epsilon\Big)+\sigma_t z,\qquad z\sim\mathcal N(0,1),\qquad \sigma_t^2=\tilde\beta_t=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\,\beta_t</div>
+        <p>Repeating it from <span class="tex">t=T</span> (with <span class="tex">x_T\sim\mathcal N(0,1)</span>) down to <span class="tex">t=1</span> (where no noise is added) is <b>ancestral sampling</b>: each step is a draw conditioned on the previous one. (Another common choice is <span class="tex">\sigma_t^2=\beta_t</span>, which is slightly noisier.)</p>
+        <div class="worked"><b>Worked example: one reverse step on a 4-step schedule</b>
+          <p>Use the tiny schedule <span class="tex">\alpha=(0.9,\,0.8,\,0.7,\,0.6)</span>, so <span class="tex">\bar\alpha=(0.9,\,0.72,\,0.504,\,0.3024)</span> and <span class="tex">\beta_4=0.4</span>. Data: the two-point set <span class="tex">\{-1,+1\}</span>. A particle sits at <span class="tex">x_4=0.8</span>.</p>
+          <p><b>Denoiser.</b> <span class="tex">\sqrt{\bar\alpha_4}=0.54991</span>, <span class="tex">\sqrt{1-\bar\alpha_4}=0.83522</span>. The expected clean value is <span class="tex">\hat x_0=\tanh\big(0.54991\cdot0.8/0.6976\big)=\tanh(0.6306)=0.5585</span>, so the best noise guess is <span class="tex">\hat\epsilon=(0.8-0.54991\cdot0.5585)/0.83522=0.5901</span>.</p>
+          <p><b>Mean.</b> <span class="tex">\mu=\big(0.8-\tfrac{0.4}{0.83522}\cdot0.5901\big)/\sqrt{0.6}=(0.8-0.2826)/0.7746=0.6679</span>.</p>
+          <p><b>Spread.</b> <span class="tex">\tilde\beta_4=\frac{1-0.504}{1-0.3024}\cdot0.4=0.2844</span>, so <span class="tex">\sigma_4=0.5333</span>.</p>
+          <p><b>Result.</b> With a draw <span class="tex">z=0.5</span>: <span class="tex">x_3=0.6679+0.5333\cdot0.5=0.9346</span>. A different <span class="tex">z</span> would give a different <span class="tex">x_3</span>: one particle, many possible next positions.</p>
+          <p><b>Same step in the equivalent form</b> that the next lesson uses: <span class="tex">x_3=\sqrt{\bar\alpha_3}\,\hat x_0+\sqrt{1-\bar\alpha_3-\sigma^2}\,\hat\epsilon+\sigma z=0.70993\cdot0.5585+\sqrt{0.2116}\cdot0.5901+0.5333\cdot0.5=0.3965+0.2715+0.2667=0.9346</span>. (I also checked in code that the two forms agree to six digits.)</p>
+        </div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\hat\epsilon</span>: the noise predictor's output at <span class="tex">(x_t,t)</span>; in the labs it is the exact conditional mean <span class="tex">\epsilon^*</span> from lesson 8.2. <span class="tex">\hat x_0</span>: the implied guess of the clean data. <span class="tex">\mu_\theta</span>: the mean of the backward step, the bracket above. <span class="tex">\sigma_t</span>: the standard deviation of the fresh noise; <span class="tex">\tilde\beta_t</span> is the variance of the exact posterior <span class="tex">q(x_{t-1}\mid x_t,x_0)</span> and does not depend on <span class="tex">x_0</span>. <span class="tex">z</span>: fresh standard normal noise, drawn at every step.</div>
+        <p><b>Number of steps.</b> The Gaussian approximation of the backward step is good only when each step is small, which is why the original schedules use <span class="tex">T=1000</span>. To sample with <span class="tex">S&lt;T</span> steps, pick <span class="tex">S</span> of the <span class="tex">T</span> noise levels and treat consecutive picks as one bigger step (the formulas keep the same shape with <span class="tex">\bar\alpha_t\to\bar\alpha_s</span>). Each step costs one network evaluation, so <span class="tex">S</span> is the cost of generating one sample.</p>
+        <p><b>Measured on the toy</b> (exact denoiser, so all error comes from big steps; 2 000 particles, mean absolute gap to the data quantiles, the one-dimensional Wasserstein-1 distance): <span class="tex">S=100</span>: 0.025, <span class="tex">S=50</span>: 0.038, <span class="tex">S=20</span>: 0.053, <span class="tex">S=10</span>: 0.132, <span class="tex">S=5</span>: 0.303, <span class="tex">S=3</span>: 0.543, <span class="tex">S=2</span>: 0.768. Values below about 0.05 are within finite-sample noise.</p>
+        <p><b>Removing the noise breaks it.</b> With S = 40 and 600 particles, a sampler that keeps the DDPM mean but drops the random <span class="tex">z</span> ends with a standard deviation of 0.357, against 1.044 for the data. The correct sampler gives 1.025.</p>
+
+        <div data-lab="gen-df-ddpm"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Run the default (S = 40). The green dashed lines connect four particles to the denoiser's guess of the clean value x̂₀ on the left axis. Early on those guesses sit near the middle; later they lean toward one bump. When is the first time they commit?</li>
+          <li>Reduce S to 5 and run again, then to 100. Compare the final histogram and the printed distance to the data with the numbers above.</li>
+          <li>Tick "leave out the added noise z" with S = 40 and watch the particles collapse into a narrow cluster. Then untick it and run once more: the spread comes back.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Sampling removes noise; so adding noise is a bug."</b> The added <span class="tex">z</span> is what keeps the distribution correct. A "denoise as much as possible" loop produces blurry averages, the same collapse you see in the lab.</li>
+            <li><b>Final step.</b> At the last step (<span class="tex">t=1</span>) no noise is added, otherwise the output would carry leftover noise.</li>
+            <li><b>Few steps with the same recipe.</b> Using only 10 of 1 000 levels does not mean "the same method, faster": the Gaussian step assumption breaks, and the error in the table is large. The next lesson shows how to use fewer steps properly.</li>
+            <li><b>Mixing up the two <span class="tex">\sigma</span> choices.</b> <span class="tex">\tilde\beta_t</span> and <span class="tex">\beta_t</span> give slightly different samples; a trained model works with the one it was evaluated with.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>DDPM and its descendants established that this simple regression plus a long ancestral chain generates high-quality images; the cost, hundreds of network evaluations per sample, motivated everything in lesson 8.4.</li>
+            <li>The same sampling loop appears for audio, video and molecules whenever a diffusion model is used; only the denoiser network changes.</li>
+            <li>The fresh noise at each step is where the diversity of a stochastic sampler comes from; deterministic variants take it only from the starting noise.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A step goes from ᾱ_t = 0.5 to ᾱ_{t−1} = 0.6. Find β_t and the DDPM standard deviation σ_t = √β̃_t.</summary><div class="ans">α_t = ᾱ_t/ᾱ_{t−1} = 0.5/0.6 = 0.8333, so β_t = 0.1667. β̃_t = (1 − 0.6)/(1 − 0.5) · 0.1667 = 0.1333, so σ_t = 0.3651.</div></details>
+        <details class="check"><summary>2. Why does the reverse step add noise when the goal is to remove it?</summary><div class="ans">The predictor gives only the average of the possible noises. The true next state is uncertain, with spread σ_t. Adding z with that spread keeps the particles distributed like the true noisy data at the previous level. Without it the cloud shrinks: in the lab the spread falls from 1.04 to 0.36.</div></details>
+        <details class="check"><summary>3. Sampling takes 1 000 steps and each network call takes 30 ms. How long is one sample, and what would 50 steps cost?</summary><div class="ans">1 000 · 30 ms = 30 s, and 50 · 30 ms = 1.5 s, 20 times faster, but only if the sampler still works well with 50 steps; the plain DDPM sampler in the table is already at an error of 0.038 for S = 50 on the toy, a small but visible increase.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>One DDPM step: move to the predicted mean <span class="tex">\tfrac{1}{\sqrt{\alpha_t}}(x_t-\tfrac{\beta_t}{\sqrt{1-\bar\alpha_t}}\hat\epsilon)</span> and add noise of standard deviation <span class="tex">\sigma_t</span> (worked: 0.6679 + 0.5333·z).</li>
+          <li>The added noise keeps the diversity; leaving it out collapses the samples.</li>
+          <li>The number of steps is the cost, and with this recipe too few steps give clearly wrong samples (error 0.025 at 100 steps, 0.768 at 2).</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.4 ===================== -->
+    <section class="lesson" id="fast-samplers" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.4</span><h2>Fast samplers</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A thousand network calls per sample is slow. Is there a way to use 20 or 50 calls without retraining the network? What changes in the update, what is lost, and how can a model be taught to do the job in even fewer?</div>
+
+        <h3 class="sec">Intuition: a straight walk instead of a drunk walk</h3>
+        <p>DDPM's path from noise to data is a random walk: at every step it is kicked by fresh noise, so the path zigzags and many small steps are needed to follow it. But a particle's final position depends on where it started and on all the kicks. There exists a different, <i>smooth</i> path from each starting noise to a data point that produces exactly the same distribution of results. A smooth path can be followed with a few long strides, the way a straight road needs fewer waypoints than a winding one. <b>DDIM</b> (denoising diffusion implicit models) follows this smooth path by using no fresh noise at all.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>One reverse update from noise level <span class="tex">\bar\alpha_t</span> to a less noisy level <span class="tex">\bar\alpha_s</span> (<span class="tex">s&lt;t</span>, not necessarily adjacent) has three parts: first guess the clean data from the current noisy value, then re-noise that guess to the new level, reusing the same noise estimate.</p>
+        <div class="eq">\hat x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\hat\epsilon}{\sqrt{\bar\alpha_t}},\qquad x_s=\sqrt{\bar\alpha_s}\,\hat x_0+\sqrt{1-\bar\alpha_s-\sigma^2}\,\hat\epsilon+\sigma z,\qquad \sigma=\eta\sqrt{\tfrac{1-\bar\alpha_s}{1-\bar\alpha_t}}\sqrt{1-\tfrac{\bar\alpha_t}{\bar\alpha_s}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\hat\epsilon=\epsilon_\theta(x_t,t)</span> and <span class="tex">\hat x_0</span> as before. <span class="tex">\bar\alpha_s&gt;\bar\alpha_t</span>: the target level, <span class="tex">s</span> steps further toward clean data (adjacent in DDPM, a jump of several in a fast sampler). <span class="tex">\eta\in[0,1]</span>: how much of the DDPM noise to use. <span class="tex">\eta=1</span> gives exactly the DDPM step of lesson 8.3 when <span class="tex">s=t-1</span>; <span class="tex">\eta=0</span> gives <span class="tex">\sigma=0</span>, the deterministic DDIM step, with no <span class="tex">z</span>. The square root <span class="tex">\sqrt{1-\bar\alpha_s-\sigma^2}</span> keeps the total noise variance at the right level.</div>
+        <div class="worked"><b>Worked example: the same particle, two samplers</b>
+          <p>Same 4-step schedule and particle as lesson 8.3: <span class="tex">x_4=0.8</span>, <span class="tex">\hat x_0=0.5585</span>, <span class="tex">\hat\epsilon=0.5901</span>, <span class="tex">\bar\alpha_4=0.3024</span>.</p>
+          <p><b>DDIM to the next level</b> (<span class="tex">\bar\alpha_3=0.504</span>, <span class="tex">\sigma=0</span>): <span class="tex">x_3=\sqrt{0.504}\cdot0.5585+\sqrt{0.496}\cdot0.5901=0.70993\cdot0.5585+0.70427\cdot0.5901=0.3965+0.4156=0.8121</span>. DDPM with <span class="tex">z=0.5</span> gave 0.9346; DDPM with <span class="tex">z=0</span> gives its mean 0.6679. DDIM lands somewhere else again, because it keeps the noise estimate <span class="tex">\hat\epsilon</span> at full strength instead of splitting the variance between <span class="tex">\hat\epsilon</span> and <span class="tex">z</span>.</p>
+          <p><b>DDIM skipping a level</b> (jump straight to <span class="tex">\bar\alpha_2=0.72</span>, using the same <span class="tex">\hat\epsilon</span>): <span class="tex">x_2=\sqrt{0.72}\cdot0.5585+\sqrt{0.28}\cdot0.5901=0.84853\cdot0.5585+0.52915\cdot0.5901=0.4739+0.3123=0.7862</span>. A single network call has taken a double-length stride.</p>
+          <p><b>Check of the formula for σ</b> (<span class="tex">\eta=1</span>, <span class="tex">\bar\alpha_t=0.5\to\bar\alpha_s=0.6</span>): <span class="tex">\sqrt{0.4/0.5}\sqrt{1-0.5/0.6}=0.89443\cdot0.40825=0.3651</span>, the same <span class="tex">\sigma_t</span> as the check question of lesson 8.3.</p>
+        </div>
+        <p><b>Why it works.</b> With <span class="tex">\eta=0</span> each starting noise is mapped by a fixed deterministic function to one output, and the collection of outputs has the same distribution as DDPM's. The smooth path is the solution of an ordinary differential equation (the "probability-flow ODE" of lesson 8.5), and the DDIM update is one step of a numerical solver for it. So faster sampling is a numerical-analysis question: how big a step can a solver take before its error shows?</p>
+        <p><b>Solver trade-offs.</b> Higher-order solvers (Runge–Kutta or multistep methods that reuse earlier network outputs) take larger accurate strides for the same number of evaluations, at the price of extra bookkeeping or more evaluations per step. Beyond solvers, <b>distillation</b> trains a student network to reproduce in one or a few steps what a teacher does in many (progressive distillation halves the step count repeatedly; consistency-style models learn to map any point on a path directly to its endpoint). Those require extra training, and few-step students typically give up some quality or diversity.</p>
+        <p><b>Measured on the toy</b> (exact denoiser, same 2 000 starting points for both, distance to the data as in lesson 8.3):</p>
+        <table class="tbl"><thead><tr><th>steps S</th><th>2</th><th>3</th><th>5</th><th>10</th><th>20</th><th>50</th><th>100</th></tr></thead><tbody>
+          <tr><td>DDPM (η = 1)</td><td>0.768</td><td>0.543</td><td>0.303</td><td>0.132</td><td>0.053</td><td>0.038</td><td>0.025</td></tr>
+          <tr><td>DDIM (η = 0)</td><td>0.765</td><td>0.526</td><td>0.266</td><td>0.111</td><td>0.081</td><td>0.061</td><td>0.054</td></tr></tbody></table>
+        <p>With 3 to 10 steps DDIM is the better of the two; from 20 steps up, DDPM scores lower. The reason is a finite-sample effect, not a flaw of the maths: the deterministic map passes the starting noise through unchanged in distribution terms, and in these 2 000 starting points only 47.65% are positive, so about 47.65% of the DDIM outputs fall in the right bump instead of 50%. That alone costs a distance of about 0.05, the "floor" noted earlier. DDPM's fresh noise repairs such small imbalances.</p>
+
+        <div data-lab="gen-df-fast"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Run with S = 10 (default). The paths are coloured by their starting noise, the same in both panels. Compare the smoothness of the two panels and the final histograms with the dashed data curve.</li>
+          <li>Drag S down to 3 and up to 50. Find the S at which the two orange and blue curves in the lower-right error plot cross.</li>
+          <li>Set η for sampler B to 0.5 and then 1. At η = 1 the two panels look alike (both are DDPM, with different noise draws).</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"DDIM is a different model."</b> It uses exactly the same trained noise predictor; only the update rule differs.</li>
+            <li><b>"Fewer steps is free."</b> It is not: every column of the table to the left of 20 shows a visible error. The lab's exact denoiser makes this error purely a step-size error; a real network adds its own.</li>
+            <li><b>Deterministic means no diversity?</b> No: the diversity comes from the starting noise, and every starting point gives a different output. It does mean you cannot "resample" an answer from the same start.</li>
+            <li><b>Comparing at equal S is not comparing at equal cost</b> if one method needs two evaluations per step.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>Fast image generation: a sampler that needs tens of steps, or a distilled model that needs a handful, rather than a thousand. Which solver or distilled model a given product uses is not something this module claims.</li>
+            <li>Deterministic samplers allow <i>inversion</i> (running the path backwards from an image to its noise) and smooth interpolation between two noise inputs, which image editing methods use.</li>
+            <li>The same speed-up reasoning applies to flow-matching models (lesson 8.8): both are ODE solvers.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What does σ equal when η = 0, and what remains of the update?</summary><div class="ans">σ = 0, so the z term vanishes. x_s = √ᾱ_s · x̂₀ + √(1 − ᾱ_s) · ε̂: the clean guess re-noised to the new level with the same noise estimate.</div></details>
+        <details class="check"><summary>2. A DDIM stride goes from ᾱ_t = 0.2 to ᾱ_s = 0.8 with x̂₀ = 1 and ε̂ = −0.5. Compute x_s.</summary><div class="ans">σ = 0. x_s = √0.8·1 + √0.2·(−0.5) = 0.8944 − 0.2236 = 0.6708.</div></details>
+        <details class="check"><summary>3. Going from 1 000 to 20 network calls is how many times fewer? Why can a deterministic sampler take bigger strides than DDPM?</summary><div class="ans">1 000 / 20 = 50 times fewer calls. The DDIM path is smooth (no random kicks), so a coarse sequence of straight strides stays close to it; a random walk has to be followed in small steps because each step's Gaussian description is accurate only for small steps.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The general update is <span class="tex">x_s=\sqrt{\bar\alpha_s}\hat x_0+\sqrt{1-\bar\alpha_s-\sigma^2}\hat\epsilon+\sigma z</span>; <span class="tex">\eta=1</span> is DDPM, <span class="tex">\eta=0</span> is DDIM.</li>
+          <li>DDIM is a numerical solver for a deterministic ODE with the same distribution of results, so fewer, larger steps are possible without retraining.</li>
+          <li>On the toy, 10 steps cost an error of 0.11 for DDIM against 0.13 for DDPM, and 3 steps are still poor (0.53 and 0.54). Distillation trades extra training for fewer steps.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.5 ===================== -->
+    <section class="lesson" id="score-sde-view" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.5</span><h2>The score and SDE view</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>So far we have a collection of recipes (a noising formula, a noise predictor, two ways of stepping). Is there a single idea underneath them? What is the network really learning, and why do the noisy random walk and the smooth deterministic path give the same answers?</div>
+
+        <h3 class="sec">Intuition: an arrow that always points uphill in probability</h3>
+        <p>Picture the density of the data as a landscape of hills, where height means "how likely". At every point, the <b>score</b> is an arrow that points in the direction in which the log-density rises fastest, and is long where the slope is steep. If you drop a ball into the landscape and let it follow the arrows, it climbs to the nearest peak. If you also shake it randomly all the time, it wanders around the peaks in proportion to how high they are, and visits the hills with the right frequencies. This is <b>Langevin dynamics</b>: following the score plus noise produces samples from the distribution.</p>
+        <p>For raw data this has a problem: far from the data the density is almost zero and its slope is unknown. Noising the data fills the empty space and gives a score at every point, and at many noise levels. A diffusion model learns the score at all levels (lesson 8.2: predicting the noise is learning the score), and sampling means following the arrows from the high-noise level, where the landscape is one smooth hill, down to the low-noise level, where it has the fine peaks of the data.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The score.</b> For a density <span class="tex">p(x)</span> the score is <span class="tex">s(x)=\nabla_x\log p(x)=p'(x)/p(x)</span>. It needs no normalising constant: if <span class="tex">p=e^{f}/Z</span> then <span class="tex">s=f'</span>.</p>
+        <div class="worked"><b>Worked example: scores and one Langevin step</b>
+          <p><b>A Gaussian.</b> For <span class="tex">p=\mathcal N(1,0.25)</span>, <span class="tex">\log p=-(x-1)^2/0.5+\text{const}</span>, so <span class="tex">s(x)=-2(x-1)/0.5=(1-x)/0.25</span>. At <span class="tex">x=0.5</span>: <span class="tex">s=0.5/0.25=2</span>, pointing right, toward the peak at 1.</p>
+          <p><b>The two-bump data</b> (<span class="tex">s=0.3</span>, bumps at <span class="tex">\pm1</span>). Computed scores: <span class="tex">s(-0.2)=-8.631</span>, <span class="tex">s(0.5)=5.555</span>, <span class="tex">s(0.9)=1.111</span>, <span class="tex">s(1.5)=-5.556</span>. At 0.5 the arrow points right toward the bump at +1, at 1.5 it points left toward it, and near the bump centre it is small.</p>
+          <p><b>One Langevin step</b> with step size <span class="tex">\varepsilon=0.1</span> from <span class="tex">x=0.5</span> and a noise draw <span class="tex">z=0.5</span>: <span class="tex">x'=x+\tfrac\varepsilon2s(x)+\sqrt\varepsilon\,z=0.5+0.05\cdot5.555+0.3162\cdot0.5=0.5+0.2778+0.1581=0.9359</span>. Drift (0.2778) is the pull uphill; the kick (0.1581) is the shake.</p>
+          <p><b>Link to the noise predictor.</b> At <span class="tex">\bar\alpha=0.5</span> and <span class="tex">x_t=0.2</span> for the same data, the score of the noised distribution is <span class="tex">-0.0377</span>, and the best noise guess is <span class="tex">-\sqrt{0.5}\cdot(-0.0377)=+0.0266</span>, the value the formula of lesson 8.2 gives.</p>
+        </div>
+        <div class="eq">x_{k+1}=x_k+\frac{\varepsilon}{2}\,\nabla_x\log p(x_k)+\sqrt{\varepsilon}\,z_k,\quad z_k\sim\mathcal N(0,1)\qquad(\text{Langevin; exact as }\varepsilon\to0,\ k\to\infty)</div>
+        <p><b>The SDE view.</b> Let the step size of the forward process go to zero. The forward noising becomes a stochastic differential equation (SDE) in continuous time <span class="tex">\tau\in[0,1]</span>:</p>
+        <div class="eq">dx=-\tfrac12\beta(\tau)\,x\,d\tau+\sqrt{\beta(\tau)}\,dW,\qquad \bar\alpha(\tau)=\exp\Big(-\!\int_0^\tau\beta\Big)</div>
+        <p>Here <span class="tex">dW</span> is the continuous limit of the noise draws (Brownian motion). Discretising it with step <span class="tex">\Delta\tau</span> gives <span class="tex">x_{t}=\sqrt{1-\beta\Delta\tau}\,x_{t-1}+\sqrt{\beta\Delta\tau}\,z</span> to first order, the forward step of lesson 8.1. In the labs <span class="tex">\beta(\tau)=0.1+19.9\tau</span>, which is the continuous counterpart of the linear schedule: <span class="tex">\bar\alpha(1)=4.3\cdot10^{-5}</span>. The same equation can be run <b>backwards in time</b> (a classical result for diffusions), and the only unknown it needs is the score <span class="tex">s_\tau(x)=\nabla_x\log p_\tau(x)</span>:</p>
+        <div class="eq">\text{reverse SDE:}\ \ dx=\Big[-\tfrac12\beta x-\tfrac{1+\lambda^2}{2}\beta\,s_\tau(x)\Big]d\tau+\lambda\sqrt{\beta}\,d\bar W\quad(\lambda=1)\qquad\text{probability-flow ODE:}\ \ \frac{dx}{d\tau}=-\tfrac12\beta x-\tfrac12\beta\,s_\tau(x)\quad(\lambda=0)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\tau</span>: continuous noise time, 1 = pure noise, 0 = data; the reverse equation runs from 1 down to 0. <span class="tex">\beta(\tau)</span>: the noise rate. <span class="tex">s_\tau(x)</span>: the score of the noised distribution at time <span class="tex">\tau</span>, which the network supplies as <span class="tex">-\epsilon_\theta/\sqrt{1-\bar\alpha}</span>. <span class="tex">d\bar W</span>: Brownian motion running backwards. <span class="tex">\lambda</span>: how much noise the reverse process injects; <span class="tex">\lambda=1</span> is the reverse SDE, <span class="tex">\lambda=0</span> removes the randomness completely. <span class="tex">\varepsilon</span>: the Langevin step size (not the noise <span class="tex">\epsilon</span>).</div>
+        <p><b>Unification.</b> For every <span class="tex">\lambda\ge0</span> the family of reverse processes carries the distribution <span class="tex">p_1</span> to <span class="tex">p_0</span> and has the same marginal <span class="tex">p_\tau</span> at every time. So the random walk and the smooth path are two ways to move the same cloud of probability. DDPM can be viewed as a discretisation of the reverse SDE and DDIM as a discretisation of the ODE; the <span class="tex">\eta</span> of lesson 8.4 is the discrete analogue of <span class="tex">\lambda</span>.</p>
+        <p><b>Checked numerically</b> (exact score, 3 000 starting points, 500 Euler or Euler–Maruyama steps from <span class="tex">\tau=1</span> to 0.002): <span class="tex">\lambda=0</span>: standard deviation 1.039, distance to the data 0.049; <span class="tex">\lambda=0.5</span>: 1.050, 0.019; <span class="tex">\lambda=1</span>: 1.047, 0.021; <span class="tex">\lambda=2</span>: 1.048, 0.018. The data standard deviation is 1.044, so all reproduce it, up to the 0.05 finite-sample floor explained in lesson 8.4.</p>
+
+        <div data-lab="gen-df-langevin"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the default two bumps. The purple arrows are the score, computed by automatic differentiation of the expression you typed. The orange bars are 400 Langevin particles; watch them settle onto the green curve.</li>
+          <li>Set "Noise strength" to 0: the particles just climb. Set it back to 1 and raise the step size ε to 0.4: the stationary shape is distorted because the steps are too large.</li>
+          <li>Type your own log-density, for example <span class="tex">-(x-2)^2/2</span> (a Gaussian centred at 2) or <span class="tex">-abs(x)</span>, and watch the arrows and the samples follow it.</li>
+        </ol></div>
+        <div data-lab="gen-df-sde"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play: left, the reverse SDE (noisy paths); right, the probability-flow ODE (smooth paths) with the exact velocity arrows drawn in purple. Check that the histograms agree with the dashed exact density at every moment.</li>
+          <li>Set λ to 0 on the left: the two panels coincide. Set it to 2: the paths become jagged but the histogram still ends on the two bumps.</li>
+          <li>Slow the speed to 0.03 and watch the early phase: the arrows near τ = 1 are weak, the structure (two groups) forms in the middle of the time range.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Two meanings of "score".</b> In classical statistics the score is the derivative of the log-likelihood with respect to <i>parameters</i>. Here it is the derivative with respect to the <i>data point</i> <span class="tex">x</span>.</li>
+            <li><b>Langevin is slow to cross valleys.</b> Particles between two far-apart bumps need many steps to move from one to the other; this is why diffusion starts at a high noise level where the landscape is a single hill.</li>
+            <li><b>"The ODE is a different model."</b> It has the same score and the same marginals; it differs in what it does to individual particles (no jitter).</li>
+            <li><b>Large steps.</b> Langevin and the SDE discretisations are exact only for small steps; that is the same error you saw in lessons 8.3 and 8.4.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>The score and SDE view is the theory behind samplers: it explains why a noise predictor suffices, justifies deterministic samplers, and lets numerical-analysis tools (adaptive and higher-order solvers) be applied to generation.</li>
+            <li>Score estimation at many noise levels is the same training objective as lesson 8.2 with a different weighting over <span class="tex">t</span>.</li>
+            <li>Related general reading: <a href="math-advanced.html#diffusion">the diffusion maths lesson</a> and the <a href="gen-latent.html#vae-elbo">ELBO view</a> from the latent-variable module.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. What is the score of N(0, 4) at x = 3?</summary><div class="ans">log p = −x²/8 + const, so s(x) = −x/4 = −0.75. It points toward 0, the peak.</div></details>
+        <details class="check"><summary>2. One Langevin step from x = 1 with score −2, ε = 0.04, z = −1.</summary><div class="ans">x′ = 1 + (0.04/2)(−2) + √0.04·(−1) = 1 − 0.04 − 0.2 = 0.76.</div></details>
+        <details class="check"><summary>3. For data N(0,1) the noised data are N(0,1) at every level. Show that ε* = −√(1−ᾱ)·score is consistent with the regression slope of ε on x_t.</summary><div class="ans">Score = −x. So −√(1−ᾱ)·(−x) = √(1−ᾱ)·x. Direct: x_t = √ᾱ x₀ + √(1−ᾱ) ε has Cov(ε, x_t) = √(1−ᾱ) and Var(x_t) = 1, so E[ε | x_t] = √(1−ᾱ)·x_t. They agree.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The score <span class="tex">\nabla_x\log p</span> points uphill in probability; a noise predictor learns it: <span class="tex">\epsilon^*=-\sqrt{1-\bar\alpha_t}\,s_t</span>.</li>
+          <li>Langevin dynamics (drift along the score plus noise) samples a distribution; diffusion applies it across a whole ladder of noise levels.</li>
+          <li>The reverse SDE (λ = 1) and the probability-flow ODE (λ = 0) share all marginals; DDPM and DDIM are their discretisations.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.6 ===================== -->
+    <section class="lesson" id="guidance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.6</span><h2>Guidance</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model trained on all the data produces anything in it. How do we make it produce what a prompt asks for, and, since a model that only loosely follows the prompt is disappointing, how do we make it follow the prompt <i>more</i> strongly than its training alone does? And what does that cost?</div>
+
+        <h3 class="sec">Intuition: ask the model twice and exaggerate the difference</h3>
+        <p>Give the model the prompt and it says one thing about the noise; give it no prompt and it says something else. The <b>difference</b> between the two answers is exactly what the prompt contributes. If following the prompt is good, following it <i>twice as much</i> should be better: take the no-prompt answer and move from it along that difference by a chosen multiple. The multiple is the guidance scale <span class="tex">w</span>. Too small and the prompt is ignored; too large and the model is pushed past anything it saw in training, trading variety and realism for obedience.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>A conditional model.</b> Give the network an extra input <span class="tex">c</span> (a class label, a text embedding): <span class="tex">\epsilon_\theta(x_t,t,c)</span>. In <b>classifier-free guidance</b> one network learns both versions: during training the condition is replaced by a "null" value for a fraction of the examples (a common choice is about one in ten), so that <span class="tex">\epsilon_\theta(x_t,t,\varnothing)</span> is the unconditional prediction. At sampling time both are evaluated and combined:</p>
+        <div class="eq">\epsilon_{\text{guided}}=\epsilon_{\text{uncond}}+w\,\big(\epsilon_{\text{cond}}-\epsilon_{\text{uncond}}\big)</div>
+        <div class="sym"><b>Sign and convention.</b> <span class="tex">\epsilon_{\text{cond}}-\epsilon_{\text{uncond}}</span> (conditional minus unconditional) is the push of the prompt. <span class="tex">w=0</span> returns the unconditional prediction (prompt ignored), <span class="tex">w=1</span> returns the plain conditional prediction, and <span class="tex">w&gt;1</span> <i>extrapolates</i> beyond it. Some papers write <span class="tex">(1+\omega)\,\epsilon_{\text{cond}}-\omega\,\epsilon_{\text{uncond}}</span>; that is the same formula with <span class="tex">\omega=w-1</span>, so always check which convention a source uses before comparing numbers.</div>
+        <p><b>In terms of scores.</b> Using <span class="tex">\epsilon=-\sqrt{1-\bar\alpha}\,s</span> the formula says <span class="tex">s_{\text{guided}}=s_u+w(s_c-s_u)</span>. By Bayes' rule <span class="tex">s_c=s_u+\nabla_x\log p(c\mid x_t)</span>, so <span class="tex">s_{\text{guided}}=s_u+w\,\nabla_x\log p(c\mid x_t)</span>: classifier-free guidance amplifies the gradient of an implicit classifier by <span class="tex">w</span>, without training a separate classifier (hence "classifier-free"). It costs two network evaluations per step, usually as one batch of two.</p>
+        <div class="worked"><b>Worked example: the toy conditional model</b>
+          <p>Two overlapping classes with centres <span class="tex">\pm0.8</span> and width 0.4 each. The unconditional model knows both classes; the conditional model for the class "right" knows only the bump at +0.8. At <span class="tex">\bar\alpha=0.5</span> and a noisy value <span class="tex">x_t=0.2</span> the exact predictions are <span class="tex">\epsilon_u=0.1110</span> and <span class="tex">\epsilon_c=-0.4458</span>; the push of the prompt is <span class="tex">-0.4458-0.1110=-0.5568</span>.</p>
+          <p><span class="tex">w=0</span>: <span class="tex">0.1110</span>. <span class="tex">w=1</span>: <span class="tex">0.1110+1\cdot(-0.5568)=-0.4458</span>. <span class="tex">w=3</span>: <span class="tex">0.1110+3\cdot(-0.5568)=-1.5594</span>.</p>
+          <p><b>What the numbers mean.</b> The implied clean value is <span class="tex">\hat x_0=(x_t-\sqrt{1-\bar\alpha}\,\epsilon)/\sqrt{\bar\alpha}</span>. For <span class="tex">w=1</span>: <span class="tex">(0.2+0.7071\cdot0.4458)/0.7071=0.7287</span>, near the class centre 0.8. For <span class="tex">w=3</span>: <span class="tex">(0.2+0.7071\cdot1.5594)/0.7071=1.8423</span>, far beyond the class centre. A negative noise estimate says "the noise was negative, so the clean value must be larger".</p>
+        </div>
+        <p><b>Measured effect on samples</b> (800 particles, 60 deterministic DDIM steps, the lab's default classes). The class itself has mean 0.8 and standard deviation 0.4.</p>
+        <table class="tbl"><thead><tr><th>w</th><th>0</th><th>1</th><th>2</th><th>3</th><th>5</th><th>7.5</th><th>10</th></tr></thead><tbody>
+          <tr><td>sample mean</td><td>−0.02</td><td>0.80</td><td>1.05</td><td>1.20</td><td>1.43</td><td>1.64</td><td>1.81</td></tr>
+          <tr><td>sample std</td><td>0.87</td><td>0.37</td><td>0.27</td><td>0.23</td><td>0.20</td><td>0.19</td><td>0.18</td></tr>
+          <tr><td>share in the right half</td><td>47%</td><td>98.6%</td><td>100%</td><td>100%</td><td>100%</td><td>100%</td><td>100%</td></tr></tbody></table>
+        <p>With <span class="tex">w=0</span> both bumps appear in their natural proportion; at <span class="tex">w=1</span> we get the class; for <span class="tex">w&gt;1</span> the samples are <b>narrower</b> (less diversity) and <b>shifted away from the other class</b>, beyond the class centre (more "typical of right", but no longer like the data). The overshoot is the price.</p>
+        <p><b>It is not simply sampling a sharper density.</b> A tempting guess is that guidance samples from <span class="tex">p_c^{\,w}\,p_u^{\,1-w}</span> (renormalised). Computing that density for this toy gives means 0.80, 0.83, 0.84, 0.86, 0.87 and standard deviations 0.40, 0.375, 0.365, 0.356, 0.348 for <span class="tex">w=1,2,3,5,7.5</span>, much milder than the table. A one-dimensional Gaussian example shows it most clearly: with <span class="tex">p_u=\mathcal N(0,1)</span> and <span class="tex">p_c=\mathcal N(1,0.25)</span> that guess has precision <span class="tex">4w-(w-1)\cdot1=3w+1</span>, i.e. mean 1.20 and standard deviation 0.316 for <span class="tex">w=3</span>, but 20 000 exact DDIM samples give mean 1.487 and standard deviation 0.114. The guided field is not the score of any family of noised distributions, so what the sampler produces is a property of the whole path, not of one formula. (The lab draws the naive guess as the purple curve so you can see the gap.)</p>
+
+        <div data-lab="gen-df-guidance"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With w = 3 press play and read the three curves in the lower panel at the probe point: grey (ε_uncond), blue (ε_cond) and orange (ε_guided). Check the number printed in the readout against the formula by hand.</li>
+          <li>Slide w from 0 to 10 and compare the final histogram with the grey (all data) and blue (class) curves. At what w are essentially all samples in the right half?</li>
+          <li>Reduce the class separation to 0.3: the two classes now overlap almost completely and the unconditional model barely differs from the conditional one. What happens to the effect of w?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Sign slips.</b> The push is conditional minus unconditional. Reversing it moves the sample <i>away</i> from the prompt.</li>
+            <li><b>Convention.</b> <span class="tex">w=1</span> here means "no extra guidance". In the <span class="tex">(1+\omega)</span> convention that is <span class="tex">\omega=0</span>. Typical numbers quoted in papers are only comparable inside one convention.</li>
+            <li><b>"More guidance is always better."</b> Fidelity to the prompt rises while diversity falls; very large <span class="tex">w</span> leaves the region where the model was trained, and image generators commonly show over-saturated or distorted results there.</li>
+            <li><b>It doubles the cost</b> of each step (two evaluations).</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>Text-to-image and text-to-video diffusion models commonly use classifier-free guidance, with the scale exposed as a user setting; the value that works well differs between systems, so this module gives no recommended number.</li>
+            <li>"Negative prompts" can be implemented by replacing the unconditional prediction with the prediction for the unwanted prompt, so the sample is pushed away from it.</li>
+            <li>The same idea guides class-conditional models, audio models and molecule generators.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. ε_u = 0.30, ε_c = 0.10, w = 2.5. Compute ε_guided.</summary><div class="ans">0.30 + 2.5·(0.10 − 0.30) = 0.30 − 0.50 = −0.20.</div></details>
+        <details class="check"><summary>2. Write the same result in the (1+ω) convention. What is ω?</summary><div class="ans">ω = w − 1 = 1.5. (1 + 1.5)·0.10 − 1.5·0.30 = 0.25 − 0.45 = −0.20, the same value.</div></details>
+        <details class="check"><summary>3. What does guidance return for w = 0, and what for w = 1? Why does w &gt; 1 reduce diversity?</summary><div class="ans">w = 0 gives ε_uncond (prompt ignored); w = 1 gives ε_cond. For w &gt; 1 every step is pushed beyond the conditional prediction along the same direction, so samples crowd toward the part of the class farthest from the other classes (in the table the standard deviation falls from 0.37 at w = 1 to 0.18 at w = 10), which is less variety.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li><span class="tex">\epsilon_{\text{guided}}=\epsilon_u+w(\epsilon_c-\epsilon_u)</span>: <span class="tex">w=0</span> unconditional, <span class="tex">w=1</span> conditional, <span class="tex">w&gt;1</span> extrapolates (worked: 0.1110, −0.4458, −1.5594 for w = 0, 1, 3).</li>
+          <li>It amplifies the implicit classifier gradient <span class="tex">\nabla\log p(c\mid x_t)</span> without a separate classifier, at twice the cost per step.</li>
+          <li>It trades diversity for fidelity, and in the toy the result overshoots even the naive sharpened density: it is a heuristic, not a probabilistic guarantee.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.7 ===================== -->
+    <section class="lesson" id="latent-diffusion" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.7</span><h2>Latent diffusion</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>An image has hundreds of thousands of numbers, and a diffusion model must process all of them dozens of times per sample. Do we really have to? And how does a text prompt get into the network so that each part of the picture can listen to the right words?</div>
+
+        <h3 class="sec">Intuition: sketch on a small canvas, then paint it large</h3>
+        <p>Most of an image's pixels are predictable from their neighbours: sky, skin, wall. A pretrained <b>autoencoder</b> squeezes an image into a much smaller grid of numbers (the <b>latent</b>) from which a decoder can rebuild a faithful picture. <b>Latent diffusion</b> runs the entire noising and denoising process on this small grid, and uses the decoder once at the end. The expensive part is made small, and the decoder fills in the detail.</p>
+        <p>The prompt is injected by <b>cross-attention</b>. Every place in the latent grid asks the prompt, "which of your words matter to me?" and mixes in their information in proportion. The pixel positions provide the questions (queries); the words provide the answers (keys and values).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Pipeline.</b> Train an encoder <span class="tex">E</span> and decoder <span class="tex">D</span> (see <a href="gen-latent.html#vae-elbo">variational autoencoders</a> and, for images, <a href="cv-generative.html#autoencoders">autoencoders</a>). Encode every training image, <span class="tex">z_0=E(x)</span>, and train the noise predictor of lesson 8.2 on <span class="tex">z_t=\sqrt{\bar\alpha_t}z_0+\sqrt{1-\bar\alpha_t}\epsilon</span>. To generate: draw <span class="tex">z_T\sim\mathcal N(0,I)</span>, run the sampler of lessons 8.3 to 8.6 in latent space with the prompt, and decode <span class="tex">x=D(z_0)</span>. The latent values are usually rescaled to roughly unit variance so the noise schedule means what it did before.</p>
+        <div class="worked"><b>Worked example: counting what is saved (one configuration, not a specific system)</b>
+          <p>An image of <span class="tex">512\times512\times3=786{,}432</span> numbers is encoded with downsampling factor <span class="tex">f=8</span> and <span class="tex">c=4</span> latent channels into <span class="tex">64\times64\times4=16{,}384</span> numbers: <span class="tex">786{,}432/16{,}384=48</span> times fewer.</p>
+          <p><b>Self-attention</b> compares every position with every other. In pixel space there are <span class="tex">512^2=262{,}144</span> positions, so <span class="tex">262{,}144^2=68{,}719{,}476{,}736</span> scores per layer and head. On the <span class="tex">64\times64=4{,}096</span> latent positions there are <span class="tex">4{,}096^2=16{,}777{,}216</span> scores: <span class="tex">68{,}719{,}476{,}736/16{,}777{,}216=4{,}096=8^4</span> times fewer, because the number of positions falls by <span class="tex">f^2</span> and attention cost goes as its square.</p>
+          <p><b>Patches.</b> A transformer backbone groups the latent into patches of side <span class="tex">p</span>; with <span class="tex">p=2</span> that gives <span class="tex">(64/2)^2=1{,}024</span> tokens and <span class="tex">1{,}024^2=1{,}048{,}576</span> scores: a further 16 times fewer.</p>
+          <p><b>Cross-attention</b> from the 4 096 positions to a prompt of 77 tokens (the context length of some text encoders) needs only <span class="tex">4{,}096\cdot77=315{,}392</span> scores.</p>
+          <p><b>A tiny cross-attention</b> (2-D, three prompt tokens with keys <span class="tex">(1,0),(0,1),(-1,0)</span> and one image position with query <span class="tex">q=(1.5,0.5)</span>): scores <span class="tex">q\cdot k/\sqrt2=1.0607,\ 0.3536,\ -1.0607</span>; softmax gives weights <span class="tex">0.6200,\ 0.3057,\ 0.0743</span> (sum 1.0000). The position receives 62% of the first token's value, 31% of the second and 7% of the third.</p>
+        </div>
+        <div class="eq">\text{CrossAttn}(h,y)=\mathrm{softmax}\!\Big(\frac{(hW_Q)(yW_K)^{\top}}{\sqrt d}\Big)\,(yW_V)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">h</span>: the image (latent) features, one row per position. <span class="tex">y</span>: the prompt features, one row per token, from a text encoder. <span class="tex">W_Q,W_K,W_V</span>: learned matrices that make queries from <span class="tex">h</span> and keys and values from <span class="tex">y</span>. <span class="tex">d</span>: the query/key dimension; the division by <span class="tex">\sqrt d</span> keeps the scores in a sensible range (<span class="tex">d=2</span> in the worked example). The softmax runs over the prompt tokens, so every row of weights sums to 1. This is the attention of <a href="gen-transformer.html#scaled-dot-product">scaled dot-product attention</a>, except that queries and keys come from different sources.</div>
+        <p><b>Backbones.</b> The noise predictor must map a grid to a grid of the same shape. A <b>U-Net</b> (convolutions that shrink and then expand the grid, with skip connections and attention at some resolutions) has been the standard; a <b>transformer</b> over patch tokens is a common alternative, with the cost of attention from the numbers above. Both receive the noise level <span class="tex">t</span> as an embedding. Which one a given system uses is a design choice that has changed over time, and this module does not claim it for any product.</p>
+        <p><b>Costs and limits.</b> The saving is in the denoiser (the part run <span class="tex">S</span> times); the encoder is used in training and the decoder once per sample. The price: the autoencoder is a <b>ceiling</b> on quality, since a detail the decoder cannot rebuild from the latent can never appear in an output, and training needs two stages (autoencoder first, then diffusion).</p>
+
+        <div data-lab="gen-df-latent"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with the default (512, f = 8, c = 4, p = 1) and check the readout against the worked numbers: 786,432, 16,384, 48× and 4,096×.</li>
+          <li>Set f = 4 and then f = 16. Read how the attention ratio follows (f·p)<sup>4</sup>, and how little the number-of-values ratio changes if you also raise the latent channels c to 16.</li>
+          <li>Set f = 1: the "latent" is as large as the image, so nothing is saved.</li>
+        </ol></div>
+        <div data-lab="gen-df-xattn"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the first position (outlined) as the queries rotate. Which token gets the largest weight when the query arrow points at it? Check the printed weights sum to 1.</li>
+          <li>Rotate the key of "table" to point nearly the same way as "cube". Their weights become almost equal for every position that points near them.</li>
+          <li>Raise the query length to 6: the rows become nearly one-hot (very decisive). Lower it to 0.5: every row is almost uniform.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Latent diffusion makes the image smaller."</b> The final picture is full size; the decoder restores it. Only the denoising runs on the small grid.</li>
+            <li><b>Compression is not free quality.</b> A very aggressive <span class="tex">f</span> loses fine detail (small text, faces) irreversibly; the diffusion model cannot add back what the autoencoder removed.</li>
+            <li><b>Cross-attention is not symmetric.</b> Queries come from the image, keys and values from the prompt. The prompt does not "look at" the image in this layer.</li>
+            <li><b>Cost depends on the whole step count.</b> A cheaper denoiser helps every one of the <span class="tex">S</span> steps, and guidance doubles them.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>The latent-diffusion recipe (autoencoder, diffusion on its latent, cross-attention to a text encoder) is the template behind the family of open and commercial text-to-image systems usually described as "Stable-Diffusion-style"; the exact sizes, encoders and backbones vary by system and version.</li>
+            <li>Video generators apply the same idea with a time axis added to the latent (see <a href="gen-multimodal.html#video-audio-generation">video and audio generation</a>).</li>
+            <li>Pipeline view: the autoencoder and the text encoder are separate pretrained components; the denoiser is the main pretraining cost; at generation time the cost is <span class="tex">S</span> (times two with guidance) denoiser calls plus one decode.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 256×256×3 image is encoded with f = 4 and c = 4. How many numbers in the image and in the latent, and what is the ratio?</summary><div class="ans">Image: 256·256·3 = 196,608. Latent: 64·64·4 = 16,384. Ratio 196,608 / 16,384 = 12.</div></details>
+        <details class="check"><summary>2. For the same f = 4 (no patching), how many times fewer self-attention scores does the latent need than the pixels?</summary><div class="ans">Positions: 256² = 65,536 versus 64² = 4,096. Scores: 65,536² versus 4,096², a ratio of (65,536/4,096)² = 16² = 256 = f⁴.</div></details>
+        <details class="check"><summary>3. A position's scores for three tokens are 2, 0 and 0. What are its attention weights?</summary><div class="ans">e² = 7.389 and e⁰ = 1, so the sum is 9.389. Weights: 7.389/9.389 = 0.787, 1/9.389 = 0.1065 and 0.1065.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Latent diffusion runs the noising and denoising on an autoencoder's small latent (for example 786,432 values become 16,384, 48× fewer) and decodes once at the end.</li>
+          <li>Attention cost falls with the fourth power of the downsampling factor (4,096× at f = 8); the autoencoder sets a ceiling on detail.</li>
+          <li>Text enters through cross-attention: queries from the image, keys and values from the prompt, weights <span class="tex">\mathrm{softmax}(QK^\top/\sqrt d)</span>. The backbone may be a U-Net or a transformer.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 8.8 ===================== -->
+    <section class="lesson" id="flow-matching" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">8.8</span><h2>Flow matching</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Diffusion destroys the data with noise and then learns to reverse the damage. Could we skip the destruction story entirely: pair a noise sample with a data sample, draw the straight line between them, and train a network to say, at every point and time, which way the particle should be moving? Does following that learned arrow really carry noise to data?</div>
+
+        <h3 class="sec">Intuition: straight conveyor belts, averaged over partners</h3>
+        <p>Pick a noise value and a data value at random and draw a straight conveyor belt between them, to be crossed at constant speed in one unit of time. For a single pair the speed and direction are known exactly: distance divided by time. But a particle standing at some point at some time does not know which pair it belongs to; many belts cross at that point heading to different destinations. The network therefore learns the <b>average</b> velocity of all belts crossing that spot. Following this average field moves the whole cloud of noise into the cloud of data, even though no individual particle follows its own straight belt.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Notation flip.</b> In this lesson <span class="tex">x_0</span> is a <b>noise</b> sample, <span class="tex">x_1</span> is a <b>data</b> sample and time runs from 0 (noise) to 1 (data), the opposite of lessons 8.1 to 8.7. The straight-line path and its velocity are</p>
+        <div class="eq">x_t=(1-t)\,x_0+t\,x_1,\qquad \frac{dx_t}{dt}=x_1-x_0,\qquad x_0\sim\mathcal N(0,1),\ x_1\sim p_{\text{data}},\ t\in[0,1]</div>
+        <div class="worked"><b>Worked example: one pair, then the average</b>
+          <p><b>A single pair.</b> Noise <span class="tex">x_0=-1.2</span>, data <span class="tex">x_1=1</span>. At <span class="tex">t=0.25</span>: <span class="tex">x_{0.25}=0.75\cdot(-1.2)+0.25\cdot1=-0.65</span>. The velocity is <span class="tex">x_1-x_0=1-(-1.2)=2.2</span>, constant: four Euler steps of size 0.25 give <span class="tex">-1.2\to-0.65\to-0.10\to0.45\to1.00</span>, arriving exactly at the data value.</p>
+          <p><b>The average over partners</b> for the two-point data <span class="tex">\{-1,+1\}</span> (the case <span class="tex">s\to0</span>). Given <span class="tex">x_1=\pm1</span>, the noisy position is <span class="tex">x_t\sim\mathcal N(\pm t,(1-t)^2)</span>, and the velocity for a pair is <span class="tex">(x_1-x_t)/(1-t)</span> (the remaining distance divided by the remaining time). Averaging over which data point the particle belongs to gives <span class="tex">v^*(x,t)=\big(\tanh\!\big(t\,x/(1-t)^2\big)-x\big)/(1-t)</span>. At <span class="tex">t=0.5</span>, <span class="tex">x=0.4</span>: <span class="tex">\tanh(0.5\cdot0.4/0.25)=\tanh(0.8)=0.6640</span>, so <span class="tex">v^*=(0.6640-0.4)/0.5=0.5281</span>. The expected destination is 0.664, and the velocity is the remaining distance over the remaining time.</p>
+          <p><b>At t = 0 the average points to the middle.</b> A pure noise value <span class="tex">x_0=x</span> knows nothing about its partner, so <span class="tex">v^*(x,0)=\mathbb E[x_1]-x=-x</span>. The field's arrows near <span class="tex">t=0</span> point toward the centre of the data, and the paths bend later, as the lab shows.</p>
+        </div>
+        <p><b>The training loss.</b> The network <span class="tex">v_\theta(x,t)</span> regresses the pair velocity, which is a plain squared-error loss just like lesson 8.2:</p>
+        <div class="eq">L(\theta)=\mathbb E_{t,\,x_0,\,x_1}\big\lVert v_\theta\big((1-t)x_0+t\,x_1,\ t\big)-(x_1-x_0)\big\rVert^2,\qquad v^*(x,t)=\mathbb E\big[x_1-x_0\mid x_t=x\big]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_0</span>: a noise sample, <span class="tex">x_1</span>: a data sample, drawn independently (any pairing works). <span class="tex">t</span>: time in [0, 1], typically drawn uniformly. <span class="tex">x_t</span>: the point on the straight line. <span class="tex">x_1-x_0</span>: the target velocity of that pair. <span class="tex">v_\theta</span>: the network. <span class="tex">v^*</span>: the exact minimiser, the average velocity of all pairs passing through <span class="tex">(x,t)</span>.</div>
+        <p><b>Sampling</b> solves the ordinary differential equation <span class="tex">dx/dt=v_\theta(x,t)</span> from <span class="tex">t=0</span> (a noise sample) to <span class="tex">t=1</span>, for example by <b>Euler steps</b>: <span class="tex">x\leftarrow x+v_\theta(x,t)/S</span> repeated <span class="tex">S</span> times, <span class="tex">t\leftarrow t+1/S</span>. This is the same kind of solver as in lesson 8.4.</p>
+        <p><b>Why it transports noise to data.</b> The marginal density <span class="tex">p_t</span> of the straight-line interpolant <span class="tex">x_t</span> moves from the noise distribution at <span class="tex">t=0</span> to the data distribution at <span class="tex">t=1</span>, and the velocity <span class="tex">v^*</span> is exactly the field that moves <span class="tex">p_t</span> along (it satisfies the continuity equation <span class="tex">\partial_tp_t+\partial_x(p_tv^*)=0</span>). Therefore integrating <span class="tex">v^*</span> from noise gives a sample of <span class="tex">p_t</span> at every time, and a data sample at <span class="tex">t=1</span>. For a mixture of normal distributions everything is explicit: with <span class="tex">V_k(t)=(1-t)^2+t^2s_k^2</span>, the interpolant is a mixture with components <span class="tex">\mathcal N(t\,m_k,\,V_k)</span> and</p>
+        <div class="eq">v^*(x,t)=\sum_k r_k(x,t)\Big[m_k+\frac{t\,s_k^2-(1-t)}{V_k(t)}\,(x-t\,m_k)\Big],\qquad r_k\propto w_k\,\mathcal N\big(x;\,t\,m_k,\,V_k(t)\big)</div>
+        <p>where <span class="tex">r_k</span> are the posterior weights of the components, <span class="tex">w_k</span> the mixture weights, <span class="tex">m_k</span> and <span class="tex">s_k</span> the component centres and widths. I checked this formula against a Monte Carlo average of <span class="tex">x_1-x_0</span> over 3 million pairs at <span class="tex">t=0.5</span>: at <span class="tex">x=0.4</span> the Monte Carlo value is 0.471 and the formula 0.480, at <span class="tex">x=-1</span> they are -0.077 and -0.074 (bins of width 0.2 explain the small differences), and for <span class="tex">s\to0</span> it reduces to the <span class="tex">\tanh</span> expression above (0.5281 both ways).</p>
+        <p><b>Verified by simulation.</b> With the exact <span class="tex">v^*</span> on the two-bump data (2 000 noise samples, seed 7) the Euler integration gives the data distribution, and the distance to the data (lesson 8.3 measure) falls as the steps increase:</p>
+        <table class="tbl"><thead><tr><th>steps S</th><th>1</th><th>2</th><th>3</th><th>5</th><th>10</th><th>20</th><th>50</th><th>100</th></tr></thead><tbody>
+          <tr><td>flow, Euler</td><td>≈ 1.0</td><td>0.455</td><td>0.244</td><td>0.150</td><td>0.092</td><td>0.067</td><td>0.055</td><td>0.051</td></tr>
+          <tr><td>DDIM (lesson 8.4)</td><td>—</td><td>0.765</td><td>0.526</td><td>0.266</td><td>0.111</td><td>0.081</td><td>0.061</td><td>0.054</td></tr></tbody></table>
+        <p>At <span class="tex">S=1</span> every particle ends at 0, the mean of the data, because <span class="tex">v^*(x,0)=-x</span> (the "single straight step" lands on the average). In this one-dimensional toy the flow-matching Euler error is lower than DDIM's at every S in the table (0.455 against 0.765 at S = 2, 0.092 against 0.111 at S = 10), and both approach the 0.05 floor by 100. This is a statement about this toy and the Euler solver, not about images or any product.</p>
+        <p><b>Relation to diffusion.</b> Both generate by integrating an ODE from noise to data: for diffusion the field is built from the score (lesson 8.5) and the path is set by the noise schedule; for flow matching one chooses the path (here a straight line) and regresses its velocity directly. Both are regressions with a squared-error loss on a conditional target, and the same samplers ideas, guidance (lesson 8.6) and latent spaces (lesson 8.7) apply. <b>Rectified flow</b> is the name for this straight-line formulation, together with an optional <i>reflow</i> step: generate pairs by running the trained flow, then retrain on those pairs, so that paths become straighter and fewer steps are needed (an idea described here only conceptually; the lab does not run reflow).</p>
+
+        <div data-lab="gen-df-flow"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with 8 Euler steps. The grey lines are 25 straight training pairs; the purple arrows are the exact average velocity. Watch the green curve (the exact density of the interpolant at the current t) and the orange bars: they match at every moment.</li>
+          <li>Set S = 1, then 2, 5, 20, and compare the final histograms with the table above. At S = 1 all particles jump to 0.</li>
+          <li>Look at the arrows near t = 0: they point toward x = 0. The coloured particle paths therefore bend, although every grey training line is straight. Why?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Opposite conventions.</b> Here <span class="tex">x_0</span> is noise and <span class="tex">t=1</span> is data. In diffusion <span class="tex">x_0</span> is data and <span class="tex">t=T</span> is noise. Always check which one a paper uses.</li>
+            <li><b>"The paths are straight."</b> Each <i>training pair</i> is straight. The learned average field generally bends because many pairs cross at each point (the arrows at t = 0 point to the middle). Paths are straighter than a high-curvature path would be, not exactly straight; reflow reduces the bend.</li>
+            <li><b>One-step generation is not automatic.</b> A single Euler step gives the data mean (S = 1 above). Few-step quality needs straighter fields, solvers or distillation, as in lesson 8.4.</li>
+            <li><b>The network does not see the pair.</b> It receives only <span class="tex">(x_t,t)</span>, so its best output is the average <span class="tex">v^*</span>, not <span class="tex">x_1-x_0</span> of the sample at hand; the loss floor is positive, as in lesson 8.2.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>Flow-matching and rectified-flow objectives appear in recent research on image and video generation; this module does not state which products use them.</li>
+            <li>The recipe (sample a time, make an interpolant, regress a velocity) is simple enough to apply to other data such as molecules, speech and robot actions, and shares the training-stage compute view of any regression pretraining.</li>
+            <li>Connections: <a href="gen-latent.html#flows-change-of-variables">normalising flows</a> also move a simple density to data by an invertible map, but need a tractable Jacobian; flow matching avoids that by training the velocity by regression.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the pair x₀ = 2 (noise) and x₁ = −1 (data), find x at t = 0.5 and the target velocity.</summary><div class="ans">x₀.₅ = 0.5·2 + 0.5·(−1) = 0.5. Velocity = x₁ − x₀ = −1 − 2 = −3 (constant along the line).</div></details>
+        <details class="check"><summary>2. Why can a network not output x₁ − x₀ exactly?</summary><div class="ans">It sees only x_t and t, not the pair. Many different pairs pass through the same point with different velocities, so the best output is their average v*(x, t), and the loss cannot reach 0.</div></details>
+        <details class="check"><summary>3. In the two-bump toy v*(x, 0) = −x. Where does a single Euler step (S = 1) send every particle, and why?</summary><div class="ans">x ← x + v*(x, 0)·1 = x − x = 0: every particle lands at 0, the mean of the data, not on a bump. The one step uses the velocity at t = 0 for the whole journey, but the true velocity changes as the particle gets closer to a bump.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Flow matching: <span class="tex">x_t=(1-t)x_0+t\,x_1</span> with <span class="tex">x_0</span> noise and <span class="tex">x_1</span> data; the target velocity of a pair is <span class="tex">x_1-x_0</span> and the loss is a squared error.</li>
+          <li>The minimiser is the average velocity <span class="tex">v^*=\mathbb E[x_1-x_0\mid x_t]</span>; integrating it carries the noise density to the data density (verified on the toy, where the histogram matches the exact density at every t and the final distance falls from 0.455 at 2 steps to 0.051 at 100).</li>
+          <li>It shares samplers, guidance and latent spaces with diffusion, but the path is chosen rather than derived from a noise schedule; straighter paths are the goal of rectified flow.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 9 (<a href="gen-multimodal.html">Multimodal, evaluation &amp; responsible generation</a>) puts these generators together with text, and shows how to evaluate them and how to talk about their misuse.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

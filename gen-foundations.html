@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 0 · Foundations of generative modelling · Generative AI</title>
+<meta name="description" content="What it means to model a distribution: generative versus discriminative models, likelihood and sampling from a table, the chain rule that generates one piece at a time, the families of generators, and how text, images and audio are turned into tokens, patches and latents, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-foundations.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="0">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 0</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">0</div>
+      <div style="flex:1">
+        <h1>Module 0 · Foundations of generative modelling</h1>
+        <p>A classifier answers a question about data. A generative model <b>produces</b> data. Before looking at any particular architecture we settle what "modelling a distribution" means, how to draw samples from one, how a long object such as a sentence is built one piece at a time, how the main families of generators differ, and how text, images and sound are turned into the numbers a model can read. This module sits at the very start of the generative pipeline (collect and tokenise, pretrain, align, adapt and compress, generate, evaluate and guard): it defines the objects every later stage works on.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 2.5 hours</span><span class="chip">Needs: <a href="math-probability.html#conditional-bayes">conditional probability and Bayes</a>, <a href="math-information.html#cross-entropy-kl">cross-entropy and KL</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> Every lesson uses a table small enough to print: a two-by-two table of rain and umbrellas, a four-colour dataset, a four-word vocabulary, a 32 by 32 picture. Each number quoted was computed by a program first and is shown with its arithmetic. All labs are <i>illustrative</i> toy simulations with seeded random numbers, so a run can be repeated. Nothing here describes any particular commercial model, and the lessons never claim that one family of generators is best.</div>
+
+    <!-- ===================== 0.1 ===================== -->
+    <section class="lesson" id="generative-vs-discriminative" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">0.1</span><h2>Generative versus discriminative models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A spam filter looks at an email and says "spam" or "not spam". A different program writes a brand-new email that looks like the ones people really send. Both programs have "learned from emails", yet only the second can create one. What exactly does the second one know that the first does not, and how are the two connected?</div>
+
+        <h3 class="sec">Intuition: answering versus describing</h3>
+        <p>Picture a doctor who has seen thousands of patients. One doctor has learned a single skill: <i>given these symptoms, which disease is most likely?</i> That doctor is <b>discriminative</b>: the knowledge is "from what I see, tell me the label". A second doctor has learned what each disease looks like in general: how patients with it typically present, and how common each disease is. That doctor could <i>describe a typical patient</i>, or even act one out. That doctor is <b>generative</b>. The second doctor can also answer the first question, by asking which disease would most naturally produce the symptoms in front of them.</p>
+        <p>In probability words: the data <span class="tex">x</span> (an image, a sentence) and the label <span class="tex">y</span> (spam or not) come together as pairs. A discriminative model learns only the conditional <span class="tex">p(y\mid x)</span>. A generative model learns how the data themselves are distributed, either <span class="tex">p(x)</span> or the joint <span class="tex">p(x,y)</span>. Once you hold a model of <span class="tex">p(x)</span> you can <b>sample</b> from it: ask it for a new <span class="tex">x</span>.</p>
+
+        <h3 class="sec">Build it up: one table holds everything</h3>
+        <p>Take the smallest possible world. <span class="tex">y</span> is whether it is raining (rain or dry), and <span class="tex">x</span> is whether the person you meet carries an umbrella. Four combinations are possible. Suppose we watched a long time and found these relative frequencies, which sum to 1. This is the <b>joint distribution</b> <span class="tex">p(x,y)</span>.</p>
+        <div class="worked"><b>Worked example: a joint table and everything you can read from it</b>
+          <table class="tbl"><thead><tr><th></th><th>x = umbrella</th><th>x = no umbrella</th><th>row total</th></tr></thead>
+          <tbody><tr><td>y = rain</td><td>0.20</td><td>0.05</td><td>0.25</td></tr>
+          <tr><td>y = dry</td><td>0.10</td><td>0.65</td><td>0.75</td></tr>
+          <tr><td>column total</td><td>0.30</td><td>0.70</td><td>1.00</td></tr></tbody></table>
+          <p><b>Marginals</b> (add along a row or column): <span class="tex">p(\text{rain})=0.20+0.05=0.25</span> and <span class="tex">p(\text{umbrella})=0.20+0.10=0.30</span>. This last one is the "<span class="tex">p(x)</span>" a generative model of <span class="tex">x</span> alone must capture.</p>
+          <p><b>The discriminative question</b>, given an umbrella, how likely is rain? Keep only the umbrella column and rescale it to sum to 1: <span class="tex">p(\text{rain}\mid\text{umbrella})=0.20/0.30=0.6667</span>. With no umbrella: <span class="tex">p(\text{rain}\mid\text{no umbrella})=0.05/0.70=0.0714</span>.</p>
+          <p><b>Conditional generation</b>: you tell the model the condition <span class="tex">c=\text{rain}</span> and ask for an <span class="tex">x</span> that goes with it. Keep only the rain row and rescale: <span class="tex">p(\text{umbrella}\mid\text{rain})=0.20/0.25=0.80</span>, <span class="tex">p(\text{no umbrella}\mid\text{rain})=0.05/0.25=0.20</span>. Sampling from this gives an umbrella 8 times out of 10.</p>
+          <p><b>The link through Bayes.</b> <span class="tex">p(\text{rain}\mid\text{umbrella})=\dfrac{p(\text{umbrella}\mid\text{rain})\,p(\text{rain})}{p(\text{umbrella})}=\dfrac{0.80\times0.25}{0.30}=0.6667</span>, the same number as before. A generative model that knows <span class="tex">p(x\mid y)</span> and <span class="tex">p(y)</span> therefore gets the classifier for free.</p>
+        </div>
+        <p>The converse does not hold. If all you hold are the two numbers <span class="tex">p(\text{rain}\mid\text{umbrella})=0.667</span> and <span class="tex">p(\text{rain}\mid\text{no umbrella})=0.071</span>, you do not know how often people carry umbrellas at all (30%? 90%?). Nothing in those two numbers lets you draw a person. The missing piece is <span class="tex">p(x)</span>.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">p(x,y)=p(y\mid x)\,p(x)=p(x\mid y)\,p(y),\qquad p(y\mid x)=\frac{p(x\mid y)\,p(y)}{\sum_{y'}p(x\mid y')\,p(y')}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x</span>: the data object (an image, a sentence, a row). <span class="tex">y</span>: a label or condition (a class, a caption, a prompt). <span class="tex">p(x,y)</span>: the <i>joint</i> probability of seeing that pair together; all its entries sum to 1. <span class="tex">p(y\mid x)</span>: the probability of <span class="tex">y</span> once <span class="tex">x</span> is known (the discriminative object). <span class="tex">p(x)</span>: the probability of <span class="tex">x</span> on its own, found by summing the joint over <span class="tex">y</span>. <span class="tex">p(x\mid y)</span>: the distribution of <span class="tex">x</span> given the condition (the conditional-generation object). The denominator sums over every possible label <span class="tex">y'</span> and equals <span class="tex">p(x)</span>.</div>
+        <p>Three kinds of model, then. <b>Discriminative</b>: <span class="tex">p(y\mid x)</span>, which classifies or regresses. <b>Unconditional generative</b>: <span class="tex">p(x)</span>, which can sample new <span class="tex">x</span>. <b>Conditional generative</b>: <span class="tex">p(x\mid c)</span>, where <span class="tex">c</span> is a prompt, class or caption; this is the form most deployed systems take. The cost of the extra power is that <span class="tex">x</span> is usually enormous (every pixel, every token), so describing its whole distribution is much harder than drawing a boundary between two labels. Discriminative models are often more accurate for plain classification; being generative is useful when you need new samples, a density, or to reason about the data itself. Neither is "better" in general.</p>
+        <p>Details on conditional probability and Bayes' rule are in <a href="math-probability.html#conditional-bayes">the probability module</a>.</p>
+
+        <div data-lab="gen-fd-joint"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the mode on "a whole pair" and watch dots fall into the four cells. The "seen" fractions drift toward the printed <span class="tex">p</span> values: sampling a joint table reproduces it.</li>
+          <li>Switch to "only x, given y = rain". The two dry cells fade and the two rain cells are renormalised (0.8 and 0.2). Compare the long-run frequencies with <span class="tex">p(\text{umbrella}\mid\text{rain})=0.80</span>.</li>
+          <li>Drag the weight of (dry, umbrella) from 0.10 up to 0.80. Watch <span class="tex">p(\text{rain}\mid\text{umbrella})</span> in the readout fall, and check that the Bayes line still agrees with it.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Generative models are just classifiers run backwards."</b> A classifier of <span class="tex">p(y\mid x)</span> carries no information about <span class="tex">p(x)</span>, so it cannot be run backwards. A generative model has to model the data itself.</li>
+            <li><b>Mixing up the two conditionals.</b> <span class="tex">p(\text{umbrella}\mid\text{rain})=0.80</span> and <span class="tex">p(\text{rain}\mid\text{umbrella})=0.667</span> are different numbers; they differ by the ratio of the marginals (0.25 to 0.30).</li>
+            <li><b>"Generative means it makes pictures."</b> Generating a token of text, a protein sequence or a row of a table is the same idea: drawing <span class="tex">x</span> from a learned distribution.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Every generative system</b> in this topic is a model of <span class="tex">p(x)</span> or <span class="tex">p(x\mid c)</span>: a language model gives <span class="tex">p(\text{next token}\mid\text{prompt})</span>, an image model gives <span class="tex">p(\text{image}\mid\text{caption})</span>.</li>
+            <li><b>Naive Bayes</b> in the machine-learning topic is the smallest generative classifier: it models <span class="tex">p(x\mid y)</span> and <span class="tex">p(y)</span> and applies Bayes' rule exactly as in the worked example.</li>
+            <li><b>Conditioning</b> is how prompts, class labels and captions enter: they play the role of <span class="tex">c</span> in <span class="tex">p(x\mid c)</span>.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the table, compute p(rain | umbrella) by Bayes' rule and by the table directly. Do they agree?</summary><div class="ans">Directly: 0.20 / 0.30 = 0.6667. By Bayes: p(umbrella | rain) = 0.20 / 0.25 = 0.80, so 0.80 × 0.25 / 0.30 = 0.20 / 0.30 = 0.6667. They agree, because both are the same cell divided by the same column total.</div></details>
+        <details class="check"><summary>2. How many free numbers does the joint table hold, and how many does the discriminative model p(y | x) need?</summary><div class="ans">The joint has 4 cells that sum to 1, so 3 free numbers. The discriminative model needs one probability of rain for each of the two values of x: 2 free numbers. The one number missing from it, p(umbrella), is exactly what a generative model also carries.</div></details>
+        <details class="check"><summary>3. Can a model that only knows p(y | x) generate a new umbrella-carrying person? Why or why not?</summary><div class="ans">No. To draw x you need a distribution over x, p(x) or p(x | y). The conditional p(y | x) tells you how to label a given x but not how often each x occurs. With only p(y | x) there is nothing to sample x from.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Discriminative models learn <span class="tex">p(y\mid x)</span>; generative models learn <span class="tex">p(x)</span> or <span class="tex">p(x\mid c)</span> and can therefore sample new data.</li>
+          <li>The joint table contains everything: marginals by summing, conditionals by slicing and renormalising.</li>
+          <li>Bayes' rule links the two: <span class="tex">p(\text{rain}\mid\text{umbrella})=0.80\times0.25/0.30=0.667</span>. Neither type is better in general; they answer different questions.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.2 ===================== -->
+    <section class="lesson" id="maximum-likelihood-sampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">0.2</span><h2>Likelihood and sampling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have 10 observations, each one of four colours, and you want a model that could have produced them. Among all possible models, which one is "best", and how would you measure that? And once you have a model, written as a small table of four probabilities, how do you make a computer pick a colour with exactly those probabilities?</div>
+
+        <h3 class="sec">Intuition: which story makes the data least surprising?</h3>
+        <p>Suppose a friend hands you a bag of coloured beads and you draw 10 times with replacement, getting mostly red. Would you believe the bag is mostly blue? Not if you saw mostly red. Each possible bag (each possible set of colour probabilities) assigns some probability to the exact sequence you saw, and the bag that makes your observations <i>most probable</i> is the most believable explanation. That number, the probability the model gives to the observed data, is the <b>likelihood</b>. Choosing the model with the largest likelihood is <b>maximum likelihood</b>.</p>
+        <p>There is a second, equivalent way to say it that matters a great deal for generative modelling: the best model is the one whose distribution is <i>closest to the distribution of the data</i>, where "closeness" is the KL divergence. Likelihood and closeness are two views of one thing; this lesson proves it with numbers.</p>
+
+        <h3 class="sec">Build it up: ten colours</h3>
+        <div class="worked"><b>Worked example: scoring two models on one dataset</b>
+          <p>Four colours: R, G, B, Y. The dataset, in the order observed: R R R R R G G G B B (ten items, assumed independent draws). Counts: R 5, G 3, B 2, Y 0. The <b>empirical distribution</b> <span class="tex">\hat p</span> divides each count by 10: (0.5, 0.3, 0.2, 0).</p>
+          <p><b>Model A</b>, uniform: <span class="tex">q=(0.25,0.25,0.25,0.25)</span>. Likelihood of the dataset = the product of the probability of each item: <span class="tex">0.25^{10}=9.54\times10^{-7}</span>. Log-likelihood = <span class="tex">10\ln0.25=-13.8629</span>.</p>
+          <p><b>Model B</b>, the empirical frequencies: <span class="tex">q=(0.5,0.3,0.2,0)</span>. Likelihood = <span class="tex">0.5^5\times0.3^3\times0.2^2=0.03125\times0.027\times0.04=3.375\times10^{-5}</span>, about 35 times larger than A. Log-likelihood = <span class="tex">5\ln0.5+3\ln0.3+2\ln0.2=-3.4657-3.6119-3.2189=-10.2965</span>. (The colour Y does not appear, so it contributes nothing, as <span class="tex">0\cdot\ln0</span> is taken as 0.)</p>
+          <p><b>Model C</b>: <span class="tex">q=(0.4,0.3,0.2,0.1)</span>: log-likelihood <span class="tex">5\ln0.4+3\ln0.3+2\ln0.2=-11.4122</span>. B beats C beats A.</p>
+          <p><b>The connection to KL.</b> Divide the negative log-likelihood by 10 to get the <i>average</i> number of nats (a nat is a unit of information measured with the natural log) the model charges per item: A: 1.3863, B: 1.0297, C: 1.1412. Now compute the entropy of the data, <span class="tex">H(\hat p)=-(0.5\ln0.5+0.3\ln0.3+0.2\ln0.2)=1.0297</span>. Then:</p>
+          <table class="tbl"><thead><tr><th>model</th><th>mean NLL</th><th>H(p̂)</th><th>KL(p̂ ‖ q)</th><th>H + KL</th></tr></thead>
+          <tbody><tr><td>A uniform</td><td>1.3863</td><td>1.0297</td><td>0.3566</td><td>1.3863</td></tr>
+          <tr><td>B (0.5, 0.3, 0.2, 0)</td><td>1.0297</td><td>1.0297</td><td>0.0000</td><td>1.0297</td></tr>
+          <tr><td>C (0.4, 0.3, 0.2, 0.1)</td><td>1.1412</td><td>1.0297</td><td>0.1116</td><td>1.1412</td></tr></tbody></table>
+          <p>For every model, mean NLL = <span class="tex">H(\hat p)+\mathrm{KL}(\hat p\,\|\,q)</span>. The entropy is a fixed property of the data and cannot be changed by choosing a model, so <b>making the likelihood largest is exactly the same as making the KL smallest</b>, and the best possible value of KL is 0, reached when <span class="tex">q=\hat p</span>. For model C, check the KL by hand: only R differs (0.5 against 0.4), giving <span class="tex">0.5\ln(0.5/0.4)=0.1116</span>; G and B agree, so they add 0.</p>
+        </div>
+        <p>Model B also shows the danger: it gives Y probability 0. If a Y ever shows up it gets log-likelihood minus infinity. Maximum likelihood trusts a small dataset completely, which is why practical models regularise or smooth (the next lesson's language models, and Module 1, return to this).</p>
+
+        <h3 class="sec">The formal statement</h3>
+        <div class="eq">\mathcal{L}(\theta)=\prod_{i=1}^{n}q_\theta(x_i),\qquad \hat\theta=\arg\max_\theta\ \frac1n\sum_{i=1}^{n}\ln q_\theta(x_i)=\arg\min_\theta\ \mathrm{KL}\big(\hat p\,\|\,q_\theta\big)</div>
+        <div class="eq">\underbrace{-\frac1n\sum_{i}\ln q_\theta(x_i)}_{\text{mean NLL}}=\underbrace{H(\hat p)}_{\text{data entropy}}+\mathrm{KL}(\hat p\,\|\,q_\theta),\qquad \mathbb{E}_{x\sim p_{\text{data}}}[-\ln q_\theta(x)]=H(p_{\text{data}})+\mathrm{KL}(p_{\text{data}}\,\|\,q_\theta)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_1,\dots,x_n</span>: the <span class="tex">n</span> training items, assumed independent draws from the data distribution. <span class="tex">q_\theta</span>: the model distribution with adjustable parameters <span class="tex">\theta</span> (here the four probabilities). <span class="tex">\mathcal{L}(\theta)</span>: the likelihood, the product of the probabilities the model gives each item. <span class="tex">\ln</span>: taking logs turns the product into a sum, which is numerically safe and does not change the arg max because the log is increasing. <span class="tex">\hat p</span>: the empirical distribution of the data (each item gets weight <span class="tex">1/n</span>). <span class="tex">H(p)=-\sum p\ln p</span>: the entropy. <span class="tex">\mathrm{KL}(p\,\|\,q)=\sum p\ln(p/q)</span>: the KL divergence from <span class="tex">p</span> to <span class="tex">q</span>, which is 0 only when the two are equal and otherwise positive. The right-hand equation is the same statement for the true data distribution <span class="tex">p_{\text{data}}</span>, as an expectation.</div>
+        <p>Note the <b>direction</b>: it is KL from the data distribution to the model, <span class="tex">\mathrm{KL}(p_{\text{data}}\|q_\theta)</span>, not the reverse. In that direction the model is punished severely wherever the data have mass and the model gives almost none, which pushes it to cover all the data. Cross-entropy and KL are derived in <a href="math-information.html#cross-entropy-kl">the information-theory module</a>, and maximum likelihood in <a href="math-statistics.html#estimation-mle">the statistics module</a>. This objective is the training loss of language models (cross-entropy over the next token) and of normalising flows.</p>
+
+        <div data-lab="gen-fd-mle"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play. The orange model bars slide toward the blue data bars and the orange curve falls toward the green dashed floor H(p̂). The red gap is the KL. Check in the readout that H + KL always equals the mean NLL.</li>
+          <li>Drag a model logit by hand (this pauses the fit). Make Y large: the KL jumps because the model puts probability where the data never go. Click Play to bring it back.</li>
+          <li>Change the data counts, for example to R 1, G 1, B 1, Y 17. The floor moves, and the fit follows the new frequencies. Set all four to the same count: the best model is the uniform one.</li>
+        </ol></div>
+
+        <h3 class="sec">Sampling from a table: inverse transform</h3>
+        <p>A trained model is a table of probabilities; <b>sampling</b> means turning random numbers into items with those probabilities. A computer can give you <span class="tex">u</span>, a number spread evenly between 0 and 1 (a "uniform" random number). Lay the probabilities end to end along the interval from 0 to 1: the first occupies [0, 0.5), the next [0.5, 0.8), and so on. A uniform <span class="tex">u</span> lands in an interval with probability equal to its length, which is the probability we want. Reading off which interval it landed in is called <b>inverse-transform sampling</b>, because it applies the inverse of the cumulative distribution function.</p>
+        <div class="worked"><b>Worked example: three draws from model B</b>
+          <p>Probabilities (R, G, B, Y) = (0.5, 0.3, 0.2, 0). Cumulative sums: 0.5, 0.8, 1.0, 1.0. The rule: take the first colour whose cumulative sum is larger than <span class="tex">u</span>.</p>
+          <p><span class="tex">u=0.17</span>: <span class="tex">0.17&lt;0.5</span>, so <b>R</b>. &nbsp; <span class="tex">u=0.62</span>: not below 0.5, but <span class="tex">0.62&lt;0.8</span>, so <b>G</b>. &nbsp; <span class="tex">u=0.93</span>: not below 0.8, but <span class="tex">0.93&lt;1.0</span>, so <b>B</b>. The colour Y would need <span class="tex">u</span> in [1.0, 1.0), an empty interval, so it is never drawn.</p>
+          <p>For a continuous variable the same idea uses the inverse of the cdf: an exponential with rate 1 has cdf <span class="tex">F(x)=1-e^{-x}</span>, so <span class="tex">x=-\ln(1-u)</span>; for <span class="tex">u=0.5</span> this gives <span class="tex">x=\ln2=0.6931</span>, the median.</p>
+        </div>
+        <div class="eq">x=F^{-1}(u)=\min\{k:\ F(k)&gt;u\},\qquad F(k)=\sum_{j\le k}q(j),\quad u\sim\mathrm{Uniform}[0,1)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">q(j)</span>: the probability of item <span class="tex">j</span> (listed in a fixed order). <span class="tex">F(k)</span>: the cumulative distribution function, the total probability of items up to and including <span class="tex">k</span>. <span class="tex">u</span>: one uniform random number. <span class="tex">F^{-1}(u)</span>: the smallest item whose cumulative probability exceeds <span class="tex">u</span>. Because <span class="tex">P(F(k-1)\le u&lt;F(k))=F(k)-F(k-1)=q(k)</span>, item <span class="tex">k</span> is drawn with exactly its probability.</div>
+
+        <div data-lab="gen-fd-inverse"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the dart fall on the strip and the readout state which interval <span class="tex">u</span> satisfies. Press Step to draw faster by hand.</li>
+          <li>Raise the weight of Y from 0 to 5. A new interval appears, and soon Y bars start to grow. Y was impossible before because its interval was empty.</li>
+          <li>Let it run to 100 or more draws and compare the bar heights (frequencies) with the grey ticks (table values). They agree more closely the more draws there are, but never exactly: sampling is random.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"The most likely model is the true one."</b> It is the one closest to the <i>data you have</i>. With 10 items, model B is perfect on the data and still a poor description of a world where Y exists.</li>
+            <li><b>Likelihood is not the probability of the model.</b> It is the probability of the data given the model, and as a function of the model it does not sum to 1 over models.</li>
+            <li><b>Reversing the KL.</b> <span class="tex">\mathrm{KL}(\hat p\|q)</span> and <span class="tex">\mathrm{KL}(q\|\hat p)</span> are different numbers and different training objectives; maximum likelihood is the first. (With a <i>zero</i> in <span class="tex">\hat p</span> the second is also well defined, but it is not what likelihood computes.)</li>
+            <li><b>Tabulating a big space.</b> Inverse transform is exact, but it needs the whole table. For a sequence of 10 tokens from a vocabulary of 50 000 the table would hold <span class="tex">5\times10^{46}</span> numbers (next lesson explains how to avoid this).</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Language-model training.</b> Training minimises the average negative log-likelihood of the next token, which is cross-entropy with the data, i.e. KL to the data up to the constant entropy. Perplexity (Module 1) is its exponential.</li>
+            <li><b>Normalising flows</b> are trained by maximising the exact log-likelihood of the data, as in this lesson, but with a continuous density (lesson 0.4).</li>
+            <li><b>Sampling a token.</b> Generation from a language model draws the next token from the model's softmax table by exactly this cumulative-sum rule; decoding settings such as temperature change the table first (Module 1).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For model C, q = (0.4, 0.3, 0.2, 0.1), compute the mean NLL on the ten items and the KL from the data.</summary><div class="ans">Log-likelihood = 5 ln 0.4 + 3 ln 0.3 + 2 ln 0.2 = −4.5815 − 3.6119 − 3.2189 = −11.4122, so mean NLL = 1.1412. KL = 0.5 ln(0.5/0.4) + 0.3 ln(0.3/0.3) + 0.2 ln(0.2/0.2) = 0.1116. Check: H(p̂) + KL = 1.0297 + 0.1116 = 1.1412.</div></details>
+        <details class="check"><summary>2. Using the cumulative sums 0.5, 0.8, 1.0, 1.0 for (R, G, B, Y), which colour does u = 0.8 give? And u = 0.4999?</summary><div class="ans">The rule takes the first cumulative value strictly larger than u. For u = 0.8, 0.5 is not larger and 0.8 is not strictly larger, but 1.0 is, so the colour is B. For u = 0.4999 the first cumulative value 0.5 is larger, so R. (A uniform draw hits exactly 0.8 with probability 0, so the boundary case does not matter in practice.)</div></details>
+        <details class="check"><summary>3. Why is "maximise the likelihood" the same as "minimise KL from the data to the model"?</summary><div class="ans">Because mean NLL = H(p̂) + KL(p̂ ‖ q). The entropy term depends only on the data, not on the model, so lowering the mean NLL can only be done by lowering the KL. The two have the same arg max/arg min. (They are also minimised at the same place, q = p̂, in the table above.)</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The likelihood is the product of the probabilities the model gives each data item; taking logs and averaging gives the mean negative log-likelihood.</li>
+          <li>Mean NLL = data entropy + <span class="tex">\mathrm{KL}(\hat p\|q)</span>, so maximum likelihood minimises the KL from the data to the model (A: 1.3863, B: 1.0297, C: 1.1412 in the example).</li>
+          <li>To sample from a table, lay out its cumulative sums on [0, 1) and see where a uniform random number lands.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.3 ===================== -->
+    <section class="lesson" id="chain-rule-factorisation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">0.3</span><h2>The chain rule: generating one piece at a time</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The sampling rule of lesson 0.2 needs a table with one entry for every possible outcome. A sentence of 10 words from a vocabulary of 50 000 has about <span class="tex">10^{47}</span> possible outcomes, more than any computer could store. How can a model still assign a probability to a whole sentence, and draw one, without ever writing that table down?</div>
+
+        <h3 class="sec">Intuition: build the sentence word by word</h3>
+        <p>You do not choose a sentence all at once; you choose a first word, then a second that fits the first, then a third that fits the two before, and so on. At every step you only face a small choice, a distribution over the vocabulary. The probability of the whole sentence is the probability of the first word, times the probability of the second <i>given</i> the first, times the probability of the third given the first two, and so on. This is the <b>chain rule of probability</b>. It is not an approximation: it holds for any joint distribution. What makes it practical is that the model only has to describe the small next-step distributions, one for each context.</p>
+
+        <h3 class="sec">Build it up: a four-word language</h3>
+        <p>Use a vocabulary of four words, <i>the</i>, <i>cat</i>, <i>sat</i>, <i>mat</i>, and sequences of length 3. A model gives, for each possible previous word (and a special START at the beginning), a row of four probabilities for the next word. This toy table conditions only on the previous word to stay printable; the chain rule itself lets each factor depend on the entire history.</p>
+        <div class="worked"><b>Worked example: scoring and sampling with a table</b>
+          <table class="tbl"><thead><tr><th>previous ↓ / next →</th><th>the</th><th>cat</th><th>sat</th><th>mat</th></tr></thead>
+          <tbody><tr><td>START</td><td>0.60</td><td>0.20</td><td>0.10</td><td>0.10</td></tr>
+          <tr><td>the</td><td>0.05</td><td>0.45</td><td>0.05</td><td>0.45</td></tr>
+          <tr><td>cat</td><td>0.15</td><td>0.05</td><td>0.70</td><td>0.10</td></tr>
+          <tr><td>sat</td><td>0.50</td><td>0.10</td><td>0.05</td><td>0.35</td></tr>
+          <tr><td>mat</td><td>0.30</td><td>0.10</td><td>0.50</td><td>0.10</td></tr></tbody></table>
+          <p>Each row sums to 1. The probability of the sequence <i>the cat sat</i> is the product of three table entries: <span class="tex">p(\text{the})\,p(\text{cat}\mid\text{the})\,p(\text{sat}\mid\text{cat})=0.60\times0.45\times0.70=0.189</span>. Another: <i>the mat the</i> = <span class="tex">0.60\times0.45\times0.30=0.081</span>. A strange one: <i>sat sat sat</i> = <span class="tex">0.10\times0.05\times0.05=0.00025</span>.</p>
+          <p><b>These really are probabilities of whole sequences.</b> There are <span class="tex">4^3=64</span> sequences of length 3, and if you add the products for all 64 you get exactly 1 (the score lab below verifies it). Yet the model stores only 5 rows of 4 numbers = 20 numbers, not 64.</p>
+          <p><b>Sampling.</b> Step 1: use the START row and draw <span class="tex">u=0.31</span>: cumulative 0.60 exceeds 0.31, so "the". Step 2: use the "the" row (0.05, 0.50, 0.55, 1.00 cumulative) and draw <span class="tex">u=0.31</span>: the first cumulative value above 0.31 is 0.50, so "cat". Step 3: row "cat" (0.15, 0.20, 0.90, 1.00): <span class="tex">u=0.31</span> gives "sat". Three table lookups and three random numbers, with no 64-entry table.</p>
+          <p><b>Order does not change the joint.</b> The chain rule works in any order. The probability that the first word is <i>the</i> and the second is <i>cat</i> is <span class="tex">p(\text{the})\,p(\text{cat}\mid\text{the})=0.60\times0.45=0.27</span>. In the other order: first compute the probability that the second word is <i>cat</i>, <span class="tex">p(x_2=\text{cat})=0.6\times0.45+0.2\times0.05+0.1\times0.10+0.1\times0.10=0.30</span>, then the probability that the first word was <i>the</i> given that, <span class="tex">p(x_1=\text{the}\mid x_2=\text{cat})=0.27/0.30=0.90</span>. Product: <span class="tex">0.30\times0.90=0.27</span>. Same number. The order is a modelling choice (left to right is natural for text) and matters only because some orders make the conditional tables easier to learn.</p>
+        </div>
+
+        <h3 class="sec">The formal statement</h3>
+        <div class="eq">p(x_1,\dots,x_L)=\prod_{t=1}^{L}p\big(x_t\mid x_{&lt;t}\big)=p(x_1)\,p(x_2\mid x_1)\,p(x_3\mid x_1,x_2)\cdots p(x_L\mid x_1,\dots,x_{L-1})</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_t</span>: the token at position <span class="tex">t</span> (<span class="tex">t=1,\dots,L</span>). <span class="tex">x_{&lt;t}</span>: all tokens before position <span class="tex">t</span> (the context or history; empty for <span class="tex">t=1</span>). <span class="tex">p(x_t\mid x_{&lt;t})</span>: the next-token distribution, a table of vocabulary-size numbers summing to 1, one for each context. <span class="tex">L</span>: the sequence length. The identity holds for <i>every</i> joint distribution, by repeatedly applying <span class="tex">p(a,b)=p(a)p(b\mid a)</span>. A model that learns the factors is called <b>autoregressive</b>.</div>
+        <p>This changes the training objective only superficially: the log-likelihood of a sequence is a sum over positions, <span class="tex">\ln p(x)=\sum_t\ln p(x_t\mid x_{&lt;t})</span>, so lesson 0.2's objective becomes "predict each token from the ones before it". Scoring a known sequence can be done for all positions at once in many architectures, because all the contexts are known. <b>Sampling</b>, though, is inherently sequential: token <span class="tex">t</span> cannot be drawn until token <span class="tex">t-1</span> exists, so generating <span class="tex">L</span> tokens needs <span class="tex">L</span> evaluations of the model one after another, and cost grows with the length. Long outputs are slow for this reason.</p>
+        <p>The probability that the factors describe also decays quickly with length: the longer the sequence, the more fractions are multiplied, which is why implementations add log probabilities rather than multiplying small numbers.</p>
+
+        <div data-lab="gen-fd-chain"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch one full sample: step 1 shows the row for the previous token, step 2 drops a random <span class="tex">u</span> on the cumulative strip, step 3 appends the chosen word. The green factors under each slot multiply into the final probability.</li>
+          <li>Raise L to 6. Sequences get longer, the number of possible sequences grows as <span class="tex">4^L</span>, but the model still only looks up rows, one at a time.</li>
+          <li>Select the row "cat" and drag the weight of "sat" to 0. Words after "cat" can no longer be "sat". Edits change the table live, so the samples change.</li>
+        </ol></div>
+        <div data-lab="gen-fd-chain-score"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Reproduce 0.189 for <i>the cat sat</i>. Then try <i>sat sat sat</i> and check it is 0.00025.</li>
+          <li>Press "Find the most probable sequence". Is it one you expected? A single high-probability sequence still has small probability in absolute terms, because 64 outcomes share the mass.</li>
+          <li>Read the "sum over all 64 sequences" line: it is 1, so the product of conditionals is a valid distribution over sequences.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Autoregressive means each word depends only on the previous word."</b> That is the special case in the toy table (a bigram model). In general each factor may depend on the whole history.</li>
+            <li><b>"The chain rule is a modelling assumption."</b> The identity itself is exact. Assumptions only enter in how the conditionals are represented (for example, limiting the context or a neural network's capacity).</li>
+            <li><b>Training is parallel, sampling is not.</b> With the true previous tokens available, all conditionals of a sequence can be computed together, but at generation time the model must wait for its own previous output.</li>
+            <li><b>Fixed versus variable length.</b> The 64 products sum to 1 only for sequences of length exactly 3. Real models add an end-of-sequence token so that length itself is generated.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Language models</b> factorise text left to right into next-token distributions, trained by lesson 0.2's likelihood. Generation draws a token, appends it, and repeats.</li>
+            <li><b>Audio and image models</b> also have autoregressive variants: sample-by-sample or code-by-code audio, pixel-by-pixel or token-by-token images (lesson 0.5 shows how to turn pictures into token sequences).</li>
+            <li><b>Cost.</b> Generating <span class="tex">L</span> tokens takes <span class="tex">L</span> sequential model evaluations. Modules 2 and 5 show how a cache avoids recomputing the past at each step, and how tricks reduce the number of sequential rounds without changing the distribution.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Using the table, what is the probability of the sequence "the mat the"? And of "cat sat the"?</summary><div class="ans">the mat the: p(the) · p(mat | the) · p(the | mat) = 0.60 × 0.45 × 0.30 = 0.081. cat sat the: p(cat) · p(sat | cat) · p(the | sat) = 0.20 × 0.70 × 0.50 = 0.070.</div></details>
+        <details class="check"><summary>2. A model generates 200 tokens. How many sequential model evaluations does sampling need, and how many different sequences are possible if the vocabulary has 4 words?</summary><div class="ans">200 evaluations, one per token, each waiting for the previous token. There are 4^200 ≈ 2.6 × 10^120 possible sequences, which is why a table over sequences is impossible, but the model only needs one row (4 numbers) per step.</div></details>
+        <details class="check"><summary>3. In the toy table, compute p(x₂ = cat) and then p(x₁ = the | x₂ = cat). Why do these two numbers multiply to the same 0.27 as the left-to-right order?</summary><div class="ans">p(x₂ = cat) = 0.6·0.45 + 0.2·0.05 + 0.1·0.10 + 0.1·0.10 = 0.27 + 0.01 + 0.01 + 0.01 = 0.30; p(x₁ = the | x₂ = cat) = 0.27 / 0.30 = 0.90; 0.30 × 0.90 = 0.27. Both orders are the chain rule applied to the same joint distribution, and a conditional is by definition the joint divided by the marginal, so the marginal cancels.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The chain rule factors any joint into next-step conditionals: <span class="tex">p(x)=\prod_t p(x_t\mid x_{&lt;t})</span>. Example: 0.60 × 0.45 × 0.70 = 0.189.</li>
+          <li>A model stores small tables of next-token probabilities instead of one table over all sequences (20 numbers here against 64 sequences, and astronomically fewer in realistic cases).</li>
+          <li>Sampling takes one sequential model evaluation per token, so cost grows with length; any order of factorisation gives the same joint.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.4 ===================== -->
+    <section class="lesson" id="families-of-generators" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">0.4</span><h2>The families of generators</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Lesson 0.3 gave one way to build a generator: factor the distribution and draw one piece at a time. But images, audio and molecules are also generated by quite different methods with names such as VAE, GAN, flow and diffusion. What is each trying to do, and what does each give up in exchange?</div>
+
+        <h3 class="sec">Intuition: five answers to one problem</h3>
+        <p>Every generator needs to turn something easy to sample (a fixed random number generator, noise) into something that looks like data. The families differ in <i>how</i> they bridge the gap, and each choice buys some convenience and costs another. Think of five ways to make a statue: carve it piece by piece in a fixed order (autoregressive); describe a recipe from a few control knobs and let a machine build it (latent-variable); train an artist against a critic until the critic cannot tell the work from real statues (adversarial); stretch and squeeze a block of clay in a way you can undo exactly (flow); or start from a rough lump and chip away a little at a time, many times (diffusion). None of these is "the" right way. They are tools with different trade-offs.</p>
+
+        <h3 class="sec">Build it up: what each family does</h3>
+        <div class="worked"><b>Worked example: the five, with one comparable number each</b>
+          <p>Let <span class="tex">z</span> be a simple random input (usually a Gaussian vector), <span class="tex">x</span> the data. For one sample of a 40-token sequence, or of an image with 30 denoising steps, count how many network evaluations are needed:</p>
+          <table class="tbl"><thead><tr><th>family</th><th>how it makes <span class="tex">x</span></th><th>likelihood</th><th>network evaluations per sample</th></tr></thead>
+          <tbody>
+          <tr><td>autoregressive</td><td>draws <span class="tex">x_1,x_2,\dots</span> from <span class="tex">p(x_t\mid x_{&lt;t})</span></td><td>exact, by the chain rule</td><td>L = 40 (one per token)</td></tr>
+          <tr><td>latent variable (VAE)</td><td>draws <span class="tex">z</span>, then decodes <span class="tex">x\sim p(x\mid z)</span></td><td>a lower bound (the ELBO)</td><td>1</td></tr>
+          <tr><td>adversarial (GAN)</td><td>maps noise <span class="tex">z</span> to <span class="tex">x=G(z)</span>; trained against a discriminator</td><td>none: the density is implicit</td><td>1</td></tr>
+          <tr><td>flow</td><td>invertible map <span class="tex">x=f(z)</span></td><td>exact, by change of variables</td><td>1 (in the simplest form)</td></tr>
+          <tr><td>diffusion / score</td><td>starts from noise and removes a little at each of <span class="tex">T</span> steps</td><td>a bound, or an estimate via a related ODE</td><td>T = 30 (fewer or more depending on the sampler)</td></tr>
+          </tbody></table>
+          <p>The cost column counts evaluations only; it ignores the size of each network. It is one axis of the comparison. The other axes are not captured by a single number: how well the samples look (quality), whether every kind of data in the training set appears (coverage), whether the density can be evaluated (likelihood), how stable training is, and what compute and data each needs.</p>
+          <p><b>Hand-checkable flow example.</b> A one-dimensional flow with an exact formula: take noise <span class="tex">z\sim\mathcal N(0,1)</span> and the data CDF <span class="tex">F</span>. The monotone map <span class="tex">x=F^{-1}(\Phi(z))</span> (with <span class="tex">\Phi</span> the standard normal CDF) turns noise into data distributed as <span class="tex">F</span>; this is inverse-transform sampling from lesson 0.2 dressed as a flow. The density of <span class="tex">x</span> is <span class="tex">p_X(x)=p_Z(z)/|dx/dz|</span>. The lab below checks this numerically for a two-hump distribution (the two numbers it prints agree).</p>
+        </div>
+
+        <h3 class="sec">The formal statement: what each family optimises</h3>
+        <div class="eq">\text{autoregressive: }\ \max\ \sum_t\ln p_\theta(x_t\mid x_{&lt;t})\qquad\qquad \text{VAE: }\ \ln p_\theta(x)\ \ge\ \mathbb{E}_{q_\phi(z\mid x)}[\ln p_\theta(x\mid z)]-\mathrm{KL}\big(q_\phi(z\mid x)\,\|\,p(z)\big)</div>
+        <div class="eq">\text{flow: }\ \ln p_X(x)=\ln p_Z\big(f^{-1}(x)\big)+\ln\Big|\det\frac{\partial f^{-1}(x)}{\partial x}\Big|\qquad\qquad \text{GAN: }\ \min_G\max_D\ \mathbb{E}_{x\sim p_{\text{data}}}[\ln D(x)]+\mathbb{E}_{z}[\ln(1-D(G(z)))]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\theta</span>: the model's parameters. <span class="tex">z</span>: a latent variable, with prior <span class="tex">p(z)</span> (typically standard Gaussian). <span class="tex">q_\phi(z\mid x)</span>: an <i>encoder</i> distribution that guesses a latent for the data item <span class="tex">x</span>; the right side of the VAE line is the evidence lower bound (ELBO), a lower bound on the log-likelihood that can be optimised. <span class="tex">f</span>: an invertible map with a tractable determinant of its Jacobian <span class="tex">\partial f^{-1}/\partial x</span>, which measures how much it stretches volume. <span class="tex">G</span>: the generator. <span class="tex">D</span>: the discriminator, a classifier giving the probability that its input is real data. Diffusion and score models are trained differently again: a network learns to remove noise, or equivalently to estimate the gradient of the log-density of noised data, and sampling reverses the noising in many steps. Each of these is developed in its own module (<a href="gen-latent.html#vae-elbo">VAEs</a>, <a href="gen-latent.html#gan-objective">GANs</a>, <a href="gen-latent.html#flows-change-of-variables">flows</a>, <a href="gen-diffusion.html#forward-noising">diffusion</a>); here you only need the map.</div>
+        <p><b>Reading the trade-offs fairly.</b> Exact likelihood (autoregressive, flows) makes the training objective of lesson 0.2 directly usable and lets you compare models by a number; implicit models (GANs) have no density to evaluate. One-evaluation samplers (VAE decoders, GAN generators, simple flows) are fast to sample; autoregressive and diffusion samplers need many sequential steps, though research on faster samplers, distillation and parallel decoding keeps changing this. Flows pay for exact likelihood with architectural constraints (invertibility, a cheap determinant). GAN training is an adversarial game, which can be unstable; VAE decoders are often trained with a pixelwise or probabilistic likelihood that can produce blurry samples; which family gives the best quality depends on the data type, the scale and the engineering, and the answer has changed over time. Different families can also be combined, for example diffusion inside an autoencoder's latent space or autoregressive models over discrete codes.</p>
+
+        <div data-lab="gen-fd-race"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play. One-evaluation samplers finish after one tick; autoregressive and diffusion rows fill slowly, one evaluation per tick.</li>
+          <li>Raise L to 200 (a long output) and lower T to 5. Which row is now slowest? Then reverse them. Cost depends on the length and step count, not on the family name.</li>
+          <li>Read the likelihood column under each family name. Which families give an exact probability for a given <span class="tex">x</span>?</li>
+        </ol></div>
+        <div data-lab="gen-fd-flow1d"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the Gaussian histogram be transported onto the two-hump shape and back. The map is monotone: no two points cross.</li>
+          <li>Move the "follow one noise value" slider and read the readout: p<sub>Z</sub>(z₀) divided by the slope equals the data density at x₀, matching the direct computation.</li>
+          <li>Change the weight and the distance of the humps. The map has to stretch over the gap between the humps; where it stretches a lot, the slope is large and the density low.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Which family is best?"</b> There is no universal answer: the trade-offs above depend on data, scale, hardware and what you need (a density, speed, diversity, control). Be suspicious of any claim that one family has made the others obsolete.</li>
+            <li><b>"One evaluation means cheap."</b> A single large network can cost more than several small ones. Counting evaluations ignores size; the race lab says so.</li>
+            <li><b>Mode dropping versus blur.</b> Models trained without a likelihood term can omit parts of the data (reduced coverage), while likelihood-based models spread probability over the data and can produce samples that look averaged. Both are tendencies in some settings, not laws of any family.</li>
+            <li><b>Exact likelihood is not quality.</b> A model can have a good likelihood and unimpressive samples, or the other way round.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Choosing a method</b> is choosing a point in this table: a language system needs a sequence distribution it can score and condition on, which suits the chain rule; an image system that must sample quickly may prefer a one-pass generator or a distilled sampler.</li>
+            <li><b>Hybrids are common.</b> Latent diffusion runs diffusion in the compressed space of an autoencoder (lesson 0.5); discrete image or audio codes can be modelled autoregressively.</li>
+            <li><b>Evaluation differs</b> by family: likelihood-based models report held-out log-likelihood or perplexity, and implicit models rely on sample-based measures (Module 9).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 200-token output from an autoregressive model and an image from a 50-step diffusion sampler: how many network evaluations does each need, versus a one-pass generator?</summary><div class="ans">200 evaluations for the autoregressive model (one per token), 50 for the diffusion sampler (one per step), and 1 for the one-pass generator. Evaluations are only one axis: each network may be a different size, and the one-pass model may be trained or distilled to give the quality that a multi-step model gets by iterating.</div></details>
+        <details class="check"><summary>2. Which of the five families give an exact log-likelihood of a given x, which give a bound, and which none?</summary><div class="ans">Exact: autoregressive (chain rule) and flows (change of variables). A bound: VAEs (the ELBO); diffusion models give a bound or an estimate through a related ODE. None: GANs, whose density is implicit; you can sample but not evaluate p(x).</div></details>
+        <details class="check"><summary>3. A blog post says "diffusion beats everything, so use it". Why is that not a safe conclusion from this lesson?</summary><div class="ans">Quality, speed, coverage, likelihood, training stability and cost are different axes, and a method that leads on one can trail on another (many sequential steps for diffusion, for instance). Which is better also depends on the data type, scale and the target use, and results change as methods improve. A fair choice weighs the requirements, not a single ranking.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The families differ in how they bridge simple noise and data: factorising (autoregressive), latent decoding (VAE), a trained critic (GAN), an invertible map (flow), or gradual denoising (diffusion/score).</li>
+          <li>Axes of trade-off: likelihood (exact, bound, none), sampling cost (1 evaluation to hundreds), quality, coverage, training stability and constraints on the architecture.</li>
+          <li>No family is best in general; hybrids are common, and the right choice follows the requirements.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 0.5 ===================== -->
+    <section class="lesson" id="representing-data" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">0.5</span><h2>Tokens, patches and latents</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A 256 by 256 colour image holds 196 608 numbers. A model that reads every pair of numbers in its input would compare more than <span class="tex">3.8\times10^{10}</span> pairs. How can we hand such an object to a generative model in a form that is both small enough to work with and still faithful enough to rebuild a sharp picture?</div>
+
+        <h3 class="sec">Intuition: choose the pieces the model will read</h3>
+        <p>Before a model sees anything, someone must decide what the <i>pieces</i> are. Text can be cut into characters, words or fragments of words. A picture can be cut into pixels or square <b>patches</b>. Sound can be cut into samples or short frames. Each choice changes three things at once: how many pieces there are (the <b>sequence length</b>), how many different pieces exist (the <b>vocabulary size</b>, for discrete pieces), and how much detail survives. Long sequences are expensive, because a model that compares every piece with every other does work that grows with the square of the length. Big vocabularies make each choice richer but harder to learn. The art is to compress the data into a shorter, smaller description that a decoder can turn back into the original with little loss.</p>
+        <p>Pieces also come in two kinds. <b>Discrete</b> pieces are chosen from a finite list (a vocabulary of numbered tokens), and a model can output a probability table over them, as in lessons 0.2 and 0.3. <b>Continuous</b> pieces are real-valued vectors (a latent), and a model must describe a density instead.</p>
+
+        <h3 class="sec">Build it up: counting what a representation costs</h3>
+        <div class="worked"><b>Worked example: the same 256 × 256 image three ways</b>
+          <p><b>Raw pixels.</b> 256 × 256 × 3 colour channels = 196 608 values. At 8 bits each that is 1 572 864 bits. Treating each pixel as a token gives a sequence of 65 536 tokens, and self-attention would compare <span class="tex">65536^2=4\,294\,967\,296</span> pairs.</p>
+          <p><b>Patches.</b> Cut into 16 × 16 patches: (256/16)² = 256 patches. Each patch still holds 16 × 16 × 3 = 768 values, so the data have not shrunk, but the sequence has: 256 tokens, and the pairs fall to <span class="tex">256^2=65\,536</span>, a factor of 65 536 fewer.</p>
+          <p><b>Discrete codes.</b> Suppose a learned encoder replaces each patch by the index of its nearest entry in a codebook of K = 1024 vectors. Each token then carries <span class="tex">\log_2 1024=10</span> bits, so the whole image is 256 × 10 = 2560 bits, which is 1 572 864 / 2560 = <b>614.4</b> times smaller than the raw bits. A decoder network must rebuild the image from those 256 numbers; how sharp it can be is a property of the learned codebook and decoder, not of this arithmetic.</p>
+          <p><b>Continuous latent.</b> Alternatively an encoder maps the image to a 32 × 32 grid with 4 numbers per cell: 32 × 32 × 4 = 4096 real numbers, 196 608 / 4096 = <b>48</b> times fewer values than the raw image. The generator then models a density over these latents rather than a table.</p>
+          <p><b>Text.</b> The sentence "the cat sat on the mat" is 22 characters (spaces included) or 6 words. With a character vocabulary of 27 (letters and space), each choice carries at most <span class="tex">\log_2 27=4.75</span> bits and the sequence is 22 long. With a word vocabulary the sequence is 6 long but each choice comes from a much bigger table (e.g. <span class="tex">\log_2 1000=9.97</span> bits for 1000 words). Subword vocabularies (Module 1) sit between these.</p>
+        </div>
+        <p>Now try it yourself with an actual picture. The lab below tokenises a 32 × 32 grey image in patches and replaces each patch by a single rounded number. This toy tokeniser throws away everything inside a patch except its average, so it is crude, but you can see all three trade-offs directly.</p>
+
+        <h3 class="sec">The formal statement</h3>
+        <div class="eq">L=\Big(\frac{H}{p}\Big)\Big(\frac{W}{p}\Big),\qquad \text{bits}=L\log_2 K,\qquad \text{compression}=\frac{H\,W\,C\,b}{L\log_2K},\qquad \text{attention pairs}\propto L^2</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">H,W</span>: image height and width in pixels. <span class="tex">p</span>: the side of a square patch (so <span class="tex">p\times p</span> pixels). <span class="tex">L</span>: the number of tokens, i.e. the sequence length. <span class="tex">K</span>: vocabulary size (number of codebook entries); each token carries <span class="tex">\log_2K</span> bits. <span class="tex">C</span>: colour channels (3 for RGB). <span class="tex">b</span>: bits per raw value (8 for standard images). The last relation says that a model comparing every token with every other does work proportional to <span class="tex">L^2</span>, which is why shorter sequences are cheaper. These are counting formulas, not statements about quality: reconstruction error depends on how the encoder and decoder are trained.</div>
+        <p>A <b>learned tokeniser</b> (an autoencoder, a vector-quantised autoencoder, or a text-subword vocabulary) picks the pieces so that a decoder can rebuild the data well, and then a generative model of lessons 0.2 and 0.3 works in that smaller space. Text is already discrete, so tokenisation is a fixed algorithm (Module 1). Image and audio generators very often work in a compressed latent space, which is why the pixels you see are the output of a decoder. The vocabulary-size and length trade-off is the same everywhere: bigger vocabulary means shorter sequences but a harder per-token prediction (compare 27 against 1000 above).</p>
+
+        <div data-lab="gen-fd-tokens"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With patch 4 and 16 levels, press play. Watch the red box scan across the image and the reconstruction fill in. Note the token count (64), the bits and the error.</li>
+          <li>Switch to patch 8, then 16. The number of tokens drops from 64 to 16 to 4, the attention pairs drop with the square, and the reconstruction becomes blocky: shorter sequences discard detail.</li>
+          <li>Keep patch 4 and reduce K from 64 to 2 levels. The bits per token fall and the grey rounding gets coarse. Then pick "continuous": there is no rounding loss from the vocabulary, but each patch needs a real number, and the model would have to describe a density instead of a table.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Tokens are words."</b> Tokens are whatever pieces the tokeniser defines: whole words, fragments, bytes, image patches, audio codes.</li>
+            <li><b>Mistaking compression ratio for quality.</b> The ratio 614.4 only counts bits. A bad codebook gives the same ratio and a poor reconstruction.</li>
+            <li><b>Ignoring the sequence length.</b> Doubling the image side multiplies the number of patches by 4 and the attention pairs by 16.</li>
+            <li><b>Discrete is not "worse".</b> Discrete tokens allow a softmax table and the sampling rule of lesson 0.2, while continuous latents avoid rounding but require a continuous density model. Each has been used successfully, with different trade-offs.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Text models</b> read subword tokens; vocabulary size sets the size of the output table and the embedding table, and sequence length sets the context cost (Module 1).</li>
+            <li><b>Vision models</b> cut an image into patches (<a href="cv-transformers.html">vision transformers</a>) and image generators often work with latents from an autoencoder or discrete codes (<a href="cv-generative.html">image generation</a>, <a href="gen-diffusion.html#latent-diffusion">latent diffusion</a>).</li>
+            <li><b>Audio and video</b> are turned into frames or codec tokens at a lower rate than the raw signal. For example, a hypothetical codec sending 50 frames per second at 10 bits each uses 500 bits per second, against 256 000 for 16 000 samples per second at 16 bits: 512 times fewer bits (a made-up illustration of the arithmetic, not a description of a real codec).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 64 × 64 grey image (8 bits per pixel) is cut into 8 × 8 patches, each replaced by one of K = 256 tokens. How many tokens, how many bits, and what compression?</summary><div class="ans">Tokens: (64/8)² = 64. Bits per token: log₂ 256 = 8, so 64 × 8 = 512 bits. Raw: 64 × 64 × 8 = 32 768 bits. Compression 32 768 / 512 = 64. Attention pairs: 64² = 4096.</div></details>
+        <details class="check"><summary>2. The same image is cut into 4 × 4 patches instead. What happens to the number of tokens and to the attention pairs?</summary><div class="ans">Tokens: (64/4)² = 256, four times more. Attention pairs: 256² = 65 536, sixteen times more than the 4096 above (L² scales with the square of the token count). The smaller patches keep more detail but cost much more per layer.</div></details>
+        <details class="check"><summary>3. Give one reason to prefer a discrete tokenisation and one to prefer a continuous latent.</summary><div class="ans">Discrete: the next piece can be modelled as a probability table (softmax) and sampled by the rule of lesson 0.2; the whole chain-rule machinery of 0.3 applies directly. Continuous: no rounding of the representation, so reconstruction can be finer for the same number of pieces, at the price of modelling a density over real vectors. Neither is universally better.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Before generating, data must be cut into pieces. The choices set the sequence length <span class="tex">L</span>, the vocabulary size <span class="tex">K</span> (for discrete pieces) and the detail kept.</li>
+          <li>Example: 256 × 256 × 3 pixels is 196 608 values; 16 × 16 patches give 256 tokens, and a 1024-entry codebook gives 2560 bits (614.4 times smaller than raw bits).</li>
+          <li>Shorter sequences are cheaper (attention grows with <span class="tex">L^2</span>) but lose detail unless a learned tokeniser compresses well; discrete and continuous representations suit different models.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 1 (<a href="gen-language.html">Language modelling &amp; tokenisation</a>) takes the chain rule of lesson 0.3 and builds the first real language models from counts, then explains perplexity, tokenisation and sampling. Later modules return to lesson 0.4's families: <a href="gen-latent.html">VAEs, GANs and flows</a> and <a href="gen-diffusion.html">diffusion and flow matching</a>.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 · Latent-variable &amp; adversarial generators · Generative AI</title>
+<meta name="description" content="Variational autoencoders and the ELBO, posterior collapse and discrete codes, the GAN game and its optimal discriminator, why GAN training is hard, and normalising flows with exact likelihood: derived from tiny tables, checked numerically and animated in labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-latent.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="7">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 7</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">7</div>
+      <div style="flex:1">
+        <h1>Module 7 · Latent-variable &amp; adversarial generators</h1>
+        <p>A language model writes one token at a time from a probability table. Images, audio and other continuous data call for different tools. Three families of generators were built before diffusion became dominant, and each is a different answer to one problem: how do you train a model of a distribution you cannot write down? A <b>variational autoencoder</b> adds a hidden code and trains a lower bound on the likelihood. A <b>GAN</b> trains a generator against a critic and never computes a likelihood. A <b>normalising flow</b> keeps the likelihood exact by using an invertible map. In the six-stage pipeline (collect and tokenise, pretrain, align, adapt and compress, generate, evaluate and guard) this module sits mainly in <b>pretrain</b> and <b>generate</b> for non-text data, and its discrete codes (lesson 7.2) are the image tokenisers that feed the multimodal models of Module 9.</p>
+        <div class="chips"><span class="chip">5 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: <a href="math-information.html#cross-entropy-kl">KL divergence</a>, <a href="math-probability.html#distributions">distributions</a>, <a href="cv-generative.html#autoencoders">autoencoders and GANs in vision</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> The vision module (<a href="cv-generative.html#autoencoders">autoencoders</a>, <a href="cv-generative.html#gans">GANs</a>, <a href="cv-generative.html#diffusion-images">diffusion for images</a>) showed what these models do to pictures. Here we go behind the pictures to the mathematics: the evidence lower bound, the adversarial objective and the change-of-variables formula. Every lesson derives its result on a table of two to four numbers and checks it in code, so each identity is a number you can verify. All labs are <i>illustrative</i> toy models with seeded random numbers; they show how the mathematics behaves, not how a large trained system performs, and nothing here describes any specific commercial model. Module 8 (<a href="gen-diffusion.html">diffusion and flow matching</a>) builds directly on lessons 7.1 and 7.5.</div>
+
+    <!-- ===================== 7.1 ===================== -->
+    <section class="lesson" id="vae-elbo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.1</span><h2>Variational autoencoders &amp; the ELBO</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You want a model that generates handwritten digits, so you decide each digit comes from a hidden recipe <span class="tex">z</span> (a few numbers such as slant, thickness and which digit) that you never observe. The probability of a particular image is then a sum over every recipe that could have produced it. That sum is impossible to compute for real images. How can you still train the model to make the data likely?</div>
+
+        <h3 class="sec">Intuition: guess the recipe, then check how well it explains the picture</h3>
+        <p>Imagine a detective who sees a finished dish (<span class="tex">x</span>) and has to say what recipe (<span class="tex">z</span>) produced it. Before tasting, the detective has a <b>prior</b>: which recipes are common. The kitchen has a <b>decoder</b>: given a recipe, how likely each dish is. The ideal answer to the detective's question is the <b>posterior</b>, the probability of each recipe given the dish, and Bayes' rule says it needs the sum over all recipes that we cannot compute. So we train a second, simpler model, the <b>encoder</b> <span class="tex">q(z\mid x)</span>, to <i>approximate</i> the posterior. The trick of the variational autoencoder (VAE) is that a single number, the <b>evidence lower bound</b> (ELBO), rewards two things at once: the guessed recipe must explain the dish well, and it must not be stranger than the kitchen's prior. Raising the ELBO trains the decoder and the encoder together.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the latent-variable model.</b> The model has a prior <span class="tex">p(z)</span> and a decoder <span class="tex">p(x\mid z)</span>. Together they define the joint <span class="tex">p(x,z)=p(z)\,p(x\mid z)</span> and the quantity we want to be large for real data, the <b>evidence</b> (marginal likelihood) <span class="tex">p(x)=\sum_z p(z)\,p(x\mid z)</span> (an integral if <span class="tex">z</span> is continuous). The posterior is <span class="tex">p(z\mid x)=p(x,z)/p(x)</span>. See <a href="math-probability.html#conditional-bayes">Bayes' rule</a> if that formula is new.</p>
+        <div class="worked"><b>Worked example 1: everything exact, on two recipes</b>
+          <p>Let <span class="tex">z\in\{0,1\}</span> with prior <span class="tex">p(z{=}0)=0.6,\;p(z{=}1)=0.4</span>. The dish <span class="tex">x</span> takes one of three values a, b, c. We observe <span class="tex">x=c</span>, and the decoder gives <span class="tex">p(c\mid z{=}0)=0.1</span> and <span class="tex">p(c\mid z{=}1)=0.6</span>.</p>
+          <table class="tbl"><thead><tr><th>z</th><th>prior p(z)</th><th>p(c | z)</th><th>joint p(c, z)</th><th>posterior p(z | c)</th></tr></thead>
+          <tbody><tr><td>0</td><td>0.6</td><td>0.1</td><td>0.06</td><td>0.06 / 0.30 = 0.2</td></tr><tr><td>1</td><td>0.4</td><td>0.6</td><td>0.24</td><td>0.24 / 0.30 = 0.8</td></tr></tbody></table>
+          <p>The evidence is <span class="tex">p(c)=0.06+0.24=0.30</span>, so <span class="tex">\ln p(c)=-1.2040</span>. Here the sum has two terms; for images it has astronomically many, which is why we need an approximation.</p>
+        </div>
+        <p><b>Step 2: any distribution <span class="tex">q(z)</span> over recipes gives a lower bound.</b> Start from the identity <span class="tex">\ln p(x)=\ln p(x,z)-\ln p(z\mid x)</span>, which holds for every <span class="tex">z</span> (because <span class="tex">p(x,z)=p(z\mid x)\,p(x)</span>). Average both sides over <span class="tex">z\sim q</span>, and add and subtract <span class="tex">\ln q(z)</span> inside:</p>
+        <div class="eq">\ln p(x)=\underbrace{\mathbb{E}_{q}\big[\ln p(x,z)-\ln q(z)\big]}_{\text{ELBO}(q)}+\underbrace{\mathbb{E}_{q}\Big[\ln\frac{q(z)}{p(z\mid x)}\Big]}_{D_{\mathrm{KL}}(q\,\|\,p(z\mid x))}</div>
+        <p>The left side does not depend on <span class="tex">q</span> at all. The last term is a <a href="math-information.html#cross-entropy-kl">KL divergence</a>, which is never negative and is zero only when <span class="tex">q</span> equals the posterior. Therefore <span class="tex">\ln p(x)\ge\mathrm{ELBO}(q)</span> always, with equality exactly when <span class="tex">q</span> is the true posterior. The gap is not a vague "approximation error": it is <i>exactly</i> the KL from <span class="tex">q</span> to the posterior. That is why maximising the ELBO over <span class="tex">q</span> makes <span class="tex">q</span> a better posterior, and maximising over the decoder parameters raises the likelihood.</p>
+        <p><b>Step 3: the form you actually compute.</b> Split <span class="tex">\ln p(x,z)=\ln p(x\mid z)+\ln p(z)</span>:</p>
+        <div class="eq">\mathrm{ELBO}(q)=\underbrace{\mathbb{E}_{q(z)}\big[\ln p(x\mid z)\big]}_{\text{reconstruction}}-\underbrace{D_{\mathrm{KL}}\big(q(z)\,\|\,p(z)\big)}_{\text{keep the code close to the prior}}</div>
+        <p>The reconstruction term asks: if I draw a recipe from my guess, how well does the decoder explain the dish? The KL term charges a price for a guess that differs from the prior. In a real VAE the guess depends on the dish, <span class="tex">q_\phi(z\mid x)</span>, produced by a neural network (the <b>encoder</b>, with weights <span class="tex">\phi</span>), and the decoder <span class="tex">p_\theta(x\mid z)</span> is another network with weights <span class="tex">\theta</span>. One encoder serves every data point ("amortised" inference), instead of solving a fresh optimisation for each dish. Training maximises the average ELBO over the dataset.</p>
+        <div class="worked"><b>Worked example 2: checking the identity on the table</b>
+          <p>Take the encoder to be a coin <span class="tex">q(z{=}0)=0.5,\;q(z{=}1)=0.5</span>.</p>
+          <p>Reconstruction: <span class="tex">0.5\ln0.1+0.5\ln0.6=0.5(-2.3026)+0.5(-0.5108)=-1.4067</span>.</p>
+          <p>KL to the prior: <span class="tex">0.5\ln\tfrac{0.5}{0.6}+0.5\ln\tfrac{0.5}{0.4}=0.0204</span>. So <span class="tex">\mathrm{ELBO}=-1.4067-0.0204=-1.4271</span>, below <span class="tex">\ln p(c)=-1.2040</span>.</p>
+          <p>KL to the posterior <span class="tex">(0.2,0.8)</span>: <span class="tex">0.5\ln\tfrac{0.5}{0.2}+0.5\ln\tfrac{0.5}{0.8}=0.2231</span>. And <span class="tex">-1.4271+0.2231=-1.2040</span>, the evidence, exactly.</p>
+          <p>Now move the encoder to <span class="tex">q(z{=}1)=0.8</span>, the posterior: reconstruction <span class="tex">-0.8692</span>, KL to the prior <span class="tex">0.3348</span>, ELBO <span class="tex">-1.2040</span>, gap <span class="tex">0</span>. For <span class="tex">q(z{=}1)=0.9</span> the ELBO is <span class="tex">-1.2407</span> and the gap is <span class="tex">0.0367</span>. Note that the best encoder pays a <i>higher</i> KL (0.3348) than the lazy one (0.0204): the KL term is a price, and the reconstruction gain outweighs it.</p>
+        </div>
+        <p><b>Step 4: Gaussians and a closed-form KL.</b> In a standard VAE, <span class="tex">p(z)=\mathcal N(0,1)</span> per dimension and the encoder outputs a mean <span class="tex">\mu</span> and a standard deviation <span class="tex">\sigma</span>, so <span class="tex">q=\mathcal N(\mu,\sigma^2)</span>. The KL between two Gaussians has a closed form, so that term needs no sampling:</p>
+        <div class="eq">D_{\mathrm{KL}}\big(\mathcal N(\mu,\sigma^2)\,\|\,\mathcal N(0,1)\big)=\tfrac12\big(\mu^2+\sigma^2-1-\ln\sigma^2\big)</div>
+        <p>Check with numbers (computed by direct numerical integration of <span class="tex">q\ln(q/p)</span> as well): <span class="tex">\mu=0.5,\sigma=0.8</span> gives <span class="tex">\tfrac12(0.25+0.64-1-\ln0.64)=0.1681</span> and the integral also gives 0.1681; <span class="tex">\mu=1,\sigma=0.5</span> gives <span class="tex">0.8181</span> by both. For a decoder <span class="tex">p(x\mid z)=\mathcal N(wz,s^2)</span> the reconstruction term is <span class="tex">-\tfrac12\ln(2\pi s^2)-\big((x-w\mu)^2+w^2\sigma^2\big)/(2s^2)</span>: a squared error, plus a penalty for the encoder's spread.</p>
+        <div class="worked"><b>Worked example 3: one-dimensional Gaussian VAE with a known posterior</b>
+          <p>Take <span class="tex">w=1,\;s=0.5</span>, observed <span class="tex">x=2</span>. With a Gaussian prior and a linear Gaussian decoder, the exact posterior is Gaussian: precision <span class="tex">1+w^2/s^2=5</span>, mean <span class="tex">(wx/s^2)/5=1.6</span>, variance <span class="tex">0.2</span> (std <span class="tex">0.4472</span>). Marginally <span class="tex">x\sim\mathcal N(0,w^2+s^2)=\mathcal N(0,1.25)</span>, so <span class="tex">\ln p(x)=-2.6305</span>.</p>
+          <p><b>Encoder = prior</b> (<span class="tex">\mu=0,\sigma=1</span>, KL = 0): reconstruction <span class="tex">-10.2258</span>, ELBO <span class="tex">-10.2258</span>. The gap to <span class="tex">\ln p(x)</span> is <span class="tex">7.5953</span>.</p>
+          <p><b>Encoder = exact posterior</b> (<span class="tex">\mu=1.6,\sigma=0.4472</span>): reconstruction <span class="tex">-0.9458</span>, KL <span class="tex">1.6847</span>, ELBO <span class="tex">-0.9458-1.6847=-2.6305</span>, equal to <span class="tex">\ln p(x)</span>. The lab below does exactly this, and also estimates the ELBO by Monte Carlo with 2000 samples to confirm the closed forms.</p>
+        </div>
+        <div data-lab="gen-lt-elbo-discrete"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults, press play: the encoder q(z=1) climbs from 0.5 to 0.80, the posterior, and the red gap closes to 0. Watch the orange point rise toward the green log p(x) ceiling but never pass it.</li>
+          <li>Pause and drag q(z=1) to 0.9, then to 0.2. Read the readout: ELBO plus the gap always equals log p(x), here −1.2040.</li>
+          <li>Change the decoder slider p(x=c | z=0) to 0.6 (the two recipes now explain x equally well). Where does the best encoder go, and why does it track the prior?</li>
+        </ol></div>
+        <div data-lab="gen-lt-elbo-gauss"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start from the prior (play): q slides from N(0,1) to the exact posterior N(1.6, 0.447²) and the ELBO bar grows to match log p(x) = −2.6305.</li>
+          <li>Pause, then set σ to 1 and μ to 1.6 by hand. Is the ELBO lower than at the posterior? By how much? (The gap is the KL from q to the posterior.)</li>
+          <li>Increase the decoder noise s to 1.5 (the decoder is vague). The posterior moves back toward the prior and the KL the encoder pays shrinks.</li>
+        </ol></div>
+
+        <h3 class="sec">The reparameterisation trick</h3>
+        <p>To train by gradient descent we need the gradient of <span class="tex">\mathbb{E}_{z\sim q_\phi}[f(z)]</span> with respect to the encoder's parameters <span class="tex">\mu,\sigma</span>, where <span class="tex">f(z)=\ln p_\theta(x\mid z)</span>. The difficulty: the random draw <span class="tex">z</span> sits <i>between</i> the parameters and the loss, and "drawing a random number" has no gradient. The fix is to move the randomness out of the way. Write the sample as <span class="tex">z=\mu+\sigma\varepsilon</span> with <span class="tex">\varepsilon\sim\mathcal N(0,1)</span> drawn independently of <span class="tex">\mu,\sigma</span>. Now <span class="tex">z</span> is an ordinary differentiable function of <span class="tex">\mu,\sigma</span> for a fixed <span class="tex">\varepsilon</span>, and the chain rule gives</p>
+        <div class="eq">\frac{\partial}{\partial\mu}\,\mathbb{E}_{\varepsilon}\big[f(\mu+\sigma\varepsilon)\big]=\mathbb{E}_{\varepsilon}\big[f'(z)\big],\qquad \frac{\partial}{\partial\sigma}\,\mathbb{E}_{\varepsilon}\big[f(\mu+\sigma\varepsilon)\big]=\mathbb{E}_{\varepsilon}\big[f'(z)\,\varepsilon\big]</div>
+        <p>You estimate each expectation by averaging over a few draws of <span class="tex">\varepsilon</span>; in practice one draw per data point is common. (An alternative, the score-function or REINFORCE estimator, needs no differentiable <span class="tex">f</span> and also works for discrete <span class="tex">z</span>, but it typically has much higher variance. That is why the VAE uses the reparameterisation for continuous codes.)</p>
+        <div class="worked"><b>Worked example 4: a numeric gradient check</b>
+          <p>Let <span class="tex">f(z)=(z-3)^2</span>, <span class="tex">\mu=1,\sigma=0.5</span>. The exact answer is available: <span class="tex">\mathbb{E}[f]=(\mu-3)^2+\sigma^2=4.25</span>, so <span class="tex">\partial_\mu=2(\mu-3)=-4</span> and <span class="tex">\partial_\sigma=2\sigma=1</span>.</p>
+          <p>Take four fixed draws <span class="tex">\varepsilon=(0.5,-1,1.5,0)</span>. Then <span class="tex">z=(1.25,0.5,1.75,1)</span>, <span class="tex">f(z)=(3.0625,6.25,1.5625,4)</span> with mean <span class="tex">3.71875</span>, and <span class="tex">f'(z)=2(z-3)=(-3.5,-5,-2.5,-4)</span>. The pathwise estimates are <span class="tex">\partial_\mu\approx\text{mean}(f')=-3.75</span> and <span class="tex">\partial_\sigma\approx\text{mean}(f'\varepsilon)=(-1.75+5-3.75+0)/4=-0.125</span>.</p>
+          <p>A finite-difference check on <i>the same four draws</i> (nudge <span class="tex">\mu</span> by <span class="tex">10^{-5}</span>, recompute the mean of <span class="tex">f</span>) gives <span class="tex">-3.7500</span> and <span class="tex">-0.1250</span>: identical, because the chain rule is exact for fixed draws. The difference from the true values <span class="tex">-4</span> and <span class="tex">1</span> is Monte Carlo noise from using only four draws, and the lab shows it shrinking as draws accumulate.</p>
+        </div>
+        <div data-lab="gen-lt-reparam"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Play with the default f(z) = (z−3)². The running estimates (solid) start noisy and wander toward the dashed reference, which is about −4 and 1.</li>
+          <li>Edit f to <b>sin(2*z)</b> or <b>abs(z-1)</b>. The pathwise estimate and the finite-difference line still agree on the same draws: reparameterisation works for any f you can differentiate (almost everywhere).</li>
+          <li>Raise σ to 2. The estimate is noisier at a given number of draws. Why does a wider q make the gradient estimate noisier?</li>
+        </ol></div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathcal L(\theta,\phi;x)=\mathbb{E}_{q_\phi(z\mid x)}\big[\ln p_\theta(x\mid z)\big]-D_{\mathrm{KL}}\big(q_\phi(z\mid x)\,\|\,p(z)\big)\;\le\;\ln p_\theta(x),\qquad \ln p_\theta(x)-\mathcal L=D_{\mathrm{KL}}\big(q_\phi(z\mid x)\,\|\,p_\theta(z\mid x)\big)</div>
+        <table class="sym"><tbody>
+          <tr><td><span class="tex">x</span></td><td>an observed data point (an image, a clip).</td></tr>
+          <tr><td><span class="tex">z</span></td><td>the latent code: the unobserved recipe, usually a vector of 16 to a few hundred numbers.</td></tr>
+          <tr><td><span class="tex">p(z)</span></td><td>the prior over codes, typically standard normal.</td></tr>
+          <tr><td><span class="tex">p_\theta(x\mid z)</span></td><td>the decoder, a neural network with weights <span class="tex">\theta</span> that outputs a distribution over <span class="tex">x</span> (for a Gaussian decoder, a mean image and a fixed or learned spread).</td></tr>
+          <tr><td><span class="tex">q_\phi(z\mid x)</span></td><td>the encoder with weights <span class="tex">\phi</span>: a distribution over codes for this <span class="tex">x</span>, an approximation to the intractable <span class="tex">p_\theta(z\mid x)</span>.</td></tr>
+          <tr><td><span class="tex">\mathbb{E}_{q}[\cdot]</span></td><td>average over codes drawn from the encoder (estimated by sampling with the reparameterisation).</td></tr>
+          <tr><td><span class="tex">D_{\mathrm{KL}}(a\,\|\,b)</span></td><td>KL divergence from <span class="tex">a</span> to <span class="tex">b</span>: <span class="tex">\mathbb{E}_a[\ln(a/b)]\ge0</span>, zero iff <span class="tex">a=b</span>. It is not symmetric.</td></tr>
+          <tr><td><span class="tex">\mathcal L</span></td><td>the ELBO, "evidence lower bound": training maximises it (equivalently minimises <span class="tex">-\mathcal L</span> as the loss).</td></tr>
+        </tbody></table>
+        <p>Cost and memory: one forward pass through the encoder and one through the decoder per example, plus sampling noise of the code's dimension. Memory is that of two networks of ordinary size. Generating new data afterwards needs only the decoder: draw <span class="tex">z\sim p(z)</span>, decode. The related image models are in <a href="cv-generative.html#autoencoders">the vision module</a>.</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"The ELBO is the likelihood."</b> It is a <i>lower</i> bound, off by exactly the KL from encoder to true posterior. A rising ELBO can come from a better decoder, a better encoder, or both; the gap is unknown unless you can compute <span class="tex">\ln p(x)</span>.</li>
+          <li><b>The KL direction.</b> The ELBO's gap is <span class="tex">D_{\mathrm{KL}}(q\,\|\,p(z\mid x))</span> with <span class="tex">q</span> first. Reversing it changes which mistakes are punished (lesson 7.2 shows the consequence for blur).</li>
+          <li><b>Reparameterisation is for continuous codes.</b> You cannot write a discrete draw as a smooth function of its parameters; discrete latents need other estimators or relaxations (see VQ-VAE in 7.2).</li>
+          <li><b>A good ELBO is not the same as good samples.</b> The bound measures likelihood, and likelihood and visual quality can disagree.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>VAEs</b> learn a compact latent space in which nearby codes decode to similar data, used for interpolation, denoising and anomaly scoring.</li>
+          <li><b>Autoencoders inside other generators.</b> Many latent-diffusion style systems first compress data with a VAE-type autoencoder and model the latent space (Module 8, <a href="gen-diffusion.html#latent-diffusion">latent diffusion</a>); the KL term keeps that space well-behaved.</li>
+          <li><b>The ELBO idea is everywhere:</b> diffusion training objectives (<a href="gen-diffusion.html#noise-prediction-loss">Module 8</a>) are derived as ELBOs of a latent-variable model with many latent layers, and the same bound appears in variational Bayes.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In worked example 1, what is the ELBO and the gap when the encoder is q(z=1) = 0.9?</summary><div class="ans">Reconstruction = 0.1 ln 0.1 + 0.9 ln 0.6 = −0.2303 − 0.4597 = −0.6900. KL to the prior = 0.1 ln(0.1/0.6) + 0.9 ln(0.9/0.4) = 0.5507. ELBO = −0.6900 − 0.5507 = −1.2407. The gap is KL(q ‖ posterior) = 0.1 ln(0.1/0.2) + 0.9 ln(0.9/0.8) = 0.0367, and −1.2407 + 0.0367 = −1.2040 = ln p(c).</div></details>
+        <details class="check"><summary>2. What is the KL between q = N(1, 0.5²) and the prior N(0, 1)?</summary><div class="ans">½(μ² + σ² − 1 − ln σ²) = ½(1 + 0.25 − 1 − ln 0.25) = ½(0.25 + 1.3863) = 0.8181.</div></details>
+        <details class="check"><summary>3. Why can the ELBO never exceed ln p(x), whatever q you choose?</summary><div class="ans">Because ln p(x) = ELBO(q) + KL(q ‖ posterior) for every q, and a KL divergence is never negative. The ELBO is ln p(x) minus a non-negative number, so it equals ln p(x) only when q is exactly the posterior.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>ln p(x) = ELBO + KL(q ‖ p(z | x)): the ELBO is a lower bound, tight exactly when the encoder equals the true posterior (checked: −1.2040 both sides).</li>
+          <li>ELBO = reconstruction − KL(q ‖ prior). For Gaussians the KL is ½(μ² + σ² − 1 − ln σ²), verified against numerical integration.</li>
+          <li>The reparameterisation z = μ + σε moves the randomness out of the way so gradients flow through the sample; the pathwise gradient matches a finite-difference check on the same draws.</li>
+          <li>One amortised encoder serves all data points; generation needs only the prior and decoder.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.2 ===================== -->
+    <section class="lesson" id="vae-pitfalls" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.2</span><h2>VAE pitfalls &amp; discrete codes</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You trained a VAE and the ELBO improved steadily, yet its samples look like washed-out blurs, and when you inspect the latent code you find the decoder barely uses it. Is the model broken, or is the objective doing exactly what it was told? And if a continuous code is awkward, can a <i>discrete</i> code (a list of tokens, like text) work better?</div>
+
+        <h3 class="sec">Intuition: the code is a budget, and the loss is an average</h3>
+        <p>Think of the latent code as a message you are allowed to send the decoder, and of the KL term as the <b>price per bit</b> of that message. If bits are expensive, you send fewer of them, and with fewer bits the decoder can only say "something near the average". If bits are free, the code carries everything and the reconstruction is sharp but the latent space need not look like the prior (so sampling from the prior misses). That trade-off is a rate (bits sent) against distortion (error after decoding), and the VAE objective picks one point on the curve by a fixed exchange rate. Two failures follow from extreme prices. A decoder powerful enough to model the data without any code makes sending bits pointless: <b>posterior collapse</b>. And a squared-error decoder that is unsure which of two plausible outputs is right, answers with their average: <b>blur</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The beta-VAE: make the exchange rate explicit.</b> Multiply the KL term by a number <span class="tex">\beta</span>:</p>
+        <div class="eq">\mathcal L_\beta=\mathbb{E}_{q}\big[\ln p(x\mid z)\big]-\beta\,D_{\mathrm{KL}}\big(q(z\mid x)\,\|\,p(z)\big)</div>
+        <p>With <span class="tex">\beta=1</span> this is the ELBO. Larger <span class="tex">\beta</span> makes bits more expensive; smaller makes them cheaper. (For <span class="tex">\beta\ne1</span> the objective is no longer a bound on <span class="tex">\ln p(x)</span>; it is a deliberate re-weighting.) In the one-dimensional Gaussian model of lesson 7.1 (decoder <span class="tex">x\sim\mathcal N(wz,s^2)</span>), the best encoder for a given <span class="tex">\beta</span> is found by setting the derivatives to zero:</p>
+        <div class="eq">\sigma^{2}=\frac{1}{1+\dfrac{w^{2}}{\beta s^{2}}},\qquad \mu=\frac{w\,x/s^{2}}{\beta+w^{2}/s^{2}}</div>
+        <p>(Derivation in one line each: the derivative in <span class="tex">\mu</span> is <span class="tex">w(x-w\mu)/s^2-\beta\mu=0</span>; the derivative in <span class="tex">\sigma^2</span> is <span class="tex">-w^2/(2s^2)-\tfrac\beta2(1-1/\sigma^2)=0</span>.) At <span class="tex">\beta=1</span> this is exactly the posterior of lesson 7.1. As <span class="tex">\beta\to\infty</span>, <span class="tex">\sigma^2\to1</span> and <span class="tex">\mu\to0</span>: the encoder becomes the prior and the code carries no information about <span class="tex">x</span>. That is collapse, reached here by turning a knob.</p>
+        <div class="worked"><b>Worked example 1: sweeping beta for x = 2</b>
+          <p>Take <span class="tex">w=1,\;s=0.5,\;x=2</span> (each row was also confirmed by a brute-force search over a grid of <span class="tex">\mu,\sigma</span>).</p>
+          <table class="tbl"><thead><tr><th>β</th><th>σ²</th><th>mean code μ</th><th>decoded w·μ</th><th>KL (nats)</th><th>squared error</th></tr></thead>
+          <tbody><tr><td>0.25</td><td>0.0588</td><td>1.8824</td><td>1.8824</td><td>2.7176</td><td>0.0138</td></tr>
+          <tr><td>1</td><td>0.2000</td><td>1.6000</td><td>1.6000</td><td>1.6847</td><td>0.1600</td></tr>
+          <tr><td>4</td><td>0.5000</td><td>1.0000</td><td>1.0000</td><td>0.5966</td><td>1.0000</td></tr>
+          <tr><td>16</td><td>0.8000</td><td>0.4000</td><td>0.4000</td><td>0.0916</td><td>2.5600</td></tr></tbody></table>
+          <p>Read across a row: as <span class="tex">\beta</span> grows, the KL (the information the code carries) falls from 2.72 to 0.09 nats, and the decoded value slides from 1.88 (almost the true 2) to 0.40, drifting toward 0, the average of a world in which the data sit near both +2 and −2. The decoder gives back the <i>average</i> of what the code leaves undetermined.</p>
+        </div>
+        <p><b>Blur has the same cause.</b> With a Gaussian decoder of fixed spread, the best decoded output for a given code is the average of all data points consistent with that code. Suppose half your images have a bright eye on the left and half on the right and the code cannot tell them apart: the optimum is a faint eye in <i>both</i> places. Real VAE blur is this effect at scale. It comes from the pixel-wise squared-error (Gaussian) likelihood plus the limited bits in the code, not from a flaw in the ELBO derivation. Remedies include a richer decoder likelihood, a learned or perceptual loss, and a cheaper code (lower <span class="tex">\beta</span>).</p>
+        <p><b>Posterior collapse in practice.</b> Take a decoder that is itself a strong sequence model of <span class="tex">x</span> (for example autoregressive). It can predict <span class="tex">x</span> well without ever looking at <span class="tex">z</span>. Then the cheapest way to raise the ELBO is to set <span class="tex">q(z\mid x)=p(z)</span> for every <span class="tex">x</span>: the KL is then exactly 0, the code is ignored, and the model is only a plain decoder. Common mitigations are to start with <span class="tex">\beta\approx0</span> and <b>anneal</b> it up during training (KL warm-up), to guarantee a minimum number of nats of KL per dimension ("free bits"), or to weaken the decoder.</p>
+
+        <div data-lab="gen-lt-beta"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Let the sweep run (play). Watch the posterior bumps (top left) start as narrow separate spikes for the two clumps, then fatten and pile onto the dashed prior as β rises.</li>
+          <li>Pause at β = 1 and read the readout for x = 2: σ² = 0.2000, μ = 1.6000, decoded 1.6, KL 1.6847. Move to about β = 4 (log₁₀β = 0.6) and confirm 0.5 / 1.0 / 0.5966.</li>
+          <li>Set the decoder weight w to 0.5 (the decoder listens less to z). At the same β is the rate higher or lower? Why does a weak decoder collapse the code earlier?</li>
+        </ol></div>
+
+        <h3 class="sec">Discrete codes: the VQ-VAE</h3>
+        <p>Text has a natural discrete vocabulary; images do not. A <b>vector-quantised VAE (VQ-VAE)</b> builds one. The encoder outputs a vector <span class="tex">z_e</span>; there is a learned <b>codebook</b> of <span class="tex">K</span> vectors <span class="tex">e_1,\dots,e_K</span>; the vector is <b>snapped</b> to the nearest code, <span class="tex">k=\arg\min_j\|z_e-e_j\|^2</span>, and the decoder receives <span class="tex">z_q=e_k</span>. An image becomes a grid of integer indices, a token sequence, exactly the kind of object a transformer can model (the route to the image tokenisers used by <a href="gen-multimodal.html#multimodal-models">multimodal models</a>). Each position costs at most <span class="tex">\log_2K</span> bits: for a grid of 256 positions and <span class="tex">K=512</span>, <span class="tex">256\times9=2304</span> bits in all (a hypothetical size for the arithmetic).</p>
+        <p>Snapping has no gradient (the argmin is a step function), so the VQ-VAE uses the <b>straight-through estimator</b>: in the backward pass, pretend <span class="tex">z_q=z_e</span> and copy the gradient of the loss at <span class="tex">z_q</span> to <span class="tex">z_e</span>. The full loss has three terms:</p>
+        <div class="eq">\mathcal L=\underbrace{-\ln p(x\mid z_q)}_{\text{reconstruction}}+\underbrace{\big\|\operatorname{sg}[z_e]-e_k\big\|^2}_{\text{move the code to the vector}}+\gamma\underbrace{\big\|z_e-\operatorname{sg}[e_k]\big\|^2}_{\text{commitment: keep the vector near its code}}</div>
+        <p>Here <span class="tex">\operatorname{sg}[\cdot]</span> is "stop gradient": treat the value as a constant. No KL term is needed because the prior over the (uniform, deterministic) code indices is fixed; a separate autoregressive or transformer model is trained afterwards on the index sequences to <i>generate</i> new ones. Discreteness also sidesteps the posterior-collapse failure of continuous codes in many setups, though VQ-VAEs have their own failure: <b>codebook collapse</b>, where only a few codes are ever chosen and the rest "die" (stay unused). Remedies include re-initialising dead codes from data and updating the codebook by an exponential moving average of the vectors assigned to it.</p>
+        <div class="worked"><b>Worked example 2: quantising six numbers</b>
+          <p>One-dimensional encoder outputs <span class="tex">1.0,\,1.2,\,0.8,\,4.9,\,5.2,\,5.1</span> and a codebook of two codes <span class="tex">e_1=0,\,e_2=3</span>.</p>
+          <p><b>Assign.</b> 1.0, 1.2, 0.8 are nearer to 0 (distances 1.0, 1.2, 0.8 against 2.0, 1.8, 2.2); 4.9, 5.2, 5.1 are nearer to 3. Quantisation error: <span class="tex">(1+1.44+0.64+3.61+4.84+4.41)/6=15.94/6=2.6567</span>.</p>
+          <p><b>Move.</b> <span class="tex">e_1\to(1.0+1.2+0.8)/3=1.0000</span>, <span class="tex">e_2\to(4.9+5.2+5.1)/3=5.0667</span>. New error <span class="tex">0.0211</span>. A second assignment changes nothing: converged. This is the codebook update of the lab (a moving average of the assigned vectors plays this role in practice).</p>
+          <p><b>Straight-through.</b> Let the decoder be <span class="tex">d(z)=2z</span> and the target <span class="tex">x=3</span>. A vector 1.3 snapped to code 1.0 gives loss <span class="tex">(2\cdot1.0-3)^2=1</span> and gradient with respect to <span class="tex">z_q</span> of <span class="tex">2(2-3)\cdot2=-4</span>. The estimator hands <span class="tex">-4</span> straight to the encoder output 1.3, telling it to move up toward 3/2, even though the real function (the argmin) has zero gradient.</p>
+        </div>
+        <div data-lab="gen-lt-vq"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Play with K = 3. Each vector is joined to its nearest code (phase ①), then each code jumps to the middle of its group (phase ②). Watch the quantisation error fall and then stop.</li>
+          <li>Set K = 8 and press "New starting codes" several times. Some codes are marked <b>unused</b>: they started too far from any data. How many of the 8 codes are used, and what is the "effective number of codes"?</li>
+          <li>Set K = 2 with three clusters. The error cannot reach the K = 3 value: two codes must serve three groups. That is the rate-distortion trade again, now in the number of tokens.</li>
+        </ol></div>
+
+        <h3 class="sec">The formal summary</h3>
+        <table class="sym"><tbody>
+          <tr><td><span class="tex">\beta</span></td><td>weight on the KL term. <span class="tex">\beta=1</span> is the ELBO; larger values lower the information in the code (rate) and raise reconstruction error (distortion).</td></tr>
+          <tr><td>posterior collapse</td><td><span class="tex">q(z\mid x)\approx p(z)</span> for all <span class="tex">x</span>: zero KL, code ignored.</td></tr>
+          <tr><td><span class="tex">K,\;e_k</span></td><td>codebook size and the <span class="tex">k</span>-th code vector (learned).</td></tr>
+          <tr><td><span class="tex">z_e,\;z_q</span></td><td>encoder output before snapping and the code vector after snapping.</td></tr>
+          <tr><td><span class="tex">\gamma</span></td><td>weight of the commitment loss (small, often a few tenths).</td></tr>
+          <tr><td><span class="tex">\operatorname{sg}[\cdot]</span></td><td>stop-gradient: the value is used but no gradient flows through it.</td></tr>
+        </tbody></table>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Blurry does not mean the ELBO derivation is wrong.</b> It is a property of the likelihood and the limited code; the sharpest likelihood-trained model still averages over what it cannot tell apart.</li>
+          <li><b>"Lower KL is always better."</b> A KL of zero means the code is useless. You want the information the code carries to be the useful part, which is a judgement the objective does not make for you.</li>
+          <li><b>Larger β gives "disentanglement" for free.</b> Claims that β-VAE separates factors of variation are empirical and depend on the data and the settings; the closed form above shows only the rate-distortion effect.</li>
+          <li><b>A big codebook is not automatically better.</b> Unused codes waste capacity, and the effective number of codes is what counts.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Image and audio tokenisers.</b> Quantised autoencoders turn pictures or sound into integer sequences so that a transformer can model and generate them like text (Module 9 builds on this).</li>
+          <li><b>Compression.</b> The rate (bits per code) against distortion trade-off is the same one that governs learned image and audio codecs.</li>
+          <li><b>Latent spaces for diffusion.</b> Autoencoders trained with a small KL or a quantiser provide the compressed space in which latent diffusion works.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For w = 1, s = 0.5, x = 2 and β = 4, what are the best σ² and the decoded value?</summary><div class="ans">σ² = 1 / (1 + 1/(4 × 0.25)) = 1 / (1 + 1) = 0.5. μ = (1 × 2 / 0.25) / (4 + 1/0.25) = 8 / 8 = 1.0, so the decoded value is w·μ = 1.0 (squared error 1.0, KL 0.5966).</div></details>
+        <details class="check"><summary>2. With codes 1.0 and 5.0667, which code does the vector 2.2 pick, and what is its squared quantisation error?</summary><div class="ans">Distance to 1.0 is 1.2, to 5.0667 is 2.8667, so it picks 1.0. Squared error 1.2² = 1.44.</div></details>
+        <details class="check"><summary>3. Why does a very powerful decoder tend to cause posterior collapse?</summary><div class="ans">If the decoder can model x well without z, setting q(z | x) equal to the prior makes the KL term exactly zero while losing nothing in reconstruction, so the ELBO is highest when the code is ignored. The remedies (KL warm-up, free bits, a weaker decoder) all make using z worthwhile.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The KL term prices the information in the code: β sets the exchange rate between rate and distortion (best σ² = 1/(1 + w²/(β s²))).</li>
+          <li>Blur is an average over what the limited code cannot distinguish; collapse is the code being ignored (KL = 0).</li>
+          <li>A VQ-VAE snaps each vector to the nearest of K codes, trains with a straight-through gradient, and yields integer tokens that a transformer can model.</li>
+          <li>Watch the effective number of codes: unused codes are wasted.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.3 ===================== -->
+    <section class="lesson" id="gan-objective" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.3</span><h2>The GAN objective</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A VAE needs a likelihood. Suppose your generator is a black box: you feed it random noise and it outputs an image, and you have no formula for the probability it assigns to any image. How could you possibly measure how close its output distribution is to the real data, and use that to improve it?</div>
+
+        <h3 class="sec">Intuition: a forger and a detective</h3>
+        <p>A forger paints fake banknotes. A detective is shown a mixed pile of real and forged notes and must say which is which. Each learns from the other. When the detective catches a fake, the forger learns what gave it away and improves. When the forger improves, the detective must look harder. The game ends, in theory, when the forger's notes are indistinguishable from real ones and the detective can only guess (a coin flip). The forger never needs a formula for "how real" a note is; the detective's verdicts are the only measuring stick. This is a <b>generative adversarial network (GAN)</b>: a <b>generator</b> <span class="tex">G</span> and a <b>discriminator</b> <span class="tex">D</span> trained against each other.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The two players.</b> The generator maps noise <span class="tex">z</span> (say standard normal) to a sample <span class="tex">G(z)</span>; the distribution of those samples is called <span class="tex">p_g</span>. The discriminator takes a sample <span class="tex">x</span> and outputs <span class="tex">D(x)\in(0,1)</span>, its estimate of the probability that <span class="tex">x</span> is real data (from <span class="tex">p_{\text{data}}</span>) rather than from the generator. A natural score for the discriminator is the log-probability it gives to the right answer: <span class="tex">\ln D(x)</span> on real data, <span class="tex">\ln(1-D(x))</span> on fakes. Average and you get the <b>value</b></p>
+        <div class="eq">V(D,G)=\mathbb{E}_{x\sim p_{\text{data}}}\big[\ln D(x)\big]+\mathbb{E}_{z}\big[\ln\big(1-D(G(z))\big)\big],\qquad \min_G\max_D V(D,G)</div>
+        <p>The discriminator tries to make <span class="tex">V</span> large (classify correctly); the generator tries to make it small (fool it). This is the <b>minimax game</b>.</p>
+        <p><b>Step 1: the best discriminator for a fixed generator.</b> Write both expectations as sums or integrals over <span class="tex">x</span>: <span class="tex">V=\int\big[p_{\text{data}}(x)\ln D(x)+p_g(x)\ln(1-D(x))\big]dx</span>. The discriminator chooses <span class="tex">D(x)</span> separately at each <span class="tex">x</span>, so maximise <span class="tex">a\ln D+b\ln(1-D)</span> with <span class="tex">a=p_{\text{data}}(x)</span>, <span class="tex">b=p_g(x)</span>. Setting the derivative <span class="tex">a/D-b/(1-D)=0</span> gives</p>
+        <div class="eq">D^*(x)=\frac{p_{\text{data}}(x)}{p_{\text{data}}(x)+p_g(x)}</div>
+        <p>This is just Bayes' rule for "real or fake?" with equal mix of real and fake samples: at each point, the fraction of real among all samples there. <span class="tex">D^*=1</span> where only data live, <span class="tex">D^*=\tfrac12</span> where the two densities agree, <span class="tex">D^*=0</span> where only the generator lives.</p>
+        <p><b>Step 2: what the generator then faces.</b> Substitute <span class="tex">D^*</span> into <span class="tex">V</span>. Let <span class="tex">m=\tfrac12(p_{\text{data}}+p_g)</span> be the 50/50 mixture. Then <span class="tex">D^*=p_{\text{data}}/(2m)</span> and <span class="tex">1-D^*=p_g/(2m)</span>, so</p>
+        <div class="eq">V(D^*,G)=\mathbb{E}_{p_{\text{data}}}\!\Big[\ln\frac{p_{\text{data}}}{m}\Big]+\mathbb{E}_{p_g}\!\Big[\ln\frac{p_g}{m}\Big]-2\ln2=-\ln4+2\,\mathrm{JS}(p_{\text{data}}\,\|\,p_g),\qquad \mathrm{JS}(P\|Q)=\tfrac12 D_{\mathrm{KL}}(P\|m)+\tfrac12 D_{\mathrm{KL}}(Q\|m)</div>
+        <p>The <b>Jensen-Shannon divergence</b> is a symmetric, smoothed KL; it is zero only when the distributions are equal and never exceeds <span class="tex">\ln2</span>. So <i>if the discriminator were always optimal</i>, the generator would be minimising a JS divergence between its distribution and the data, and the global optimum is <span class="tex">p_g=p_{\text{data}}</span>, with value <span class="tex">-\ln4=-1.3863</span> and <span class="tex">D^*=\tfrac12</span> everywhere.</p>
+        <div class="worked"><b>Worked example: four values, everything computed</b>
+          <p>Let <span class="tex">x\in\{1,2,3,4\}</span>, <span class="tex">p_{\text{data}}=(0.1,0.4,0.4,0.1)</span>, and a poor generator <span class="tex">p_g=(0.4,0.1,0.1,0.4)</span>.</p>
+          <p><b>Optimal discriminator.</b> <span class="tex">D^*=(0.1/0.5,\,0.4/0.5,\,0.4/0.5,\,0.1/0.5)=(0.2,0.8,0.8,0.2)</span>.</p>
+          <p><b>Value.</b> <span class="tex">V(D^*,G)=\sum p_{\text{data}}\ln D^*+p_g\ln(1-D^*)=-1.0008</span>.</p>
+          <p><b>JS check.</b> The mixture is <span class="tex">m=(0.25,0.25,0.25,0.25)</span>. <span class="tex">D_{\mathrm{KL}}(p_{\text{data}}\|m)=0.2\ln0.4+0.8\ln1.6=0.1927</span>, and by symmetry the same for <span class="tex">p_g</span>, so <span class="tex">\mathrm{JS}=0.1927</span>. Then <span class="tex">-\ln4+2\,\mathrm{JS}=-1.3863+0.3855=-1.0008</span>, matching the direct value.</p>
+          <p><b>Other discriminators are worse.</b> <span class="tex">D=\tfrac12</span> everywhere gives <span class="tex">-1.3863</span>; <span class="tex">D=(0.3,0.7,0.7,0.3)</span> gives <span class="tex">-1.0523</span>; <span class="tex">D=(0.1,0.9,0.9,0.1)</span> gives <span class="tex">-1.0896</span>. All below <span class="tex">-1.0008</span>, the maximum. A perfect generator (<span class="tex">p_g=p_{\text{data}}</span>) would give <span class="tex">\mathrm{JS}=0</span> and the best the discriminator could reach is <span class="tex">-1.3863</span>.</p>
+        </div>
+        <div data-lab="gen-lt-gan-discrete"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the defaults. The four green diamonds (D) climb toward the hollow circles (D*) = 0.2, 0.8, 0.8, 0.2, and the orange value curve rises to the dashed line −1.0008.</li>
+          <li>Slide the generator quality λ to 1 (the generator now equals the data). The target D* becomes ½ everywhere and the dashed V* falls to −ln 4 = −1.3863. The better the generator, the <i>lower</i> the best the discriminator can do.</li>
+          <li>Choose p_data = left-heavy and p_g = right-heavy. D* should become about 0.84 at x = 1 (data 0.6, generator 0.11) and 0.13 at x = 4. Why does the discriminator become confident exactly where the two distributions disagree most?</li>
+        </ol></div>
+
+        <h3 class="sec">The loss you really train: non-saturating</h3>
+        <p>Early in training the generator is poor, so the discriminator is confident: <span class="tex">D(G(z))</span> is near 0. Look at the gradient of the generator's loss <span class="tex">\ln(1-D)</span> there. Write <span class="tex">D=\sigma(a)</span> with <span class="tex">a</span> the discriminator's logit. Then <span class="tex">\partial_a\ln(1-\sigma(a))=-\sigma(a)=-D</span>, which is nearly zero when <span class="tex">D</span> is nearly zero: the loss is flat exactly when the generator most needs a signal. It <b>saturates</b>. The standard fix is for the generator to <i>minimise</i> <span class="tex">-\ln D(G(z))</span> instead. It has the same fixed point (it wants <span class="tex">D(G(z))</span> to be large) but its gradient is <span class="tex">\partial_a(-\ln\sigma(a))=-(1-D)</span>, which is near <span class="tex">-1</span> when <span class="tex">D</span> is small. Numerically at <span class="tex">a=-4</span> (<span class="tex">D=0.018</span>): the minimax slope is <span class="tex">-0.018</span>, the non-saturating slope <span class="tex">-0.982</span>. The non-saturating objective is no longer exactly the JS divergence, a theoretical price accepted for training signal.</p>
+        <div data-lab="gen-lt-nonsat"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the default start a = −5. The green marker (non-saturating) moves up the curve within seconds; the red marker (minimax) barely moves.</li>
+          <li>Drag the starting logit to 0 and replay. Now the two slopes are of similar size, and both generators make progress. When is the choice of loss important?</li>
+          <li>Read the slopes in the readout at the start. At a = −5 the slopes are −0.007 and −0.993: a hundred-fold difference in how much the generator learns per step.</li>
+        </ol></div>
+
+        <h3 class="sec">The formal summary</h3>
+        <table class="sym"><tbody>
+          <tr><td><span class="tex">G,\;p_g</span></td><td>the generator network and the distribution of its outputs <span class="tex">G(z)</span>, <span class="tex">z\sim p(z)</span>. We can sample from <span class="tex">p_g</span> but cannot evaluate it.</td></tr>
+          <tr><td><span class="tex">D(x)</span></td><td>the discriminator's probability that <span class="tex">x</span> is real, in <span class="tex">(0,1)</span>; <span class="tex">D=\sigma(a)</span> for a logit <span class="tex">a</span>.</td></tr>
+          <tr><td><span class="tex">V(D,G)</span></td><td>the value: expected log-probability <span class="tex">D</span> assigns to the correct label.</td></tr>
+          <tr><td><span class="tex">D^*</span></td><td>the maximising discriminator for fixed <span class="tex">G</span>: <span class="tex">p_{\text{data}}/(p_{\text{data}}+p_g)</span>.</td></tr>
+          <tr><td><span class="tex">m</span></td><td>the equal mixture <span class="tex">(p_{\text{data}}+p_g)/2</span>.</td></tr>
+          <tr><td><span class="tex">\mathrm{JS}</span></td><td>Jensen-Shannon divergence, <span class="tex">0\le\mathrm{JS}\le\ln2</span>; <span class="tex">V(D^*,G)=-\ln4+2\,\mathrm{JS}</span>.</td></tr>
+        </tbody></table>
+        <p>Cost: each training step needs a forward and backward pass through both networks, and the generator's gradient flows <i>through</i> the discriminator. There is no likelihood to evaluate, which is both the strength (any sampler works) and the weakness (no number says how good the model is; see 7.4). The vision-side picture is in <a href="cv-generative.html#gans">GANs for images</a>.</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>The theory assumes an optimal discriminator and unlimited generator capacity.</b> Real training alternates a few gradient steps with finite networks, so the JS picture is an idealisation, not a guarantee.</li>
+          <li><b>Confusing D with a probability of quality.</b> D reports how real a sample looks to <i>this</i> discriminator, not how good the image is.</li>
+          <li><b>Believing the minimax loss is what people train.</b> The non-saturating loss is the usual generator loss.</li>
+          <li><b>JS is not KL.</b> JS is bounded by ln 2 even when the two distributions share no support; that boundedness will turn out to be a weakness (lesson 7.4).</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>GANs</b> for image synthesis, super-resolution, image-to-image translation and data augmentation were the leading image generators for several years before diffusion.</li>
+          <li><b>Adversarial losses as components.</b> Even in systems that are not GANs, a small discriminator loss is often added to a reconstruction loss (for instance in the autoencoders that compress images for latent diffusion) to sharpen the output.</li>
+          <li><b>Learned discriminators as detectors and critics</b> turn up in domain-adaptation methods that make features indistinguishable between two domains.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At a point where p_data(x) = 0.3 and p_g(x) = 0.1, what is the optimal discriminator's output?</summary><div class="ans">D*(x) = 0.3 / (0.3 + 0.1) = 0.75. Three quarters of the samples that land at x are real.</div></details>
+        <details class="check"><summary>2. If the generator matches the data exactly, what is V(D*, G)?</summary><div class="ans">JS = 0, so V = −ln 4 = −1.3863, and D* = ½ everywhere: the discriminator can do no better than guessing.</div></details>
+        <details class="check"><summary>3. What are JS and V(D*, G) if the data and generator distributions have completely disjoint supports?</summary><div class="ans">The mixture m is p_data/2 on the data's support and p_g/2 on the generator's, so each KL to m is ln 2, and JS = ln 2 = 0.6931. Then V = −ln 4 + 2 ln 2 = 0. The discriminator separates them perfectly (D* = 1 on data, 0 on fakes, so ln 1 + ln 1 = 0).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A GAN needs only samples: V(D,G) rewards D for classifying real against fake and G for fooling it.</li>
+          <li>For a fixed G the best discriminator is D* = p_data / (p_data + p_g) (checked: 0.2, 0.8, 0.8, 0.2).</li>
+          <li>Then V(D*, G) = −ln 4 + 2·JS (checked: −1.0008 both ways), minimised when p_g = p_data.</li>
+          <li>The saturating generator loss gives almost no gradient when D is confident; the non-saturating −ln D fixes the signal.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.4 ===================== -->
+    <section class="lesson" id="gan-training" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.4</span><h2>Training GANs</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>The theory of lesson 7.3 said the game has a clean optimum, yet practitioners describe GAN training as fragile: losses that oscillate instead of settling, generators that produce only a few kinds of output, and no single number that says whether the model is getting better. What goes wrong, which fixes exist, and why did diffusion models largely replace GANs for image synthesis?</div>
+
+        <h3 class="sec">Intuition: two people walking uphill and downhill on the same hill</h3>
+        <p>Ordinary training has one person walking downhill on a fixed landscape: eventually they stop at a valley. A GAN has two people on a landscape that <i>each one's step reshapes</i>: one walks downhill, the other uphill on the same surface. They can chase each other around in circles forever, like two people dancing around a pole. Three separate troubles follow: the dynamics can <b>circle or blow up</b>, the generator can find a safe answer and <b>cover only part of the data</b> (mode collapse), and the distance the discriminator measures can go <b>flat</b> so that it tells the generator nothing about which way to move. Fixes exist for each, none is complete, and there is no loss curve to judge progress by.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>1. Instability: the simplest game that goes wrong.</b> Take the smallest adversarial game: one player picks <span class="tex">x</span> to minimise <span class="tex">xy</span>, the other picks <span class="tex">y</span> to maximise it. The only equilibrium is <span class="tex">(0,0)</span>. Gradient steps with step size <span class="tex">\eta</span>, taken simultaneously, are <span class="tex">x\leftarrow x-\eta y</span> and <span class="tex">y\leftarrow y+\eta x</span>. The squared distance from the equilibrium gets multiplied each step:</p>
+        <div class="eq">x'^2+y'^2=(x-\eta y)^2+(y+\eta x)^2=(1+\eta^2)\,(x^2+y^2)</div>
+        <p>(the cross terms cancel). So the point <i>spirals outward</i>, with radius growing as <span class="tex">(1+\eta^2)^{t/2}</span>, however small <span class="tex">\eta</span> is. That is not the GAN's exact dynamics, but it shows that "both players follow their gradient" can fail to converge even when a clean equilibrium exists. Two fixes in this toy: <b>alternating</b> updates (the second player sees the first's new value) keep the radius bounded but the orbit never shrinks; <b>optimistic</b> updates use <span class="tex">x\leftarrow x-2\eta y_t+\eta y_{t-1}</span> (a correction for where the opponent is heading) and spiral inward.</p>
+        <div class="worked"><b>Worked example 1: starting at (1, 0) with eta = 0.1</b>
+          <table class="tbl"><thead><tr><th>method</th><th>radius after 10 steps</th><th>after 50</th><th>after 100</th></tr></thead>
+          <tbody><tr><td>simultaneous</td><td>1.0510</td><td>1.2824</td><td>1.6446</td></tr><tr><td>alternating</td><td>1.0242</td><td>0.9885</td><td>1.0234</td></tr><tr><td>optimistic</td><td>0.9603</td><td>0.7838</td><td>0.6081</td></tr></tbody></table>
+          <p>The simultaneous row equals the formula: <span class="tex">(1.01)^{5}=1.0510</span>, <span class="tex">(1.01)^{25}=1.2824</span>, <span class="tex">(1.01)^{50}=1.6446</span>.</p>
+        </div>
+        <div data-lab="gen-lt-game"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With simultaneous steps, press play and watch the red point spiral out past the dashed circle (the starting radius). At step 50 it should read 1.2824.</li>
+          <li>Switch the rule to alternating, then to optimistic, and compare the shapes of the paths. Which one heads for the centre?</li>
+          <li>Raise η to 0.3 with simultaneous steps. How much faster does it blow up? (Check against (1 + η²)^(t/2).)</li>
+        </ol></div>
+
+        <p><b>2. Mode collapse.</b> Suppose the data have several clumps ("modes"). The generator is rewarded for outputs the discriminator calls real. If the discriminator currently likes one clump the most, the generator's best move is to put <i>all</i> its output there. Then the discriminator learns that clump is over-supplied and now prefers another; the generator jumps there. The generator hops between modes and never covers them all. A tiny abstraction shows this: three modes with data probabilities <span class="tex">(0.5,0.3,0.2)</span>, a discriminator that is optimal at every step, and a generator that moves a fraction <span class="tex">\alpha</span> of its mass onto the mode with the highest <span class="tex">D^*</span>.</p>
+        <div class="worked"><b>Worked example 2: the greedy generator</b>
+          <p>Start with <span class="tex">p_g=(\tfrac13,\tfrac13,\tfrac13)</span>. Then <span class="tex">D^*=(0.5,0.3,0.2)/(0.5,0.3,0.2+\tfrac13)=(0.600,0.474,0.375)</span>: mode 1 is the most under-supplied, so the generator moves there. With <span class="tex">\alpha=0.9</span> the new <span class="tex">p_g=(0.9333,0.0333,0.0333)</span>. Now <span class="tex">D^*=(0.349,0.900,0.857)</span>: mode 1 is flooded, so the generator jumps to mode 2, giving <span class="tex">p_g\approx(0.09,0.90,0.00)</span>, and the cycle continues 1, 2, 3, 1, 2, 3 and never matches <span class="tex">(0.5,0.3,0.2)</span>. With <span class="tex">\alpha=0.02</span> the same rule drifts gently toward the data mixture. This is an illustration of the <i>mechanism</i>; it is not a measurement of any real network.</p>
+        </div>
+        <div data-lab="gen-lt-modehop"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Play with α = 0.6 and read the stacked columns on the right: which mode gets the generator's mass at each step? Does it ever match the data weights (dashed outlines)?</li>
+          <li>Lower α to 0.05. The hopping shrinks and the JS value falls. Why is a small step size a stabiliser, and what does it cost in training time?</li>
+          <li>Set the three data weights equal (all 5). The generator starts exactly right (uniform), with D* = ½ everywhere. Does the greedy rule keep it there?</li>
+        </ol></div>
+
+        <p><b>3. The Wasserstein idea: a distance that does not go flat.</b> In 7.3 the discriminator measures JS. Take data uniform on <span class="tex">[0,1)</span> and a generator uniform on <span class="tex">[\theta,\theta+1)</span>. For <span class="tex">\theta\ge1</span> the supports do not overlap, JS equals <span class="tex">\ln2</span>, and it stays <span class="tex">\ln2</span> however close the generator gets. Its gradient with respect to <span class="tex">\theta</span> is zero: no direction to improve. The <b>Wasserstein-1</b> (earth mover's) distance asks how far the probability mass must be carried to turn one distribution into the other; here that is simply <span class="tex">\theta</span>, a clean slope. In one dimension <span class="tex">W_1=\int|F_P(x)-F_Q(x)|\,dx</span> (the area between the two cumulative distribution functions), and in general, by the Kantorovich-Rubinstein duality,</p>
+        <div class="eq">W_1(P,Q)=\sup_{\|f\|_{L}\le1}\;\mathbb{E}_{x\sim P}[f(x)]-\mathbb{E}_{x\sim Q}[f(x)]</div>
+        <p>where the supremum is over 1-Lipschitz functions (functions whose slope never exceeds 1 in size). A <b>Wasserstein GAN</b> replaces the discriminator by such a <b>critic</b> <span class="tex">f</span> without a final sigmoid, trained to widen the gap in average score between real and generated data, while the generator tries to close it. The Lipschitz limit has to be enforced: by clipping the weights (the original, crude choice) or by adding a <b>gradient penalty</b> <span class="tex">\lambda\,(\|\nabla f(\hat x)\|-1)^2</span> at points between real and fake samples. These help stability in many settings; they are not a cure-all.</p>
+        <div class="worked"><b>Worked example 3: the two distances for sliding blocks</b>
+          <table class="tbl"><thead><tr><th>offset θ</th><th>JS = ln 2 · min(θ, 1)</th><th>W₁ = θ</th></tr></thead>
+          <tbody><tr><td>0.5</td><td>0.3466</td><td>0.5</td></tr><tr><td>1.0</td><td>0.6931</td><td>1.0</td></tr><tr><td>3.0</td><td>0.6931</td><td>3.0</td></tr></tbody></table>
+          <p>The JS values come from the overlap: for <span class="tex">\theta\le1</span> each block has a non-overlapping strip of length <span class="tex">\theta</span> where one density is 1 and the mixture is ½, contributing <span class="tex">\theta\ln2</span> in total. Both distances were also computed on a fine grid and agree with the formulas (the lab shows both numbers). Note JS stops growing at θ = 1 while W₁ keeps growing.</p>
+        </div>
+        <div data-lab="gen-lt-jsw"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Play. Q starts far away (θ = 3) and slides toward the data. While the blocks are apart, the red JS line is flat at 0.6931 and the green W₁ dot is on its rising line.</li>
+          <li>Pause at θ = 0.5 and read both: JS 0.3466, W₁ 0.5, in agreement with the worked table.</li>
+          <li>Drag θ between 1 and 3. Which distance would give a generator a usable direction, and why?</li>
+        </ol></div>
+
+        <p><b>4. Evaluating a GAN without a likelihood.</b> A GAN offers no <span class="tex">p_g(x)</span>, so held-out likelihood is unavailable. Common practice is to compare sample statistics. The <b>Fréchet distance between feature distributions</b> (the idea behind widely used image scores) passes real and generated samples through a fixed feature extractor, fits a Gaussian to each set of features, and computes</p>
+        <div class="eq">d^2=\|\mu_1-\mu_2\|^2+\operatorname{Tr}\!\big(\Sigma_1+\Sigma_2-2(\Sigma_1\Sigma_2)^{1/2}\big)</div>
+        <p>In one dimension this reduces to <span class="tex">(\mu_1-\mu_2)^2+(\sigma_1-\sigma_2)^2</span>; for <span class="tex">\mathcal N(0,1)</span> against <span class="tex">\mathcal N(1,2^2)</span> it is <span class="tex">1+1=2</span>. Such scores depend on the feature extractor, on the number of samples (small sets bias them), and on the Gaussian assumption; they can miss mode dropping inside a class. Separate <i>precision</i> (do samples look real?) and <i>recall</i> (is the whole data distribution covered?) measures are used because a single score hides which one failed.</p>
+
+        <h3 class="sec">Why diffusion models overtook GANs</h3>
+        <p>Many practitioners moved to diffusion models for image generation for reasons that are widely discussed rather than proven by one experiment: diffusion is trained with a simple regression loss that behaves like ordinary supervised learning, so training is far more stable; the loss decreases and is interpretable; it tends to cover all modes of a dataset; and it scales smoothly with data and compute and conditions naturally on text. GANs still sample in a <b>single forward pass</b>, which is much cheaper than iterative denoising, and distilled diffusion models, and GAN-style losses used to sharpen them, are partly motivated by that speed. Treat the ranking as a statement about current practice, which can change. Module 8 starts with <a href="gen-diffusion.html#forward-noising">the forward noising process</a>.</p>
+
+        <h3 class="sec">The formal summary</h3>
+        <table class="sym"><tbody>
+          <tr><td><span class="tex">\eta</span></td><td>step size of the gradient updates.</td></tr>
+          <tr><td>mode collapse</td><td>the generator covers only some of the clumps (modes) of the data distribution.</td></tr>
+          <tr><td><span class="tex">W_1(P,Q)</span></td><td>Wasserstein-1 (earth mover's) distance: the minimum average distance mass must travel.</td></tr>
+          <tr><td><span class="tex">\|f\|_L\le1</span></td><td>1-Lipschitz: <span class="tex">|f(a)-f(b)|\le|a-b|</span> for all <span class="tex">a,b</span>.</td></tr>
+          <tr><td><span class="tex">\mu_i,\Sigma_i</span></td><td>mean and covariance of the features of real (1) and generated (2) samples in the Fréchet distance.</td></tr>
+        </tbody></table>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Reading the loss curves.</b> The generator and discriminator losses move against each other; a low discriminator loss may mean a strong discriminator or a weak generator. They do not track sample quality the way a supervised loss tracks accuracy.</li>
+          <li><b>A good score from a single number.</b> Fréchet-style scores can hide mode dropping and depend on the feature network and sample count.</li>
+          <li><b>"Wasserstein fixes everything".</b> It gives a more informative distance, but the Lipschitz constraint has to be enforced approximately and training still needs care.</li>
+          <li><b>Assuming GANs are obsolete.</b> They remain useful where one-step sampling matters, and adversarial losses are used inside other systems.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Image synthesis history:</b> an era of GAN-based generators (and their training tricks: spectral normalisation, gradient penalties, progressive growing, two-time-scale updates) preceded the diffusion era.</li>
+          <li><b>Adversarial and optimistic updates</b> appear wherever two objectives are optimised against each other, including multi-agent and game-theoretic learning.</li>
+          <li><b>Wasserstein and optimal-transport distances</b> are used to compare distributions in domain adaptation and in some flow-matching variants (Module 8).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the game min over x, max over y of xy with simultaneous steps and η = 0.1, what is the radius after 50 steps starting at (1, 0)?</summary><div class="ans">The radius is multiplied by √(1 + η²) each step, so after 50 steps it is (1.01)^25 = 1.2824.</div></details>
+        <details class="check"><summary>2. For two unit-width uniform blocks offset by θ = 0.5, what are JS and W₁?</summary><div class="ans">JS = ln 2 × min(0.5, 1) = 0.3466. W₁ = θ = 0.5.</div></details>
+        <details class="check"><summary>3. The features of real images have mean 0 and standard deviation 1 (one dimension) and the generated ones have mean 1 and standard deviation 2. What is the Fréchet distance?</summary><div class="ans">(0 − 1)² + (1 − 2)² = 1 + 1 = 2.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Two players following their own gradients can circle or spiral out (radius × √(1+η²) per step in the toy game); alternating and optimistic updates change that.</li>
+          <li>A generator that chases the current best discriminator tends to hop between modes instead of covering them all.</li>
+          <li>JS goes flat (ln 2) when supports do not overlap; Wasserstein keeps a slope, at the price of enforcing a Lipschitz critic.</li>
+          <li>With no likelihood, evaluation relies on feature-space scores whose limits you must know; diffusion largely replaced GANs through stable training and coverage, while GANs keep one-step speed.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 7.5 ===================== -->
+    <section class="lesson" id="flows-change-of-variables" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">7.5</span><h2>Normalising flows</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>VAEs give only a bound on the likelihood and GANs give none. Is there a generator whose likelihood is <i>exact</i>, so you can train it by plain maximum likelihood, evaluate the density of any data point, and still sample by pushing simple noise through a network?</div>
+
+        <h3 class="sec">Intuition: stretch a rubber sheet, and the ink must conserve its total</h3>
+        <p>Spread a layer of ink evenly (or in a bell-shaped blob) on a rubber sheet. Now stretch the sheet unevenly. Where the sheet stretches, the ink thins out; where it is squeezed, the ink piles up. The <i>total amount</i> of ink never changes. A <b>normalising flow</b> does exactly this to a probability density: start with simple noise (a Gaussian), pass it through an <b>invertible</b> map that stretches and squeezes space, and read off the new density from how much the map stretched at each point. Because the map can be undone, you can also take any data point, push it back to the noise space and ask how likely it was there, then correct for the stretching. That correction is the <b>change-of-variables formula</b>, and it makes the likelihood exact.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>One dimension.</b> Let <span class="tex">z</span> have density <span class="tex">p_z</span> and let <span class="tex">x=f(z)</span> with <span class="tex">f</span> strictly increasing (so it has an inverse). The probability that <span class="tex">z</span> lies in a tiny interval of width <span class="tex">dz</span> equals the probability that <span class="tex">x</span> lies in the image interval of width <span class="tex">dx=f'(z)\,dz</span>:</p>
+        <div class="eq">p_x(x)\,|dx|=p_z(z)\,|dz|\quad\Longrightarrow\quad p_x(x)=\frac{p_z(z)}{|f'(z)|},\qquad z=f^{-1}(x)</div>
+        <p>If <span class="tex">f'&gt;1</span> the map stretches, so the density is divided by that factor and thins out; if <span class="tex">f'&lt;1</span> it squeezes and the density rises. (Equivalently <span class="tex">p_x(x)=p_z(f^{-1}(x))\,|(f^{-1})'(x)|</span>.)</p>
+        <div class="worked"><b>Worked example 1: three maps of the standard normal</b>
+          <p>The standard normal density is <span class="tex">\varphi(z)=e^{-z^2/2}/\sqrt{2\pi}</span>, with <span class="tex">\varphi(1)=0.2420</span>.</p>
+          <p><b>Affine:</b> <span class="tex">x=2z+1</span>, <span class="tex">f'=2</span>. At <span class="tex">x=3</span> (<span class="tex">z=1</span>): <span class="tex">p_x(3)=\varphi(1)/2=0.1210</span>. The sheet is stretched twice, so the density is halved.</p>
+          <p><b>Exponential:</b> <span class="tex">x=e^z</span>, <span class="tex">f'=e^z=x</span>, <span class="tex">z=\ln x</span>. Then <span class="tex">p_x(x)=\varphi(\ln x)/x</span> (the lognormal density). At <span class="tex">x=2</span>: <span class="tex">\varphi(\ln2)=0.3137</span>, so <span class="tex">p_x(2)=0.3137/2=0.1569</span>. Integrating <span class="tex">p_x</span> over <span class="tex">x\in(0,\infty)</span> numerically gives <span class="tex">0.999999</span>: total probability still 1.</p>
+          <p><b>A non-linear increasing map:</b> <span class="tex">f(z)=z+1.5\tanh z</span>, <span class="tex">f'(z)=1+1.5(1-\tanh^2z)</span>. At <span class="tex">z=1</span>: <span class="tex">x=f(1)=2.1424</span>, <span class="tex">f'(1)=1.6300</span>, so <span class="tex">p_x(2.1424)=0.2420/1.6300=0.1485</span>. Inverting <span class="tex">f</span> numerically on a grid of <span class="tex">x</span> values from −40 to 40 and adding <span class="tex">p_x\,dx</span> gives <span class="tex">1.000000</span>. This is the default of the lab below.</p>
+        </div>
+        <p><b>Several dimensions.</b> The stretching factor of a map <span class="tex">f:\mathbb R^d\to\mathbb R^d</span> at a point is the absolute value of the determinant of its <b>Jacobian matrix</b> <span class="tex">J_f</span> (the matrix of all partial derivatives <span class="tex">\partial f_i/\partial z_j</span>): the factor by which small volumes are scaled. In logarithms, which is what you train with:</p>
+        <div class="eq">\ln p_x(x)=\ln p_z(z)-\ln\big|\det J_f(z)\big|,\qquad z=f^{-1}(x)</div>
+        <p>A flow chains several simple invertible maps, <span class="tex">x=f_K\circ\cdots\circ f_1(z)</span>. The log-determinants simply <i>add</i>, <span class="tex">\ln|\det J|=\sum_k\ln|\det J_{f_k}|</span>, so each layer can be simple. The difficulty is design: for a general <span class="tex">d\times d</span> Jacobian the determinant costs about <span class="tex">d^3</span> operations, far too slow for images with thousands of dimensions. Flow layers are built so the Jacobian is cheap.</p>
+        <p><b>Coupling layers.</b> Split the coordinates into two parts. Keep the first part, and transform the second by a scale and shift that depend <i>only on the first</i>:</p>
+        <div class="eq">y_1=x_1,\qquad y_2=x_2\,e^{s(x_1)}+t(x_1)\qquad\Longleftrightarrow\qquad x_2=\big(y_2-t(y_1)\big)\,e^{-s(y_1)}</div>
+        <p>The inverse is just as cheap, and <i>s</i> and <i>t</i> can be arbitrary neural networks, because we never invert them. The Jacobian is triangular: the top-left block is 1, the top-right is 0, so its determinant is the product of the diagonal, <span class="tex">e^{s(x_1)}</span> (a product of exponentials in more dimensions). Hence <span class="tex">\ln|\det J|=\sum s(x_1)</span>, essentially free. Stacking such layers while alternating which half is kept gives an expressive flow with an exact likelihood.</p>
+        <div class="worked"><b>Worked example 2: a coupling layer on one point</b>
+          <p>Take <span class="tex">x=(x_1,x_2)=(1,\,0.5)</span> with <span class="tex">s(u)=0.5u</span>, <span class="tex">t(u)=0.3u^2</span>. Then <span class="tex">s=0.5</span>, <span class="tex">t=0.3</span>, and <span class="tex">y_2=0.5\cdot e^{0.5}+0.3=0.5\times1.6487+0.3=1.1244</span>, so <span class="tex">y=(1,1.1244)</span>. The log-determinant is <span class="tex">s(x_1)=0.5</span> (determinant <span class="tex">e^{0.5}=1.6487</span>): the layer stretches area by 1.65 there.</p>
+          <p>Suppose <span class="tex">x</span> comes from a 2-D standard normal: <span class="tex">p_x(x)=\varphi(1)\varphi(0.5)=0.0852</span>. The density at the new point is <span class="tex">p_y(y)=p_x(x)/e^{0.5}=0.0852/1.6487=0.0517</span>: area was stretched so density dropped. Computing <span class="tex">p_y</span> instead from the inverse map, <span class="tex">\varphi(y_1)\,\varphi\big((y_2-t)/e^{s}\big)/e^{s}</span>, gives the same <span class="tex">0.0517</span>; the lab prints both, and checks the determinant against a numerical Jacobian.</p>
+        </div>
+        <div data-lab="gen-lt-flow1d"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the morph (play). The bars are a histogram of 4000 samples pushed through the map and the orange curve is the formula p_z/f′; they agree. The readout shows the integral staying 1.000000 at every t.</li>
+          <li>Click the preset <b>exp (lognormal)</b>, set t = 1 and z₀ = 0.7 (close to ln 2). Compare p_x (about 0.155) with the 0.1569 of the worked example at exactly ln 2. Then try <b>not invertible</b> (z²): what does the page say, and why does the formula fail there?</li>
+          <li>Where f′ is large (the ticks spread out) is the density low or high? Edit f to be steeper in the middle and check.</li>
+        </ol></div>
+        <div data-lab="gen-lt-coupling"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Play. A Gaussian cloud and a square grid are sheared by the coupling layer: the vertical coordinate is stretched and shifted by amounts that depend on the horizontal one, and x₁ never moves.</li>
+          <li>Set the probe to (1, 0.5) and τ = 1. The readout should give y₂ = 1.1244, log-determinant 0.5, density 0.0517 by both methods.</li>
+          <li>Set s to a negative number such as <b>-0.8*u</b> (shrinks where u is large). What happens to the density on the right of the picture?</li>
+        </ol></div>
+
+        <h3 class="sec">Training and what flows can and cannot do</h3>
+        <p>For a dataset <span class="tex">\{x_i\}</span> you maximise <span class="tex">\sum_i\big[\ln p_z(f^{-1}(x_i))-\ln|\det J_f|\big]</span> directly: it is an exact likelihood, with no lower bound (VAE) and no adversary (GAN). Sampling needs the forward direction (draw <span class="tex">z</span>, apply <span class="tex">f</span>) and density evaluation needs the inverse, so a flow has to be cheap in both. The price: the map must be invertible and keep the dimension the same (no bottleneck code), and the architecture constrains what it can express. Two cautions: for <i>discrete</i> data such as 8-bit pixels, a continuous density is only meaningful after adding small noise ("dequantisation"); and a high likelihood does not guarantee good samples, and flows have been reported to give high likelihood to data unlike their training set, so likelihood alone is a weak out-of-distribution detector.</p>
+        <p><b>Link forward.</b> A flow of many small steps can be written as an ordinary differential equation <span class="tex">dx/dt=v(x,t)</span> (a "continuous flow"), whose log-density changes by minus the divergence of <span class="tex">v</span>. Flow matching (<a href="gen-diffusion.html#flow-matching">Module 8</a>) trains such a velocity field by simple regression along paths between noise and data, avoiding the cost of exact likelihood training, and the diffusion samplers of <a href="gen-diffusion.html#fast-samplers">fast samplers</a> are the same kind of object.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <table class="sym"><tbody>
+          <tr><td><span class="tex">z</span></td><td>the noise variable with a simple density <span class="tex">p_z</span> (standard normal).</td></tr>
+          <tr><td><span class="tex">x=f(z)</span></td><td>the data-space variable produced by the invertible map <span class="tex">f</span>; <span class="tex">f^{-1}</span> maps data back to noise.</td></tr>
+          <tr><td><span class="tex">f'(z)</span></td><td>the slope of <span class="tex">f</span>: how much a short interval is stretched.</td></tr>
+          <tr><td><span class="tex">J_f(z)</span></td><td>the Jacobian matrix of <span class="tex">f</span> at <span class="tex">z</span>; <span class="tex">|\det J_f|</span> is the factor by which small volumes are scaled.</td></tr>
+          <tr><td><span class="tex">s(x_1),\,t(x_1)</span></td><td>the log-scale and shift of a coupling layer, arbitrary functions of the kept coordinates.</td></tr>
+          <tr><td><span class="tex">\ln|\det J|</span></td><td>log of the volume-scaling factor; sums over layers; equals <span class="tex">\sum s(x_1)</span> for a coupling layer.</td></tr>
+        </tbody></table>
+        <p>Cost: each coupling layer costs one pass of the networks <span class="tex">s,t</span>, and its log-determinant is a sum of <span class="tex">d/2</span> numbers, so training needs about the cost of a forward pass of the stack plus an inverse pass, with memory like an ordinary network of that depth.</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Forgetting the stretching factor.</b> Substituting x = f(z) into p_z without dividing by |f′| gives a density that does not integrate to 1.</li>
+          <li><b>Non-invertible maps.</b> If f is not one-to-one (z², ReLU), the formula fails; with several preimages you sum the contributions, and where f′ = 0 the density is infinite.</li>
+          <li><b>Using the wrong direction.</b> The determinant in ln p_x is of the map from noise to data evaluated at z = f⁻¹(x); using its inverse flips the sign of the correction.</li>
+          <li><b>Equating likelihood with quality.</b> Exact likelihood is a property of the model class; it does not by itself mean the samples look good.</li>
+        </ul></div>
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Density estimation and exact likelihood models</b> for tabular, scientific and low-dimensional data, where an exact density matters (anomaly scoring, simulation-based inference).</li>
+          <li><b>Flexible posteriors.</b> A flow can be used as the encoder distribution of a VAE (replacing the Gaussian) to shrink the ELBO gap of lesson 7.1.</li>
+          <li><b>Continuous flows and flow matching.</b> The change-of-variables idea reappears as the instantaneous change of variables in continuous-time generators (Module 8).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For x = e^z with z standard normal, what is p_x(2)?</summary><div class="ans">p_x(x) = φ(ln x)/x. φ(ln 2) = φ(0.6931) = 0.3137, so p_x(2) = 0.3137 / 2 = 0.1569.</div></details>
+        <details class="check"><summary>2. For x = 3z with z standard normal, what is p_x(3)?</summary><div class="ans">z = 1, f′ = 3, so p_x(3) = φ(1)/3 = 0.2420/3 = 0.0807.</div></details>
+        <details class="check"><summary>3. A coupling layer has s(x₁) = −0.4 at some point. What is its log-determinant, and by what factor does it scale area there?</summary><div class="ans">The log-determinant is s(x₁) = −0.4, so the area factor is e^(−0.4) = 0.6703: area shrinks by about a third and the density there rises by 1/0.6703 = 1.49.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>For an increasing map x = f(z): p_x(x) = p_z(z)/|f′(z)|. Checked: the tanh-map density integrates to 1.000000.</li>
+          <li>In d dimensions ln p_x(x) = ln p_z(z) − ln|det J_f(z)|, and log-determinants add across layers.</li>
+          <li>Coupling layers (y₂ = x₂ e^s(x₁) + t(x₁)) have triangular Jacobians, so the determinant is e^s and the inverse is cheap.</li>
+          <li>Flows give exact likelihood and one-pass sampling, at the price of invertibility and equal dimension; continuous flows lead to flow matching.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 8 (<a href="gen-diffusion.html">Diffusion &amp; flow matching</a>) takes the ELBO of lesson 7.1 to many latent layers (diffusion), uses the change of variables of lesson 7.5 in continuous time (flow matching), and replaces the adversary of lessons 7.3 and 7.4 with a regression loss. Module 9 (<a href="gen-multimodal.html">Multimodal, evaluation &amp; responsible generation</a>) uses the discrete codes of lesson 7.2 as image and audio tokens.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

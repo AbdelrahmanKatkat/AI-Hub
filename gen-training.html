@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 · Training large language models · Generative AI</title>
+<meta name="description" content="How a large language model is pretrained: the next-token objective and sequence packing, assembling and filtering data (with licensing, consent and contamination), scaling laws and the 6ND compute estimate, AdamW and learning-rate schedules, memory and parallelism, and reading a training run. Hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-training.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="3">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 3</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">3</div>
+      <div style="flex:1">
+        <h1>Module 3 · Training large language models</h1>
+        <p>Module 2 built the network. This module is about teaching it: what number is being minimised, what text it is minimised on, how much compute a run needs and how to choose the model size for a budget, how the optimiser is set up so that billions of parameters train stably, how the bytes are spread across many devices, and how a person watching a run tells healthy from sick. In the pipeline of the topic (collect and tokenise, <b>pretrain</b>, align, adapt and compress, generate, evaluate and guard) this module is the second stage, the expensive one.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3 hours</span><span class="chip">Needs: <a href="gen-transformer.html#cost-and-kv-cache">cost of a transformer</a>, <a href="gen-language.html#perplexity">perplexity</a>, <a href="math-optimization.html#momentum-adam">Adam</a>, <a href="math-information.html#cross-entropy-kl">cross-entropy</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> Everything is taught on tiny numbers that you can check with a pencil: a six-token sentence, a six-document corpus, a table of six toy training runs, a 1-billion-parameter model whose memory you add up byte by byte. All labs are <i>illustrative</i> simulations with seeded random numbers; they show the logic of each idea, not measurements from a real training run. The module names published <i>methods</i> and gives their formulas, but it quotes no sizes, costs or scores of any particular commercial model: such facts date quickly and cannot be verified here. Where a rule of thumb depends on current practice it is hedged with "commonly" or "many systems".</div>
+
+    <!-- ===================== 3.1 ===================== -->
+    <section class="lesson" id="pretraining-objective" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.1</span><h2>The pretraining objective</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have a network with billions of parameters and a pile of text with no labels on it. Nobody has written "the right answer" for any sentence. What single number can you compute from raw text so that making it smaller makes the network better at language, and how do you feed an enormous, uneven pile of documents through a machine that wants neat blocks of equal length?</div>
+
+        <h3 class="sec">Intuition: guess the next word, over and over</h3>
+        <p>Cover the last word of a sentence and ask a friend to guess it: "The cat sat on the ___". A good guesser does not name one word, they spread their confidence: "mat" quite likely, "sofa" possible, "democracy" almost impossible. Now reveal the real word and ask how surprised the friend should be. If they had given it 60% they are barely surprised; if they had given it 1% they are very surprised. Do this at <i>every</i> position in a very large amount of text and average the surprise. That average is the <b>pretraining loss</b>, and the text is its own answer key: the "label" at each position is simply the word that actually came next. This is called <b>self-supervised learning</b>, because the supervision is manufactured from the data itself, with no human labelling.</p>
+        <p>The idea is old (the <a href="gen-language.html#ngram-models">n-gram models</a> of Module 1 counted exactly this); what changed is the machine that does the guessing. Surprise is measured in "nats" if you use the natural logarithm, as here, or in bits if you use log base 2.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Take a vocabulary of six tokens: <i>the, cat, sat, on, mat, ⟨eos⟩</i>, where ⟨eos⟩ is a special "end of document" token. Our single training sentence is the seven tokens <i>the cat sat on the mat ⟨eos⟩</i>. A seven-token sequence gives <b>six</b> prediction problems, one for each token that has something before it. At each position the network reads the tokens so far and outputs a probability for each of the six vocabulary entries (this is the output head of <a href="gen-language.html#neural-language-model">Module 1</a>: logits then softmax). We look only at the probability it gave to the token that really came next.</p>
+        <div class="worked"><b>Worked example: six predictions, one loss</b>
+          <table class="tbl"><thead><tr><th>position</th><th>context</th><th>true next token</th><th>model's p(true)</th><th>surprise −ln p</th></tr></thead>
+          <tbody>
+          <tr><td>1</td><td>the</td><td>cat</td><td>0.30</td><td>1.2040</td></tr>
+          <tr><td>2</td><td>the cat</td><td>sat</td><td>0.50</td><td>0.6931</td></tr>
+          <tr><td>3</td><td>the cat sat</td><td>on</td><td>0.60</td><td>0.5108</td></tr>
+          <tr><td>4</td><td>the cat sat on</td><td>the</td><td>0.70</td><td>0.3567</td></tr>
+          <tr><td>5</td><td>the cat sat on the</td><td>mat</td><td>0.10</td><td>2.3026</td></tr>
+          <tr><td>6</td><td>the cat sat on the mat</td><td>⟨eos⟩</td><td>0.40</td><td>0.9163</td></tr>
+          </tbody></table>
+          <p><b>The loss</b> is the average of the last column: <span class="tex">(1.2040+0.6931+0.5108+0.3567+2.3026+0.9163)/6=5.9835/6=0.9972</span> nats. As bits: <span class="tex">0.9972/\ln 2=1.4387</span> bits per token. The <b>perplexity</b> is <span class="tex">e^{0.9972}=2.711</span>: the model is, on average, as unsure as if it were choosing uniformly among about 2.7 tokens. A model that knew nothing and guessed uniformly over six tokens would score <span class="tex">\ln 6=1.7918</span>.</p>
+          <p><b>Where the learning signal comes from.</b> At position 5 the model put only 0.10 on "mat", and put 0.62 on "cat" instead. For a softmax output, the gradient of the surprise with respect to the six logits is <span class="tex">p-y</span>, the predicted probabilities minus a one-hot vector for the true token. Here that is <span class="tex">(0.02,\,0.62,\,0.03,\,0.05,\,-0.90,\,0.18)</span> in vocabulary order. Gradient descent lowers the logit of "cat" (positive entry), raises the logit of "mat" (negative entry), and the further the model was from the truth, the bigger the push.</p>
+          <p><b>Confidence is not free.</b> Sharpen every row (raise each probability to the power 2 and renormalise) and positions 2, 3 and 4 improve, because the model was right and now says so more firmly: their surprises fall to 0.304, 0.175, 0.057. But position 5 gets worse, from 2.303 to 3.763, because a confident wrong answer is punished hard. The average over six positions ends at 1.0132, slightly <i>worse</i> than before. The loss rewards being <i>calibrated</i>, not merely confident.</p>
+        </div>
+        <p><b>Packing.</b> Real documents have all sorts of lengths, but a GPU is most efficient on a rectangle of identical shape. The common solution is to separate the documents with the ⟨eos⟩ token, glue them end to end into one long stream, and cut the stream into windows of a fixed length <span class="tex">L</span> (the context length used in training). A window may then contain the end of one document and the start of another. The alternative is to give each document its own window and fill the unused part with padding, which wastes compute.</p>
+        <div class="worked"><b>Worked example: packing eight documents</b>
+          <p>Eight documents with 5, 3, 6, 2, 7, 4, 3 and 8 tokens, each followed by ⟨eos⟩: <span class="tex">6+4+7+3+8+5+4+9=46</span> tokens in all. With windows of <span class="tex">L=8</span>:</p>
+          <p><b>Packed:</b> <span class="tex">\lceil 46/8\rceil=6</span> windows (48 positions), so only 2 positions are padding and 46/48 = 95.8% of the slots carry real tokens.</p>
+          <p><b>One document per window:</b> the documents occupy 1, 1, 1, 1, 1, 1, 1 and 2 windows (the last one has 9 tokens, which does not fit in 8): 9 windows, 72 slots, 46/72 = 63.9% real. About a third of the compute is spent on padding.</p>
+          <p>Packing has a price. Without care, a token near the start of document B can attend to document A's tail in the same window, which is unrelated text. Many pipelines accept this; others add an attention mask that blocks attention across the ⟨eos⟩ boundary (the same <a href="gen-transformer.html#causal-decoder">causal mask</a> idea, with extra blocks). The lab shows both options.</p>
+        </div>
+        <p><b>What does this loss force the model to learn?</b> To guess "mat" more reliably the model must know the grammar that makes a noun likely after "the", the facts that make "Paris" likely after "the capital of France is", the code syntax that makes a closing bracket likely, the arithmetic pattern that makes "12" likely after "5+7=", and the style that makes the next sentence fit a recipe or an argument. None of these is taught separately; each helps the single number go down, on text where it applies. That is the sense in which next-token prediction is a rich training signal. It is also limited: the loss measures agreement with what <i>was written</i>, so it does not reward truthfulness, safety or helpfulness as such. Those are the topics of the next module.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <p>For a token sequence <span class="tex">x_1,\dots,x_T</span> and a model with parameters <span class="tex">\theta</span> that outputs <span class="tex">p_\theta(\cdot\mid x_{&lt;t})</span> at each position, the loss on that sequence is the average negative log-probability of each token given the ones before it (<b>teacher forcing</b>: the true earlier tokens are fed in, whatever the model would have generated). The pretraining objective averages this over all windows in the data.</p>
+        <div class="eq">\mathcal{L}(\theta)=-\frac{1}{T-1}\sum_{t=2}^{T}\ln p_\theta\!\left(x_t\mid x_1,\dots,x_{t-1}\right),\qquad \frac{\partial \mathcal{L}_t}{\partial z}=p-y,\qquad \text{perplexity}=e^{\mathcal{L}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x_t</span>: the token at position <span class="tex">t</span>, an integer from 1 to the vocabulary size <span class="tex">V</span>. <span class="tex">T</span>: the number of tokens in the window. <span class="tex">\theta</span>: all the model's parameters. <span class="tex">p_\theta(x_t\mid x_{&lt;t})</span>: the probability the model gives to the true token <span class="tex">x_t</span> after reading <span class="tex">x_1,\dots,x_{t-1}</span>. <span class="tex">\ln</span>: natural logarithm, so the unit is nats (dividing by <span class="tex">\ln 2</span> gives bits). <span class="tex">z</span>: the logits (pre-softmax scores) at one position; <span class="tex">p=\mathrm{softmax}(z)</span>; <span class="tex">y</span>: the one-hot vector that has a 1 at the true token. The sum starts at 2 because the first token has nothing to condition on; many implementations instead predict the first token of a window from an ⟨eos⟩ or start token. Minimising this is the same as minimising the cross-entropy from the data distribution to the model, see <a href="math-information.html#cross-entropy-kl">cross-entropy and KL</a>.</div>
+        <p>All <span class="tex">T-1</span> terms are computed in <b>one forward pass</b> thanks to the causal mask, which is why training is parallel while generation is sequential.</p>
+
+        <div data-lab="gen-tn-objective"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play and watch the cursor walk through the sentence: blue tokens are the context, the green-outlined one is the target, the green bar is the model's probability for it, and the orange bar is its surprise. Compare the six orange bars: which position hurts most, and why?</li>
+          <li>Set "Model confidence" to 0, then 1, then 2, then 3. At 0 the loss equals ln 6. Find the setting where the loss is lowest; why does it not keep falling?</li>
+          <li>Choose position 5 in the edit menu and drag the true-token probability from 0.10 up to 0.80. Watch that one bar shrink and the average fall. Then drag position 3 down to 0.05 and see what a single bad prediction does to the average.</li>
+        </ol></div>
+        <div data-lab="gen-tn-packing"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the default lengths and press play. Count the grey padding cells that appear on the right-hand side but not on the left.</li>
+          <li>Change the window length from 8 to 16 and then to 5. Which layout loses more when the window is shorter than a document?</li>
+          <li>Tick "mask attention at document boundaries" and see the single span under each packed row split into one span per document.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"The model is trained to be correct."</b> It is trained to assign high probability to what was written. Wrong or biased text in the data is, for the loss, a perfectly good target.</li>
+            <li><b>Averaging over tokens, not documents.</b> Long documents contribute more terms. Loss values are only comparable between models that use the <i>same tokeniser</i> and data: a model with a larger vocabulary has fewer, bigger tokens, so its per-token loss is larger without being worse (see <a href="gen-language.html#perplexity">perplexity</a>, bits per character).</li>
+            <li><b>Packing silently mixes documents.</b> Without a boundary mask, the loss on early tokens of a document is computed with an unrelated document in view.</li>
+            <li><b>Loss is not a quality score.</b> A small drop in loss can correspond to large gains on some skills and none on others; the loss is a good training signal and a coarse measure of what you actually want.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Decoder-only language models</b> are pretrained with exactly this objective on very large token streams, then adapted (Module 4 and 5).</li>
+            <li><b>Other modalities.</b> Autoregressive image and audio models use the same loss on image or audio tokens (see <a href="gen-foundations.html#representing-data">Tokens, patches and latents</a>).</li>
+            <li><b>Evaluation.</b> The held-out version of this same quantity (validation loss, perplexity) is the main number watched during a run, see lesson 3.6.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A model gives probabilities 0.25, 0.5 and 0.125 to the three true tokens of a short sequence. What are its loss in nats, its loss in bits, and its perplexity?</summary><div class="ans">Surprises in bits: 2, 1 and 3, mean 2 bits. In nats: <span class="tex">(1.3863+0.6931+2.0794)/3=1.3863=\ln 4</span>. Perplexity <span class="tex">e^{1.3863}=4</span>: as unsure as a uniform choice among 4 tokens.</div></details>
+        <details class="check"><summary>2. Three documents with 4, 6 and 2 tokens (each followed by ⟨eos⟩) go into windows of length 5. How many windows and what fraction of slots is real, packed and with one document per window?</summary><div class="ans">Lengths with ⟨eos⟩: 5, 7, 3 = 15 tokens. Packed: exactly 3 windows, 15/15 = 100% real. One per window: 5 fits in 1 window, 7 needs 2, 3 needs 1, so 4 windows = 20 slots, 15/20 = 75%.</div></details>
+        <details class="check"><summary>3. A model that knows nothing gives every token of a 50 000-token vocabulary the same probability. What loss does it start at, and why is that a useful sanity check on a new run?</summary><div class="ans"><span class="tex">\ln 50000=10.82</span> nats. A freshly initialised network with a sensible output layer should start close to this number. If the first loss is far above it, something is wrong with initialisation or data; if training never gets below it, the model is not learning.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Pretraining minimises the average surprise of each next token given the earlier ones; the text supplies its own labels.</li>
+          <li>One sequence of <span class="tex">T</span> tokens gives <span class="tex">T-1</span> predictions in a single parallel forward pass; the gradient at the logits is <span class="tex">p-y</span>.</li>
+          <li>Packing documents end to end wastes few positions (95.8% real versus 63.9% in the worked example) at the cost of cross-document context unless masked.</li>
+          <li>The loss rewards calibrated probabilities on written text; it says nothing directly about truth, safety or usefulness.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.2 ===================== -->
+    <section class="lesson" id="data-for-pretraining" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.2</span><h2>Data for pretraining</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A crawl of the public web contains good writing, spam, the same article copied a thousand times, private-looking pages, material whose owners did not expect it to be used for training, and, somewhere, the exact questions of the test you plan to use later. Which of it do you keep, in what proportions, and how do you know afterwards that your evaluation still means anything?</div>
+
+        <h3 class="sec">Intuition: you become what you read</h3>
+        <p>A language model's abilities, gaps and habits come from its text. If a language is rare in the corpus the model will be weak in it; if the text repeats a stereotype the model will reproduce it; if the same paragraph appears a thousand times the model may recite it. So data work is not housekeeping before the "real" modelling: it is a large part of the modelling. And it involves choices where reasonable people disagree, particularly about who may use whose writing. This lesson sets out the technical trade-offs and the open questions side by side, without pretending the second kind are settled.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Sources.</b> Pretraining text usually comes from a mix of: crawls of public web pages, books and long-form writing, source code, reference works and encyclopaedias, scientific papers, forums and Q&amp;A sites, and in some systems licensed or user-contributed data. Each source has different quality, style, language coverage, copyright status and risk of private information.</p>
+        <p><b>Filtering.</b> A raw crawl is cleaned in stages. Typical steps (the exact recipe differs between teams): extract text from markup; detect language; drop very short pages and pages with abnormal character statistics; apply <i>heuristics</i> (repeated lines, too many symbols); apply a learned <i>quality score</i> (a small classifier trained to prefer text resembling a reference set that someone judged good); remove or mask personal information such as emails and phone numbers; remove material that is unlawful or clearly harmful. Every filter has two error types: it can let junk through, and it can remove good text. A quality classifier trained on "reference-like" prose may systematically discard dialects, informal registers or specialised fields that the reference set lacked. Whatever is filtered out, the model will know less about.</p>
+        <p><b>Deduplication.</b> The web contains the same text many times: mirrored pages, boilerplate, licence texts, quoted articles. <i>Exact</i> deduplication removes byte-identical documents (compare hashes). <i>Near</i> deduplication finds almost-identical ones, for example by comparing sets of overlapping word chunks. Duplicates waste compute, bias the data towards whatever is most copied, and raise the chance that the model memorises and can reproduce passages verbatim.</p>
+        <p><b>Mixtures.</b> You rarely sample sources in proportion to their raw size. You choose weights: so much web, so much code, so much books. A source with fewer tokens than its weight demands is read <i>more than once</i>: the number of passes over a source is called its number of <b>epochs</b>. Repeating high-quality data a few times is commonly thought to be fine; repeating it many times risks memorisation and diminishing returns.</p>
+        <div class="worked"><b>Worked example: six documents</b>
+          <table class="tbl"><thead><tr><th>doc</th><th>source</th><th>tokens</th><th>quality score</th><th>copy of</th><th>owner opted out or licence forbids?</th></tr></thead>
+          <tbody>
+          <tr><td>A</td><td>web</td><td>400</td><td>0.8</td><td>–</td><td>no</td></tr>
+          <tr><td>B</td><td>web</td><td>400</td><td>0.8</td><td>A</td><td>no</td></tr>
+          <tr><td>C</td><td>forum</td><td>150</td><td>0.2</td><td>–</td><td>no</td></tr>
+          <tr><td>D</td><td>books</td><td>900</td><td>0.9</td><td>–</td><td>yes</td></tr>
+          <tr><td>E</td><td>code</td><td>300</td><td>0.6</td><td>–</td><td>no</td></tr>
+          <tr><td>F</td><td>web</td><td>250</td><td>0.5</td><td>–</td><td>no</td></tr>
+          </tbody></table>
+          <p><b>Raw:</b> <span class="tex">400+400+150+900+300+250=2400</span> tokens. By source: web 1050 (43.8%), books 900 (37.5%), code 300 (12.5%), forum 150 (6.3%).</p>
+          <p><b>Step 1, quality at least 0.4:</b> drops C (150). 2250 tokens remain. <b>Step 2, exact duplicates:</b> drops B (400). 1850 remain (77.1% of raw). <b>Step 3, honour opt-outs and licences:</b> drops D (900). 950 remain, 39.6% of the raw crawl. Kept: A 400, E 300, F 250. Shares of what is left: web 650 (68.4%), code 300 (31.6%), books 0.</p>
+          <p><b>Notice the trade.</b> Honouring the restriction on D removes more tokens than the other two filters together, and it removes the <i>only</i> long-form book text. If you do not apply step 3 you keep 1850 tokens (77.1%), but you are training on material whose owner asked you not to. Neither number is "the right one": the cost of the choice has to be weighed against the question of what is permitted, which this lesson cannot settle for you.</p>
+          <p><b>Mixture.</b> Suppose the run will see <span class="tex">D=1900</span> tokens and the target weights are 50% web, 50% code. That asks for 950 web tokens, but only 650 exist: <span class="tex">950/650=1.46</span> epochs. It asks for 950 code tokens from 300: <span class="tex">950/300=3.17</span> epochs. The code is repeated more than three times, which is exactly where memorisation risk and diminishing returns start to appear. A smaller code weight or more code data would avoid it.</p>
+        </div>
+        <p><b>Licensing and consent: what is and is not settled.</b> Text on the web is mostly written by people who did not write it for model training. Questions that different parties answer differently, and that courts, legislators and standards bodies in different countries are addressing at different speeds: whether training on copyrighted material is permitted without a licence, whether it falls under an exception such as fair use or text-and-data-mining provisions, what a website's <i>opt-out signal</i> (for instance a crawler-exclusion file) should mean, whether an author's later wish to withdraw can be honoured for an already-trained model, how to pay or credit creators, and how to treat personal data under privacy law. Arguments on one side stress that learning patterns from text resembles what readers do, that wide data is needed for useful and fair models, and that rights-holders can be compensated by other means. Arguments on the other stress that the creators did not agree, that outputs can compete with or reproduce their work, and that consent should be the default. This module does not give legal advice and treats none of these as settled. As an engineer you can do concrete things regardless: record where every document came from, keep its licence and opt-out status as data fields, make the corpus reconstructible, honour the signals that are legally or contractually binding where you operate, and design so that a later removal request can be acted on for the next training run.</p>
+        <p><b>Contamination.</b> Suppose a benchmark's test questions, or their answers, appear in the training data. The model's score then partly measures <i>memory</i>, not the skill the benchmark was meant to test. Contamination is easy to cause by accident, because benchmark text is itself published on the web. A model that saw a fraction <span class="tex">f</span> of the test items, and answers an unseen item correctly with probability <span class="tex">p_0</span> but a seen item with probability <span class="tex">p_1</span>, has expected score <span class="tex">(1-f)p_0+f\,p_1</span>.</p>
+        <div class="worked"><b>Worked example: how much does a leak inflate a score?</b>
+          <p>A hundred questions; the model answers unseen ones correctly 40% of the time (<span class="tex">p_0=0.40</span>) and seen ones 95% (<span class="tex">p_1=0.95</span>). If 20% leaked (<span class="tex">f=0.2</span>): <span class="tex">0.8\times0.40+0.2\times0.95=0.32+0.19=0.51</span>. The reported 51% overstates the real skill (40%) by 11 points. At <span class="tex">f=1</span> the score would be 95% and tell you nothing about generalisation. With only 100 questions, chance alone moves any such score by about ±10 points (<span class="tex">1.96\sqrt{0.51\times0.49/100}=0.098</span>), so a small leak can hide inside the noise.</p>
+        </div>
+        <p>Common defences: remove training documents that share long word sequences (for example 8 or more consecutive words) with any test item; evaluate on items created <i>after</i> the training data was frozen; keep a private test set; and report scores on the clean and suspect parts separately. Each has limits: word-overlap checks miss paraphrases and translations of the test, and a private test set is only as private as its use history.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">\text{epochs}_s=\frac{w_s\,D}{n_s},\quad \text{kept}=\sum_{d}\mathbb{1}[\,q_d\ge\tau\,]\;\mathbb{1}[\,d\text{ is the first copy}\,]\;\mathbb{1}[\,d\text{ permitted}\,]\; n_d,\quad \text{score}=(1-f)\,p_0+f\,p_1</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">w_s</span>: the mixture weight of source <span class="tex">s</span> (shares sum to 1). <span class="tex">D</span>: the total number of training tokens the run will consume. <span class="tex">n_s</span>: the number of tokens available from source <span class="tex">s</span> after filtering. <span class="tex">\text{epochs}_s</span>: how many times source <span class="tex">s</span> is read. <span class="tex">q_d</span>: the quality score of document <span class="tex">d</span>; <span class="tex">\tau</span>: the threshold. <span class="tex">\mathbb{1}[\cdot]</span>: 1 if the condition holds, otherwise 0. <span class="tex">n_d</span>: tokens in document <span class="tex">d</span>. <span class="tex">f</span>: the fraction of the benchmark that leaked into the data; <span class="tex">p_0,p_1</span>: the model's chance of a correct answer on unseen and seen items. This is a bookkeeping formula for the worked examples, not a law.</div>
+
+        <div data-lab="gen-tn-datapipe"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play and watch the filters pass over 48 toy documents. At the default settings, how many tokens survive? Which source shrinks most in the "mixture of tokens by source" bar?</li>
+          <li>Raise the quality threshold to 0.7. Does the corpus get better, or does it merely get smaller and narrower? Look at the source shares.</li>
+          <li>Untick "exclude documents whose owner opted out" and then tick it again. Note the token count change: that is the arithmetic price of the choice, not an argument for either side.</li>
+        </ol></div>
+        <div data-lab="gen-tn-contam"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With 0% leaked, press play and note the score. Move the leak slider to 20%: the expected score should read 0.51 for the default p0 and p1, the worked example above.</li>
+          <li>Set p1 equal to p0. Why does the leak stop mattering? What does that say about a model that has not memorised?</li>
+          <li>Look at the "clean" and "leaked" bars separately as the grading proceeds. With so few questions, how often does the clean bar wobble by 10 points or more?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"More data is always better."</b> Unfiltered duplicates, spam and mislabelled text can lower quality; but filtering too hard narrows coverage. Both are trade-offs, not rules.</li>
+            <li><b>Equating "public" with "free to use".</b> That a page can be fetched says nothing, by itself, about the licence or the owner's wishes. Equally, "copyrighted" does not by itself settle whether training use is permitted in a given jurisdiction. Both statements are common shortcuts, and both are incomplete.</li>
+            <li><b>Believing a quality score is neutral.</b> It encodes the taste of whatever reference set trained it.</li>
+            <li><b>Assuming exact-match decontamination is enough.</b> Paraphrased, translated or reformatted test items slip through; and the same facts can reach the model through other documents that discuss the benchmark.</li>
+            <li><b>Deduplicating only at the document level.</b> Boilerplate paragraphs repeat across otherwise different documents; near-duplicate removal at passage level is often needed.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Corpus documentation.</b> Practice such as dataset documentation sheets and recording provenance and licence per document exists so that a corpus can be audited, filtered again, or revised after a removal request.</li>
+            <li><b>Data mixtures</b> are tuned experimentally: teams train small models on candidate mixtures and compare them before committing a large run.</li>
+            <li><b>Evaluation hygiene.</b> Reports increasingly state how test sets were checked for overlap, and prefer held-out or newly written test items; see <a href="gen-multimodal.html">Module 9</a> on evaluation.</li>
+            <li><b>Memorisation and privacy.</b> Duplicated passages are more likely to be reproduced verbatim; deduplication is one mitigation, used alongside filtering of personal data.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the six-document table, raise the quality threshold to 0.6 (keep quality at least 0.6), still deduplicating and honouring the restriction. How many tokens remain and what share of the raw 2400?</summary><div class="ans">Quality at least 0.6 keeps A (0.8), B (0.8), D (0.9), E (0.6) and drops C (0.2) and F (0.5). Deduplication drops B. Honouring the restriction drops D. Left: A 400 + E 300 = 700 tokens = 29.2% of 2400.</div></details>
+        <details class="check"><summary>2. A benchmark has 100 questions; 30% leaked. The model gets unseen items right half the time and seen items right 90% of the time. What score is expected, and by how much is the real skill overstated?</summary><div class="ans"><span class="tex">0.7\times0.5+0.3\times0.9=0.35+0.27=0.62</span>. The real skill is 0.50, so the score overstates it by 12 points.</div></details>
+        <details class="check"><summary>3. Why can removing duplicates lower the loss on a held-out set as well as save compute?</summary><div class="ans">Repeated documents make the model spend capacity memorising the same passages and weight whatever is most copied; after deduplication the same number of training tokens covers more distinct text, which usually helps on unseen text. (If the held-out set shares duplicates with training, then deduplicating can instead <i>raise</i> its loss, a reminder that the held-out set must be checked for overlap too.)</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A model's knowledge, gaps and habits are inherited from its data; filtering, deduplication and mixture weights are modelling decisions.</li>
+          <li>Every filter trades noise against coverage; quality scores carry the taste of their reference set.</li>
+          <li>Licensing, consent and privacy are open and contested questions, with different rules in different places; record provenance and rights fields so decisions can be made, audited and revisited.</li>
+          <li>Contamination inflates benchmark scores: expected score <span class="tex">(1-f)p_0+f p_1</span>; check overlap, use fresh or private tests, report clean and suspect parts.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.3 ===================== -->
+    <section class="lesson" id="scaling-laws" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.3</span><h2>Scaling laws</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A large training run costs a great deal and cannot be repeated if you get the size wrong. You have run six small experiments. Can you predict the loss of a model one hundred times bigger before building it, how many floating-point operations will it need, and, given a fixed budget, should you train a bigger model on fewer tokens or a smaller model on more?</div>
+
+        <h3 class="sec">Intuition: a straight line on a log–log chart, with fine print</h3>
+        <p>Plot the loss of a series of models against their size, with both axes logarithmic. In many experiments the points fall close to a straight line for the part of the loss that can still be reduced. A straight line on log–log axes is a <b>power law</b>: each time you multiply the size by 10, the reducible part of the loss is multiplied by the same fixed factor less than 1. That regularity is what lets you plan. The fine print is the rest of this lesson: the line is fitted to noisy points; it flattens at a floor (the irreducible loss, because text is genuinely unpredictable); the fit has uncertainty that grows as you extrapolate; and nothing in the maths guarantees the pattern continues beyond the range you measured. <b>Scaling laws are empirical fits, not laws of nature.</b></p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1: the shape.</b> Write the loss of a model with <span class="tex">N</span> parameters, trained long enough that data is not the limit, as <span class="tex">L(N)=E+A\,N^{-\alpha}</span>. Here <span class="tex">E</span> is the floor, <span class="tex">A\,N^{-\alpha}</span> the reducible part, and <span class="tex">\alpha&gt;0</span> the exponent (a bigger <span class="tex">\alpha</span> means size pays off faster). Taking logs of the reducible part: <span class="tex">\ln(L-E)=\ln A-\alpha\ln N</span>, a straight line in <span class="tex">\ln N</span> with slope <span class="tex">-\alpha</span>.</p>
+        <div class="worked"><b>Worked example: six toy runs, fitted by hand and by computer</b>
+          <p>Six synthetic training runs (generated for this lesson from a known law plus a little noise, so we can check the answer):</p>
+          <table class="tbl"><thead><tr><th>N (parameters)</th><th>1.00e6</th><th>3.16e6</th><th>1.00e7</th><th>3.16e7</th><th>1.00e8</th><th>3.16e8</th></tr></thead>
+          <tbody><tr><td>final loss</td><td>4.815</td><td>3.924</td><td>3.304</td><td>2.845</td><td>2.561</td><td>2.334</td></tr></tbody></table>
+          <p><b>By hand, pretending the floor is known to be <span class="tex">E=1.8</span>.</b> Reducible parts: 3.015 at <span class="tex">10^6</span> and 0.761 at <span class="tex">10^8</span>. A hundredfold increase in <span class="tex">N</span> shrank the reducible loss by the factor <span class="tex">3.015/0.761=3.962</span>, so <span class="tex">\alpha=\ln 3.962/\ln 100=1.3769/4.6052=0.299</span>.</p>
+          <p><b>In practice the floor is unknown.</b> A computer fits <span class="tex">E</span>, <span class="tex">A</span> and <span class="tex">\alpha</span> together (here by scanning candidate floors and doing a straight-line fit of the logarithm for each, keeping the one with the smallest squared error in the loss). The result is approximately <span class="tex">\hat E=1.84</span>, <span class="tex">\hat A=216</span>, <span class="tex">\hat\alpha=0.310</span>. The data were generated with <span class="tex">E=1.8</span>, <span class="tex">A=190</span>, <span class="tex">\alpha=0.30</span>, so the fit is close, but not equal: noise of about 0.015 in the loss, and the trade-off between floor and exponent, move the fitted numbers.</p>
+          <p><b>How sure are we?</b> Take the fitted curve as if true, add noise of the size seen in the residuals (about 0.011), refit, and repeat 160 times (a <i>parametric bootstrap</i>). The refitted exponents have standard deviation about 0.007 and a 95% range of about 0.297 to 0.322. Predicting the loss at <span class="tex">N=10^{10}</span>: the fit says 2.008 with a 95% band of about 1.968 to 2.050; the hidden truth is 1.990, inside the band.</p>
+          <p><b>Fewer runs, wider band.</b> The same data with only the first 4 runs: exponent 0.293 with a 95% range about 0.268 to 0.315, prediction at <span class="tex">10^{10}</span> of 1.932 with band 1.826 to 2.025. With 9 runs (up to <span class="tex">10^{10}</span> itself): 0.298, [0.288, 0.311], and the band at <span class="tex">10^{10}</span> narrows to [1.970, 2.007]. With four points and three unknowns the data hardly constrain the curve.</p>
+          <p><b>If the truth is not an exact power law.</b> Generate the data from a curve whose exponent drifts slowly (the "bend" slider in the lab, 0.15). With the first 4 runs the fit predicts 1.994 at <span class="tex">10^{10}</span> with band [1.879, 2.104], while the truth is 2.104, <i>right at the upper edge of the band</i>. The band measures noise within the assumed shape; it cannot see that the shape is wrong.</p>
+        </div>
+        <p><b>Step 2: compute.</b> Parameters alone are not the cost: you must also decide how many tokens <span class="tex">D</span> to train on. The work in a training run is counted in floating-point operations (FLOPs). For a dense transformer there is a standard estimate. Count the work for <i>one token</i>:</p>
+        <p><i>Forward pass.</i> Almost all the parameters are weights in matrix multiplications. A matrix multiplication touches each weight once per token, doing one multiply and one add, which is 2 FLOPs per weight. So the forward pass costs about <span class="tex">2N</span> FLOPs per token. <i>Backward pass.</i> Backpropagation needs two matrix products per layer: one to get the gradient with respect to the layer's input (passing the error back) and one to get the gradient with respect to its weights. Each is about as costly as the forward product, so the backward pass costs about <span class="tex">2\times 2N=4N</span>. <i>Total per token:</i> <span class="tex">2N+4N=6N</span>, and over <span class="tex">D</span> tokens <span class="tex">C\approx 6ND</span>.</p>
+        <div class="worked"><b>Worked example: a 1-billion-parameter model on 20 billion tokens</b>
+          <p><span class="tex">C=6\times10^{9}\times2\times10^{10}=1.2\times10^{20}</span> FLOPs. If each accelerator sustains <span class="tex">10^{14}</span> FLOP/s in practice (an assumption, usually well below the peak figure), that is <span class="tex">1.2\times10^{6}</span> device-seconds, or 333 device-hours; on 100 devices, about 3.3 hours if the work divided perfectly, which it never does.</p>
+        </div>
+        <p><b>When 6ND is inexact.</b> The approximation counts only the matrix multiplications that involve a weight. Left out: (1) the <i>attention scores</i>, which multiply queries by keys and the weights by values; these cost about <span class="tex">12\,\ell\,d\,n_{\text{ctx}}\ \text{FLOPs per token}</span> for forward plus backward (<span class="tex">\ell</span> layers, hidden size <span class="tex">d</span>, context length <span class="tex">n_{\text{ctx}}</span>), small when <span class="tex">n_{\text{ctx}}\ll d</span> but not when the context is long (for <span class="tex">\ell=24,d=2048,n_{\text{ctx}}=2048</span> and <span class="tex">N=12\ell d^2=1.21\times10^9</span> this adds <span class="tex">12\ell d\,n_{\text{ctx}}/6N=1/6</span>, about 17%); (2) <i>embedding lookups</i> do no multiplications but count as parameters, so for small models with big vocabularies <span class="tex">N</span> should exclude them; (3) <i>activation recomputation</i> (lesson 3.5) re-runs part of the forward pass, adding up to about <span class="tex">2N</span> and making it nearer <span class="tex">8ND</span>; (4) in a <i>mixture of experts</i>, <span class="tex">N</span> should be the parameters used per token, not stored; (5) layer-norms, softmaxes and the optimiser step add small extras. Use 6ND for planning to within tens of percent, not as an exact count.</p>
+        <p><b>Step 3: both together.</b> Loss depends on both model size and data. A simple form with two reducible terms is <span class="tex">L(N,D)=E+A N^{-a}+B D^{-b}</span>. For a fixed budget <span class="tex">C=6ND</span>, making <span class="tex">N</span> bigger forces <span class="tex">D=C/6N</span> smaller: one term falls, the other rises. There is a best split, and you can find it by setting the derivative to zero.</p>
+        <div class="worked"><b>Worked example: the best split of a toy law</b>
+          <p>Use made-up constants (not measurements of anything): <span class="tex">E=1.5,\ A=300,\ a=0.30,\ B=500,\ b=0.25</span>. Substitute <span class="tex">D=C/6N</span> and set <span class="tex">dL/dN=0</span>: <span class="tex">-aA N^{-a-1}+bB\,(6/C)^{b}N^{b-1}=0</span>, which gives <span class="tex">N^{a+b}=\frac{aA}{bB}\left(\frac C6\right)^{b}</span>, i.e.</p>
+          <div class="eq">N^{*}=\left(\frac{aA}{bB}\right)^{\frac1{a+b}}\left(\frac C6\right)^{\frac{b}{a+b}},\qquad D^{*}=\frac{C}{6N^{*}}</div>
+          <p>For <span class="tex">C=10^{21}</span>: <span class="tex">N^{*}=8.56\times10^{8}</span>, <span class="tex">D^{*}=1.95\times10^{11}</span> tokens (227.6 tokens per parameter in this toy), loss 2.880 (a numerical search over <span class="tex">N</span> confirms the same minimum). Compare two other ways of spending the same <span class="tex">10^{21}</span> FLOPs: <span class="tex">N=10^{8}</span> with <span class="tex">D=1.67\times10^{12}</span> gives loss 3.134, and <span class="tex">N=10^{10}</span> with <span class="tex">D=1.67\times10^{10}</span> gives 3.192; both are worse by 0.25 to 0.31. Because the toy exponents differ (<span class="tex">a\ne b</span>), <span class="tex">N^{*}\propto C^{0.25/0.55}=C^{0.4545}</span>: ten times the budget makes the best model about <span class="tex">10^{0.4545}=2.85</span> times bigger, and the best number of tokens about <span class="tex">10/2.85=3.5</span> times bigger.</p>
+        </div>
+        <p>Published studies have fitted forms like this to real training runs and reported exponents and best token-to-parameter ratios. Those numbers depend on the architecture, the data, the tokeniser, the learning-rate schedule and how the fit was done, and different studies have reached different conclusions about the best split, so this lesson deliberately quotes none: treat any figure you meet as the result of one experimental setup, not a constant. What carries over is the <i>method</i>: run a grid of small experiments, fit, and check the fit predicts a held-out larger run before trusting it for a much larger one.</p>
+
+        <h3 class="sec">Limits of extrapolation</h3>
+        <ul>
+          <li><b>Noise and few points.</b> The band above is only as good as the noise model; a fit to four runs is almost unconstrained.</li>
+          <li><b>The form can be wrong.</b> A different law, a regime change (for example when the data runs out and must be repeated), or a floor that moves as data improves, all break the extrapolation without any warning in the fit.</li>
+          <li><b>Loss is not capability.</b> Smooth average loss does not imply that every downstream skill improves smoothly or at the rate you want; whether and when specific abilities appear is debated.</li>
+          <li><b>Compute is not the only cost.</b> A model trained for its lowest loss per training FLOP may be expensive to <i>serve</i>; teams that expect heavy use often prefer a smaller model trained on more tokens than the training-optimal split. That is a business decision the fit cannot make.</li>
+        </ul>
+
+        <h3 class="sec">The formal definitions</h3>
+        <div class="eq">L(N)=E+A\,N^{-\alpha},\qquad L(N,D)=E+\frac{A}{N^{a}}+\frac{B}{D^{b}},\qquad C\approx 6ND,\qquad C\approx 6ND+12\,\ell\,d\,n_{\text{ctx}}\,D</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">L</span>: the loss on held-out text, in nats per token. <span class="tex">N</span>: number of parameters (non-embedding for small models). <span class="tex">D</span>: number of training tokens. <span class="tex">E</span>: the irreducible loss. <span class="tex">A,B</span>: scale constants. <span class="tex">\alpha,a,b</span>: exponents, fitted from data (here, for the toy). <span class="tex">C</span>: training compute in FLOPs. <span class="tex">\ell</span>: number of layers; <span class="tex">d</span>: hidden size; <span class="tex">n_{\text{ctx}}</span>: context length. The first three are empirical fits; the last two are accounting identities for a dense transformer, with the error terms listed above. See <a href="gen-transformer.html#cost-and-kv-cache">cost and the KV cache</a> for the parameter count <span class="tex">N\approx12\ell d^2</span>.</div>
+
+        <div data-lab="gen-tn-fit"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play: runs finish one by one (filled dots) and the purple curve and its band re-fit. Read the exponent and its 95% range at 4, 5, 6 and 9 runs. When does the band at N = 1e10 become narrow?</li>
+          <li>Raise the noise to 0.05. The exponent range widens. Press "New noise" a few times: does the fitted exponent change from draw to draw by about the stated range?</li>
+          <li>Set the bend to 0.15 and use only 4 or 5 runs. Does the hidden truth (dashed) stay inside the purple band at 1e10? What does that tell you about trusting an extrapolation?</li>
+        </ol></div>
+        <div data-lab="gen-tn-compute"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave "sweep N automatically" on and watch the orange marker travel along the blue curve. Where is the loss lowest? Compare with the green "best split" dot.</li>
+          <li>Raise the compute budget from 10<sup>21</sup> to 10<sup>23</sup>. Does the best N move to the right? By about how much per decade of compute (the caption says N* ∝ C<sup>0.45</sup> in this toy)?</li>
+          <li>Untick the sweep and set N yourself 100 times smaller than the best. Read "mis-sizing costs" and the implied tokens per parameter.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Treating a fit as a law.</b> The exponent is a property of one family of experiments; do not carry it to a different architecture or dataset without re-measuring.</li>
+            <li><b>Extrapolating by decades.</b> A fit on 2.5 decades of size tells you little about 5 decades; the band widens and, worse, is blind to a wrong form.</li>
+            <li><b>Forgetting the floor.</b> A power law fitted without the constant <span class="tex">E</span> bends and gives a wrong exponent, and one fitted with it can trade <span class="tex">E</span> against <span class="tex">\alpha</span> (see how the floor and exponent move together in the lab).</li>
+            <li><b>Using 6ND as exact.</b> Long contexts, recomputation and mixture-of-experts layers all change the count.</li>
+            <li><b>Equating "compute-optimal" with "best".</b> It minimises loss for a training budget; deployment cost, data supply and latency can favour a different choice.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Planning runs.</b> Teams fit small-scale experiments to choose a model size and token count before committing, and to decide whether a change (data mixture, architecture tweak) helps at several scales rather than at one.</li>
+            <li><b>Data-limited regimes.</b> When high-quality text runs short, the <span class="tex">B D^{-b}</span> term motivates repeating data, synthetic data and better filtering, each with its own caveats (lesson 3.2).</li>
+            <li><b>Hyper-parameter transfer.</b> Methods that carry settings from small to large models rely on the same assumption of regular behaviour with scale, and fail when it breaks.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A dense model has 2×10<sup>8</sup> parameters and trains on 4×10<sup>9</sup> tokens. Estimate its training compute with 6ND.</summary><div class="ans"><span class="tex">6\times2\times10^{8}\times4\times10^{9}=4.8\times10^{18}</span> FLOPs. (About 13 device-hours at a sustained 10<sup>14</sup> FLOP/s.)</div></details>
+        <details class="check"><summary>2. In the toy law above, the compute budget doubles. By what factor does the best model size N* change? And the best token count D*?</summary><div class="ans"><span class="tex">N^{*}\propto C^{0.25/0.55}</span>, so it multiplies by <span class="tex">2^{0.4545}=1.370</span>. Since <span class="tex">D^{*}=C/6N^{*}</span>, it multiplies by <span class="tex">2/1.370=1.459</span>.</div></details>
+        <details class="check"><summary>3. Why is a power-law fit from four small runs a poor basis for a very large run, even if the points lie almost on a line?</summary><div class="ans">There are three unknowns (floor, scale, exponent), so four points leave about one degree of freedom and the fit can bend several ways that match the data; the range of exponents consistent with the noise is wide, and the prediction band grows with distance. Beyond that, no fit can reveal that the true curve changes shape outside the measured range.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Reducible loss often falls as a power law in size, data or compute; fit <span class="tex">E+AN^{-\alpha}</span>, report the exponent <i>with an uncertainty</i> (here 0.310, range about 0.297 to 0.322 from six toy runs).</li>
+          <li>Training compute for a dense transformer is about <span class="tex">6ND</span>: 2N forward plus 4N backward per token; attention scores, recomputation and sparse layers make it inexact.</li>
+          <li>For a fixed budget there is a best split of parameters and tokens; mis-sizing either way costs loss, but the best split depends on the fitted law, so measure rather than copy.</li>
+          <li>Scaling laws are empirical and extrapolate imperfectly: the band measures noise, not whether the assumed shape continues.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.4 ===================== -->
+    <section class="lesson" id="optimisation-at-scale" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.4</span><h2>Optimisation at scale</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A run takes weeks. If the learning rate is too high at step 20, the weights may be ruined before anything useful has been learned. If it stays high to the end, the loss stalls on a noisy plateau. A single bad batch can send the gradient off by a factor of a hundred. And to fit in memory, the numbers are stored with only about three significant digits. How is an optimiser set up so that this survives for hundreds of thousands of steps?</div>
+
+        <h3 class="sec">Intuition: four safety measures</h3>
+        <p>Think of driving a very heavy lorry. You pull away slowly (<b>warm-up</b>), cruise at a speed the road allows, slow down smoothly towards the end so you stop where you meant to (<b>decay</b>), never let a single pothole throw the steering wheel across the road (<b>gradient clipping</b>), and keep the odometer in a format that does not lose the last digit (<b>mixed precision</b>). Each measure is cheap; together they make long runs routinely possible. They are habits of current practice, not theorems, and the best values are found by experiment.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>AdamW.</b> Plain gradient descent moves every parameter by the same multiple of its gradient. Adam (see <a href="math-optimization.html#momentum-adam">momentum and Adam</a>) keeps a running average <span class="tex">m</span> of the gradient and a running average <span class="tex">v</span> of its square, and divides one by the root of the other, so each parameter gets a step of roughly the learning rate no matter how big its gradient is. <b>AdamW</b> applies <i>weight decay</i> separately, shrinking each weight a little towards zero at every step, rather than adding it to the gradient. Typical settings in language-model training are <span class="tex">\beta_1=0.9</span> and a <span class="tex">\beta_2</span> somewhat lower than the textbook 0.999 (for example 0.95), because gradients are noisy and a shorter memory adapts faster; these are commonly used values, not requirements.</p>
+        <div class="worked"><b>Worked example: two AdamW steps on one weight</b>
+          <p>A weight <span class="tex">\theta_0=0.500</span>; learning rate <span class="tex">\eta=0.001</span>; <span class="tex">\beta_1=0.9,\ \beta_2=0.95,\ \varepsilon=10^{-8}</span>; weight decay <span class="tex">\lambda=0.1</span>. First gradient <span class="tex">g_1=0.20</span>.</p>
+          <p><b>Step 1.</b> <span class="tex">m_1=0.1\times0.20=0.020</span>; <span class="tex">v_1=0.05\times0.04=0.0020</span>. Both started at zero, so they are biased low; correct them: <span class="tex">\hat m_1=0.020/(1-0.9)=0.200</span>, <span class="tex">\hat v_1=0.0020/(1-0.95)=0.040</span>. Update <span class="tex">=\eta\,\hat m_1/(\sqrt{\hat v_1}+\varepsilon)=0.001\times0.200/0.200=0.001000</span>. Decay <span class="tex">=\eta\lambda\theta_0=0.001\times0.1\times0.5=0.00005</span>. New weight: <span class="tex">0.5-0.001-0.00005=0.49895</span>.</p>
+          <p><b>Step 2</b>, gradient <span class="tex">g_2=0.10</span>. <span class="tex">m_2=0.9\times0.020+0.1\times0.10=0.028</span>; <span class="tex">v_2=0.95\times0.0020+0.05\times0.01=0.0024</span>. Corrections: <span class="tex">\hat m_2=0.028/(1-0.81)=0.14737</span>, <span class="tex">\hat v_2=0.0024/(1-0.9025)=0.024615</span>, <span class="tex">\sqrt{\hat v_2}=0.15690</span>. Update <span class="tex">=0.001\times0.14737/0.15690=0.000939</span>; decay <span class="tex">=0.001\times0.1\times0.49895=0.0000499</span>. New weight <span class="tex">0.49795</span> (more precisely 0.497961). Note that the gradient halved but the step shrank only from 0.00100 to 0.00094: the division by <span class="tex">\sqrt{\hat v}</span> makes the step size nearly independent of the gradient's scale.</p>
+        </div>
+        <p><b>Warm-up and decay.</b> At the start the weights are random, and Adam's second-moment estimate is built from only a few gradients, so a large step can do damage. <b>Linear warm-up</b> raises the learning rate from 0 to its peak over the first <span class="tex">W</span> steps. After it, a common choice is <b>cosine decay</b> from the peak <span class="tex">\eta_{\max}</span> down to a fraction of it (often around a tenth) at the final step <span class="tex">T</span>. Decay helps because with a noisy gradient, a large learning rate keeps jiggling the weights around the minimum; a small one lets them settle. See <a href="math-optimization.html#schedules">learning-rate schedules</a>.</p>
+        <div class="worked"><b>Worked example: a schedule table</b>
+          <p><span class="tex">T=1000</span> steps, <span class="tex">W=100</span>, peak <span class="tex">\eta_{\max}=3\times10^{-4}</span>, floor <span class="tex">\eta_{\min}=3\times10^{-5}</span> (one tenth).</p>
+          <table class="tbl"><thead><tr><th>step t</th><th>0</th><th>50</th><th>100</th><th>300</th><th>550</th><th>1000</th></tr></thead>
+          <tbody><tr><td>learning rate</td><td>0</td><td>1.50e-4</td><td>3.00e-4</td><td>2.68e-4</td><td>1.65e-4</td><td>3.00e-5</td></tr></tbody></table>
+          <p>Warm-up: <span class="tex">\eta_t=\eta_{\max}\,t/W</span>, so 50 gives half the peak. After warm-up with progress <span class="tex">s=(t-W)/(T-W)</span>: <span class="tex">\eta_t=\eta_{\min}+\tfrac12(\eta_{\max}-\eta_{\min})(1+\cos\pi s)</span>. At <span class="tex">t=550</span>, <span class="tex">s=0.5</span>, <span class="tex">\cos(\pi/2)=0</span>, so <span class="tex">\eta=3\times10^{-5}+\tfrac12\cdot2.7\times10^{-4}=1.65\times10^{-4}</span>. At <span class="tex">t=300</span>, <span class="tex">s=0.2222</span>, <span class="tex">\cos(0.698)=0.7660</span>, so <span class="tex">\eta=3\times10^{-5}+1.35\times10^{-4}\times1.766=2.68\times10^{-4}</span>.</p>
+        </div>
+        <p><b>Gradient clipping.</b> Compute the length (norm) of the whole gradient, all parameters together. If it exceeds a threshold <span class="tex">c</span>, scale the whole gradient down so its norm equals <span class="tex">c</span>; otherwise leave it. The direction is kept, only a rare huge step is shortened. Example: gradient pieces <span class="tex">(3,4,12)</span> have norm <span class="tex">\sqrt{9+16+144}=13</span>; with <span class="tex">c=1</span> they are multiplied by <span class="tex">1/13=0.0769</span> to give <span class="tex">(0.2308,\,0.3077,\,0.9231)</span>, whose norm is 1.</p>
+        <p><b>Batch size.</b> One optimiser step uses a batch of sequences. With 512 sequences of 2048 tokens each, a step consumes <span class="tex">512\times2048=1{,}048{,}576</span> tokens, so a run of <span class="tex">D=2\times10^{10}</span> tokens takes <span class="tex">2\times10^{10}/1{,}048{,}576=19{,}073.5</span> steps (about 19 074, rounding up). A bigger batch averages away more gradient noise, which permits a bigger learning rate, but each step costs more, and beyond some size extra data per step gives diminishing improvement per step (often called the critical batch size, which depends on the problem and changes during training). When the batch does not fit on the devices at once, you <b>accumulate</b> gradients over several micro-batches before one update, so the maths is unchanged.</p>
+        <p><b>Mixed precision with bfloat16.</b> A 32-bit float (float32) has 1 sign bit, 8 exponent bits and 23 mantissa bits. Two 16-bit formats exist. <b>float16</b> has 5 exponent bits and 10 mantissa bits: finer, but its largest value is only 65 504 and its smallest normal number about 6×10<sup>-5</sup>, so small gradients vanish unless a "loss scale" multiplies them first. <b>bfloat16</b> has 8 exponent bits (the same range as float32, up to about 3×10<sup>38</sup>) but only 7 mantissa bits: coarse, but without overflow trouble. "Mixed precision" runs the matrix multiplications in 16 bits for speed and memory and keeps a <b>float32 master copy</b> of the weights, which is where the updates are added. Why? Around the number 1 the gap between neighbouring bfloat16 values is <span class="tex">2^{-7}=0.0078125</span>.</p>
+        <div class="worked"><b>Worked example: rounding to bfloat16</b>
+          <p>Rounding to the nearest representable value, ties to the even neighbour: <span class="tex">257\to256</span> (neighbours 256 and 258, a tie, rounds to 256); <span class="tex">1.001\to1.0</span> (the gap is 0.0078, so anything within 0.0039 of 1 rounds to 1); <span class="tex">3.14159265\to3.140625</span>; <span class="tex">300.7\to300</span> (the gap near 300 is 2). In float16 (10 mantissa bits) the same numbers become 257, 1.0009765625, 3.140625, 300.75; in float32 they are nearly exact.</p>
+          <p><b>Lost updates.</b> Add 1 to a running total 1000 times. Exactly: 1000. In bfloat16 the total stalls at <b>256</b>: at 256 the gap between neighbours becomes 2, and 256+1 is a tie that rounds back to 256. In float16 it stalls at <b>2048</b> for the same reason (gap 2 above 2048). In float32 it is exact (up to 16 777 216). Now apply the point to training: a weight of 1.0 receiving an update of 0.001 stores nothing in bfloat16, since 0.001 is below half the gap 0.0039 and 1.001 rounds to 1.0. A thousand such updates would change nothing. Kept in float32, they add up. Hence the master copy.</p>
+        </div>
+
+        <h3 class="sec">The formal recipe</h3>
+        <div class="eq">m_t=\beta_1m_{t-1}+(1-\beta_1)g_t,\quad v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2,\quad \theta_t=\theta_{t-1}-\eta_t\frac{\hat m_t}{\sqrt{\hat v_t}+\varepsilon}-\eta_t\lambda\,\theta_{t-1},\quad \tilde g=g\cdot\min\!\left(1,\frac{c}{\lVert g\rVert}\right)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">g_t</span>: the gradient at step <span class="tex">t</span> (after clipping if used). <span class="tex">m_t,v_t</span>: running averages of the gradient and of its square; <span class="tex">\hat m_t=m_t/(1-\beta_1^t)</span> and <span class="tex">\hat v_t=v_t/(1-\beta_2^t)</span> correct their start-up bias. <span class="tex">\beta_1,\beta_2</span>: their decay rates. <span class="tex">\varepsilon</span>: a tiny constant to avoid dividing by zero. <span class="tex">\eta_t</span>: the learning rate at step <span class="tex">t</span>, from the schedule. <span class="tex">\lambda</span>: weight-decay strength. <span class="tex">\lVert g\rVert</span>: the global gradient norm; <span class="tex">c</span>: the clipping threshold; <span class="tex">\tilde g</span>: the clipped gradient. Schedule: <span class="tex">\eta_t=\eta_{\max}t/W</span> for <span class="tex">t&lt;W</span>, then <span class="tex">\eta_{\min}+\tfrac12(\eta_{\max}-\eta_{\min})(1+\cos(\pi\frac{t-W}{T-W}))</span>.</div>
+
+        <div data-lab="gen-tn-schedule"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play and watch the orange marker run along the learning-rate curve while the blue average loss falls. Where does the loss stall while η is high, and what happens as η decays?</li>
+          <li>Switch the shape to "constant" (warm-up then constant). Compare the final loss with the cosine run. Then set the final fraction to 0.5 to see a half-way decay.</li>
+          <li>Set warm-up to 0. In this tiny problem almost nothing changes. Read the caption: why would a huge network feel it much more?</li>
+        </ol></div>
+        <div data-lab="gen-tn-precision"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With start 1 and increment 1, press play. Which of the three lines leaves the exact (dashed) one first, and at what value? It should be bfloat16 at 256, float16 at 2048.</li>
+          <li>Set the start to 1 and the increment to 0.001. After 1000 steps the exact sum is 2. What do the bfloat16 and float16 sums do?</li>
+          <li>Type 1.0009765625 in the box: which formats can store it exactly? Try 3.14159265 and 300.7.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Warm-up "because everyone does".</b> It guards against early instability from untrained weights and fresh statistics; the lab shows it hardly matters on a toy problem, so do not conclude it is superstitious: the need grows with model size and learning rate.</li>
+            <li><b>Clipping hiding a problem.</b> If the clip is triggered every step, it is acting as a learning-rate cap; track how often it fires.</li>
+            <li><b>Applying weight decay to everything.</b> Many recipes exempt biases and normalisation scales; decay on those is usually not wanted.</li>
+            <li><b>Mixing up precision of storage and of accumulation.</b> Sums of many terms (loss, gradients, optimiser state) generally need more than 16 bits, even when the products are computed in 16.</li>
+            <li><b>Comparing runs with different batch sizes at the same learning rate.</b> The right rate usually changes with batch size.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>LLM training recipes</b> commonly combine AdamW, linear warm-up, cosine (or another) decay to a fraction of the peak, global-norm clipping and bfloat16 compute with a float32 master copy; each team tunes the numbers.</li>
+            <li><b>Fine-tuning</b> uses the same optimiser with much lower peak rates and shorter warm-up (Module 5).</li>
+            <li><b>Mixed precision</b> is also a stepping stone to lower-precision <i>inference</i>, where weights are quantised further (Module 5).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A gradient (6, 8) has norm 10. With clipping threshold c = 2, what is the clipped gradient?</summary><div class="ans">Norm 10 exceeds 2, so multiply by <span class="tex">2/10=0.2</span>: (1.2, 1.6), norm 2. A gradient with norm 1.5 would be left alone.</div></details>
+        <details class="check"><summary>2. With T = 1000, W = 100, peak 3×10<sup>-4</sup> and floor 3×10<sup>-5</sup>, what is the cosine-schedule learning rate at step 300?</summary><div class="ans">Progress <span class="tex">s=200/900=0.2222</span>; <span class="tex">\tfrac12(1+\cos(0.6981))=0.8830</span>; <span class="tex">\eta=3\times10^{-5}+2.7\times10^{-4}\times0.8830=2.68\times10^{-4}</span>.</div></details>
+        <details class="check"><summary>3. A weight of 1.0 is stored in bfloat16 and receives an update of +0.003. What does it become, and why does a float32 master copy fix this?</summary><div class="ans">The gap near 1 is 0.0078125, so the representable neighbours are 1.0 and 1.0078125. 1.003 is within half a gap (0.0039) of 1.0 so it rounds back to 1.0: the update is lost. A float32 master weight can hold 1.003 (its gap near 1 is about 1.2×10<sup>-7</sup>), and the bfloat16 copy used in the forward pass is re-rounded from it each step, so many small updates accumulate until they cross a rounding boundary.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>AdamW divides a running mean gradient by the root of a running mean square, so each step is about the learning rate in size; weight decay is applied directly to the weights.</li>
+          <li>Warm-up protects the start, decay lets the weights settle, clipping caps a single bad step (a norm of 13 clipped to 1 scales by 1/13).</li>
+          <li>Batch size sets tokens per step (512×2048 = 1 048 576) and how noisy each step is.</li>
+          <li>bfloat16 keeps float32's range with 7 mantissa bits; small updates vanish in 16 bits, so a float32 master copy and float32 accumulation are kept.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.5 ===================== -->
+    <section class="lesson" id="parallelism-memory" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.5</span><h2>Parallelism and memory</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model with one billion parameters sounds small, yet it does not train on a single 16 GB card. Where do the bytes go? And once one device is not enough, what are the ways to split the work across many, and what does each one cost?</div>
+
+        <h3 class="sec">Intuition: a workshop that has to store its own tools and notes</h3>
+        <p>Training is not just "holding the model". For every parameter the machine must hold the weight, the gradient computed for it, and the two running averages Adam keeps for it, plus a master copy in higher precision. Add to that the temporary numbers produced during the forward pass that the backward pass needs again (the <b>activations</b>). The persistent items cost a fixed number of bytes per parameter, so they can be added up exactly; the activations depend on batch and sequence length. Once you know the bytes, three families of tricks appear: copy the model to several devices and split the data; cut each matrix across devices; or put different layers on different devices. And one more trick, sharding, stops every device from keeping an identical copy of what only needs to exist once.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Bytes per parameter in mixed-precision training with Adam.</b> Count, for each parameter:</p>
+        <table class="tbl"><thead><tr><th>item</th><th>format</th><th>bytes per parameter</th></tr></thead>
+        <tbody>
+        <tr><td>weights used in forward and backward</td><td>bfloat16</td><td>2</td></tr>
+        <tr><td>gradients</td><td>bfloat16</td><td>2</td></tr>
+        <tr><td>master copy of the weights</td><td>float32</td><td>4</td></tr>
+        <tr><td>Adam first moment <span class="tex">m</span></td><td>float32</td><td>4</td></tr>
+        <tr><td>Adam second moment <span class="tex">v</span></td><td>float32</td><td>4</td></tr>
+        <tr><td><b>total</b></td><td></td><td><b>16</b></td></tr>
+        </tbody></table>
+        <div class="eq">M_{\text{states}}=(2+2+4+4+4)\,N=16\,N\ \text{bytes}</div>
+        <div class="worked"><b>Worked example: a toy parameter count</b>
+          <p>Take <span class="tex">N=10^{9}</span> parameters. <span class="tex">M=16\times10^{9}</span> bytes = <b>16 GB</b> (using 1 GB = 10<sup>9</sup> bytes) before a single activation is stored. Of this 16 GB, only the 2 GB of bfloat16 weights are what you would later use for serving; the other 14 GB exists only to train. Some systems keep gradients or the master copy in other formats, so 16 is the commonly used count for this particular recipe, not a universal constant.</p>
+          <p><b>Activations.</b> A rough estimate for one transformer layer without any memory saving is about <span class="tex">34\,b\,s\,d</span> bytes in 16-bit training (<span class="tex">b</span> sequences per device, <span class="tex">s</span> tokens each, hidden size <span class="tex">d</span>), when a memory-efficient attention method avoids storing the big attention-score matrices. Treat the 34 as a rough guide that differs between implementations. For <span class="tex">\ell=24,\ d=2048,\ s=2048,\ b=2</span> (so <span class="tex">N=12\ell d^2=1.208\times10^{9}</span>): <span class="tex">34\times24\times2\times2048\times2048=6.85</span> GB. With <b>activation recomputation</b> you store only each layer's input (2 bytes per value) and recompute one layer at a time in the backward pass: <span class="tex">(2\ell+34)\,b\,s\,d=82\times2\times2048\times2048=0.69</span> GB. That is about a tenth of the memory, bought with extra compute (roughly one more forward pass: this is the 8ND instead of 6ND of lesson 3.3).</p>
+          <p><b>Total for this model on one device without sharding:</b> <span class="tex">16N=19.33</span> GB plus activations: 26.2 GB without recomputation, 20.0 GB with. A card with 16 GB cannot train it; one with 80 GB can.</p>
+        </div>
+        <p><b>Sharding the state (the idea behind ZeRO-style methods and fully sharded data parallelism).</b> In plain data parallelism every one of the <span class="tex">N_d</span> devices holds all 16N bytes, an enormous redundancy. Sharding splits that state across the devices in stages. Stage 1 shards the optimiser state (the 12N bytes of master weights, <span class="tex">m</span>, <span class="tex">v</span>); stage 2 also shards the gradients; stage 3 also shards the bfloat16 weights, gathering each layer's weights just in time for its forward or backward step and discarding them after.</p>
+        <div class="eq">\text{stage 0: }16N,\quad \text{stage 1: }4N+\frac{12N}{N_d},\quad \text{stage 2: }2N+\frac{14N}{N_d},\quad \text{stage 3: }\frac{16N}{N_d}\ \text{bytes per device}</div>
+        <div class="worked"><b>Worked example: sharding 10<sup>9</sup> parameters over 8 and 64 devices</b>
+          <table class="tbl"><thead><tr><th>stage</th><th>8 devices</th><th>64 devices</th></tr></thead>
+          <tbody><tr><td>0 (none)</td><td>16.00 GB</td><td>16.00 GB</td></tr><tr><td>1</td><td>4 + 12/8 = 5.50 GB</td><td>4 + 12/64 = 4.19 GB</td></tr><tr><td>2</td><td>2 + 14/8 = 3.75 GB</td><td>2 + 14/64 = 2.22 GB</td></tr><tr><td>3</td><td>16/8 = 2.00 GB</td><td>16/64 = 0.25 GB</td></tr></tbody></table>
+          <p>Stage 3 reaches the ideal 1/N<sub>d</sub> but pays with communication: every layer's weights must be gathered across the devices before use, twice per step (forward, backward). The activations in the previous example are <i>not</i> reduced by sharding the state; they depend on the micro-batch on each device.</p>
+        </div>
+        <p><b>Data parallelism.</b> Each device holds a copy (or a shard) of the model and processes a different slice of the batch. After the backward pass the devices must agree on the average gradient: an <b>all-reduce</b>. With the common ring algorithm each device sends and receives about <span class="tex">2(N_d-1)/N_d</span> times the size of the gradient. For gradients of 2 GB and <span class="tex">N_d=8</span>: <span class="tex">2\times7/8\times2=3.5</span> GB per device per step. Time for this communication has to be hidden behind computation, or it eats the benefit of adding devices.</p>
+        <p><b>Tensor parallelism.</b> One big matrix multiplication is cut across devices. Take a toy product <span class="tex">xW</span> with <span class="tex">x=(1,2)</span> and <span class="tex">W=\begin{pmatrix}1&amp;2\\3&amp;4\end{pmatrix}</span>, whose answer is <span class="tex">(7,10)</span>. <i>Column split:</i> device 1 holds column 1 of <span class="tex">W</span> and computes <span class="tex">1\cdot1+2\cdot3=7</span>; device 2 holds column 2 and computes <span class="tex">1\cdot2+2\cdot4=10</span>. Each produces its own slice of the output, with no communication until the slices are needed together. <i>Row split:</i> device 1 holds row 1 and computes <span class="tex">1\cdot(1,2)=(1,2)</span>; device 2 holds row 2 and computes <span class="tex">2\cdot(3,4)=(6,8)</span>; the answer is their <i>sum</i> <span class="tex">(7,10)</span>, which needs an all-reduce. Transformer blocks are arranged so that a column split is followed by a row split, giving one all-reduce per block in each direction. Since this communicates inside every layer, it is usually done among devices with the fastest links, typically those in one machine.</p>
+        <p><b>Pipeline parallelism.</b> Put layers 1 to <span class="tex">n/p</span> on device 1, the next group on device 2, and so on: <span class="tex">p</span> <i>stages</i>. A batch is cut into <span class="tex">m</span> <b>micro-batches</b> that flow through like items on a conveyor belt. At the start, later devices wait for the first micro-batch to arrive; at the end, early devices wait for the last to drain. That idle time is the <b>bubble</b>. If every micro-batch takes the same time on every stage and all forwards precede all backwards, the step takes <span class="tex">(m+p-1)</span> slots per phase while each device works on <span class="tex">m</span>, so the idle fraction is <span class="tex">(p-1)/(m+p-1)</span>. For <span class="tex">p=4</span>: with <span class="tex">m=4</span> it is <span class="tex">3/7=42.9\%</span>; with <span class="tex">m=8</span>, <span class="tex">3/11=27.3\%</span>; with <span class="tex">m=32</span>, <span class="tex">3/35=8.6\%</span>. More micro-batches shrink the bubble (at the price of each being smaller). Schedules that interleave forward and backward work reduce the memory held, and some reduce the bubble, which this simple model does not show.</p>
+        <p>Large runs commonly combine all three, with the number of devices equal to the product <span class="tex">N_d\times t\times p</span> of data-parallel, tensor-parallel and pipeline-parallel degrees, chosen according to the machine's network layout and the model's size. There is no single best arrangement; teams search for one for their hardware.</p>
+
+        <h3 class="sec">The formal summary</h3>
+        <div class="eq">M_{\text{device}}\approx M_{\text{states}}(N,N_d,\text{stage})+M_{\text{act}}(b,s,d,\ell),\qquad \text{bubble}=\frac{p-1}{m+p-1},\qquad \text{ring all-reduce traffic}\approx 2\,\frac{N_d-1}{N_d}\,G</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">N</span>: parameter count. <span class="tex">N_d</span>: devices sharing the state (data-parallel degree). <span class="tex">M_{\text{states}}</span>: bytes of weights, gradients, master weights and Adam state per device, from the table. <span class="tex">M_{\text{act}}</span>: activation bytes, about <span class="tex">34\,\ell\,b\,s\,d</span> or, with recomputation, about <span class="tex">(2\ell+34)\,b\,s\,d</span>. <span class="tex">b</span>: sequences per device per micro-batch; <span class="tex">s</span>: tokens per sequence; <span class="tex">d</span>: hidden size; <span class="tex">\ell</span>: layers. <span class="tex">p</span>: pipeline stages; <span class="tex">m</span>: micro-batches per step. <span class="tex">G</span>: gradient size in bytes. The memory formulas are estimates for one common recipe; real systems add communication buffers, fragmentation and framework overhead.</div>
+
+        <div data-lab="gen-tn-memory"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with the defaults (ℓ = 24, d = 2048, 8 devices, stage 0). Read the "no sharding" total. Does it fit in 80 GB? Drop the device memory to 24 GB and see what changes.</li>
+          <li>Choose stage 1, then 2, then 3 and watch the coloured segments shrink: which colour goes first, and which segment never shrinks with sharding?</li>
+          <li>Raise the layers to 48 and the hidden size to 4096 so the model is about 10 billion parameters. How many devices at stage 3 does it take to fit in 80 GB? Then tick the recompute box.</li>
+        </ol></div>
+        <div data-lab="gen-tn-bubble"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With 4 stages and 4 micro-batches, press play. Watch device 4 wait for the first micro-batch and device 1 wait at the end. Compare the measured idle fraction with the formula.</li>
+          <li>Raise the micro-batches to 16, then 24. How does the bubble change, and what is the downside you would meet in a real system?</li>
+          <li>Raise the stages to 8 with only 4 micro-batches. What fraction of device time is idle?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Counting only the weights.</b> 2 bytes per parameter is the weights; training needs about eight times that for the persistent state alone.</li>
+            <li><b>Thinking sharding shrinks activations.</b> It shards parameters, gradients and optimiser state; activations depend on batch and sequence length per device.</li>
+            <li><b>Assuming more devices means proportionally faster.</b> Communication (all-reduce, weight gathering, pipeline bubbles) takes a growing share as devices are added.</li>
+            <li><b>Mixing up the three parallelisms.</b> Data parallelism splits the batch, tensor parallelism splits a matrix, pipeline parallelism splits the layers; they need different communication and can be combined.</li>
+            <li><b>Treating 34 and 16 as universal.</b> They are for the stated recipe; other precision or optimiser choices change them (an optimiser without the second moment, for example, stores less).</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Multi-GPU training frameworks</b> implement sharded data parallelism, tensor parallelism and pipeline parallelism, and expose the degrees as configuration.</li>
+            <li><b>Parameter-efficient fine-tuning</b> (Module 5) shrinks the trainable set so that gradients and optimiser state are small, which is why a large model can be adapted on far less memory than it took to train.</li>
+            <li><b>Checkpoint size</b> follows the same count: the full training state is about 16N bytes, the serving weights 2N (see lesson 3.6).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A 3-billion-parameter model trains with the recipe above. How much memory do weights, gradients and optimiser state need on one device without sharding?</summary><div class="ans"><span class="tex">16\times3\times10^{9}=48\times10^{9}</span> bytes = 48 GB, before activations.</div></details>
+        <details class="check"><summary>2. The same model uses stage-3 sharding across 16 devices. What persistent state does each device hold?</summary><div class="ans"><span class="tex">16N/N_d=48\ \text{GB}/16=3</span> GB per device (plus activations and communication buffers).</div></details>
+        <details class="check"><summary>3. A pipeline has p = 4 stages and processes m = 12 micro-batches per step. What fraction of device time is idle in the simple schedule?</summary><div class="ans"><span class="tex">(p-1)/(m+p-1)=3/15=20\%</span>.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Training with mixed-precision Adam needs about <span class="tex">16N</span> bytes of persistent state (2 + 2 + 4 + 4 + 4): 16 GB for a billion parameters, plus activations.</li>
+          <li>Activations scale with batch, sequence length, hidden size and layers; recomputation cuts them by roughly an order of magnitude for about one extra forward pass.</li>
+          <li>Sharding divides the state across devices in stages (stage 3 gives <span class="tex">16N/N_d</span>) at the price of communication.</li>
+          <li>Data, tensor and pipeline parallelism split the batch, a matrix and the layers; the pipeline bubble is <span class="tex">(p-1)/(m+p-1)</span>.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 3.6 ===================== -->
+    <section class="lesson" id="training-diagnostics" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">3.6</span><h2>Operating a training run</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A run is two weeks in and the loss curve suddenly jumps. Is the run dead, or will it recover? Which number should you have been watching, how much work do you lose if you rewind, and how would you have known that the model was actually improving, not just fitting its training data?</div>
+
+        <h3 class="sec">Intuition: a long flight needs instruments and waypoints</h3>
+        <p>A training run is a long, expensive journey with no way to inspect the engine while it runs, only the instruments: the loss curve, the gradient norm, the learning rate, evaluation scores, throughput. A pilot reads the instruments for <i>trends and warnings</i> and has places to land (checkpoints) from which the journey can resume. This lesson is about the instruments and the landing places.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>What a healthy loss curve looks like.</b> It starts near <span class="tex">\ln V</span> (lesson 3.1), falls fast at first, then slowly, with small step-to-step noise that shrinks as the learning rate decays. Because each step sees a different batch, a single point is noisy; read a <i>moving average</i> (for example over 50 to 100 steps). Fine details, such as the small bump when the learning rate peaks after warm-up or the small drop at the end of decay, are normal.</p>
+        <p><b>Spikes.</b> A <b>loss spike</b> is a sudden rise. Many are benign: the loss climbs for a few hundred steps and returns to the old curve. Others are not: it never recovers (<b>divergence</b>), or the loss becomes NaN (not a number, from an overflow or division by zero). Common causes, none of them universal: a learning rate too high for the current state; a bad batch (corrupted or extremely unusual data); an instability inside the network such as attention logits growing without bound; numerical overflow in low precision; a hardware or software fault. The <b>gradient norm</b> is the early warning: a spike in it usually appears a step or more before the loss moves.</p>
+        <div class="worked"><b>Worked example: spotting a spike in the gradient norm</b>
+          <p>Five recent gradient norms: 0.42, 0.45, 0.41, 0.44, 0.43. Their median is 0.43. The next step shows 3.90. The ratio to the median is <span class="tex">3.90/0.43=9.07</span>. A simple rule: flag any step whose norm exceeds, say, 5 times the recent median. This one is flagged.</p>
+          <p><b>What clipping does with it.</b> With the clip threshold 1.0, this gradient is scaled by <span class="tex">1/3.90=0.256</span>; the weights see an update 3.9 times smaller than the raw gradient would have caused. In the lab's toy rule, a clipped spike adds a damage of 0.35 and an unclipped one adds <span class="tex">0.35\times3.9=1.37</span>.</p>
+        </div>
+        <p><b>Evaluation during training.</b> Training loss on the batches being learned will fall even for a model that memorises; what you want to know is how it does on text it has not been trained on. Every so often, usually every few hundred or thousand steps, run the model on a fixed <b>held-out set</b> and record the loss (and, separately, a handful of downstream tests). Plot it alongside the training loss. When data are seen only once, training and held-out loss track each other closely. When the data are repeated for several epochs, training loss may keep falling while held-out loss flattens or rises: that gap is overfitting. Note too that a fixed held-out set must not leak into the training data (lesson 3.2).</p>
+        <p><b>Checkpoints and restarts.</b> A <b>checkpoint</b> is a saved copy of everything needed to resume: the weights, the optimiser state (<span class="tex">m</span> and <span class="tex">v</span>, and the master weights), the step number, the learning-rate schedule position, the random-number state and the position in the data. Saving only the weights is not enough to resume exactly, because Adam's averages would restart from zero.</p>
+        <div class="worked"><b>Worked example: what a rewind costs, and how big a checkpoint is</b>
+          <p>Checkpoint every 250 steps. A divergence is noticed at step 1 430. The last checkpoint is at step 1 250, so you rewind and redo <span class="tex">1430-1250=180</span> steps. If failures strike at random times, the average amount of work lost per failure is about half the interval, <span class="tex">250/2=125</span> steps; halving the interval halves the loss per failure but doubles the number of times you pay the saving cost. For a 3-billion-parameter model the full training state is <span class="tex">16N=48</span> GB (lesson 3.5), while the bfloat16 weights alone are <span class="tex">2N=6</span> GB. This is why checkpoints take noticeable time to write and why systems write them in pieces from many devices at once, often in the background.</p>
+          <p><b>Restart policy.</b> After a spike that does not recover, a common practice is to rewind to a checkpoint from before it, then change something so the same thing does not recur: skip or reshuffle the data that was about to be read, lower the learning rate a little, or tighten the clipping threshold. The lab applies a different data order after a restart.</p>
+        </div>
+
+        <h3 class="sec">The formal bookkeeping</h3>
+        <div class="eq">\bar{\mathcal L}_t=\frac1w\sum_{i=t-w+1}^{t}\mathcal L_i,\qquad \text{flag if }\ \lVert g_t\rVert&gt;\kappa\cdot\operatorname{median}(\lVert g_{t-k}\rVert,\dots,\lVert g_{t-1}\rVert),\qquad \text{work lost}=t_{\text{fail}}-K\left\lfloor t_{\text{fail}}/K\right\rfloor</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\mathcal L_i</span>: the training loss at step <span class="tex">i</span>; <span class="tex">w</span>: the averaging window (steps); <span class="tex">\bar{\mathcal L}_t</span>: the moving average. <span class="tex">\lVert g_t\rVert</span>: the gradient norm at step <span class="tex">t</span>; <span class="tex">\kappa</span>: a multiplier such as 5; <span class="tex">k</span>: how many recent steps define "normal". <span class="tex">K</span>: the checkpoint interval in steps; <span class="tex">t_{\text{fail}}</span>: the step at which the failure was noticed; <span class="tex">\lfloor\cdot\rfloor</span>: round down. These are monitoring rules of thumb, not guarantees: real runs watch many more signals (per-layer norms, activation statistics, throughput, hardware health).</div>
+
+        <div data-lab="gen-tn-run"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the defaults. Watch the gray training loss, the blue 50-step average and the green evaluation dots. Notice how the gradient-norm bars at the bottom stay below the dashed clip line when nothing is wrong.</li>
+          <li>Press "Inject a spike now" a few times with clipping on, then untick clipping and inject again. Compare the jump in loss, and see how many spikes the run survives.</li>
+          <li>Raise the learning-rate multiplier to 3 with clipping off. When the run diverges, press "Restart from last checkpoint" and note how many steps you lost. Change the checkpoint interval to 100 and repeat.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Reading a single point.</b> Individual steps are noisy; decide from a moving average and from the gradient norm, not one bad step.</li>
+            <li><b>Looking only at training loss.</b> It can improve while generalisation does not; keep a held-out loss and some downstream checks.</li>
+            <li><b>Saving only weights.</b> A restart without optimiser state and data position is a different run, not a continuation.</li>
+            <li><b>Restarting unchanged.</b> If a bad batch or an instability caused the spike, replaying the same steps may reproduce it; change the data order or a setting.</li>
+            <li><b>Treating every spike as fatal.</b> Many recover; but a spike that does not recover, or that repeats at a regular interval, needs investigation.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Training operations</b> in practice means dashboards of loss, gradient norm, learning rate and throughput, alerts on spikes, automatic checkpoints and restarts after hardware faults.</li>
+            <li><b>Ablations and small runs.</b> Instabilities are often reproduced at small scale first, then fixed by changing initialisation, normalisation, learning rate or clipping.</li>
+            <li><b>Evaluation suites</b> run on checkpoints decide which one to keep and hand over to alignment (Module 4).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Recent gradient norms are 0.50, 0.48, 0.52, 0.49, 0.51 and then 2.9. With the rule "flag above 5 times the recent median", is the last step flagged?</summary><div class="ans">The median of the five is 0.50, and 5 × 0.50 = 2.5. Since 2.9 &gt; 2.5 it is flagged (ratio 5.8).</div></details>
+        <details class="check"><summary>2. Checkpoints are saved every 500 steps and a run diverges at step 1 730. Where does it restart and how many steps are repeated?</summary><div class="ans">The last checkpoint is at step 1 500 (3 × 500). The run restarts there and repeats 1 730 − 1 500 = 230 steps.</div></details>
+        <details class="check"><summary>3. Why is saving only the model weights not enough to resume a run exactly, and how big is the full state for 3 billion parameters in the recipe of lesson 3.5?</summary><div class="ans">Adam's running averages and the float32 master weights, the step count for the schedule, and the data position are needed to continue the same trajectory; without them the averages restart from zero and the data order changes. The full state is 16 bytes per parameter, 48 GB, against 6 GB for the bfloat16 weights alone.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Read a moving average of the loss, the gradient norm (the early warning), the learning rate and a held-out loss together.</li>
+          <li>A spike is a rise that may or may not recover; clipping, a lower learning rate and a changed data order are the usual first remedies.</li>
+          <li>A checkpoint needs weights, optimiser state, schedule position and data position; the interval sets how much work a failure costs (on average half the interval).</li>
+          <li>Training loss alone can mislead; a fixed, uncontaminated held-out set shows whether the model is generalising.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 4 (<a href="gen-alignment.html">Alignment &amp; post-training</a>) takes the pretrained model produced here, which predicts text well but does not follow instructions or weigh human preferences, and shows how supervised fine-tuning, preference learning and reinforcement learning shape it. Module 5 (<a href="gen-efficiency.html">Efficient adaptation &amp; inference</a>) returns to the memory arithmetic of lesson 3.5 for low-rank adapters and quantisation.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

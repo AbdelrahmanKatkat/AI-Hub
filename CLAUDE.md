@@ -7,7 +7,7 @@ Live: https://abdelrahmankatkat.github.io/AI-Hub/ · repo: AbdelrahmanKatkat/AI-
 ## Topic order (sidebar, home grid) — do not reorder without being asked
 Mathematics → Machine Learning → Data Science → Computer Vision → NLP → Voice → Generative AI → Governing AI →
 Reinforcement Learning → Domains (GeoAI, Robotics, Healthcare & Bio, Climate & Earth, Finance, Other — each a sub-topic).
-Live now: Mathematics (9 modules / 58 lessons), Machine Learning (10 modules / 63 lessons), Computer Vision (10 modules / 70 lessons), GeoAI (10 modules / 63 lessons, a sub-topic of Domains, includes STAC and STAC MLM), Robotics (10 modules / 59 lessons, a sub-topic of Domains), Reinforcement Learning (10 modules / 56 lessons), Data Science (10 modules / 59 lessons). Others: `status: 'soon'`.
+Live now: Mathematics (9 modules / 58 lessons), Machine Learning (10 modules / 63 lessons), Computer Vision (10 modules / 70 lessons), GeoAI (10 modules / 63 lessons, a sub-topic of Domains, includes STAC and STAC MLM), Robotics (10 modules / 59 lessons, a sub-topic of Domains), Reinforcement Learning (10 modules / 56 lessons), Data Science (10 modules / 59 lessons), Generative AI (10 modules / 61 lessons). Others: `status: 'soon'`.
 
 ## Layout
 ```
@@ -17,7 +17,7 @@ math-<module>.html              one page per math module (lessons are <section c
 machine-learning.html           ML hub; modules are ml-<name>.html (same pattern as cv-*.html / math-*.html)
 curriculum/<topic>.md           SOURCE OF TRUTH for what each lesson covers (tables: id | title | must understand | AI link)
 curriculum/AUTHORING.md         the lesson standard, lab API, animation rules, verification steps  (READ before writing content)
-tools/gen-curriculum.js         curriculum/<topic>.md -> assets/curriculum-<slug>.js for math, cv, ml, geoai, robotics, rl, ds (run `node tools/gen-curriculum.js` after editing an md)
+tools/gen-curriculum.js         curriculum/<topic>.md -> assets/curriculum-<slug>.js for math, cv, ml, geoai, robotics, rl, ds, genai (run `node tools/gen-curriculum.js` after editing an md)
 tools/smoke.js                  interaction smoke test: clicks every lab control on every page, reports console errors and phone-width overflow (needs puppeteer-core; usage in the file header)
 assets/topics.js                topic registry (order, status, children) + PIPELINES (animated stage definitions)
 assets/curriculum-math.js       GENERATED — never edit by hand
@@ -81,5 +81,7 @@ A page is not done until labs render, equations typeset (no raw `\frac`), and th
 - **Robotics**: live (sub-topic of Domains). Hub `robotics.html` + modules `robo-*.html`, 59 lessons. Spec `curriculum/robotics.md`; addendum `curriculum/AUTHORING-ROBOTICS.md`. Labs in `assets/labs-robo-<module>.js`. Most lab simulations are labelled *illustrative*; no hardware was tested.
 - **Reinforcement Learning**: live. Hub `reinforcement-learning.html` + modules `rl-*.html`, 56 lessons. Spec `curriculum/reinforcement-learning.md`; addendum `curriculum/AUTHORING-RL.md`. Labs in `assets/labs-rl-<module>.js`. Most lab simulations are labelled *illustrative*; deep-RL labs are small plain-JS models, not real training runs.
 - **Data Science**: live. Hub `data-science.html` + modules `ds-*.html`, 59 lessons. Spec `curriculum/data-science.md`; addendum `curriculum/AUTHORING-DS.md`. Labs in `assets/labs-ds-<module>.js` (names prefixed `ds-`). Most lab simulations are labelled *illustrative*; worked numbers were computed in code.
-- Next topics in order: NLP, Voice, Generative AI, Governing AI, then the other Domains (Healthcare & Bio, Climate & Earth, Finance, Other).
+- **Generative AI**: live. Hub `generative-ai.html` + modules `gen-*.html`, 61 lessons (language modelling, Transformer, LLM training, alignment, efficient inference, retrieval and agents, VAEs/GANs/flows, diffusion and flow matching, multimodal, evaluation and responsible generation). Spec `curriculum/generative-ai.md`; addendum `curriculum/AUTHORING-GENAI.md`. Labs in `assets/labs-gen-<module>.js` (names prefixed `gen-`). All labs are small toy models labelled *illustrative*; no claim is made about any specific commercial model, and statements about published methods outside the formulas are hedged. Real-time verification tools: `tools/shot.js` (screenshot + DOM facts), `tools/smoke.js`, `tools/check-links.js` (headless `--virtual-time-budget` barely advances animations).
+- Authoring hazard: never give a lab control `id="side"`, `id="hdr"` or `id="outline"`: the shell's CSS for those ids applies to it.
+- Next topics in order: NLP, Voice, Governing AI, then the other Domains (Healthcare & Bio, Climate & Earth, Finance, Other).
 - Agent runs can hit the session rate limit: when that happens, resume the agents (SendMessage) — their files are saved on disk.

@@ -48,6 +48,7 @@ async function testPage(browser, file) {
       await sleep(500);
     }
     current = '(phone)';
+    await page.bringToFront();   // background tabs throttle timers and resize handling when pages run in parallel
     await page.setViewport({ width: 390, height: 800 });
     await sleep(1800);   // formulas re-fit 150 ms after a resize; allow time under load
     const over = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));

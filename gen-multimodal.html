@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 · Multimodal, evaluation &amp; responsible generation · Generative AI</title>
+<meta name="description" content="Image and audio tokens in language models, contrastive pre-training and its mutual-information bound, video and audio generation, Elo ratings, bootstrap intervals, contamination, Fréchet distance, calibration, provenance and watermarking, and cost, latency and guardrails in production, with hand-worked numbers and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-multimodal.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="9">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 9</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">9</div>
+      <div style="flex:1">
+        <h1>Module 9 · Multimodal, evaluation &amp; responsible generation</h1>
+        <p>The last module widens the picture in three directions. First, models that handle more than text: images and audio become tokens, and a contrastive loss teaches two encoders to agree. Second, how to tell whether a generator is any good: ratings, confidence intervals, contamination, distances between distributions, and honesty about what the model knows. Third, how to run one responsibly: misuse, provenance, cost, latency and guardrails.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 4 hours</span><span class="chip">Stage 6: evaluate and guard</span><span class="chip">Labs are illustrative</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>A note before you start.</b> Every number in the labs is a toy: a 3 × 3 similarity matrix, 20 judgements, 400 invented questions, round-number prices. They show how the formulas behave; they are not measurements of any real system, and this module makes no claim about any specific commercial model or product. The misuse lesson is defensive and conceptual: it explains risks and countermeasures, never how to cause harm. It is not legal advice; copyright and consent law differs between countries and is changing. For the probability and information theory used here see <a href="math-information.html#mutual-info">mutual information</a> and <a href="math-information.html#cross-entropy-kl">cross-entropy and KL</a>, and for the interval ideas <a href="ds-statistics.html#confidence-intervals">confidence intervals</a>.</div>
+
+    <!-- ===================== 9.1 ===================== -->
+    <section class="lesson" id="multimodal-models" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">9.1</span><h2>Multimodal models: images and audio as tokens, and contrastive learning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A language model reads a sequence of token vectors. A photograph is a grid of pixel numbers. How can the model "read" the photograph, and how can we train a pair of encoders so that a picture of a dog and the sentence "a dog on grass" end up close together in the same vector space, while a picture of a boat does not?</div>
+
+        <h3 class="sec">Intuition: everything becomes a row of vectors</h3>
+        <p>A Transformer does not care what its inputs mean. It needs a sequence of vectors of one fixed length <span class="tex">d</span>. Text already is such a sequence once words are turned into token embeddings. To feed a picture, we chop it into small square patches and turn each patch into one vector. Now the picture is also "a sequence of tokens", and the same attention machinery can mix it with words. Sound works the same way once it is cut into short frames. Two ideas follow, and most multimodal systems use one or both.</p>
+        <ul>
+          <li><b>The adapter idea.</b> Use an image encoder to produce patch vectors, pass them through a small projection so they have the language model's width <span class="tex">d</span>, and place them in the text sequence like special words: "<i>[image tokens] Describe this picture.</i>" The language model then answers in text.</li>
+          <li><b>The contrastive idea.</b> Use two separate encoders, one for images and one for text, each ending in a vector of the same size. Train them so that matching pairs point the same way and mismatched pairs do not. The result is a shared "meaning space" where a sentence can be compared with a picture by a single cosine.</li>
+        </ul>
+        <p>This lesson sits at the start of the pipeline's last stages: the contrastive encoders are pre-trained first, and a vision-language assistant is built by connecting such an encoder to a language model that has already been pre-trained and aligned (<a href="cv-transformers.html#clip-multimodal">CLIP and multimodal models</a> in the vision track show the encoder side).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, counting image tokens.</b> A square image of 224 × 224 pixels is cut into patches of 16 × 16 pixels.</p>
+        <div class="worked"><b>Worked example, patches as tokens</b>
+          <p>Patches per side: <span class="tex">224/16=14</span>, so the image becomes <span class="tex">14\times14=196</span> patch tokens. Each patch holds <span class="tex">16\times16\times3=768</span> numbers (three colour channels), and a learned linear map turns those 768 numbers into a vector of width <span class="tex">d</span>.</p>
+          <p>Put the 196 image tokens in front of a 20-token question and the language model sees a sequence of <span class="tex">196+20=216</span> tokens. Because attention cost grows with the square of the length, the picture costs about <span class="tex">196/20\approx10</span> times more tokens than the question; this is why systems often shrink or pool image tokens before the language model.</p>
+        </div>
+
+        <p><b>Step 2, the contrastive goal.</b> Take a small batch of <span class="tex">N=3</span> image-text pairs: (image 1, text 1), (image 2, text 2), (image 3, text 3). Encode every image into a unit vector <span class="tex">u_i</span> and every text into a unit vector <span class="tex">v_j</span>. The cosine of the angle between them, <span class="tex">s_{ij}=u_i\cdot v_j</span>, says how well image <span class="tex">i</span> matches text <span class="tex">j</span>. Arrange all nine cosines in a matrix. The three true pairs are the diagonal; we want the diagonal to beat the six wrong cells in every row and every column.</p>
+        <table class="tbl"><tr><th></th><th>text 1</th><th>text 2</th><th>text 3</th></tr>
+        <tr><td>image 1</td><td><b>0.9</b></td><td>0.2</td><td>0.1</td></tr>
+        <tr><td>image 2</td><td>0.3</td><td><b>0.8</b></td><td>0.2</td></tr>
+        <tr><td>image 3</td><td>0.1</td><td>0.4</td><td><b>0.7</b></td></tr></table>
+        <p>Turn each <b>row</b> into a three-way multiple-choice question: "given image <span class="tex">i</span>, which of the three texts is its caption?" The model's answer is a softmax over the row of cosines divided by a temperature <span class="tex">\tau</span>. A small <span class="tex">\tau</span> sharpens the choice. The loss is the usual negative log probability of the right answer.</p>
+        <div class="worked"><b>Worked example, symmetric InfoNCE with τ = 0.5</b>
+          <p>Row 1 of the matrix divided by 0.5 is (1.8, 0.4, 0.2). Exponentials: <span class="tex">e^{1.8}=6.0496,\ e^{0.4}=1.4918,\ e^{0.2}=1.2214</span>, sum 8.7629. The probability of the right text is <span class="tex">6.0496/8.7629=0.6904</span>, so the row loss is <span class="tex">-\ln0.6904=0.3705</span>.</p>
+          <p>Row 2 gives (0.6, 1.6, 0.4)→ probabilities with the right one 0.5991 and loss 0.5123. Row 3 gives loss 0.6152. The image-to-text loss is their mean: <span class="tex">(0.3705+0.5123+0.6152)/3=0.4993</span>.</p>
+          <p>Now do the same for the <b>columns</b> ("given text <span class="tex">j</span>, which image?"): losses 0.4075, 0.5599, 0.5123, mean 0.4932. The symmetric loss is the average of the two directions: <span class="tex">(0.4993+0.4932)/2=0.4963</span>.</p>
+          <p>The temperature matters: with <span class="tex">\tau=1</span> the same matrix gives 0.7532, and with <span class="tex">\tau=0.2</span> it gives 0.1287, because dividing by a smaller <span class="tex">\tau</span> widens the gaps between cosines before the softmax.</p>
+        </div>
+
+        <p><b>Step 3, what this has to do with mutual information.</b> If the matching pairs really share information, then knowing the image should make the right text easier to pick out among decoys. The InfoNCE loss measures exactly how well that multiple-choice question is answered, and it gives a <b>lower bound</b> on the mutual information <span class="tex">I(X;Y)</span> between images and texts (<a href="math-information.html#mutual-info">mutual information</a>): the better the model picks the right partner, the more information it must be capturing.</p>
+        <div class="eq">\mathcal L_{i\to t}=-\frac1N\sum_{i=1}^{N}\ln\frac{\exp(s_{ii}/\tau)}{\sum_{j=1}^{N}\exp(s_{ij}/\tau)},\qquad \mathcal L=\tfrac12\bigl(\mathcal L_{i\to t}+\mathcal L_{t\to i}\bigr),\qquad I(X;Y)\ \ge\ \ln N-\mathcal L</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">N</span>: pairs in the batch (here 3). <span class="tex">s_{ij}=u_i\cdot v_j</span>: cosine between image <span class="tex">i</span> and text <span class="tex">j</span> (unit vectors). <span class="tex">\tau</span>: the temperature, a positive number that scales the cosines before the softmax. <span class="tex">\mathcal L_{i\to t}</span>: the row-wise loss, image chooses text. <span class="tex">\mathcal L_{t\to i}</span>: the same over columns, text chooses image. <span class="tex">\mathcal L</span>: the symmetric loss. <span class="tex">I(X;Y)</span>: mutual information in nats. The inequality holds when the wrong candidates in each row are drawn independently from the marginal distribution; with a learned model and real batches it is a guide, not an exact measurement.</div>
+        <div class="worked"><b>Worked example, the bound</b>
+          <p><span class="tex">\ln3=1.0986</span>. With <span class="tex">\mathcal L=0.4963</span> the bound says <span class="tex">I\ge1.0986-0.4963=0.6023</span> nats. Two facts follow. If the model cannot tell the pairs apart (all nine cosines equal), every row is uniform, <span class="tex">\mathcal L=\ln3</span> and the bound is 0: no information captured. And the bound can never exceed <span class="tex">\ln N</span>, so a batch of 3 can certify at most 1.0986 nats; this is one reason contrastive training uses very large batches.</p>
+        </div>
+
+        <p><b>Step 4, from encoders to assistants.</b> After contrastive pre-training the image encoder produces features that already line up with language. A vision-language assistant commonly keeps such an encoder, adds a small trained adapter that maps its patch features into the language model's token space, and then fine-tunes on image-question-answer examples. Which parts are frozen and which are trained differs between designs.</p>
+
+        <div data-lab="gen-mm-contrastive"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the printed matrix and watch the cursor sweep the three rows then the three columns. Check that the first row shows p = 0.690 for the green cell and loss 0.3705.</li>
+          <li>Drag τ from 0.5 down to 0.2 and up to 1. The loss falls and rises as in the worked example. Then use the diagonal slider to subtract 0.5: what happens to the lower bound on mutual information?</li>
+          <li>Switch to trainable 2-D embeddings, tick Train and watch the vectors rotate. Which pairs move together first, and does the bound approach ln 3 = 1.0986?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Treating the bound as the mutual information.</b> It is a lower bound that saturates at <span class="tex">\ln N</span>. A small batch cannot certify a large amount of shared information.</li>
+          <li><b>Forgetting both directions.</b> The loss is symmetric on purpose: images should find their captions and captions should find their images.</li>
+          <li><b>Thinking a high similarity proves understanding.</b> The encoder learns what separates the batch's captions, which can rely on shortcuts such as a visible word in the image.</li>
+          <li><b>"The model sees the image".</b> It sees a sequence of patch vectors produced by an encoder; detail lost in the encoder or by pooling cannot be recovered by the language model.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Contrastive image-text pre-training</b> (the CLIP family) yields encoders used for zero-shot classification, retrieval, and as the image side of many vision-language assistants.</li>
+          <li><b>Adapters and image tokens:</b> multimodal assistants commonly place projected patch vectors in the language model's input sequence; audio inputs are handled analogously with frame embeddings.</li>
+          <li><b>Text-to-image conditioning:</b> text embeddings from such encoders guide diffusion models (see the vision track's <a href="cv-generative.html">generative models</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the printed matrix at τ = 0.5, what is the loss of row 2?</summary><div class="ans">Row 2 divided by 0.5 is (0.6, 1.6, 0.4); exponentials 1.8221, 4.9530, 1.4918, sum 8.2669. The right probability is 4.9530/8.2669 = 0.5991 and the loss is −ln 0.5991 = 0.5123.</div></details>
+        <details class="check"><summary>2. What is the largest mutual information a batch of 256 pairs can certify with InfoNCE?</summary><div class="ans"><span class="tex">\ln256=5.545</span> nats, reached only when the loss is 0. Larger batches raise the ceiling.</div></details>
+        <details class="check"><summary>3. All nine cosines are equal. What are the loss and the bound for N = 3?</summary><div class="ans">Every softmax is uniform, so every row and column loss is <span class="tex">\ln3=1.0986</span>, the symmetric loss is 1.0986 and the bound is <span class="tex">1.0986-1.0986=0</span>.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Images become patch tokens (224 px with 16 px patches gives 196 tokens) and audio becomes frame tokens; then attention treats them like words.</li>
+          <li>Contrastive pre-training turns each row and column of a similarity matrix into a classification, and the symmetric InfoNCE loss averages both directions.</li>
+          <li><span class="tex">\ln N-\mathcal L</span> lower-bounds mutual information and cannot exceed <span class="tex">\ln N</span>.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.2 ===================== -->
+    <section class="lesson" id="video-audio-generation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">9.2</span><h2>Video and audio generation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A four-second clip at 8 frames per second is 32 images. A diffusion model that treated every pixel of every frame as a token and let all of them attend to all of them would need astronomically many attention pairs, and sound is even longer: 24,000 numbers every second. How do video and audio generators shrink the problem, and why do frames still flicker unless they are tied together?</div>
+
+        <h3 class="sec">Intuition: compress first, then generate in the small space</h3>
+        <p>Both ideas of earlier modules return here. As in latent diffusion, an autoencoder squeezes the raw signal into a much smaller latent array, and the generator works there. For video the compression runs along space and time. For audio a neural <b>codec</b> turns the waveform into a short sequence of <b>discrete codes</b>, so that generating sound looks like generating text: predict the next code. The remaining difficulty is <b>time</b>: every frame must agree with its neighbours about where objects are.</p>
+        <p>The details of real systems differ and change quickly. This lesson teaches the counting and the principles, with round numbers marked <i>illustrative</i>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, counting spatiotemporal tokens.</b></p>
+        <div class="worked"><b>Worked example, a latent video</b>
+          <p>Start with 4 s at 8 fps: <span class="tex">32</span> frames of 256 × 256 pixels. An autoencoder reduces each spatial side by 8: <span class="tex">256/8=32</span>, a 32 × 32 latent grid. Group the grid into 2 × 2 patches: <span class="tex">32/2=16</span> per side, <span class="tex">16\times16=256</span> tokens per latent frame. Compress time by 4: <span class="tex">32/4=8</span> latent frames. The video is <span class="tex">N=8\times256=2048</span> tokens.</p>
+          <p>Full attention over all of them costs <span class="tex">N^2=4{,}194{,}304</span> pairs per layer. A cheaper pattern alternates two kinds of attention: <b>spatial</b> (each token sees the 256 tokens of its own frame) and <b>temporal</b> (each token sees the same grid position in all 8 frames). The pair count is <span class="tex">T\,S^2+S\,T^2=8\cdot256^2+256\cdot8^2=524{,}288+16{,}384=540{,}672</span>, about 7.8 times fewer, and information still travels everywhere in two hops.</p>
+        </div>
+        <div class="eq">N=T\cdot S,\qquad \text{pairs}_{\text{full}}=N^2,\qquad \text{pairs}_{\text{factorised}}=T\,S^2+S\,T^2</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">T</span>: number of latent frames (after temporal compression). <span class="tex">S</span>: tokens per latent frame (after spatial compression and patching). <span class="tex">N</span>: total tokens. "Pairs" counts query-key pairs in one attention layer, the quantity the memory and compute of attention grow with.</div>
+
+        <p><b>Step 2, audio as discrete codes.</b> Raw audio at 24,000 samples per second, cut by a codec that outputs one code vector every 320 samples, gives <span class="tex">24000/320=75</span> frames per second. Each frame is described not by one code but by several, from <b>residual vector quantisation</b>: pick the nearest entry in a first codebook, then quantise the leftover error with a second codebook, and so on. Here is the idea on one number.</p>
+        <div class="worked"><b>Worked example, residual quantisation of the value 0.73</b>
+          <p>Codebook 1 holds {0, 0.5, 1}. The nearest entry to 0.73 is 0.5; the residual is <span class="tex">0.73-0.5=0.23</span>. Codebook 2 holds {−0.25, 0, 0.25}; the nearest to 0.23 is 0.25 and the new residual is <span class="tex">0.23-0.25=-0.02</span>. Codebook 3 holds {−0.03, 0, 0.03}; the nearest to −0.02 is −0.03 (distance 0.01), leaving <span class="tex">-0.02-(-0.03)=0.01</span>. Reconstruction after 1, 2 and 3 codebooks: 0.50, 0.75, 0.72, with errors 0.23, 0.02, 0.01. Each extra codebook refines the previous answer.</p>
+          <p>With 4 codebooks the codec emits <span class="tex">75\times4=300</span> tokens per second, so 10 s of sound is 3000 tokens instead of <span class="tex">240{,}000</span> samples, an 80-fold shorter sequence that a language-model-style generator can handle. (Round illustrative numbers.)</p>
+        </div>
+
+        <p><b>Step 3, consistency over time.</b> Suppose each frame, generated on its own, has a small random error in where it puts a ball. Three frames with independent errors of +0.08, −0.08, +0.08 (box width 1) make the ball jump 0.16 between frames: it <b>flickers</b>, even though each frame is individually only slightly wrong. Three frames whose errors are coupled, +0.08, +0.07, +0.06, are just as wrong on average yet differ by only 0.01 between frames: the motion looks smooth. A simple model of coupling is an autoregressive error</p>
+        <div class="eq">e_t=\rho\,e_{t-1}+\sqrt{1-\rho^{2}}\;\xi_t,\qquad \xi_t\sim\mathcal N(0,1)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">e_t</span>: the error in frame <span class="tex">t</span>. <span class="tex">\rho\in[0,1)</span>: how strongly this frame's error repeats the previous one (0 = independent, near 1 = nearly identical). <span class="tex">\xi_t</span>: fresh random noise. The square-root factor keeps the typical size of <span class="tex">e_t</span> equal to 1 for every <span class="tex">\rho</span>, so changing <span class="tex">\rho</span> changes only the smoothness, not the error size.</div>
+        <p>Real video generators obtain this coupling in several ways: temporal attention lets each frame see its neighbours while it is being denoised; frames share initial noise or conditioning; and some systems generate a few key frames first and then fill in between them. Each choice trades computation, length of clip and controllability.</p>
+
+        <div data-lab="gen-mm-tokens"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults, read the token count (2,048) and the two attention pair counts. Switch attention between full and factorised and watch which tokens the orange query attends to.</li>
+          <li>Set temporal compression to 2: the token count doubles to 4,096 and the full-attention pairs quadruple to 16,777,216. Which pattern grows faster?</li>
+          <li>Raise audio codebooks to 8 and the audio length to 30 s. How many tokens is that, and how does it compare with the video?</li>
+        </ol></div>
+
+        <div data-lab="gen-mm-consistency"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With ρ = 0 watch the ball flicker; note the mean frame-to-frame jump in the readout.</li>
+          <li>Raise ρ to 0.9 and compare: the ball should glide, but it may sit off the dashed path. Is the root-mean-square distance from the true path much smaller?</li>
+          <li>Press "New random errors" at ρ = 0.9 a few times. Smooth does not mean right: what changes from run to run?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Quality per frame is not quality of the clip.</b> Sharp individual frames can still flicker, drift in object shape, or break physical plausibility. Check motion, not only stills.</li>
+          <li><b>Token counts are not durations.</b> More compression makes sequences shorter but removes detail; fine fast motion and speech sounds suffer first.</li>
+          <li><b>Treating the numbers as a particular system.</b> Frame rates, compression ratios and codebook counts here are illustrative; real systems choose their own.</li>
+          <li><b>Audio is not "just text".</b> Codes at the first codebook carry coarse content and later ones fine detail; a generator must predict all of them consistently.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Latent video diffusion and spatiotemporal Transformers:</b> a latent array of <span class="tex">T\times S</span> tokens denoised with spatial and temporal attention.</li>
+          <li><b>Neural audio codecs with token language models:</b> speech and music generated as sequences of residual-quantised codes, then decoded to a waveform.</li>
+          <li><b>Evaluation:</b> video and audio need temporal metrics and human review; the next lesson explains why scores for any generator must be read with their uncertainty.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With temporal compression 2 instead of 4, how many video tokens and full-attention pairs are there (other settings as in the worked example)?</summary><div class="ans"><span class="tex">T=32/2=16</span>, <span class="tex">N=16\times256=4096</span>, and <span class="tex">N^2=16{,}777{,}216</span>.</div></details>
+        <details class="check"><summary>2. How many audio tokens does a 6-second clip need with 8 codebooks at 75 frames per second?</summary><div class="ans"><span class="tex">75\times8\times6=3600</span>.</div></details>
+        <details class="check"><summary>3. Why do independently generated frames flicker even when each is almost correct?</summary><div class="ans">Small errors that are independent from frame to frame point in random directions, so the difference between neighbouring frames is about as large as the errors themselves (for example +0.08 then −0.08 is a jump of 0.16). Coupling the errors, or generating frames together with temporal attention, makes neighbours wrong in the same way, so their difference is small.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Compress first: video becomes <span class="tex">T\times S</span> latent tokens, audio becomes codec codes at a few hundred tokens per second.</li>
+          <li>Full attention costs <span class="tex">N^2</span>; alternating spatial and temporal attention costs <span class="tex">TS^2+ST^2</span>.</li>
+          <li>Consistency over time needs frames to share information; independent per-frame errors show up as flicker.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.3 ===================== -->
+    <section class="lesson" id="evaluating-generators" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">9.3</span><h2>Evaluating generators</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Model A beat model B in 13 of 20 side-by-side comparisons. Does that mean A is better? Another model scores 0.68 on a public benchmark; can you trust the number? And how do you score a generator of images when there is no single right answer?</div>
+
+        <h3 class="sec">Intuition: every score is a noisy measurement of something narrower than you want</h3>
+        <p>Evaluating a generator is a measurement problem. A score has three weaknesses to check, each treated below: <b>does it measure the right thing</b> (contamination, judge bias, feature choice), <b>how much would it change on another sample</b> (an interval), and <b>how is it aggregated</b> (ratings from pairwise outcomes). We take them in turn on tiny tables.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, perplexity: the intrinsic score for a language model.</b> Perplexity is the exponential of the average negative log probability the model gives to the true next tokens. It is "the effective number of equally likely choices per token". It needs no reference answers, but it only compares models with the same tokeniser on the same text.</p>
+        <div class="worked"><b>Worked example, perplexity of four tokens</b>
+          <p>The model gave the true tokens probabilities 0.5, 0.25, 0.125, 0.5. Negative logs: 0.6931, 1.3863, 2.0794, 0.6931; mean 1.2130; perplexity <span class="tex">e^{1.2130}=3.3636</span>. Check: it equals the geometric mean of the inverse probabilities, <span class="tex">(2\cdot4\cdot8\cdot2)^{1/4}=128^{1/4}=3.3636</span>.</p>
+        </div>
+        <div class="eq">\mathrm{PPL}=\exp\Bigl(-\frac1n\sum_{t=1}^{n}\ln p_\theta(x_t\mid x_{&lt;t})\Bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">n</span>: tokens in the text. <span class="tex">x_t</span>: the true token at position <span class="tex">t</span>. <span class="tex">x_{&lt;t}</span>: the tokens before it. <span class="tex">p_\theta</span>: the model's probability. Lower perplexity means the text was less surprising to the model (cross-entropy, <a href="math-information.html#cross-entropy-kl">here</a>).</div>
+
+        <p><b>Step 2, benchmarks and contamination.</b> A benchmark is a fixed set of questions with known answers. If some of those questions (or their answers) appear in the training data, a model can answer from memory, and the score no longer measures the ability the benchmark is meant to test: this is <b>contamination</b> (also called leakage).</p>
+        <div class="worked"><b>Worked example, an inflated score</b>
+          <p>A test set has 100 questions. On genuinely new questions a model is right 60% of the time. Suppose 20 of the 100 questions leaked into training and the model answers all of those from memory. The reported score is <span class="tex">0.20\times1+0.80\times0.60=0.20+0.48=0.68</span>, eight points above its real ability of 0.60. With only 10 leaked questions the score is <span class="tex">0.10+0.90\times0.60=0.64</span>. The reader of "0.68" cannot see the difference.</p>
+        </div>
+        <div class="eq">\text{reported}=c\,m+(1-c)\,b</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">c</span>: fraction of test items that leaked. <span class="tex">m</span>: accuracy on leaked items (memorisation; 1 if every leaked item is answered from memory). <span class="tex">b</span>: true accuracy on unseen items. The inflation is <span class="tex">c\,(m-b)</span>.</div>
+        <p>Defences are practical rather than perfect: check for overlap between test and training text, keep part of the test set private, refresh tests with new items, and report performance on freshly written questions next to the public score.</p>
+        <div data-lab="gen-mm-contam"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults (20% leaked, memorised, 60% real accuracy) confirm the final score of 0.68 and the inflation of 0.08.</li>
+          <li>Lower the memorisation slider to 0.5 and then 0. Why does the inflation shrink even though the same questions leaked?</li>
+          <li>Set leakage to 0 and check that reported equals real accuracy.</li>
+        </ol></div>
+
+        <p><b>Step 3, human preference and Elo ratings.</b> For open-ended outputs, people are asked which of two answers they prefer. Individual outcomes are noisy, so they are combined into a rating. In the <b>Elo</b> system every model has a rating <span class="tex">R</span>; the expected score of A against B is a logistic function of the rating difference, and after each game ratings move toward the result.</p>
+        <div class="eq">E_A=\frac{1}{1+10^{(R_B-R_A)/400}},\qquad R_A\leftarrow R_A+K\,(S_A-E_A),\qquad R_B\leftarrow R_B-K\,(S_A-E_A)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">R_A,R_B</span>: current ratings. <span class="tex">E_A</span>: A's expected score (probability of winning) against B; equal ratings give 0.5. <span class="tex">S_A</span>: the actual result, 1 if A won, 0 if A lost. <span class="tex">K</span>: the step size; larger <span class="tex">K</span> reacts faster and is noisier. The 400 sets the scale: a 400-point gap means expected score <span class="tex">1/(1+10^{-1})=0.909</span>.</div>
+        <p>Three models A, B, C all start at 1000, <span class="tex">K=32</span>, and eight outcomes arrive in the order printed.</p>
+        <table class="tbl"><tr><th>game</th><th>winner beat loser</th><th>E of winner</th><th>change K(1−E)</th><th>A</th><th>B</th><th>C</th></tr>
+        <tr><td>0</td><td>start</td><td></td><td></td><td>1000.0</td><td>1000.0</td><td>1000.0</td></tr>
+        <tr><td>1</td><td>A beat B</td><td>0.5000</td><td>16.000</td><td>1016.0</td><td>984.0</td><td>1000.0</td></tr>
+        <tr><td>2</td><td>A beat C</td><td>0.5230</td><td>15.264</td><td>1031.3</td><td>984.0</td><td>984.7</td></tr>
+        <tr><td>3</td><td>B beat C</td><td>0.4989</td><td>16.034</td><td>1031.3</td><td>1000.0</td><td>968.7</td></tr>
+        <tr><td>4</td><td>C beat A</td><td>0.4109</td><td>18.850</td><td>1012.4</td><td>1000.0</td><td>987.6</td></tr>
+        <tr><td>5</td><td>B beat A</td><td>0.4822</td><td>16.570</td><td>995.8</td><td>1016.6</td><td>987.6</td></tr>
+        <tr><td>6</td><td>B beat C</td><td>0.5417</td><td>14.665</td><td>995.8</td><td>1031.3</td><td>972.9</td></tr>
+        <tr><td>7</td><td>A beat C</td><td>0.5330</td><td>14.944</td><td>1010.8</td><td>1031.3</td><td>957.9</td></tr>
+        <tr><td>8</td><td>C beat B</td><td>0.3960</td><td>19.328</td><td>1010.8</td><td>1011.9</td><td>977.3</td></tr></table>
+        <div class="worked"><b>Worked example, game 2</b>
+          <p>After game 1, A has 1016.0 and C has 1000.0. A's expected score is <span class="tex">1/(1+10^{(1000-1016)/400})=1/(1+10^{-0.04})=0.5230</span>. A won, so A gains <span class="tex">32\times(1-0.5230)=15.264</span> and C loses the same amount: A 1031.264, C 984.736. The total of all ratings stays 3000 in every row. Final ratings: A 1010.8, B 1011.9, C 977.3. A and B each won 3 and lost 2; C won 2 and lost 4. A and B are only 1.1 points apart, far less than the noise in eight games.</p>
+        </div>
+        <p>Elo ratings depend on the <b>order</b> of games and the choice of <span class="tex">K</span>; an alternative fits all outcomes at once with a Bradley–Terry model, which has the same logistic form as Elo's expected score but ignores order. Either way the rating alone hides its uncertainty, which brings us to intervals.</p>
+        <div data-lab="gen-mm-elo"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the replay and check game 2 against the readout (E = 0.5230, change 15.264).</li>
+          <li>Press "Reverse game order". The same eight results give different final ratings; by how much does the leader change?</li>
+          <li>Click a game chip to flip a winner and see how much one result moves the ranking. Then set K to 8 and compare.</li>
+        </ol></div>
+
+        <p><b>Step 4, an interval by the bootstrap.</b> Twenty judges compared model A with model B; the outcomes are, with 1 = A preferred:</p>
+        <table class="tbl"><tr><td>1 1 0 1 1 1 0 1 1 0 1 1 0 1 1 0 1 0 1 0</td></tr></table>
+        <p>That is 13 ones, a win rate <span class="tex">\hat p=0.65</span>. The <b>bootstrap</b> asks: if the 20 judgements are all we know about the world, what other sets might we have collected? Resample 20 judgements <i>with replacement</i> from the 20, compute the win rate, repeat many times, and read the middle 95% of those rates.</p>
+        <div class="worked"><b>Worked example, the exact bootstrap distribution</b>
+          <p>Resampling 20 times from a set with 65% ones means each draw is a 1 with probability 0.65, so the number of ones in a resample is Binomial(20, 0.65). Its cumulative probabilities: at 8 wins 0.0196, at 9 wins 0.0532 (so the 2.5th percentile is 9 wins, 0.45); at 16 wins 0.9556, at 17 wins 0.9879 (so the 97.5th percentile is 17 wins, 0.85). The percentile interval is <b>0.45 to 0.85</b>.</p>
+          <p>A quick formula agrees: the standard error is <span class="tex">\sqrt{0.65\times0.35/20}=0.1067</span>, and <span class="tex">0.65\pm1.96\times0.1067</span> gives 0.441 to 0.859. The interval contains 0.5, so 13 of 20 does <b>not</b> establish that A is better. With four times the data (52 wins of 80, the same rate) the standard error is 0.0533, and the interval narrows to about 0.55 to 0.75.</p>
+        </div>
+        <div class="eq">\hat p=\frac1n\sum_{i=1}^{n}y_i,\qquad \text{bootstrap: } \hat p^{*}_b=\frac1n\sum_{i=1}^{n}y^{*}_{b,i},\ \ y^{*}_{b,i}\sim\text{uniform over }\{y_1,\dots,y_n\},\ \ b=1,\dots,B</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">y_i\in\{0,1\}</span>: the <span class="tex">i</span>-th judgement. <span class="tex">n</span>: how many judgements. <span class="tex">\hat p</span>: the observed win rate. <span class="tex">y^{*}_{b,i}</span>: the <span class="tex">i</span>-th item of the <span class="tex">b</span>-th resample. <span class="tex">B</span>: number of resamples. The interval is the 2.5th and 97.5th percentiles of <span class="tex">\hat p^{*}_1,\dots,\hat p^{*}_B</span>. More on intervals: <a href="ds-statistics.html#confidence-intervals">confidence intervals</a> and <a href="ds-statistics.html#bootstrap">the bootstrap</a>.</div>
+        <div data-lab="gen-mm-bootstrap"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Let 100 or more resamples accumulate. The red lines should settle near 0.45 and 0.85.</li>
+          <li>Choose 4× (n = 80). The histogram narrows: how far apart are the red lines now?</li>
+          <li>Click one judgement in the top row to flip it. Does one changed judgement move the interval much with n = 20, and with n = 80?</li>
+        </ol></div>
+
+        <p><b>Step 5, model-based judges and their known biases.</b> Because human judging is slow, a strong model is often asked to judge two answers. This is cheap and scalable, but judges have systematic biases reported in published studies of this practice: <b>position bias</b> (preferring the first or the second answer shown), <b>length bias</b> (preferring longer answers regardless of content), and <b>self-preference</b> (favouring answers written by the same model or style as the judge). The size of each bias depends on the judge and the task, so measure it for your own setup rather than assume a number. A common mitigation for position bias is to judge each pair twice with the order swapped and count only consistent verdicts.</p>
+        <table class="tbl"><tr><th>pair</th><th>verdict, order (A,B)</th><th>verdict, order (B,A)</th><th>result</th></tr>
+        <tr><td>1</td><td>A</td><td>A</td><td>A wins</td></tr>
+        <tr><td>2</td><td>A</td><td>B</td><td>tie (judge picked the first slot both times)</td></tr>
+        <tr><td>3</td><td>B</td><td>B</td><td>B wins</td></tr>
+        <tr><td>4</td><td>A</td><td>A</td><td>A wins</td></tr>
+        <tr><td>5</td><td>A</td><td>B</td><td>tie</td></tr>
+        <tr><td>6</td><td>B</td><td>A</td><td>tie (picked the second slot both times)</td></tr></table>
+        <div class="worked"><b>Worked example, swapping the order</b>
+          <p>Judged only in order (A,B), A is preferred in pairs 1, 2, 4, 5, so <span class="tex">4/6=0.667</span>. Using both orders, A wins 2 pairs, B wins 1 and 3 pairs are ties (half a point each): <span class="tex">(2+3\times0.5)/6=3.5/6=0.583</span>. Half of the first number's advantage came from the slot the answer was shown in. The same idea checks length bias (compare verdicts after trimming answers to equal length) and self-preference (compare judges from different families).</p>
+        </div>
+
+        <p><b>Step 6, scoring images: Fréchet distance and CLIP score.</b> For images there is no reference text. A popular idea is to compare the <b>distribution</b> of generated images with the distribution of real ones in a feature space. A fixed pre-trained network turns every image into a feature vector. Model the real features as a Gaussian with mean <span class="tex">\mu_r</span> and covariance <span class="tex">\Sigma_r</span> and the generated features as <span class="tex">\mu_g,\Sigma_g</span>. The squared Fréchet distance between two Gaussians (the quantity behind FID) is</p>
+        <div class="eq">d^2=\lVert\mu_r-\mu_g\rVert^2+\mathrm{Tr}\Bigl(\Sigma_r+\Sigma_g-2\,(\Sigma_r\Sigma_g)^{1/2}\Bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\mu_r,\mu_g</span>: mean feature vectors of real and generated images. <span class="tex">\Sigma_r,\Sigma_g</span>: their covariance matrices. <span class="tex">\lVert\cdot\rVert^2</span>: squared length. <span class="tex">\mathrm{Tr}</span>: the trace, the sum of the diagonal. <span class="tex">(\Sigma_r\Sigma_g)^{1/2}</span>: the matrix square root of the product. The first term measures how far apart the centres are; the second measures how different the spreads and tilts are. Zero means identical Gaussians.</div>
+        <div class="worked"><b>Worked example, a tiny 2-D case</b>
+          <p>Real features: <span class="tex">\mu_r=(0,0)</span>, <span class="tex">\Sigma_r=\mathrm{diag}(1,4)</span>. Generated: <span class="tex">\mu_g=(3,4)</span>, <span class="tex">\Sigma_g=\mathrm{diag}(4,1)</span>. Mean term: <span class="tex">3^2+4^2=25</span>. For diagonal matrices <span class="tex">\Sigma_r\Sigma_g=\mathrm{diag}(4,4)</span>, whose square root is <span class="tex">\mathrm{diag}(2,2)</span> with trace 4. Trace term: <span class="tex">(1+4)+(4+1)-2\times4=2</span>. So <span class="tex">d^2=25+2=27</span>.</p>
+          <p>For a general 2 × 2 case the trace of the square root has a shortcut: <span class="tex">\mathrm{Tr}\bigl((\Sigma_r\Sigma_g)^{1/2}\bigr)=\sqrt{\mathrm{Tr}(\Sigma_r\Sigma_g)+2\sqrt{\det\Sigma_r\det\Sigma_g}}</span>. In the example <span class="tex">\sqrt{8+2\sqrt{16}}=4</span>, matching. The lab uses this formula.</p>
+        </div>
+        <p>Its weaknesses follow from its recipe: it depends on the chosen feature network; a Gaussian is a crude summary; and when the covariances are estimated from few images the estimate is biased and noisy, which the lab shows. A different score, <b>CLIP score</b>, checks text-to-image <i>prompt agreement</i>: the cosine between the image's and the prompt's embeddings from a contrastive model (lesson 9.1), sometimes rescaled. It does not judge realism or fine detail, and inherits the encoder's blind spots. This module deliberately quotes no scores of real systems: they depend on the data, network and version used.</p>
+        <div data-lab="gen-mm-frechet"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults (generated mean (3, 4), spreads 2 and 1) confirm the population distance 27.000 (mean term 25, trace term 2). Watch the sample estimate wander toward it as points arrive.</li>
+          <li>Set the generated mean to (0, 0) and the spreads to 1 and 2: the distance should reach 0 for the population, but the sample estimate does not at small n. Why?</li>
+          <li>Keep the means equal but set spreads (2, 1): which of the two terms is non-zero?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Comparing scores from different setups.</b> Perplexity across tokenisers, or an FID computed with different networks or sample sizes, is not comparable.</li>
+          <li><b>No interval.</b> A difference smaller than the interval is not a ranking. 13 of 20 does not beat 0.5.</li>
+          <li><b>Believing a public benchmark.</b> Without a contamination check a high score may be memory, not ability.</li>
+          <li><b>Trusting a judge you have not audited.</b> Swap positions, control length and compare judges before using a model-based judge for decisions.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Model selection:</b> choosing between candidates uses benchmarks, human or model-judged preference ratings, and intervals around each.</li>
+          <li><b>Preference data for alignment</b> uses the same pairwise comparisons and logistic (Bradley–Terry) form as Elo.</li>
+          <li><b>Image generation research:</b> distribution distances such as FID and prompt-agreement scores are reported together with human study results.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the Elo table, a 400-point gap gives what expected score for the higher-rated model?</summary><div class="ans"><span class="tex">1/(1+10^{-1})=1/1.1=0.909</span>.</div></details>
+        <details class="check"><summary>2. A model is right 60% on unseen items; 10% of items leaked and are all answered from memory. What is its reported score?</summary><div class="ans"><span class="tex">0.10\times1+0.90\times0.60=0.64</span>, an inflation of 0.04.</div></details>
+        <details class="check"><summary>3. Compute the squared Fréchet distance for means (0,0) and (1,2) and identical covariance matrices.</summary><div class="ans">Identical covariances make the trace term zero (<span class="tex">(\Sigma\Sigma)^{1/2}=\Sigma</span>, so <span class="tex">\mathrm{Tr}(2\Sigma-2\Sigma)=0</span>). The distance is <span class="tex">1^2+2^2=5</span>.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Perplexity is <span class="tex">\exp</span> of the mean negative log probability; contamination adds <span class="tex">c(m-b)</span> to a benchmark score.</li>
+          <li>Elo turns pairwise outcomes into ratings; always attach an interval, for example by the bootstrap (13 of 20 gives 0.45 to 0.85).</li>
+          <li>Model-based judges show position, length and self-preference bias; swap the order and audit them.</li>
+          <li>The Fréchet distance is <span class="tex">\lVert\Delta\mu\rVert^2</span> plus a covariance term (27 in the worked example); it depends on the feature network and the sample size.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.4 ===================== -->
+    <section class="lesson" id="hallucination-factuality" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">9.4</span><h2>Hallucination and factuality</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A language model states a wrong date in a smooth, confident sentence. Why does that happen, how would we notice that its confidence is unreliable, and is "well calibrated" the same thing as "factually correct"?</div>
+
+        <h3 class="sec">Intuition: fluent is not the same as true</h3>
+        <p>A language model is trained to continue text so that the next token is plausible given the context. A sentence that sounds like a correct answer is a plausible continuation whether or not it is correct. When the model has seen a fact often, the plausible continuation is usually the true one. When the fact is rare, or absent, the model still has to emit <i>something</i>, and it emits what fits the pattern: a date in the right format, a name that looks like an author's. That plausible-but-unsupported output is called a <b>hallucination</b>. Several things contribute (hedged, because their relative weight is still studied): rare facts, ambiguity in the question, training that seldom rewards "I do not know", and a sampling process that sometimes picks less likely tokens.</p>
+        <p>Two different questions must be kept apart. <b>Factuality:</b> is the statement true or supported by evidence? <b>Calibration:</b> does the model's stated confidence match how often it is right? A model can be well calibrated and often wrong (it says "60%" and is right 60% of the time), and a model can be accurate and badly calibrated.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, calibration on a table.</b> Suppose a model answers 100 questions and gives a confidence with each answer. Group the answers into confidence bins. In a well calibrated model, among answers given 80% confidence about 80% should be right.</p>
+        <table class="tbl"><tr><th>confidence bin</th><th>answers n</th><th>mean confidence</th><th>correct</th><th>accuracy</th><th>gap |acc − conf|</th><th>(n/100) × gap</th></tr>
+        <tr><td>0.5–0.6</td><td>10</td><td>0.55</td><td>5</td><td>0.5000</td><td>0.0500</td><td>0.0050</td></tr>
+        <tr><td>0.6–0.7</td><td>15</td><td>0.65</td><td>8</td><td>0.5333</td><td>0.1167</td><td>0.0175</td></tr>
+        <tr><td>0.7–0.8</td><td>25</td><td>0.75</td><td>15</td><td>0.6000</td><td>0.1500</td><td>0.0375</td></tr>
+        <tr><td>0.8–0.9</td><td>30</td><td>0.85</td><td>21</td><td>0.7000</td><td>0.1500</td><td>0.0450</td></tr>
+        <tr><td>0.9–1.0</td><td>20</td><td>0.95</td><td>15</td><td>0.7500</td><td>0.2000</td><td>0.0400</td></tr></table>
+        <div class="worked"><b>Worked example, expected calibration error</b>
+          <p>Add the last column: <span class="tex">0.0050+0.0175+0.0375+0.0450+0.0400=0.1450</span>. The expected calibration error (ECE) is <b>0.145</b>: on average the stated confidence is about 14.5 points away from the observed accuracy. Overall accuracy is <span class="tex">64/100=0.64</span> while the mean confidence is <span class="tex">0.785</span>: the model is <b>overconfident</b> in every bin (accuracy below confidence).</p>
+          <p>ECE can hide errors that cancel. Take two bins: 40 answers at confidence 0.9 with accuracy 0.8, and 60 answers at confidence 0.6 with accuracy 0.7. Mean confidence is <span class="tex">0.4(0.9)+0.6(0.6)=0.72</span> and accuracy <span class="tex">0.4(0.8)+0.6(0.7)=0.74</span>, nearly equal, yet ECE is <span class="tex">0.4(0.1)+0.6(0.1)=0.10</span>. Binned ECE also depends on how the bins are chosen.</p>
+        </div>
+        <div class="eq">\mathrm{ECE}=\sum_{b=1}^{B}\frac{n_b}{n}\,\bigl|\,\mathrm{acc}(b)-\mathrm{conf}(b)\,\bigr|</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">B</span>: number of confidence bins. <span class="tex">n_b</span>: answers in bin <span class="tex">b</span>; <span class="tex">n</span>: all answers. <span class="tex">\mathrm{acc}(b)</span>: fraction correct in the bin. <span class="tex">\mathrm{conf}(b)</span>: the mean stated confidence in the bin. A perfectly calibrated model has ECE 0. See also <a href="ml-evaluation.html#calibration-uncertainty">calibration and uncertainty</a>.</div>
+
+        <p><b>Step 2, using confidence: answer or abstain.</b> If confidence is informative, the model can decline to answer when it is low. From the table, answering only where the confidence is at least 0.8 keeps the 50 answers of the last two bins; 21 + 15 = 36 are correct, so accuracy rises from 0.64 to <span class="tex">36/50=0.72</span>, while <b>coverage</b> (the share of questions answered) falls to 0.50. Choosing the threshold trades accuracy against coverage.</p>
+
+        <p><b>Step 3, factuality is about claims, not confidence.</b> To measure factuality of a long answer, split it into small checkable claims and ask, for each, whether a trusted source supports it. A simple score is the fraction of claims supported.</p>
+        <div class="worked"><b>Worked example, claim-level factuality</b>
+          <p>A short biography contains 10 atomic claims. Checked against a reference: 7 supported, 2 contradicted, 1 not verifiable. The supported fraction is <span class="tex">7/10=0.70</span>. Reporting the three counts is more honest than one number, because "unverifiable" and "contradicted" call for different responses. Note that a model that said all ten claims at 95% confidence would be miscalibrated <i>and</i> only 70% factual; one that said all ten at 70% would be calibrated and exactly as factual.</p>
+        </div>
+        <p><b>Step 4, grounding and verification.</b> Two families of remedies reduce unsupported statements. <b>Grounding</b> supplies evidence in the prompt (retrieved documents, tool results), asks the model to answer only from it and to cite it, so that each claim can be traced. <b>Verification</b> checks the output afterwards: compare claims with the sources, sample several answers and check agreement, or ask a second pass to look for unsupported statements. None is perfect: retrieval can bring wrong or outdated documents, a model can misread a correct one, and a verifier can share the generator's blind spots.</p>
+
+        <div data-lab="gen-mm-calib"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With k = 1 (calibrated) let the 400 questions arrive. The bars follow the diagonal and ECE is small. Now raise the difficulty to 2.5: accuracy falls a lot but the bars still sit on the diagonal. What does this say about calibration versus factuality?</li>
+          <li>Set k = 1.8, difficulty 1. The red gaps show overconfidence. Read ECE and the mean confidence minus the accuracy.</li>
+          <li>Set k = 0.6: the bars now rise above the diagonal. Which way does the gap point, and is the model more or less trustworthy than a calibrated one?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Equating calibration with correctness.</b> A calibrated model that is right 40% of the time is honestly unreliable; it is still unreliable.</li>
+          <li><b>Reading a model's verbal confidence as a probability.</b> Stated confidence ("I am sure") must itself be checked against outcomes, as in the table.</li>
+          <li><b>One ECE number.</b> Binned ECE depends on bin choice and hides cancelling errors; also look at the reliability diagram and at accuracy by slice.</li>
+          <li><b>Trusting a citation because it exists.</b> A cited source may not say what the claim says; verify that the cited text supports the claim.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Retrieval-augmented assistants</b> ground answers in documents and show citations so a user can check them.</li>
+          <li><b>Selective answering and abstention</b> use confidence or agreement across samples to decline low-confidence questions.</li>
+          <li><b>Factuality benchmarks</b> typically score atomic claims against references, with the evaluation cautions of lesson 9.3 (intervals, contamination, judge bias).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Two bins: 40 answers at confidence 0.9, accuracy 0.8; 60 answers at confidence 0.6, accuracy 0.7. What is the ECE and the overall accuracy?</summary><div class="ans">ECE = 0.4 × 0.1 + 0.6 × 0.1 = 0.10; accuracy = 0.4 × 0.8 + 0.6 × 0.7 = 0.74.</div></details>
+        <details class="check"><summary>2. In the printed table, if the model answers only when confidence is at least 0.7, what are the accuracy and coverage?</summary><div class="ans">Bins from 0.7 up hold 25 + 30 + 20 = 75 answers with 15 + 21 + 15 = 51 correct: accuracy 51/75 = 0.68, coverage 0.75.</div></details>
+        <details class="check"><summary>3. Can a model be perfectly calibrated and still hallucinate often? Explain.</summary><div class="ans">Yes. Perfect calibration only says that among answers given 60% confidence, 60% are right. If the model gives most answers low or moderate confidence and is right 40% to 60% of the time, it is calibrated but a large share of its statements are false. Calibration says whether you can trust the confidence, not whether the statement is true.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Hallucination is fluent output without support; factuality (is it true?) and calibration (does confidence match accuracy?) are different properties.</li>
+          <li>ECE = <span class="tex">\sum (n_b/n)|\mathrm{acc}-\mathrm{conf}|</span>; the printed table gives 0.145 and an overconfident model.</li>
+          <li>Measure factuality claim by claim; reduce errors with grounding and verification, and know their limits.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.5 ===================== -->
+    <section class="lesson" id="misuse-provenance" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">9.5</span><h2>Misuse, provenance and consent</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Generative systems make fluent text, convincing images and cloned voices cheaply. Which risks does that create, what can technology do to help people tell where content came from, what can it not do, and why do reasonable people disagree about copyright and consent?</div>
+
+        <h3 class="sec">Intuition: capability and trust move apart</h3>
+        <p>When a tool makes a piece of media easy to produce, the media stops being evidence by itself. A photograph used to imply that a camera was somewhere; a recording used to imply that someone spoke. The honest response has three parts: <b>reduce the risk where the system is built</b> (safeguards, access limits, monitoring), <b>add evidence about origin</b> (provenance, watermarks), and <b>maintain social and legal norms</b> (disclosure, consent, accountability). No single part is sufficient. This lesson is conceptual and defensive: it explains what the risks are and how the countermeasures work, and it does not describe how to carry out an attack.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, the risk landscape at a glance.</b></p>
+        <ul>
+          <li><b>Jailbreaks.</b> Attempts to talk a model out of its safety training with clever wording. Models are trained and filtered against known patterns, and new phrasings keep being found, so this is an ongoing contest and not a solved problem.</li>
+          <li><b>Prompt injection.</b> A model that reads untrusted text (a web page, an email, a document) cannot reliably tell "data to summarise" from "instructions to follow", so text planted in that content may try to redirect the assistant. The structural defences are: give the model the least privilege it needs, never let untrusted content authorise consequential actions without human confirmation, treat model output as untrusted input to other systems, and layer several checks.</li>
+          <li><b>Synthetic media.</b> Fabricated images, audio and video can be used for fraud, impersonation, harassment (including non-consensual imagery) and disinformation. A second effect is the "liar's dividend": real evidence can be dismissed as fake.</li>
+          <li><b>Scale.</b> Automation lowers the cost of producing spam, persuasion and low-quality content, which can overwhelm human review.</li>
+        </ul>
+
+        <p><b>Step 2, provenance: evidence about where content came from.</b> The most robust idea is <b>signed metadata</b>. When a camera or a generator creates a file, it records a manifest (who or what made it, with which tool, what edits followed), computes a <b>hash</b> of the content, and signs the manifest with a secret key. Anyone can later recompute the hash and check the signature with the matching public key. Industry content-credential standards exist along these lines; this lesson explains the mechanism, not a particular product.</p>
+        <div class="eq">\text{valid}\iff \mathrm{hash}(\text{content})=h_{\text{manifest}}\ \ \text{and}\ \ \mathrm{verify}\bigl(\text{signature},\,(h_{\text{manifest}},\text{claims}),\,\text{public key}\bigr)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\mathrm{hash}</span>: a function that maps any content to a short fingerprint; changing the content changes the fingerprint. <span class="tex">h_{\text{manifest}}</span>: the fingerprint recorded at signing. <i>claims</i>: statements such as "made by tool X". <i>signature</i>: made with a private key; checked with the public key. If either test fails the credential is broken.</div>
+        <p>What a valid credential <b>does</b> show: this content is exactly what the signer signed, and the signer made the stated claim. What it does <b>not</b> show: that the content is true, that the signer is trustworthy, or anything at all when the credential is <b>missing</b>. Metadata is easily dropped when a file is re-saved, screenshotted or uploaded to a service that strips it, so absence is normal and must not be read as "fake". Provenance works best when most legitimate tools attach it and users are shown the result.</p>
+        <div data-lab="gen-mm-provenance"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press "Verify again" with the original text and watch the three checks turn green. Read the verdict sentence closely.</li>
+          <li>Change one letter in the content. Which step fails, and why does a harmless edit also fail?</li>
+          <li>Press "Sign with a different key", then "Strip the metadata". Compare the two verdicts: failed versus unverifiable.</li>
+        </ol></div>
+
+        <p><b>Step 3, watermarks: evidence hidden in the content itself.</b> A watermark is a signal placed in the output as it is generated, so it survives when the metadata is gone. For text, one published scheme splits the vocabulary at each position into a "green" list and a "red" list by a secret rule, and gently nudges the generator toward green tokens. A detector that knows the rule counts green tokens. Ordinary text is green by chance with probability <span class="tex">\gamma</span>, so an excess of green is statistical evidence.</p>
+        <div class="eq">z=\frac{G-\gamma\,T}{\sqrt{T\,\gamma\,(1-\gamma)}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">T</span>: tokens examined. <span class="tex">G</span>: how many of them are green. <span class="tex">\gamma</span>: the chance an ordinary token is green (the green fraction). <span class="tex">\gamma T</span>: the number expected by chance and <span class="tex">\sqrt{T\gamma(1-\gamma)}</span> its standard deviation, so <span class="tex">z</span> counts standard deviations above chance (a normal approximation). A threshold such as <span class="tex">z\ge4</span> keeps false alarms on ordinary text rare.</div>
+        <div class="worked"><b>Worked example, a detection and its erosion</b>
+          <p>Take <span class="tex">T=200</span> tokens and <span class="tex">\gamma=0.25</span>. By chance we expect <span class="tex">50</span> green tokens with standard deviation <span class="tex">\sqrt{200\times0.25\times0.75}=6.124</span>. A watermarked text in which 40% of tokens are green has <span class="tex">G=80</span>, so <span class="tex">z=(80-50)/6.124=4.90</span>. For ordinary text, <span class="tex">P(z\ge4)\approx3.2\times10^{-5}</span> per test.</p>
+          <p>Now suppose half of the tokens are later replaced by other words, which are green only 25% of the time. The expected green count becomes <span class="tex">200\,(0.5\times0.4+0.5\times0.25)=65</span>, so <span class="tex">z=(65-50)/6.124=2.45</span>, below the threshold: detection fails although the text began as watermarked. Detection is therefore evidence that weakens with editing, short texts, and translation, and it applies only to systems that embed the mark and share the check.</p>
+        </div>
+        <div data-lab="gen-mm-watermark"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With rewriting 0%, watch the orange line cross the red threshold while the blue line wanders near zero. About how many tokens does it need?</li>
+          <li>Increase the rewriting share to 50% and then 100%. At what share does the watermarked line stay below the threshold at 400 tokens?</li>
+          <li>Raise γ to 0.5 with the other sliders fixed. Is detection easier or harder, and why?</li>
+        </ol></div>
+
+        <p><b>Step 4, detectors of AI-made content and the base-rate problem.</b> A classifier that guesses whether something was AI-generated, without any embedded signal, is a statistical guess that can be wrong in both directions, and the rates depend on the model, the text and the writer. Reports and studies have raised concern that such detectors can mislabel the writing of some groups, for example people writing in a second language. Even an apparently accurate detector produces many wrong accusations when the thing it looks for is rare.</p>
+        <div class="worked"><b>Worked example, a detector and a rare event</b>
+          <p>Suppose a detector flags 90% of AI-written texts and 5% of human-written ones (illustrative). Among 1,000 submissions, 10 are AI-written. The detector flags <span class="tex">0.90\times10=9</span> of them and <span class="tex">0.05\times990=49.5</span> of the human ones. Of the flagged texts only <span class="tex">9/(9+49.5)=0.154</span>, about 15%, were really AI-written. Decisions about people should never rest on such a flag alone.</p>
+        </div>
+
+        <p><b>Step 5, copyright and consent, stated from both sides.</b> These questions are open, differ between countries, and are the subject of ongoing court cases and legislation, so nothing here is legal advice.</p>
+        <ul>
+          <li><b>Arguments made in favour of training on public works:</b> the model learns statistical patterns, not stored copies; analysing works to extract facts and style has long been accepted in some legal traditions; broad training data is said to benefit society and competition; blocking it could favour a few large rights-holders.</li>
+          <li><b>Arguments made against:</b> works are copied and used commercially without permission or payment; models can sometimes reproduce passages or imitate a living creator's style closely enough to substitute for their work; creators did not agree to this use when they published.</li>
+          <li><b>Designs under discussion:</b> opt-out and opt-in registries, licensing and revenue sharing, disclosure of training sources, filters against reproducing protected passages, and rules about using a person's likeness or voice, where <b>consent</b> is the central principle.</li>
+        </ul>
+        <p>The technical facts relevant to both sides are that models can memorise some training examples, especially those repeated often, and that no technical measure today can fully prove what a given model did or did not learn from a given work.</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>"No credential, so it is fake".</b> Most authentic content has no credential. Missing metadata is not evidence.</li>
+          <li><b>"Valid signature, so it is true".</b> A signature proves origin and integrity only.</li>
+          <li><b>Trusting one defence.</b> Safeguards, provenance, watermarks, detection, human review and policy each fail in different ways; they are layered for that reason.</li>
+          <li><b>Treating a detector's output as proof.</b> With a rare target the large majority of flags can be false.</li>
+          <li><b>Treating contested law as settled.</b> Copyright and consent rules vary and change; check current local guidance for any real decision.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Content credentials and signed metadata</b> from creation tools, with verification shown in viewers and platforms.</li>
+          <li><b>Statistical watermarks</b> for generated text and invisible marks for images and audio, with their detection tests.</li>
+          <li><b>Safety work on models and agents:</b> red-teaming for jailbreaks, least-privilege design against prompt injection, and policies on likeness, voice and training data. The next lesson covers the guardrails around a deployed system.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A text of 100 tokens, γ = 0.25, has 45 green tokens. What is z?</summary><div class="ans">Expected 25, standard deviation <span class="tex">\sqrt{100\times0.25\times0.75}=4.330</span>, so <span class="tex">z=(45-25)/4.330=4.62</span>.</div></details>
+        <details class="check"><summary>2. What is the difference between "verification failed" and "no credential"?</summary><div class="ans">Failed verification means a credential is present but the content or signature does not match it: something was altered or the signer cannot be trusted. No credential means nothing can be checked, which is common for genuine content and says nothing about authenticity either way.</div></details>
+        <details class="check"><summary>3. A detector flags 90% of AI texts and 5% of human texts, and 1% of submissions are AI-written. What share of flagged items is really AI-written?</summary><div class="ans">Per 1,000 items: 9 true flags and 49.5 false flags, so 9 / 58.5 = 0.154, about 15%.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Risks include jailbreaks, prompt injection, synthetic-media abuse and scale; defences are layered because each one fails somewhere.</li>
+          <li>Signed provenance proves origin and integrity when present; its absence proves nothing. Statistical watermarks give evidence (<span class="tex">z</span>-score) that weakens with editing.</li>
+          <li>Copyright and consent debates have serious arguments on both sides and unsettled law; consent for likeness and voice is a central principle.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 9.6 ===================== -->
+    <section class="lesson" id="production-genai" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">9.6</span><h2>Running generative systems in production</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Your assistant works in a demo. Before you launch it, a manager asks: how long will a user wait, what will a million requests a month cost, how do we stop harmful requests without blocking legitimate ones, and how will we know next month that something broke?</div>
+
+        <h3 class="sec">Intuition: a deployed model is a service with a budget</h3>
+        <p>In production the model is one component of a service. It has a <b>latency budget</b> (how long the user waits), a <b>cost budget</b> (money per request, times volume), a <b>safety layer</b> that checks inputs and outputs, and a <b>monitoring and release process</b> that catches regressions. Each has a simple model you can compute before you launch. All prices and speeds in this lesson are invented round numbers for illustration, not real prices of any product.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Step 1, latency.</b> A request waits in a queue, then the model <b>prefills</b> (reads the whole prompt in parallel, fast per token), then <b>decodes</b> (writes the answer one token at a time, slow per token). The user sees the first token after the <b>time to first token</b>, and the whole answer after the total latency.</p>
+        <div class="eq">\text{TTFT}=t_{\text{queue}}+\frac{P}{r_{\text{prefill}}},\qquad \text{latency}=\text{TTFT}+\frac{O-1}{r_{\text{decode}}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">P</span>: prompt tokens. <span class="tex">O</span>: output tokens. <span class="tex">r_{\text{prefill}}</span>: tokens read per second; <span class="tex">r_{\text{decode}}</span>: tokens written per second. <span class="tex">t_{\text{queue}}</span>: waiting before processing starts. The first output token arrives with the end of prefill, so the remaining <span class="tex">O-1</span> tokens take the decode time.</div>
+        <div class="worked"><b>Worked example, an illustrative budget</b>
+          <p>Take <span class="tex">P=1500</span>, <span class="tex">O=300</span>, prefill 5,000 tokens/s, decode 40 tokens/s, queue 0.1 s. TTFT = <span class="tex">0.1+1500/5000=0.40</span> s. Decode = <span class="tex">299/40=7.475</span> s. Total latency = <b>7.875 s</b>. Decode dominates: output length is the lever. With <span class="tex">O=200</span> the latency is <span class="tex">0.4+199/40=5.375</span> s.</p>
+          <p>Cost with illustrative prices of $2 per million input tokens and $8 per million output tokens: <span class="tex">1500\times2\times10^{-6}+300\times8\times10^{-6}=0.0030+0.0024=\$0.0054</span> per request, so <b>$5,400</b> for a million requests.</p>
+        </div>
+
+        <p><b>Step 2, caching.</b> Many requests start with the same long system prompt. If the first 1000 tokens match a stored prefix, the system can skip reading them again and often charges less for them. Suppose cached tokens cost 10% of the input price and need no prefill. Then a hit costs <span class="tex">1000\times0.2\times10^{-6}+500\times2\times10^{-6}+0.0024=0.0002+0.0010+0.0024=\$0.0036</span>, a third cheaper, and its TTFT falls to <span class="tex">0.1+500/5000=0.20</span> s (total 7.675 s). If 60% of requests hit the cache, the average cost is <span class="tex">0.6(0.0036)+0.4(0.0054)=\$0.00432</span>, or $4,320 per million, with expected TTFT 0.28 s.</p>
+        <div data-lab="gen-mm-budget"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Reproduce the worked numbers: total latency 7.875 s on a miss, cost $0.00540, and $4,320 per million at a 60% hit rate.</li>
+          <li>Set the latency budget to 6 s. Both lanes miss it. Which single slider change (output length, decode speed, queue) meets the budget at the least cost to the user?</li>
+          <li>Double the prompt to 3000 tokens with the cache at 1000 tokens. Does caching help more or less in relative terms?</li>
+        </ol></div>
+
+        <p><b>Step 3, guardrails and their error trade-off.</b> A guardrail is a check around the model: an <b>input check</b> (is this request allowed?), an <b>output check</b> (is the answer safe to show?), often by a classifier that outputs a risk score. A threshold turns the score into block or pass. There are two kinds of error: a <b>false positive</b> (a harmless request blocked, which frustrates users) and a <b>false negative</b> (a harmful one let through). Moving the threshold trades one for the other. Here is a labelled set of 20 requests (10 benign, 10 harmful) with the classifier's score; a request is blocked if its score is at or above the threshold.</p>
+        <table class="tbl"><tr><th>benign scores</th><td>0.05, 0.10, 0.12, 0.15, 0.22, 0.30, 0.35, 0.42, 0.55, 0.62</td></tr>
+        <tr><th>harmful scores</th><td>0.35, 0.48, 0.58, 0.65, 0.72, 0.78, 0.85, 0.90, 0.93, 0.97</td></tr></table>
+        <table class="tbl"><tr><th>threshold</th><th>false positives (of 10 benign)</th><th>false negatives (of 10 harmful)</th><th>FPR</th><th>FNR</th></tr>
+        <tr><td>0.3</td><td>5</td><td>0</td><td>0.5</td><td>0.0</td></tr>
+        <tr><td>0.5</td><td>2</td><td>2</td><td>0.2</td><td>0.2</td></tr>
+        <tr><td>0.7</td><td>0</td><td>4</td><td>0.0</td><td>0.4</td></tr>
+        <tr><td>0.9</td><td>0</td><td>7</td><td>0.0</td><td>0.7</td></tr></table>
+        <div class="worked"><b>Worked example, counting and the base rate</b>
+          <p>At threshold 0.5 the benign scores 0.55 and 0.62 are blocked (2 false positives) and the harmful scores 0.35 and 0.48 pass (2 false negatives): FPR = 2/10 = 0.2 and FNR = 2/10 = 0.2, so the true positive rate is 0.8. No threshold gives zero for both, because the two groups overlap (benign up to 0.62, harmful down to 0.35).</p>
+          <p>Real traffic is mostly benign. Suppose only 1% of requests are harmful. At threshold 0.5, per 10,000 requests, 100 are harmful and 80 are blocked; 9,900 are benign and 1,980 are blocked. Of the 2,060 blocked, only <span class="tex">80/2060=0.039</span>, about 4%, are harmful. That is <span class="tex">\mathrm{TPR}\,\pi/(\mathrm{TPR}\,\pi+\mathrm{FPR}(1-\pi))=0.8(0.01)/(0.008+0.2(0.99))=0.0388</span>. At threshold 0.7 the 10 benign samples show 0 false positives, but that does not mean the true rate is 0; with only 10 benign cases the 95% upper limit is roughly 3/10 = 30% (the "rule of three"). A real evaluation needs hundreds of labelled cases and intervals (lesson 9.3).</p>
+        </div>
+        <div class="eq">\mathrm{FPR}=\frac{FP}{FP+TN},\quad \mathrm{FNR}=\frac{FN}{FN+TP},\quad \text{precision}=\frac{\mathrm{TPR}\,\pi}{\mathrm{TPR}\,\pi+\mathrm{FPR}\,(1-\pi)}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">FP</span>: benign requests blocked. <span class="tex">TN</span>: benign passed. <span class="tex">FN</span>: harmful passed. <span class="tex">TP</span>: harmful blocked. <span class="tex">\mathrm{TPR}=1-\mathrm{FNR}</span>. <span class="tex">\pi</span>: the share of real traffic that is harmful. Precision is the share of blocked requests that are truly harmful. See <a href="ml-evaluation.html#metrics-classification">classification metrics</a>.</div>
+        <div data-lab="gen-mm-guard"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Set the threshold to 0.5 and read FP = 2 and FN = 2; then 0.3 and 0.7 and match the table.</li>
+          <li>Change the harmful share from 1% to 20%. How does the share of blocked requests that are truly harmful change at threshold 0.5?</li>
+          <li>Which threshold would you choose if a missed harmful request is much worse than a blocked harmless one? What would you do about the harmless requests then blocked?</li>
+        </ol></div>
+
+        <p><b>Step 4, monitoring, evaluation harnesses and versioning.</b> Quality in production changes silently: user mix shifts, upstream documents change, a model or prompt is updated. Four habits catch this.</p>
+        <ul>
+          <li><b>Monitor what you can measure:</b> latency percentiles, error and refusal rates, token counts, cost per request, block rates of each guardrail, and sampled human or judged quality scores with intervals. Alert on changes against a baseline (the drift ideas of <a href="ds-production.html">data science in production</a> apply to input statistics).</li>
+          <li><b>An evaluation harness:</b> a fixed, versioned set of test requests with expected properties, run automatically before every change, so a "small prompt tweak" cannot silently break a case that worked.</li>
+          <li><b>Version everything together:</b> model version, prompt text, retrieval index, guardrail thresholds and settings. Record all of them with each response so any answer can be reproduced and a regression traced to the change that caused it.</li>
+          <li><b>Release gradually:</b> send a small share of traffic to the new version, compare with the old on the harness and on live metrics, and keep a quick way to roll back.</li>
+        </ul>
+        <p>Together these make a pipeline: input guard, then the model with its cached prefix, then output guard, with logs and metrics feeding the monitors, and the harness gating each release.</p>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Averaging latency.</b> Users feel the slow tail; track high percentiles, and remember that long outputs dominate decode time.</li>
+          <li><b>Budgeting only the happy path.</b> Retries, longer-than-expected prompts and tool calls multiply tokens; budget with the realistic distribution, not the average demo.</li>
+          <li><b>Setting a guardrail threshold on a tiny set.</b> Ten examples cannot show a rate near zero. Measure on enough cases, report intervals and revisit as traffic changes.</li>
+          <li><b>Forgetting the base rate.</b> A filter with a modest false-positive rate on mostly benign traffic mostly blocks benign requests.</li>
+          <li><b>Changing the prompt without a test run.</b> Prompts are code; version and test them.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Serving stacks</b> report time to first token and tokens per second, use prefix caching and batching, and price input and output tokens separately.</li>
+          <li><b>Moderation and policy layers</b> are classifiers with thresholds tuned on labelled data, and are re-evaluated as misuse patterns change (lesson 9.5).</li>
+          <li><b>MLOps for generative systems</b> adds prompt and index versions to the model registry, with evaluation harnesses as release gates (compare <a href="ml-production.html#monitoring-drift">monitoring and drift</a>).</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. At $2 per million input tokens and $8 per million output tokens, what does one request with 2000 prompt tokens and 500 output tokens cost?</summary><div class="ans"><span class="tex">2000\times2\times10^{-6}+500\times8\times10^{-6}=0.004+0.004=\$0.008</span>.</div></details>
+        <details class="check"><summary>2. With a 0.2 s queue, a 3000-token prompt and prefill at 5,000 tokens/s, what is the time to first token?</summary><div class="ans"><span class="tex">0.2+3000/5000=0.8</span> s.</div></details>
+        <details class="check"><summary>3. A filter blocks 80% of harmful and 20% of benign requests, and 5% of traffic is harmful. What share of blocked requests is harmful?</summary><div class="ans"><span class="tex">0.8(0.05)/(0.8(0.05)+0.2(0.95))=0.04/0.23=0.174</span>, about 17%.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Latency = queue + prefill + decode, and decode (output length) usually dominates; cost is input tokens times input price plus output tokens times output price (7.875 s and $0.0054 in the illustrative example).</li>
+          <li>Caching reduces both cost and time to first token for shared prefixes.</li>
+          <li>A guardrail threshold trades false positives against false negatives; the base rate decides how many blocks are real.</li>
+          <li>Monitor, test with a versioned harness, version model, prompt and settings together, and release gradually.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. That is the end of the Generative AI topic: return to the <a href="generative-ai.html">Generative AI overview</a> to revisit any module. Governing AI, the next topic in the hub, builds on lessons 9.4 to 9.6.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

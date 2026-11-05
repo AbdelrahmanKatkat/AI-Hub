@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 · Attention &amp; the Transformer · Generative AI</title>
+<meta name="description" content="Attention as a soft lookup, scaled dot-product attention with a hand-computed three-token example, multi-head attention, position information including rotary embeddings, the transformer block, the causal decoder, and the cost of attention and the KV cache, with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-transformer.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="2">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 2</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">2</div>
+      <div style="flex:1">
+        <h1>Module 2 · Attention &amp; the Transformer</h1>
+        <p>Almost every modern language model is a stack of one repeated block. This module builds that block from the ground up: how one token can fetch information from every other token (attention), how the model knows the order of words, how the pieces are wired together with a residual stream, why a language model must not look ahead, and what all this costs in compute and memory. It sits in the <b>pretrain</b> stage of the pipeline (collect and tokenise, pretrain, align, adapt and compress, generate, evaluate and guard), and it explains the part of <b>generate</b> that makes long prompts expensive.</p>
+        <div class="chips"><span class="chip">7 lessons</span><span class="chip">≈ 4 hours</span><span class="chip">Needs: <a href="math-linear-algebra.html#dot-product">dot product</a>, <a href="math-neural.html#softmax-stability">softmax</a>, <a href="gen-language.html#neural-language-model">a neural language model</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> This is the <i>language-model</i> transformer: it reads and writes a sequence of text tokens. The <a href="cv-transformers.html#vit">Vision Transformer</a> in the computer-vision topic uses the same block on image patches, and the <a href="math-neural.html#attention-math">attention mathematics</a> lesson derives the gradient; here we build the whole architecture and count its cost. One three-token example, with real numbers, runs through lessons 2.2 and 2.6. All labs are <i>illustrative</i> toy models with seeded random numbers and random (untrained) weights: they show how the mechanism behaves, not what a trained model has learned. Nothing here describes a particular commercial model.</div>
+
+    <!-- ===================== 2.1 ===================== -->
+    <section class="lesson" id="attention-lookup" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.1</span><h2>Attention as a soft lookup</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>In "The trophy did not fit in the suitcase because <i>it</i> was too big", what does "it" mean? To decide, the model at the word "it" must go back, find "trophy", and borrow information from it. An older kind of network read the text one word at a time and carried a single fixed-size vector forward as its memory. Whether the text has 10 words or 1 000, that vector has the same few hundred numbers. Is there a way for a position to look directly at <i>any</i> earlier word, and to decide by content which words matter?</div>
+
+        <h3 class="sec">Intuition: a dictionary that blends</h3>
+        <p>An ordinary dictionary (a Python dict, a database table) works by <b>exact lookup</b>. You hand it a <b>query</b>, it compares the query with every stored <b>key</b>, finds the one that matches, and returns the <b>value</b> stored under it. Either you get one value or nothing.</p>
+        <p>Attention is the same machinery with one change: the match is not yes or no but a <b>degree</b>. The query is compared with every key and each key gets a score for how well it matches. The scores are turned into positive weights that add up to 1, and the answer is not one value but the <b>weighted average of all the values</b>. A key that matches strongly contributes a lot; a key that matches weakly contributes a little. Because nothing is a hard decision, the whole operation can be trained by gradient descent: nudging a query or a key changes the weights smoothly.</p>
+        <p>The reason this fixes the bottleneck is that the values of <i>all</i> earlier tokens stay available. Nothing is squeezed into one vector; each position decides, fresh, how much of each token to read.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Every token has three roles, and each role is a vector of numbers. Its <b>key</b> says what the token offers ("I am a noun that is a thing you can carry"). Its <b>value</b> is the content it hands over if it is read. A <b>query</b> says what the token currently looks for. Where those vectors come from (learned projection matrices) is the subject of lessons 2.2 and 2.3. For now they are given.</p>
+        <p>Three tokens A, B, C, with 2-number keys and values:</p>
+        <table class="tbl"><thead><tr><th>token</th><th>key k</th><th>value v</th></tr></thead><tbody>
+          <tr><td>A</td><td>(1, 0)</td><td>(10, 0)</td></tr>
+          <tr><td>B</td><td>(0, 1)</td><td>(0, 10)</td></tr>
+          <tr><td>C</td><td>(1, 1)</td><td>(4, 4)</td></tr></tbody></table>
+        <div class="worked"><b>Worked example: query q = (2, 0)</b>
+          <p><b>Step 1, score each key</b> with the dot product <span class="tex">q\cdot k</span> (large when the two vectors point the same way): A: 2·1 + 0·0 = 2. B: 2·0 + 0·1 = 0. C: 2·1 + 0·1 = 2. The query "looks like" A and C equally, and not like B.</p>
+          <p><b>Step 2, softmax</b> turns scores into weights: <span class="tex">e^2=7.389</span>, <span class="tex">e^0=1</span>, <span class="tex">e^2=7.389</span>, which add to 15.778. Weights: A 7.389/15.778 = 0.4683, B 1/15.778 = 0.0634, C 0.4683. They are positive and add to 1.</p>
+          <p><b>Step 3, blend the values.</b> Output = 0.4683·(10, 0) + 0.0634·(0, 10) + 0.4683·(4, 4) = (4.683 + 0 + 1.873, 0 + 0.634 + 1.873) = <b>(6.556, 2.507)</b>.</p>
+          <p><b>A sharper query.</b> Double it to q = (4, 0): scores 4, 0, 4, weights 0.4955, 0.0091, 0.4955, output (6.937, 2.073). B has almost vanished. <b>A different query.</b> q = (0.5, 2): scores 0.5, 2, 2.5, weights 0.0777, 0.3482, 0.5741, output (3.073, 5.779): now C and B dominate. A hard lookup would have returned one stored value exactly; the soft lookup gives a blend that moves smoothly as the query moves.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\alpha_i=\frac{\exp(q\cdot k_i)}{\sum_{j=1}^{n}\exp(q\cdot k_j)},\qquad \text{output}=\sum_{i=1}^{n}\alpha_i\,v_i</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">q</span>: the query vector. <span class="tex">k_i</span>: the key of item <span class="tex">i</span>, same length as <span class="tex">q</span>. <span class="tex">v_i</span>: the value of item <span class="tex">i</span> (any length). <span class="tex">n</span>: the number of items (tokens that can be read). <span class="tex">q\cdot k_i</span>: the score, a dot product (see <a href="math-linear-algebra.html#dot-product">the dot product</a>). <span class="tex">\alpha_i</span>: the attention weight of item <span class="tex">i</span>, with <span class="tex">\alpha_i&gt;0</span> and <span class="tex">\sum_i\alpha_i=1</span>. The output has the same length as a value. The scaling factor that real systems add to the score is the subject of the next lesson.</div>
+        <p>Compared with a recurrent summary: after reading <span class="tex">n</span> tokens a recurrent network carries one vector of fixed size, whereas attention has <span class="tex">n</span> keys and <span class="tex">n</span> values to consult, so the information available grows with the text. The price, studied in lesson 2.7, is that every query is compared with every key.</p>
+
+        <div data-lab="gen-tr-lookup"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with the query length at 2. The query arrow turns slowly. Watch the three weight bars trade places, and the purple output point glide around inside the triangle of value points. Pause when the direction is 0°: the weights should read 0.468, 0.063, 0.468, matching the worked example.</li>
+          <li>Drag the length to 0. All three weights become 1/3 and the output stops at the average of the three values. Now drag it to 3: the output hugs the ring (the hard lookup) but never quite reaches it.</li>
+          <li>Set the direction to 90° and find which two tokens get the most weight. Predict it from the arrows before looking at the bars.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Attention picks one token."</b> It averages all of them; weights are never exactly 0 or 1. Only the sharpness of the scores moves it toward a pick.</li>
+            <li><b>Keys, values and queries are not the raw word.</b> They are learned linear views of the token's vector (lesson 2.2). The same token can be a good key for one purpose and carry a quite different value.</li>
+            <li><b>The weights are not an explanation by themselves.</b> A large weight says where information was read from, not why the final answer was produced.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Every transformer</b> (language, image, audio) is built from this operation. Encoder-decoder translation models were the first place attention beat a fixed-size summary, by letting the decoder look back over the source sentence.</li>
+            <li><b>Retrieval-style memory</b> in later modules has the same shape: a query, a set of stored keys, a blend or selection of stored values.</li>
+            <li><b>Vision:</b> <a href="cv-transformers.html#attention-maps">attention maps</a> in a Vision Transformer are exactly these weights over image patches.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With the table above, what are the weights and output for q = (0, 2)?</summary><div class="ans">Scores: A 0, B 2, C 2. Weights 0.0634, 0.4683, 0.4683. Output = 0.0634·(10,0) + 0.4683·(0,10) + 0.4683·(4,4) = (2.507, 6.556): the mirror image of the worked example, because the table is symmetric between the two coordinates.</div></details>
+        <details class="check"><summary>2. If all three keys were identical, what would the output be for any query?</summary><div class="ans">All scores are equal, so all weights are 1/3 and the output is the plain average of the values: ((10+0+4)/3, (0+10+4)/3) = (4.667, 4.667). The query could not tell the tokens apart.</div></details>
+        <details class="check"><summary>3. Why not replace the softmax by "take the key with the largest score"?</summary><div class="ans">The arg-max is a hard choice: moving the query slightly changes nothing until the winner flips, so the gradient is zero almost everywhere and the model cannot learn which keys to match. The softmax gives every key a small, smoothly changing weight, which gradient descent can follow.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Attention compares a query with every key, turns the scores into weights with softmax, and returns the weighted average of the values.</li>
+          <li>It is a differentiable, soft version of a lookup, and every earlier token stays readable instead of being squeezed into one summary vector.</li>
+          <li>Longer query vectors give sharper weights; the weights are always positive and add to 1.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.2 ===================== -->
+    <section class="lesson" id="scaled-dot-product" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.2</span><h2>Scaled dot-product attention</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Lesson 2.1 handled one query. A sentence has many tokens, and every one of them needs its own lookup, all at once. How is that written as a few matrix multiplications so that a GPU can do it in one go? And the standard formula divides the scores by <span class="tex">\sqrt{d_k}</span> before the softmax. What goes wrong if you leave that division out?</div>
+
+        <h3 class="sec">Intuition: every token asks, every token answers</h3>
+        <p>In <b>self-attention</b> the queries, keys and values all come from the same sequence. Every token plays all three roles: it asks a question (its query), advertises what it holds (its key) and carries content (its value). If the sequence has <span class="tex">T</span> tokens, stack the <span class="tex">T</span> queries as the rows of a matrix <span class="tex">Q</span>, the keys as the rows of <span class="tex">K</span>, the values as the rows of <span class="tex">V</span>. Then all the dot products of lesson 2.1 are one matrix product <span class="tex">QK^{\top}</span>: a <span class="tex">T\times T</span> table whose entry in row <span class="tex">i</span>, column <span class="tex">j</span> says how much token <span class="tex">i</span> wants to read token <span class="tex">j</span>.</p>
+        <p>Where do <span class="tex">Q,K,V</span> come from? From the token vectors <span class="tex">X</span> (one row per token) by three learned matrices: <span class="tex">Q=XW_Q</span>, <span class="tex">K=XW_K</span>, <span class="tex">V=XW_V</span>. Different matrices mean one vector can ask one thing, advertise another and carry a third.</p>
+
+        <h3 class="sec">Build it up: three tokens, real numbers</h3>
+        <p>Take the sentence "the cat sat" and suppose the projections have produced (key size <span class="tex">d_k=4</span>, value size <span class="tex">d_v=2</span>):</p>
+        <table class="tbl"><thead><tr><th>token</th><th>query q</th><th>key k</th><th>value v</th></tr></thead><tbody>
+          <tr><td>the</td><td>(1, 2, 0, 1)</td><td>(2, 1, 0, 1)</td><td>(1, 0)</td></tr>
+          <tr><td>cat</td><td>(2, 0, 1, 3)</td><td>(0, 3, 1, 0)</td><td>(0, 2)</td></tr>
+          <tr><td>sat</td><td>(0, 1, 2, 1)</td><td>(1, 0, 2, 2)</td><td>(3, 1)</td></tr></tbody></table>
+        <div class="worked"><b>Worked example: the whole computation</b>
+          <p><b>① Scores</b> <span class="tex">S=QK^{\top}</span>. Row "the": q·k_the = 1·2 + 2·1 + 0·0 + 1·1 = 5; q·k_cat = 0 + 6 + 0 + 0 = 6; q·k_sat = 1 + 0 + 0 + 2 = 3. Doing all nine entries:</p>
+          <table class="tbl"><thead><tr><th>query \ key</th><th>the</th><th>cat</th><th>sat</th></tr></thead><tbody>
+            <tr><td>the</td><td>5</td><td>6</td><td>3</td></tr><tr><td>cat</td><td>7</td><td>1</td><td>10</td></tr><tr><td>sat</td><td>2</td><td>5</td><td>6</td></tr></tbody></table>
+          <p><b>② Scale.</b> <span class="tex">d_k=4</span>, so <span class="tex">\sqrt{d_k}=2</span>. Divide every score by 2: rows (2.5, 3, 1.5), (3.5, 0.5, 5), (1, 2.5, 3).</p>
+          <p><b>③ Softmax along each row.</b> Row "the": <span class="tex">e^{2.5}=12.182</span>, <span class="tex">e^{3}=20.086</span>, <span class="tex">e^{1.5}=4.482</span>, sum 36.750, so the weights are 0.3315, 0.5465, 0.1220. All three rows:</p>
+          <table class="tbl"><thead><tr><th>weights with scale</th><th>the</th><th>cat</th><th>sat</th></tr></thead><tbody>
+            <tr><td>the</td><td>0.3315</td><td>0.5465</td><td>0.1220</td></tr><tr><td>cat</td><td>0.1808</td><td>0.0090</td><td>0.8102</td></tr><tr><td>sat</td><td>0.0777</td><td>0.3482</td><td>0.5741</td></tr></tbody></table>
+          <p><b>④ Weighted values.</b> Output row "the" = 0.3315·(1,0) + 0.5465·(0,2) + 0.1220·(3,1) = (0.3315 + 0.366, 1.093 + 0.122) = (0.697, 1.215). Output rows "cat" and "sat": (2.611, 0.828) and (1.800, 1.271). Notice that "cat" puts 0.81 of its attention on "sat".</p>
+          <p><b>What the scale did.</b> Skip step ②, so the softmax sees the raw scores. Row "the" becomes (0.2595, 0.7054, 0.0351), row "cat" becomes (0.0474, 0.0001, 0.9525) and row "sat" becomes (0.0132, 0.2654, 0.7214). The largest weight in each row rises from 0.547, 0.810, 0.574 (with the scale) to 0.705, 0.952, 0.721 (without). The entropy of each row, in bits (three equal weights would give 1.585), falls from 1.375, 0.753, 1.276 to 1.030, 0.277, 0.930. The output for "cat" shifts from (2.611, 0.828) to (2.905, 0.953). With only <span class="tex">d_k=4</span> the effect is modest; the next paragraph shows why it grows.</p>
+        </div>
+        <p><b>Why divide by <span class="tex">\sqrt{d_k}</span>.</b> Suppose the entries of a query and a key are independent with average 0 and variance 1. A score is a sum of <span class="tex">d_k</span> products, each with variance 1, so the score has variance <span class="tex">d_k</span> and spread <span class="tex">\sqrt{d_k}</span>. Bigger key vectors therefore produce bigger scores, and a softmax fed large scores puts almost all its weight on one key. A simulation (4 000 trials, 8 keys each) gives the following. This is the same experiment as the second lab below.</p>
+        <table class="tbl"><thead><tr><th>d_k</th><th>spread of raw scores</th><th>mean largest weight, no scale</th><th>mean largest weight, scaled</th></tr></thead><tbody>
+          <tr><td>4</td><td>1.98</td><td>0.527</td><td>0.343</td></tr><tr><td>16</td><td>4.01</td><td>0.752</td><td>0.357</td></tr><tr><td>64</td><td>8.00</td><td>0.879</td><td>0.361</td></tr><tr><td>256</td><td>16.09</td><td>0.939</td><td>0.362</td></tr></tbody></table>
+        <p>Dividing by <span class="tex">\sqrt{d_k}</span> brings the spread back to about 1 for every <span class="tex">d_k</span>, so the softmax stays in a sensible range. There is a training reason too. A softmax with one weight near 1 has almost no gradient: for the row "cat" without scaling, the last weight is 0.9525 and its slope <span class="tex">p(1-p)</span> is 0.045, against 0.154 for the scaled weight 0.8102. A saturated softmax barely learns.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\operatorname{Attention}(Q,K,V)=\operatorname{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right)V</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">Q\in\mathbb{R}^{T\times d_k}</span>: one query per row. <span class="tex">K\in\mathbb{R}^{T\times d_k}</span>: one key per row. <span class="tex">V\in\mathbb{R}^{T\times d_v}</span>: one value per row. <span class="tex">QK^{\top}</span>: the <span class="tex">T\times T</span> score table. <span class="tex">\sqrt{d_k}</span>: the scale, the square root of the key length. <span class="tex">\operatorname{softmax}</span>: applied to each <i>row</i> separately, so every row of weights is positive and sums to 1. The result is <span class="tex">T\times d_v</span>: one blended value per token. (This is a single head and has no mask yet; both are added in later lessons. The matrix derivation and gradient are in <a href="math-neural.html#attention-math">the attention mathematics lesson</a>; softmax stability is in <a href="math-neural.html#softmax-stability">softmax and numerical stability</a>.)</div>
+
+        <div data-lab="gen-tr-sdpa"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press Reset, then watch the four stages. Each cell is filled one at a time, and the line under the grid shows the arithmetic for the cell being revealed. Check the first entry: it should read 5.</li>
+          <li>Untick "divide the scores by √d_k". The readout compares the largest weight and the entropy of each row with and without scaling: the numbers should match the worked example above.</li>
+          <li>Change one entry of Q (for example make the first query row (3, 2, 0, 1)) and see how that row's weights and output move while the other rows stay fixed.</li>
+        </ol></div>
+        <div data-lab="gen-tr-scale"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave d_k at 64 and play. The red bars (no scale) usually have one tall bar; the green bars (scaled) are spread out. Compare the running averages: red climbs toward 0.88, green stays near 0.36.</li>
+          <li>Slide d_k down to 1, then up to 256, and watch the red line rise and the measured spread of raw scores follow √d_k.</li>
+          <li>Note that the green curve does not depend on d_k: that is what the scale is for.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Softmax over the wrong axis.</b> Each <i>row</i> (one query over all keys) is normalised, not the columns. Row sums are 1; column sums are not.</li>
+            <li><b>The scale uses the key size</b> <span class="tex">d_k</span>, not the number of tokens <span class="tex">T</span> and not the model width unless they coincide.</li>
+            <li><b>Q and K must have the same length;</b> V may differ. The output length follows V, not K.</li>
+            <li>"The scale is a minor detail." For small <span class="tex">d_k</span> it is (our example), for large <span class="tex">d_k</span> it decides whether training works.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>This formula is the core of every transformer layer, run once per head (next lesson). Efficient implementations compute it in blocks without ever storing the full <span class="tex">T\times T</span> table, but the mathematics is identical.</li>
+            <li>The <span class="tex">T\times T</span> table is why long inputs are costly: its size grows with the <i>square</i> of the length (lesson 2.7).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A key has length d_k = 16 and a raw score is 12. What goes into the softmax?</summary><div class="ans">12 / √16 = 12 / 4 = 3.</div></details>
+        <details class="check"><summary>2. In the scaled table, which token's value does "cat" copy most, and what is its output?</summary><div class="ans">"sat", with weight 0.8102 (and 0.1808 on "the", 0.0090 on "cat" itself). The output is 0.1808·(1,0) + 0.0090·(0,2) + 0.8102·(3,1) = (2.611, 0.828).</div></details>
+        <details class="check"><summary>3. Going from d_k = 64 to d_k = 256 with unit-variance entries, what happens to the spread of raw scores with and without the scale?</summary><div class="ans">Without the scale the spread doubles, from √64 = 8 to √256 = 16 (simulation: 8.00 and 16.09). With the scale both are divided by √d_k and stay close to 1 (1.00 and 1.01).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>All queries attend at once: <span class="tex">\operatorname{softmax}(QK^{\top}/\sqrt{d_k})V</span>, a <span class="tex">T\times T</span> weight table times the values.</li>
+          <li>A raw score is a sum of <span class="tex">d_k</span> products, so its spread grows like <span class="tex">\sqrt{d_k}</span>; dividing by <span class="tex">\sqrt{d_k}</span> keeps the softmax from saturating.</li>
+          <li>In the worked example the scale lowers the largest weights from (0.705, 0.952, 0.721) to (0.547, 0.810, 0.574).</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.3 ===================== -->
+    <section class="lesson" id="multi-head" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.3</span><h2>Multi-head attention</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A single attention head gives each token <i>one</i> weighted average of the other tokens. But the word "sat" in "the cat sat on the mat" needs to know who sat (the cat), where (the mat) and in what tense, and those are different questions with different best answers. One set of weights cannot ask all of them. How do we let a layer ask several questions at once without making it much more expensive?</div>
+
+        <h3 class="sec">Intuition: a committee of readers</h3>
+        <p>Imagine <span class="tex">h</span> readers going through the same sentence at the same time. Each has its own idea of what to look for and its own notebook of what to write down. One reader tracks grammatical subjects, another the nearest neighbour, another punctuation. Afterwards their notes are laid side by side and a final person merges them into one summary per word. Each reader has a <b>narrow</b> notebook: instead of giving every reader the full width <span class="tex">d</span>, we split the width, so <span class="tex">h</span> readers of width <span class="tex">d/h</span> cost about the same as one reader of full width.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The token vectors have width <span class="tex">d</span> (called <span class="tex">d_{\text{model}}</span>). A single head would project them with three <span class="tex">d\times d</span> matrices. Multi-head attention instead gives <i>each head</i> its own three matrices that project down to the smaller <b>head dimension</b> <span class="tex">d_{\text{head}}=d/h</span>. Each head runs the scaled dot-product attention of lesson 2.2 on its own small queries, keys and values, producing a <span class="tex">T\times d_{\text{head}}</span> result. The <span class="tex">h</span> results are placed side by side (concatenated) to give <span class="tex">T\times d</span> again, and one last matrix <span class="tex">W_O</span> mixes the heads together.</p>
+        <div class="worked"><b>Worked example: d = 8, h = 2, a six-token sentence</b>
+          <p>Width <span class="tex">d=8</span>, heads <span class="tex">h=2</span>, so <span class="tex">d_{\text{head}}=8/2=4</span>. The input <span class="tex">X</span> for "the cat sat on the mat" is <span class="tex">6\times 8</span>.</p>
+          <p><b>Shapes.</b> Head 1 has <span class="tex">W_Q^{(1)},W_K^{(1)},W_V^{(1)}</span>, each <span class="tex">8\times 4</span>, so its <span class="tex">Q,K,V</span> are <span class="tex">6\times 4</span>. Its score table is <span class="tex">6\times 6</span>, its output <span class="tex">6\times 4</span>. Head 2 does the same with its own matrices. Concatenating gives <span class="tex">6\times 8</span>, and <span class="tex">W_O</span> (<span class="tex">8\times 8</span>) maps that to the layer output <span class="tex">6\times 8</span>. There are two score tables, <span class="tex">h\cdot T^2=2\cdot 36=72</span> score entries.</p>
+          <p><b>Parameters (no biases).</b> Per head: <span class="tex">3\times(8\times 4)=96</span>. Two heads: 192. Plus <span class="tex">W_O</span>: 64. Total <b>256</b>, which equals <span class="tex">4d^2=4\cdot 64</span>. Equivalent view: <span class="tex">W_Q</span> as one <span class="tex">8\times 8</span> matrix (64 numbers) whose 8 output columns are split into 2 groups of 4, one group per head; the same for <span class="tex">W_K</span> and <span class="tex">W_V</span>, so 3·64 = 192, plus 64 for <span class="tex">W_O</span>. With biases on all four projections, add <span class="tex">4d=32</span> for 288.</p>
+          <p><b>Does <span class="tex">h</span> change the parameter count?</b> Try <span class="tex">h=1</span>: one head of width 8, three <span class="tex">8\times 8</span> matrices (192) plus <span class="tex">W_O</span> (64) = 256. Try <span class="tex">h=4</span>: four heads of width 2, three <span class="tex">8\times 2</span> matrices each (48 per head, 192 total) plus 64 = 256. The count is <span class="tex">4d^2</span> for every <span class="tex">h</span> that divides <span class="tex">d</span>. At a realistic width, <span class="tex">d=512</span> and <span class="tex">h=8</span> (<span class="tex">d_{\text{head}}=64</span>): <span class="tex">4\cdot 512^2=1{,}048{,}576</span> parameters in the attention part of one layer.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\operatorname{head}_i=\operatorname{Attention}\!\left(XW_Q^{(i)},\,XW_K^{(i)},\,XW_V^{(i)}\right),\qquad \operatorname{MHA}(X)=\operatorname{Concat}(\operatorname{head}_1,\dots,\operatorname{head}_h)\,W_O</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">X\in\mathbb{R}^{T\times d}</span>: the token vectors entering the layer. <span class="tex">h</span>: the number of heads, chosen so that <span class="tex">d_{\text{head}}=d/h</span> is a whole number. <span class="tex">W_Q^{(i)},W_K^{(i)},W_V^{(i)}\in\mathbb{R}^{d\times d_{\text{head}}}</span>: the projections of head <span class="tex">i</span>. <span class="tex">\operatorname{Concat}</span>: place the head outputs side by side, giving <span class="tex">T\times h\,d_{\text{head}}=T\times d</span>. <span class="tex">W_O\in\mathbb{R}^{d\times d}</span>: the output projection that lets information flow between heads. Parameters per layer: <span class="tex">4d^2</span> (plus <span class="tex">4d</span> if the projections have biases).</div>
+        <p>Cost: the compute of attention over all heads is about that of one full-width head (each head's score table is <span class="tex">T\times T</span> with a <span class="tex">d_{\text{head}}</span>-sized dot product, and there are <span class="tex">h</span> of them), but the number of score entries is <span class="tex">h\,T^2</span>, which matters for memory.</p>
+
+        <div data-lab="gen-tr-heads"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Start with <span class="tex">h=1</span>: one 6×6 map and one pattern. The orange frame marks the row of the current query token and moves slowly down the sentence; the readout says where that token looks.</li>
+          <li>Increase to 2, 4 and 8 heads. Different heads pick out different columns for the same query token, and with <span class="tex">h=8</span> each head is only one number wide, so its map is a simple function of two scalars.</li>
+          <li>Read the parameter line under the maps: it stays at 256 for every <span class="tex">h</span>. The heads here are random, not trained, so they show the mechanism, not meaningful linguistic roles.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"More heads means more parameters."</b> At fixed width <span class="tex">d</span>, no: the heads split the width. What grows is the number of separate score tables, and with it memory.</li>
+            <li><b>Heads are not assigned jobs by hand.</b> Each head's role emerges in training. Studies find some heads with interpretable behaviour and others that look redundant; do not assume every head is meaningful.</li>
+            <li><b>Too many heads make each one too thin.</b> With <span class="tex">d_{\text{head}}=1</span> a head's score is a product of two single numbers, which can express little.</li>
+            <li><b>W_O is not optional.</b> Without it the heads would be concatenated but never mixed within the layer.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>Every layer of a transformer language model, and of the <a href="cv-transformers.html#vit">Vision Transformer</a>, uses multi-head attention.</li>
+            <li>Many serving systems share the keys and values across several query heads to shrink memory (the idea is called multi-query or grouped-query attention); lesson 2.7 shows exactly what that saves.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. d = 512 and h = 8. What is d_head, and how many parameters do the four projection matrices hold (no biases)?</summary><div class="ans">d_head = 512/8 = 64. Four matrices of 512 × 512 = 262,144 entries each: 4 × 262,144 = 1,048,576.</div></details>
+        <details class="check"><summary>2. A layer with 8 heads reads a 10-token prompt. How many attention weights does it compute?</summary><div class="ans">One 10 × 10 table per head: 8 × 100 = 800 weights (before any mask).</div></details>
+        <details class="check"><summary>3. The model width is doubled from d = 8 to d = 16 with h = 2 fixed. By what factor does the attention parameter count change, and what is d_head?</summary><div class="ans">4d² grows from 256 to 1,024, a factor of 4. d_head = 16/2 = 8, up from 4.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Heads run attention in parallel on narrower slices (<span class="tex">d_{\text{head}}=d/h</span>) and are merged by <span class="tex">W_O</span>.</li>
+          <li>The four matrices <span class="tex">W_Q,W_K,W_V,W_O</span> hold <span class="tex">4d^2</span> parameters whatever <span class="tex">h</span> is (256 for <span class="tex">d=8</span>).</li>
+          <li>What grows with <span class="tex">h</span> is the number of <span class="tex">T\times T</span> score tables, <span class="tex">hT^2</span>.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.4 ===================== -->
+    <section class="lesson" id="position-information" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.4</span><h2>Position information</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>"Man bites dog" and "dog bites man" use the same three words and mean very different things. Self-attention scores each pair of tokens from their content alone. Can it tell the two sentences apart? If not, how do we give the model the order of the words, and can we do it in a way that depends on <i>how far apart</i> two words are rather than on where in the document they sit?</div>
+
+        <h3 class="sec">Intuition: attention sees a bag, not a line</h3>
+        <p>Attention takes a weighted average over tokens; an average does not care about the order of what it averages. If you shuffle the input tokens, every token still gets the same weights over the same set, and the outputs are just shuffled the same way. This property is called <b>permutation equivariance</b>. It is useful (the same machinery handles any length) but it means the order information must be added by hand. Three families of ways to do that:</p>
+        <ul>
+          <li><b>Absolute positions added to the input.</b> Give each position number <span class="tex">p</span> its own vector and add it to the token's vector (fixed sinusoidal formula, or a table of learned vectors).</li>
+          <li><b>Relative positions.</b> Let the score between two tokens depend on the distance between them.</li>
+          <li><b>Rotary embeddings (RoPE).</b> Rotate the query and key by an angle that grows with position, so that the dot product depends only on the offset.</li>
+        </ul>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example 1: attention cannot see order</b>
+          <p>Use 2-number vectors: man = (1, 0), bites = (0, 1), dog = (1, 1), and (to keep it plain) no projections, one head, scale <span class="tex">1/sqrt 2</span>. For the query "bites" = (0, 1) the scores against (man, bites, dog) are 0, 1, 1, which become 0, 0.7071, 0.7071 after dividing by 1.4142. Softmax: <span class="tex">e^0=1</span>, <span class="tex">e^{0.7071}=2.0281</span> twice, sum 5.0562, so the weights are (0.1978, 0.4011, 0.4011). Output = 0.1978·(1,0) + 0.4011·(0,1) + 0.4011·(1,1) = <b>(0.5989, 0.8022)</b>.</p><p>Now read the sentence in the other order, (dog, bites, man). The set of keys and values is the same, so the weights are the same numbers attached to the same words, and the output for "bites" is again <b>(0.5989, 0.8022)</b>. Attention cannot see that the word order changed. The lab below lets you verify this with live numbers and then add positions.</p></div>
+        <p>Positions fix this by making the vectors of identical words in different places differ.</p>
+        <div class="worked"><b>Worked example 2: sinusoidal encodings, d = 4</b>
+          <p>The classical fixed encoding writes, for position <span class="tex">p</span> and pair <span class="tex">i</span>, a sine and a cosine at the frequency <span class="tex">\omega_i=10000^{-2i/d}</span>. For <span class="tex">d=4</span> there are two pairs, with <span class="tex">\omega_0=1</span> and <span class="tex">\omega_1=10000^{-1/2}=0.01</span>:</p>
+          <table class="tbl"><thead><tr><th>p</th><th>sin(p·1)</th><th>cos(p·1)</th><th>sin(p·0.01)</th><th>cos(p·0.01)</th></tr></thead><tbody>
+            <tr><td>0</td><td>0.0000</td><td>1.0000</td><td>0.0000</td><td>1.0000</td></tr><tr><td>1</td><td>0.8415</td><td>0.5403</td><td>0.0100</td><td>1.0000</td></tr><tr><td>2</td><td>0.9093</td><td>-0.4161</td><td>0.0200</td><td>0.9998</td></tr><tr><td>3</td><td>0.1411</td><td>-0.9900</td><td>0.0300</td><td>0.9996</td></tr></tbody></table>
+          <p>The fast pair changes at every position (it is like the seconds hand); the slow pair barely moves (like the hour hand), so together they identify a position, much like the digits of a clock. A useful property: for any fixed offset <span class="tex">\delta</span>, the dot product <span class="tex">PE(p)\cdot PE(p+\delta)=\sum_i\cos(\omega_i\delta)</span> does not depend on <span class="tex">p</span>, as the first lab shows. <b>Learned</b> absolute positions are simply a table with one trainable vector per position up to a maximum length; nothing guarantees sensible vectors beyond the longest position seen in training.</p>
+        </div>
+        <div class="worked"><b>Worked example 3: rotary embedding on one 2-D pair</b>
+          <p>RoPE does not add anything to the token vectors. It rotates the query and the key, in the 2-D plane, by an angle proportional to their positions. Write <span class="tex">R(a)</span> for rotation by angle <span class="tex">a</span>. A query at position <span class="tex">m</span> becomes <span class="tex">R(m\theta)q</span> and a key at position <span class="tex">n</span> becomes <span class="tex">R(n\theta)k</span>, where <span class="tex">\theta</span> is the angle per position. Take <span class="tex">q=(2,1)</span>, <span class="tex">k=(1,2)</span> and <span class="tex">\theta=0.5</span> rad. Without rotation, <span class="tex">q\cdot k=4</span>. The rotated dot products, computed numerically:</p>
+          <table class="tbl"><thead><tr><th>query position m</th><th>key position n</th><th>offset m − n</th><th>(R(mθ)q)·(R(nθ)k)</th></tr></thead><tbody>
+            <tr><td>3</td><td>1</td><td>2</td><td>4.685622</td></tr><tr><td>5</td><td>3</td><td>2</td><td>4.685622</td></tr><tr><td>10</td><td>8</td><td>2</td><td>4.685622</td></tr><tr><td>103</td><td>101</td><td>2</td><td>4.685622</td></tr><tr><td>1</td><td>3</td><td>−2</td><td>−0.363204</td></tr></tbody></table>
+          <p>The same offset gives the same dot product at every absolute position, and a different offset gives a different one. <b>Why:</b> rotation matrices satisfy <span class="tex">R(a)^{\top}R(b)=R(b-a)</span>, so <span class="tex">(R(m\theta)q)\cdot(R(n\theta)k)=q^{\top}R((n-m)\theta)\,k</span>, which contains only <span class="tex">n-m</span>. In angle form, with <span class="tex">\varphi_q,\varphi_k</span> the angles of the original vectors, the value is <span class="tex">\lVert q\rVert\lVert k\rVert\cos(\varphi_k-\varphi_q-(m-n)\theta)</span>. Check: <span class="tex">\lVert q\rVert\lVert k\rVert=5</span>, <span class="tex">\varphi_k-\varphi_q=1.1071-0.4636=0.6435</span>, offset 2 gives <span class="tex">5\cos(0.6435-1)=5\times 0.9371=4.686</span>, as in the table.</p>
+          <p><b>In more dimensions.</b> A vector of even length <span class="tex">d</span> is cut into <span class="tex">d/2</span> pairs, and pair <span class="tex">i</span> is rotated by <span class="tex">m\theta_i</span> with <span class="tex">\theta_i=\text{base}^{-2i/d}</span> (commonly base 10 000). For <span class="tex">d=64</span> the first pair turns 1 radian per position, the last pair <span class="tex">10000^{-62/64}=1.3335\times10^{-4}</span> radians per position, a wavelength of about 47 117 positions. The attention score is the sum over pairs, so it still depends on <span class="tex">m-n</span> only. Only queries and keys are rotated; values are left alone.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\operatorname{PE}(p,2i)=\sin(p\,\omega_i),\quad \operatorname{PE}(p,2i+1)=\cos(p\,\omega_i),\quad \omega_i=10000^{-2i/d}</div>
+        <div class="eq">\tilde q_m=R_m\,q,\quad \tilde k_n=R_n\,k,\qquad \tilde q_m\cdot\tilde k_n=q^{\top}R_{n-m}\,k</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">p</span>: an absolute position (0, 1, 2, …). <span class="tex">i</span>: the index of a pair of dimensions, <span class="tex">0\le i&lt;d/2</span>. <span class="tex">\omega_i</span>: the frequency of pair <span class="tex">i</span> (radians per position), fast for small <span class="tex">i</span> and slow for large. <span class="tex">R_m</span>: the block-diagonal matrix that rotates pair <span class="tex">i</span> by the angle <span class="tex">m\theta_i</span>; <span class="tex">R_m^{\top}R_n=R_{n-m}</span>. <span class="tex">q,k</span>: the query and key before rotation. <span class="tex">\tilde q_m,\tilde k_n</span>: the rotated ones for positions <span class="tex">m,n</span>. Sinusoidal and learned encodings are added to the <i>input</i> once; RoPE is applied to <span class="tex">q</span> and <span class="tex">k</span> inside <i>every</i> attention layer.</div>
+        <p><b>Absolute versus relative.</b> Adding an absolute encoding to the input mixes position and content before the projections, so the relative-offset structure is present but entangled with content. RoPE makes the offset dependence exact and leaves the content untouched. What happens for positions beyond the training length depends on the scheme; learned tables have nothing to say, and rotary schemes are often adjusted (for example by rescaling the angles) before being used on longer texts. Treat any claim that a method "extends the context" as something to verify by measurement.</p>
+
+        <div data-lab="gen-tr-order"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With α = 0 (no positions) watch the sentence swap its order every few seconds. The output for "bites" in the two orders is identical, and the difference reads 0.</li>
+          <li>Raise α to 0.5 and then 1. The two outputs now differ, so the model can tell who bites whom.</li>
+        </ol></div>
+        <div data-lab="gen-tr-posenc"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the heat map (rows are positions, columns are dimensions). Left columns flip quickly from row to row; right columns change slowly. The orange frame is the current position.</li>
+          <li>Follow the green curve while the cursor moves. It always peaks (value 1) at the cursor, and its shape stays the same, only shifted: the similarity depends on the offset.</li>
+          <li>Lower the base to 10 and the slow pairs speed up; raise it and they slow down.</li>
+        </ol></div>
+        <div data-lab="gen-tr-rope"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults (q = (2,1), k = (1,2), θ = 0.5, Δ = 2) press play. Both arrows rotate, but the green trace stays flat at 4.686, the number in the table above.</li>
+          <li>The red trace shows what would happen if only the query were rotated: it wanders with the absolute position. That is the difference RoPE removes.</li>
+          <li>Move Δ and see the dot product slide along the cosine curve; set θ small and the curve flattens, so far-apart tokens are treated almost like near ones.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"The model knows order automatically."</b> A stack of attention and per-token layers without any position signal treats the input as a set (the causal mask of lesson 2.6 leaks a little order information, but this is not a substitute).</li>
+            <li><b>Relative is not the same as "distance only".</b> The score still depends on content; position only changes how the angle between <span class="tex">q</span> and <span class="tex">k</span> shifts.</li>
+            <li><b>Fixed formulas do not guarantee long-text quality.</b> Having a defined value at position 50 000 does not mean the model learned to use it.</li>
+            <li><b>Rotation is applied to q and k, not v,</b> and pairs must be of even length.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>Rotary embeddings are widely used in open language models. The original transformer used the sinusoidal formula, and other models use learned tables or distance-dependent biases added to the scores.</li>
+            <li><b>Long-context work</b> largely amounts to choosing a position scheme that still behaves sensibly beyond the training length, then testing it on long inputs.</li>
+            <li><a href="cv-transformers.html#patch-embedding">Vision transformers</a> add a position embedding to each patch for the same reason: patches are otherwise an unordered set.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With θ = 0.5 rad per position, by what angle is a query at position 7 rotated?</summary><div class="ans">7 × 0.5 = 3.5 radians (about 200.5 degrees).</div></details>
+        <details class="check"><summary>2. For q = (2,1), k = (1,2), θ = 0.5, what is the rotated dot product for positions m = 20, n = 17?</summary><div class="ans">The offset is 3, the same as for m = 3, n = 0, so the value is 3.275434 (computed numerically); it does not depend on where in the text the pair sits.</div></details>
+        <details class="check"><summary>3. For d = 64 and base 10 000, what are the angle per position and the wavelength of pair i = 31?</summary><div class="ans">θ₃₁ = 10000^(−62/64) = 1.3335×10⁻⁴ rad per position; one full turn takes 2π / θ₃₁ ≈ 47 117 positions. Pair 0 turns 1 rad per position, so its wavelength is 2π ≈ 6.28 positions.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Attention alone is blind to order: reversing the input only reverses the outputs.</li>
+          <li>Sinusoidal or learned vectors are added to the input; RoPE rotates pairs of dimensions of <span class="tex">q</span> and <span class="tex">k</span> by position-dependent angles.</li>
+          <li>With RoPE the dot product depends only on the offset <span class="tex">m-n</span>, here 4.685622 for every pair of positions with offset 2.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.5 ===================== -->
+    <section class="lesson" id="transformer-block" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.5</span><h2>The transformer block</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Attention only <i>mixes</i> information between tokens, and the mixing itself is a weighted average. Where does the model compute new features from each token's own vector, and how do we stack dozens of such layers so that training stays stable? And once stacked, where do the parameters actually sit: in the attention part, or somewhere else?</div>
+
+        <h3 class="sec">Intuition: a shared whiteboard</h3>
+        <p>Think of each token's vector as a whiteboard that travels through the network. The board is never wiped. Every sublayer reads the board, computes something, and <b>writes a small addition</b> on it. This running whiteboard is called the <b>residual stream</b>. A transformer block has two sublayers: <b>attention</b> (read other tokens' boards, write what was learned from them) and an <b>MLP</b> (think about this one token's own board, write the result). Because each sublayer only adds, the information that was already on the board is still there at the end, and the gradient has a direct path from output to input.</p>
+        <p>One more tool keeps the numbers tame: <b>layer normalisation</b> rescales a vector to a standard size before a sublayer reads it, so a sublayer sees inputs of a predictable scale no matter how large the stream has grown.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>The <b>pre-norm</b> block (common in recent language models) is two lines, with <span class="tex">x</span> the stream at one token:</p>
+        <div class="eq">x'=x+\operatorname{Attn}(\operatorname{LN}(x)),\qquad x''=x'+\operatorname{MLP}(\operatorname{LN}(x'))</div>
+        <div class="worked"><b>Worked example 1: layer normalisation</b>
+          <p>LayerNorm subtracts the mean of the vector's own entries and divides by their standard deviation (then multiplies by a learned scale <span class="tex">\gamma</span> and adds a learned shift <span class="tex">\beta</span>, taken as 1 and 0 here). Take <span class="tex">x=(1,2,3,6)</span>. Mean = 12/4 = 3. Variance = ((−2)² + (−1)² + 0² + 3²)/4 = 14/4 = 3.5, standard deviation = <span class="tex">\sqrt{3.5}=1.8708</span>. Normalised: (−2, −1, 0, 3)/1.8708 = <b>(−1.0690, −0.5345, 0, 1.6036)</b>. (A tiny constant <span class="tex">\varepsilon</span>, such as 10⁻⁵, is added to the variance to avoid dividing by zero.) Some recent models use a simpler variant, RMSNorm, which divides by the root-mean-square 3.5355 without subtracting the mean, giving (0.2828, 0.5657, 0.8485, 1.6971) for the same vector.</p>
+        </div>
+        <p><b>The MLP.</b> After attention, each token's vector goes separately through a two-layer network: expand from width <span class="tex">d</span> to <span class="tex">fd</span> (usually <span class="tex">f=4</span>), apply a nonlinearity (ReLU, GELU or a gated variant), and project back to <span class="tex">d</span>. This is where a block does nonlinear per-token feature computation; attention supplies the context, the MLP processes it.</p>
+        <div class="worked"><b>Worked example 2: counting the parameters of one block</b>
+          <p>Let the width be <span class="tex">d</span>, the expansion <span class="tex">4</span>, with biases. <b>Attention:</b> four projections <span class="tex">W_Q,W_K,W_V,W_O</span>, each <span class="tex">d\times d</span>, plus four bias vectors: <span class="tex">4d^2+4d</span>. <b>MLP:</b> <span class="tex">W_1</span> is <span class="tex">d\times 4d</span> (<span class="tex">4d^2</span>) with bias <span class="tex">4d</span>; <span class="tex">W_2</span> is <span class="tex">4d\times d</span> (<span class="tex">4d^2</span>) with bias <span class="tex">d</span>: <span class="tex">8d^2+5d</span>. <b>Two LayerNorms:</b> each has <span class="tex">\gamma</span> and <span class="tex">\beta</span> of length <span class="tex">d</span>: <span class="tex">4d</span>. <b>Total:</b></p>
+          <div class="eq">P_{\text{block}}=(4d^2+4d)+(8d^2+5d)+4d=12d^2+13d</div>
+          <p><b>Check against an explicit small configuration, d = 8:</b> W_Q 64, b_Q 8, W_K 64, b_K 8, W_V 64, b_V 8, W_O 64, b_O 8 (attention subtotal 288); W_1 8×32 = 256, b_1 32, W_2 32×8 = 256, b_2 8 (MLP subtotal 552); LayerNorm 1 γ and β 16, LayerNorm 2 γ and β 16 (32). Adding all sixteen tensors gives 288 + 552 + 32 = <b>872</b>, and the formula gives 12·64 + 13·8 = 768 + 104 = 872. They agree. (The lab below recounts the tensors one by one for any configuration you choose.)</p>
+          <p><b>Where the parameters live.</b> For large <span class="tex">d</span> the linear terms are negligible and the block holds about <span class="tex">12d^2</span>: attention <span class="tex">4d^2</span> (one third) and the MLP <span class="tex">8d^2</span> (two thirds). At <span class="tex">d=8</span> the MLP holds 552 of 872 (63%). Many recent models drop the biases and use RMSNorm, in which case the block is close to exactly <span class="tex">12d^2</span> (a gated MLP changes the split somewhat).</p>
+        </div>
+        <p><b>Why add instead of replace?</b> Writing <span class="tex">y=x+f(x)</span> gives the derivative <span class="tex">\partial y/\partial x=I+\partial f/\partial x</span>. The identity part carries the gradient straight through, however deep the stack, the same trick that made very deep image networks trainable. <b>Why norm before the sublayer (pre-norm)?</b> The stream itself is never rescaled, so the identity path stays clean; the original transformer instead normalised after each addition (post-norm), which trains less stably at large depth in many reports. Treat that as common practice, not a law.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\operatorname{LN}(x)=\gamma\odot\frac{x-\mu}{\sqrt{\sigma^2+\varepsilon}}+\beta,\qquad \mu=\tfrac1d\sum_j x_j,\quad \sigma^2=\tfrac1d\sum_j (x_j-\mu)^2</div>
+        <div class="eq">\operatorname{MLP}(x)=W_2\,\phi(W_1x+b_1)+b_2,\qquad W_1\in\mathbb{R}^{4d\times d},\ W_2\in\mathbb{R}^{d\times 4d}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x\in\mathbb{R}^d</span>: one token's vector in the residual stream. <span class="tex">\mu,\sigma^2</span>: the mean and variance of its <span class="tex">d</span> entries (not across tokens). <span class="tex">\gamma,\beta\in\mathbb{R}^d</span>: learned per-entry scale and shift; <span class="tex">\odot</span> is entry-wise multiplication. <span class="tex">\varepsilon</span>: a small constant. <span class="tex">\phi</span>: the nonlinearity. <span class="tex">W_1,b_1,W_2,b_2</span>: the MLP's weights and biases (here written for a column vector <span class="tex">x</span>). Attention is the multi-head layer of lesson 2.3. A full model is an embedding, <span class="tex">L</span> such blocks, a final LayerNorm, and a linear layer to the vocabulary logits (see <a href="gen-language.html#neural-language-model">the neural language model</a>). Normalisation and initialisation are discussed in <a href="ml-neural.html#init-normalization">initialisation and normalisation</a>.</div>
+
+        <div data-lab="gen-tr-block"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play and follow the orange box down the diagram. Purple bars are the stream (8 numbers of one token); the lower bars show what the sublayer sees or writes. During an "add" stage the purple bars slide from the old to the new values; the outline marks the old ones.</li>
+          <li>Look at the "update/stream" ratio in the line under the bars. Each sublayer changes the stream by a modest fraction, and the stream after four blocks still resembles the input.</li>
+          <li>Set the input scale to 6 and untick layer normalisation. Without it the sublayers receive large inputs; with it they see the same scale as before. Then compare the number of parameters in the readout with 12·8² + 13·8 = 872.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>LayerNorm is over the vector, not over the batch or the sequence:</b> each token's <span class="tex">d</span> numbers are normalised independently of other tokens.</li>
+            <li><b>The MLP does not mix tokens.</b> Only attention moves information between positions; the MLP acts on each position alone, with the same weights for every token.</li>
+            <li><b>"Attention holds the parameters."</b> At the usual expansion of 4, the MLP has twice as many as attention.</li>
+            <li><b>Pre-norm versus post-norm</b> are different networks; copying a formula from a paper without noting which one is used gives a different model.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>GPT-style models are an embedding, a stack of these blocks, and an output layer. Scaling a model mostly means more blocks (<span class="tex">L</span>) and a wider stream (<span class="tex">d</span>); the parameter count grows like <span class="tex">12Ld^2</span> plus the embedding table.</li>
+            <li>Interpretability work reads the residual stream directly, because every sublayer writes into the same shared space.</li>
+            <li>The same pre-norm block, with patches instead of words, is the <a href="cv-transformers.html#vit">Vision Transformer</a> layer.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Apply LayerNorm (γ = 1, β = 0) to x = (1, 2, 3, 6).</summary><div class="ans">Mean 3, variance 3.5, standard deviation 1.8708. Result (−1.0690, −0.5345, 0, 1.6036). The normalised vector has mean 0 and variance 1.</div></details>
+        <details class="check"><summary>2. How many parameters does one block with biases have for d = 16, and how are they split?</summary><div class="ans">12·256 + 13·16 = 3072 + 208 = 3 280. Attention 4·256 + 64 = 1 088; MLP 8·256 + 80 = 2 128; two LayerNorms 4·16 = 64. Check: 1 088 + 2 128 + 64 = 3 280.</div></details>
+        <details class="check"><summary>3. If W_O and W_2 were all zeros, what would a pre-norm block compute?</summary><div class="ans">Both sublayers would output zero, so x' = x and x'' = x': the block is the identity. This is why residual networks can start close to "do nothing" and learn small corrections.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A block adds an attention update and an MLP update to the residual stream, each computed from a normalised copy.</li>
+          <li>One block has <span class="tex">12d^2+13d</span> parameters with biases (872 at <span class="tex">d=8</span>); two thirds of the weights sit in the MLP.</li>
+          <li>Attention mixes across tokens; the MLP and LayerNorm act on each token separately.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.6 ===================== -->
+    <section class="lesson" id="causal-decoder" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.6</span><h2>The causal decoder</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A language model is trained to predict the next token. To train on a sentence of 1 000 tokens you could run the model 1 000 times, each time showing the first <span class="tex">t</span> tokens and asking for token <span class="tex">t+1</span>. That is slow. Could one pass over the whole sentence give all 1 000 predictions at once, without the model cheating by looking at the answer? And at generation time, when the text does not exist yet, what changes?</div>
+
+        <h3 class="sec">Intuition: cover the future with a card</h3>
+        <p>When you read a sentence word by word and guess the next word, you cover the rest of the page with a card. Training a decoder does the same for all positions simultaneously: every row of the attention table is only allowed to look at itself and the tokens before it. Position 3 cannot read positions 4 and 5. The <b>causal mask</b> is that card, implemented by forbidding every entry above the diagonal of the score table.</p>
+        <p>With the card in place, token <span class="tex">t</span>'s output depends only on tokens <span class="tex">1,\dots,t</span>, exactly as if we had shown the model only the first <span class="tex">t</span> tokens. So reading the whole sequence once is equivalent to <span class="tex">T</span> separate next-token problems, computed in parallel.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Replace each forbidden score by <span class="tex">-\infty</span> before the softmax; since <span class="tex">e^{-\infty}=0</span>, those weights are exactly 0 and the remaining weights in the row are renormalised.</p>
+        <div class="worked"><b>Worked example: the three-token example with a mask</b>
+          <p>Take the scaled scores of lesson 2.2: rows (2.5, 3, 1.5), (3.5, 0.5, 5), (1, 2.5, 3), with values "the" (1, 0), "cat" (0, 2), "sat" (3, 1). The mask removes the entries above the diagonal:</p>
+          <table class="tbl"><thead><tr><th>query \ key</th><th>the</th><th>cat</th><th>sat</th></tr></thead><tbody>
+            <tr><td>the</td><td>2.5</td><td>−∞</td><td>−∞</td></tr><tr><td>cat</td><td>3.5</td><td>0.5</td><td>−∞</td></tr><tr><td>sat</td><td>1</td><td>2.5</td><td>3</td></tr></tbody></table>
+          <p><b>Row "the"</b> has one allowed entry, so its weight is 1: weights (1, 0, 0), output (1, 0). <b>Row "cat"</b>: <span class="tex">e^{3.5}=33.115</span> and <span class="tex">e^{0.5}=1.649</span>, sum 34.764, weights (0.9526, 0.0474, 0); output = 0.9526·(1,0) + 0.0474·(0,2) = <b>(0.9526, 0.0949)</b>. <b>Row "sat"</b> may see everything, so it is unchanged: weights (0.0777, 0.3482, 0.5741), output (1.800, 1.271).</p>
+          <p>Compare with the unmasked outputs of lesson 2.2: "the" changed from (0.697, 1.215) to (1, 0), "cat" from (2.611, 0.828) to (0.953, 0.095), "sat" did not change. <b>The leak test:</b> change the value of the last token "sat" and the masked outputs of "the" and "cat" are exactly unchanged. Without the mask all three would change. The lab runs this test.</p>
+        </div>
+        <p><b>Teacher forcing.</b> The decoder reads the true text shifted by one: the input at position <span class="tex">t</span> is token <span class="tex">x_{t-1}</span> (position 1 sees a start symbol) and the target at position <span class="tex">t</span> is <span class="tex">x_t</span>. Position <span class="tex">t</span> uses the <i>true</i> earlier tokens, whether or not the model would have produced them. The loss is the sum of the cross-entropies at all positions, the quantity defined in <a href="gen-training.html#pretraining-objective">the pretraining objective</a>.</p>
+        <p><b>Decoder-only architecture.</b> Stack <span class="tex">L</span> transformer blocks whose attention is masked, add a final LayerNorm and a linear layer that maps each position's vector to a logit per vocabulary entry. The logits at position <span class="tex">t</span> define the distribution of token <span class="tex">t+1</span> (see <a href="gen-language.html#decoding-sampling">decoding and sampling</a> for how a token is chosen). Other arrangements exist: an <i>encoder</i> uses no mask, so every token sees all others (suited to understanding a fixed input), and an <i>encoder-decoder</i> adds a second attention in which the decoder's queries read the encoder's keys and values (cross-attention). Many current chat and text-generation models are decoder-only.</p>
+        <p><b>Parallel training, sequential generation.</b> Training knows the whole text, so one forward pass covers all positions: for 8 tokens, 1 pass and 8 loss terms. Generation does not know the future: to produce token <span class="tex">k+1</span> the model must first sample token <span class="tex">k</span>, append it and run again, so 8 tokens need 8 passes one after another. That makes generation slow compared with training on the same number of tokens (lesson 2.7 shows how the cache avoids repeating work inside each pass). A mismatch also exists: during training the model always sees correct history, during generation it sees its own samples, which can drift; this is sometimes called exposure bias.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\operatorname{Attn}_{\text{causal}}(Q,K,V)=\operatorname{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}+M\right)V,\qquad M_{ij}=\begin{cases}0 &amp; j\le i\\ -\infty &amp; j&gt;i\end{cases}</div>
+        <div class="eq">\mathcal{L}=-\frac1T\sum_{t=1}^{T}\log p_\theta\!\left(x_t\mid x_1,\dots,x_{t-1}\right)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">M</span>: the mask matrix, added to the scores; <span class="tex">M_{ij}</span> belongs to query <span class="tex">i</span> and key <span class="tex">j</span>. <span class="tex">j\le i</span>: key at or before the query's position (allowed). <span class="tex">-\infty</span>: forbids a pair, so its weight is 0. <span class="tex">x_t</span>: the token at position <span class="tex">t</span> of the training text. <span class="tex">p_\theta(x_t\mid x_{&lt;t})</span>: the model's probability of the true token given the true tokens before it. <span class="tex">\mathcal{L}</span>: the average negative log-likelihood per position (the cross-entropy, in nats). The sum is computed for all <span class="tex">t</span> in one forward pass because of the mask.</div>
+
+        <div data-lab="gen-tr-mask"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the mask on, read row 1 of the weights: it is (1, 0, 0, 0, 0). Watch the orange frame move down the rows; row <span class="tex">i</span> has non-zero weights only in columns 1 to <span class="tex">i</span>.</li>
+          <li>Tick "add +1 to the value of the last token". With the mask only row 5 changes; the other rows show exactly 0.</li>
+          <li>Untick the mask. The upper triangle fades in and, with the same perturbation, every row changes. That is the leak that would let a model copy its target. Press "New scores" for another random table.</li>
+        </ol></div>
+        <div data-lab="gen-tr-gen"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Watch the top lane: the true sentence is shifted by one and all eight predictions are made in the single pass counted by the blue bar.</li>
+          <li>The bottom lane fills one token at a time and the orange bar grows to 8 passes. Slow the speed and read the caption for each pass.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Mask the scores, not the weights.</b> Setting weights to 0 after the softmax leaves rows that no longer sum to 1; setting the scores to −∞ before it keeps them summing to 1.</li>
+            <li><b>The last row is not masked in a useful way:</b> the final position sees everything, which is why unmasked and masked outputs agree there.</li>
+            <li><b>Parallel training does not mean parallel generation.</b> Each new token is an input of the next pass.</li>
+            <li>An all-masked row would produce <span class="tex">0/0</span>; the first token always sees at least itself, so this never occurs in a causal mask, but padding needs care.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li>GPT-style language models, code models and many multimodal generators train with exactly this masked next-token loss.</li>
+            <li>The sequential nature of generation is why serving systems batch many requests and why <a href="gen-efficiency.html#serving-batching">prefill and decode</a> are treated as two different phases.</li>
+            <li>Bidirectional (unmasked) encoders are used where the entire input is known, for example to embed or classify text.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In a causal mask over 5 positions, how many score entries are set to −∞?</summary><div class="ans">The entries strictly above the diagonal: 4 + 3 + 2 + 1 + 0 = 10 = 5·4/2. The other 15 (5 + 4 + 3 + 2 + 1) remain.</div></details>
+        <details class="check"><summary>2. A 100-token text is used for training; the model then generates 100 new tokens. How many forward passes does each take?</summary><div class="ans">Training: 1 pass over the 100 tokens (it yields 100 predictions and loss terms). Generation: 100 passes, because every token depends on the previous one. (With a KV cache each of those passes handles one new token instead of the whole prefix.)</div></details>
+        <details class="check"><summary>3. What would happen if the mask were forgotten during training?</summary><div class="ans">Position t could read token t+1, which is its own target, so the loss would collapse by copying and the model would learn nothing useful about prediction. At generation time the future tokens do not exist, and the model would fail.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The causal mask sets scores above the diagonal to <span class="tex">-\infty</span>, so token <span class="tex">i</span> reads only tokens 1 to <span class="tex">i</span>.</li>
+          <li>That lets one pass compute all next-token predictions (teacher forcing), while generation still needs one pass per new token.</li>
+          <li>Decoder-only models are masked self-attention blocks plus an output layer to vocabulary logits.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 2.7 ===================== -->
+    <section class="lesson" id="cost-and-kv-cache" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">2.7</span><h2>Cost and the KV cache</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You are given a transformer's configuration: width, layers, heads, vocabulary. How many parameters does it have? How much compute does one layer need for a prompt of <span class="tex">T</span> tokens, and what happens when you double the prompt? And while generating, why is memory, not arithmetic, often the limit, and how many bytes does each generated token add?</div>
+
+        <h3 class="sec">Intuition: three bills</h3>
+        <p>A transformer sends three different bills. The <b>parameter bill</b> (storing the weights) depends on the architecture only, not on the prompt. The <b>compute bill</b> for reading a prompt has two parts: the dense layers, linear in <span class="tex">T</span>, and attention, which compares every pair of tokens, so it grows as <span class="tex">T^2</span>. The <b>cache bill</b> appears during generation: to avoid recomputing the keys and values of all earlier tokens every time a token is added, the model stores them. That store is the <b>KV cache</b>, and it grows linearly with the text.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>A toy configuration used throughout this lesson (not any real product): width <span class="tex">d=64</span>, <span class="tex">L=4</span> layers, <span class="tex">h=4</span> heads of size <span class="tex">d_{\text{head}}=16</span>, MLP expansion <span class="tex">f=4</span>, vocabulary <span class="tex">V=1000</span>, rotary positions (so no position table), biases on, output layer sharing the embedding table.</p>
+        <div class="worked"><b>Worked example 1: the parameter count</b>
+          <p>From lesson 2.5, one block has <span class="tex">12d^2+13d</span> parameters: <span class="tex">12\cdot 4096+13\cdot 64=49{,}152+832=49{,}984</span>. Four blocks: 199 936. The embedding table has <span class="tex">V\cdot d=64{,}000</span> entries; sharing it with the output layer adds nothing. The final LayerNorm has <span class="tex">2d=128</span>. Total:</p>
+          <div class="eq">N=Vd+L\,(12d^2+13d)+2d=64{,}000+199{,}936+128=264{,}064</div>
+          <p>Stored in 2 bytes each, that is 528 128 bytes, about 516 KiB. If the output layer were separate it would add another <span class="tex">Vd</span> = 64 000.</p>
+        </div>
+        <div class="worked"><b>Worked example 2: the quadratic part</b>
+          <p>For one layer and a prompt of <span class="tex">T</span> tokens, count 2 floating-point operations per multiply-add. <b>Attention scores</b> <span class="tex">QK^\top</span>: for each of the <span class="tex">T^2</span> pairs, a dot product of length <span class="tex">d</span> summed over all heads: <span class="tex">2T^2d</span>. <b>Weighted sum</b> (weights times V): another <span class="tex">2T^2d</span>. Together <span class="tex">4T^2d</span>. <b>Dense layers</b>: the four attention projections cost <span class="tex">2\cdot 4d^2</span> per token and the MLP <span class="tex">2\cdot 2fd^2</span>, so <span class="tex">(8+4f)\,Td^2</span> in total, which is <span class="tex">24Td^2</span> for <span class="tex">f=4</span>.</p>
+          <table class="tbl"><thead><tr><th>T</th><th>score entries per layer (h·T²)</th><th>attention FLOPs 4T²d</th><th>dense FLOPs 24Td²</th></tr></thead><tbody>
+            <tr><td>128</td><td>65 536</td><td>4 194 304</td><td>12 582 912</td></tr><tr><td>256</td><td>262 144</td><td>16 777 216</td><td>25 165 824</td></tr><tr><td>512</td><td>1 048 576</td><td>67 108 864</td><td>50 331 648</td></tr></tbody></table>
+          <p>Doubling <span class="tex">T</span> quadruples the attention part and merely doubles the dense part. The two are equal when <span class="tex">4T^2d=24Td^2</span>, i.e. at <span class="tex">T=6d=384</span> here (in general <span class="tex">T=(2+f)d</span>). Short prompts are dominated by the dense layers; long prompts by attention. The score table itself has <span class="tex">hT^2</span> entries per layer, which is why implementations avoid storing it in full.</p>
+        </div>
+        <div class="worked"><b>Worked example 3: the KV cache</b>
+          <p>During generation, the keys and values of token <span class="tex">t</span> in layer <span class="tex">l</span> do not change when later tokens are added (the causal mask guarantees it). So compute them once and keep them. Each new token then needs one new query, key and value per layer, and its query reads the <span class="tex">t</span> cached keys. Per token and per layer the cache holds one key vector and one value vector for each head: <span class="tex">2\cdot h\cdot d_{\text{head}}</span> numbers. Over <span class="tex">L</span> layers, with <span class="tex">b</span> bytes per number:</p>
+          <div class="eq">\text{bytes per token}=2\,L\,h\,d_{\text{head}}\,b,\qquad \text{cache}(T)=2\,L\,h\,d_{\text{head}}\,b\,T</div>
+          <p>Toy configuration, 16-bit numbers (<span class="tex">b=2</span>): <span class="tex">2\cdot 4\cdot 4\cdot 16\cdot 2=1024</span> bytes per token. At <span class="tex">T=128</span>: 131 072 bytes (128 KiB). At <span class="tex">T=1024</span>: 1 048 576 bytes (1 MiB). At <span class="tex">T=2048</span>: 2 097 152 bytes (2 MiB), which is four times the size of the 516 KiB of weights. With 8-bit numbers every figure halves (512 bytes per token).</p>
+          <p><b>What the cache saves.</b> Without it, step <span class="tex">t</span> would recompute keys and values for all <span class="tex">t</span> tokens, so after <span class="tex">T</span> steps <span class="tex">T(T+1)/2</span> of them: 36 for <span class="tex">T=8</span>, 528 for <span class="tex">T=32</span>. With it, <span class="tex">T</span> of them (8 and 32). Attention score entries per head, counting one full table per step without a cache (<span class="tex">\sum t^2</span>) against one row per step with it (<span class="tex">\sum t</span>): 204 against 36 for <span class="tex">T=8</span>.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">N=Vd+L\,\big((4+2f)\,d^2+(f+7)\,d\big)+2d\qquad(\text{biases, tied output, no position table})</div>
+        <div class="eq">\text{FLOPs}_{\text{layer}}(T)\approx\underbrace{(8+4f)\,T\,d^2}_{\text{projections and MLP}}+\underbrace{4\,T^2\,d}_{\text{scores and weighted sum}}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">N</span>: total parameters. <span class="tex">V</span>: vocabulary size; <span class="tex">d</span>: model width; <span class="tex">L</span>: layers; <span class="tex">f</span>: MLP expansion factor (4 above, giving <span class="tex">12d^2+13d</span> per block; here <span class="tex">(4+2f)d^2+(f+7)d</span> is the general form). <span class="tex">T</span>: tokens in the sequence. <span class="tex">h</span>: heads; <span class="tex">d_{\text{head}}</span>: head size, with <span class="tex">hd_{\text{head}}=d</span> in standard multi-head attention. <span class="tex">b</span>: bytes per stored number (1, 2 or 4). The FLOP expression counts only matrix multiplications, 2 per multiply-add, and ignores norms, softmax and the output layer. The cache formula assumes every head has its own keys and values; when a model shares keys and values among several query heads (grouped-query attention), replace <span class="tex">h</span> by the smaller number of key-value heads, which shrinks the cache by the sharing factor.</div>
+        <p>Training also stores activations and optimiser state, which module 3 ( <a href="gen-training.html#parallelism-memory">parallelism and memory</a> ) counts; serving, where the cache competes with the weights for memory, is treated in <a href="gen-efficiency.html#serving-batching">prefill, decode and batching</a>.</p>
+
+        <div data-lab="gen-tr-kv"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults (L = 4, h = 4, d_head = 16, 16-bit) watch the cache fill one column per generated token. The readout's bytes per token should be 1024, and after 48 tokens the cache is 48 KiB.</li>
+          <li>Look at the red and green curves: without a cache the number of K and V vectors computed grows like a parabola, with it a straight line.</li>
+          <li>Change the bytes per number to 8-bit, then double the layers: the first halves the cache, the second doubles it. Read the extrapolation to 2 048 and 32 768 tokens.</li>
+        </ol></div>
+        <div data-lab="gen-tr-params"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press "Reset to the toy configuration". The total should read 264,064 and the explicit tensor count should agree with the formula (a tick appears).</li>
+          <li>Untick "biases" and "shares the embedding table" and check that the explicit count and the formula still agree.</li>
+          <li>Drag the sequence length T up and find where the red (attention) bar overtakes the orange (dense) bar. It should be at T = (2 + f)·d = 384 for the toy configuration.</li>
+          <li>Increase the width d and note that the attention share of the parameters stays one third of the block while the embedding table share shrinks.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>The cache is not the attention matrix.</b> The score table is <span class="tex">T\times T</span> per head and need not be stored; the cache stores <span class="tex">K</span> and <span class="tex">V</span>, which are <span class="tex">T\times d_{\text{head}}</span> per head and grow linearly.</li>
+            <li><b>The factor 2 in the cache formula is K plus V,</b> not two copies of anything else.</li>
+            <li><b>Parameters do not depend on <span class="tex">T</span>.</b> A longer prompt costs compute and cache, not weights.</li>
+            <li><b>Quadratic is the cost of dense attention.</b> Many systems use sparse, windowed or low-memory exact kernels to reduce the memory (and sometimes the compute); they change the cost, and some change the result, so check which.</li>
+            <li>Real configurations differ in many details (gated MLPs, shared key-value heads, untied output layers), so the formulas here are a template to adapt, not a lookup for any given product.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Long-context serving:</b> the cache grows with each request, so memory decides how many requests fit on one device at once; cutting the cache (shared key-value heads, 8-bit storage, dropping old tokens) is a standard trade of quality against cost.</li>
+            <li><b>Planning a model:</b> the parameter formula is what you evaluate before training; with compute roughly 6 times parameters times tokens (module 3) you can estimate cost.</li>
+            <li><b>Latency:</b> in generation each step moves the weights and the whole cache through memory to produce one token, which is why decoding is often limited by memory bandwidth rather than arithmetic.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For the toy configuration with 16-bit cache, how large is the KV cache at T = 2 048, and with 8-bit numbers?</summary><div class="ans">Bytes per token 2·4·4·16·2 = 1 024, so 1 024 × 2 048 = 2 097 152 bytes = 2 MiB. With 8-bit numbers (b = 1): 512 × 2 048 = 1 048 576 bytes = 1 MiB.</div></details>
+        <details class="check"><summary>2. The prompt is doubled from 256 to 512 tokens. By what factors do the attention FLOPs, the dense FLOPs and the cache change?</summary><div class="ans">Attention FLOPs ×4 (16 777 216 to 67 108 864 per layer in the toy configuration), dense FLOPs ×2 (25 165 824 to 50 331 648), cache ×2. The parameter count does not change.</div></details>
+        <details class="check"><summary>3. What is the parameter count of the toy configuration, and what share is the embedding table?</summary><div class="ans">264 064 in total; the embedding table is 64 000 of them, 64 000 / 264 064 = 24.2%. The four blocks hold 199 936 (75.7%) and the final norm 128.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Parameters: <span class="tex">N=Vd+L(12d^2+13d)+2d</span>, which is 264 064 for the toy configuration.</li>
+          <li>Attention costs <span class="tex">4T^2d</span> FLOPs per layer against <span class="tex">24Td^2</span> for the dense layers (equal at <span class="tex">T=6d</span>): quadratic in prompt length.</li>
+          <li>KV cache bytes per token = <span class="tex">2\,L\,h\,d_{\text{head}}\,b</span> (1 024 for the toy configuration), linear in length, and it trades memory for recomputation.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 3 (<a href="gen-training.html">Training large language models</a>) uses the parameter count from lesson 2.7 to count training compute with the 6ND rule and to size memory per GPU, and shows how the next-token loss of lesson 2.6 falls as data and parameters grow.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

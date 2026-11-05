@@ -27,7 +27,12 @@ window.HUB = {
     },
     { id: 'nlp', title: 'NLP', icon: '💬', color: '#db6d28', status: 'soon', desc: 'Tokens, embeddings, attention and language understanding.' },
     { id: 'voice', title: 'Voice', icon: '🎙️', color: '#db61a2', status: 'soon', desc: 'Speech recognition, synthesis and real-time voice pipelines.' },
-    { id: 'genai', title: 'Generative AI', icon: '✨', color: '#a371f7', status: 'soon', desc: 'Transformers, diffusion, and how models create text, images and code.' },
+    {
+      id: 'genai', title: 'Generative AI', icon: '✨', color: '#a371f7', status: 'live', href: 'generative-ai.html', curriculum: 'assets/curriculum-genai.js', next: 'gov',
+      desc: 'How models create text, images and more: language modelling, the Transformer, training and alignment, efficient serving, retrieval and agents, diffusion and flow matching.',
+      tags: ['Transformers', 'LLM training', 'RLHF & DPO', 'RAG & agents', 'Diffusion'],
+      // lessons are generated from curriculum/generative-ai.md (assets/curriculum-genai.js)
+    },
     { id: 'gov', title: 'Governing AI', icon: '⚖️', color: '#d29922', status: 'soon', desc: 'How AI is kept safe, fair and accountable: risk, ethics, regulation, auditing and responsible deployment.' },
     {
       id: 'rl', title: 'Reinforcement Learning', icon: '🎮', color: '#f85149', status: 'live', href: 'reinforcement-learning.html', curriculum: 'assets/curriculum-rl.js', next: 'domains',
@@ -130,6 +135,16 @@ window.PIPELINES = {
       { name: 'Test & model', color: '#db6d28', items: ['Hypothesis tests', 'Experiments', 'Predictive models'], out: 'estimates with uncertainty', compute: 'CPU, sometimes GPU', storage: 'Experiment logs, model files', desc: 'Statistics and experiments say how sure we can be; models predict. Every result carries its uncertainty.' },
       { name: 'Communicate', color: '#db61a2', items: ['Honest charts', 'Dashboards', 'Written report'], out: 'decision-ready story', compute: 'BI tools, notebooks', storage: 'Reports, dashboards', desc: 'A finding only matters if the audience understands it: one clear chart, a headline, and the limits stated.' },
       { name: 'Deploy & monitor', color: '#3fb950', items: ['Reproducible pipeline', 'Drift checks', 'Fairness checks'], out: 'trusted, repeatable results', compute: 'Scheduled jobs, monitoring', storage: 'Feature store, metrics store', desc: 'Pipelines run again on new data; monitoring catches drift and unfair outcomes before decisions go wrong.' },
+    ],
+  },
+  genai: {
+    stages: [
+      { name: 'Collect & tokenise', color: '#2f81f7', items: ['Crawl & filter', 'Deduplicate', 'Tokenise or encode'], out: 'token sequences', compute: 'CPU clusters, heavy I/O', storage: 'Sharded token datasets', desc: 'Raw text, images or audio are filtered, deduplicated and turned into the tokens, patches or latents the model reads.' },
+      { name: 'Pretrain', color: '#39c5cf', items: ['Next-token or denoising loss', 'AdamW', 'Parallel training'], out: 'base model weights', compute: 'Large GPU or TPU clusters', storage: 'Checkpoints: weights and optimiser state', desc: 'The model learns to predict the next token, or to remove noise, over a huge dataset. This is the most expensive stage.' },
+      { name: 'Align', color: '#a371f7', items: ['Instruction tuning', 'Preference tuning (RLHF, DPO)', 'Safety training'], out: 'assistant model', compute: 'GPU, far fewer tokens than pretraining', storage: 'Tuned weights, preference datasets', desc: 'The base model is taught to follow instructions, prefer helpful and safe answers, and refuse harmful requests.' },
+      { name: 'Adapt & compress', color: '#db6d28', items: ['LoRA adapters', 'Quantisation', 'Distillation'], out: 'smaller, cheaper model', compute: 'One GPU up to a small cluster', storage: 'Adapters, quantised weights', desc: 'The model is specialised cheaply and shrunk so that it fits the memory and latency budget of the product.' },
+      { name: 'Generate', color: '#db61a2', items: ['Prompt and retrieved context', 'KV-cached decoding or denoising steps', 'Sampling'], out: 'text, image or audio', compute: 'GPU inference; decoding is memory-bound', storage: 'KV cache, vector index', desc: 'The prompt and any retrieved context go in; tokens are sampled one at a time, or an image is denoised over several steps.' },
+      { name: 'Evaluate & guard', color: '#3fb950', items: ['Evals and human preference', 'Guardrails', 'Monitoring'], out: 'trusted, monitored outputs', compute: 'Evaluation jobs, filters', storage: 'Eval sets, logs', desc: 'Outputs are tested, filtered and monitored for errors, hallucination and misuse, and the results feed the next training round.' },
     ],
   },
 };

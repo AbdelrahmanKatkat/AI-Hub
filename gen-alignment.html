@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · Alignment &amp; post-training · Generative AI</title>
+<meta name="description" content="Instruction tuning, preference data and reward models, RLHF with a KL penalty, the DPO loss derived from the same objective, verifiable rewards with group-relative advantages, and AI feedback with red teaming: hand-worked numbers on a three-answer toy and animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-alignment.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="4">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 4</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">4</div>
+      <div style="flex:1">
+        <h1>Module 4 · Alignment &amp; post-training</h1>
+        <p>A pretrained model continues text: it imitates whatever text it saw, including rude, wrong and useless text. Post-training reshapes it into an assistant that follows instructions, prefers helpful answers and declines some requests. This module sits in the <b>align</b> stage of the pipeline (collect and tokenise, pretrain, align, adapt and compress, generate, evaluate and guard). Every lesson is taught on a toy with three answers to one prompt, so each probability, reward and loss can be computed by hand.</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 4 hours</span><span class="chip">Needs: <a href="math-information.html#cross-entropy-kl">cross-entropy and KL</a>, <a href="rl-policy-gradient.html#policy-gradient-theorem">the policy-gradient idea</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> One running toy: a prompt with three possible answers A, B and C, a reference model that gives them probabilities 0.5, 0.3 and 0.2, and rewards that say how much each is liked. All labs are <i>illustrative</i> simulations with seeded random numbers: they show how the methods behave in a three-answer world, not how any real system was trained. The methods named here (supervised fine-tuning, Bradley-Terry reward models, RLHF with PPO, DPO, group-relative advantages) are published ideas; the module makes no claim about the data, scale or settings of any particular product. Safety topics are treated even-handedly and without operational detail.</div>
+
+    <!-- ===================== 4.1 ===================== -->
+    <section class="lesson" id="instruction-tuning" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">4.1</span><h2>Instruction tuning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A pretrained model, shown the text "What is 2 + 2 ?", may continue with "What is 3 + 3 ? What is 4 + 4 ?", because lists of questions are common in its training text. How do we turn a text continuer into something that answers? And when we train on question-and-answer examples, which tokens should the loss count: all of them, or only the answer?</div>
+
+        <h3 class="sec">Intuition: show it what a good reply looks like</h3>
+        <p>The pretraining objective (<a href="gen-training.html#pretraining-objective">Module 3</a>) is next-token prediction on raw text. The model has the knowledge but no habit of using it as a reply. <b>Supervised fine-tuning</b> (SFT), also called <b>instruction tuning</b>, continues training on a much smaller set of examples that each look like a conversation: an instruction, then the reply we would like. It is the same next-token loss as before. Only the data changed, so the model learns "after a user turn, I produce an assistant turn".</p>
+        <p>Two practical details matter. First, the examples are written in a fixed <b>chat template</b>: special marker tokens that say who is speaking. Second, the model only needs to learn to <i>write the reply</i>, not to write the user's question, so the loss is computed on the reply tokens alone. That is <b>loss masking</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The template.</b> The conversation is flattened into one token sequence. We use three toy markers: <code>&lt;usr&gt;</code> opens the user's turn, <code>&lt;bot&gt;</code> opens the assistant's turn, and <code>&lt;end&gt;</code> ends it. (Real systems use their own marker tokens; the idea is identical.) The end marker matters: it is how the model learns to stop.</p>
+        <div class="worked"><b>Worked example: one training example, token by token</b>
+          <p>The example is the sequence <code>&lt;usr&gt; What is 2 + 2 ? &lt;bot&gt; It is 4 . &lt;end&gt;</code>. That is 8 prompt tokens (<code>&lt;usr&gt; What is 2 + 2 ? &lt;bot&gt;</code>) and 5 response tokens (<code>It is 4 . &lt;end&gt;</code>), 13 in all. Suppose, at the start of training, the toy model gives each response token these probabilities when it is shown the tokens before it:</p>
+          <table class="tbl"><thead><tr><th>response token</th><th>It</th><th>is</th><th>4</th><th>.</th><th>&lt;end&gt;</th></tr></thead>
+          <tbody><tr><td>probability <span class="tex">p</span></td><td>0.50</td><td>0.40</td><td>0.25</td><td>0.80</td><td>0.90</td></tr>
+          <tr><td>loss <span class="tex">-\ln p</span></td><td>0.6931</td><td>0.9163</td><td>1.3863</td><td>0.2231</td><td>0.1054</td></tr></tbody></table>
+          <p>The losses add to 3.3242, and the <b>masked loss</b> is their mean, <span class="tex">3.3242/5=0.6648</span>. Now suppose the model also gave each of the 8 prompt tokens probability 0.2, so each costs <span class="tex">-\ln 0.2=1.6094</span>, 12.8755 in total. If we did <i>not</i> mask, the loss would be <span class="tex">(12.8755+3.3242)/13=1.2461</span>, almost twice as large, and most of it would come from tokens we never want the model to produce: the user's own words.</p>
+        </div>
+        <p>Why does the unmasked version hurt? The gradient would spend effort making the model better at writing questions in this template. At best that is wasted capacity; at worst the model learns to hallucinate user turns. With the mask, the prompt is context the model <i>reads</i> (it still influences every response prediction through attention), but it receives no gradient as a target.</p>
+        <p><b>Data diversity.</b> SFT sets are small compared with pretraining sets, so what they contain is decisive. A set with only one style of instruction (all short factual questions) teaches a narrow habit; a set that mixes tasks, lengths, formats and tones teaches a general habit of following instructions. Quality beats quantity here: a small number of careful, varied examples often moves the model more than a larger set of repetitive or sloppy ones, and errors in the replies are copied faithfully, because the model is trained to imitate them.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <p>Write the flattened example as tokens <span class="tex">t_1,\dots,t_T</span> and let <span class="tex">m_i\in\{0,1\}</span> mark the response tokens. The SFT loss is the masked average of the usual next-token cross-entropy:</p>
+        <div class="eq">\mathcal{L}_{\text{SFT}}(\theta)\;=\;-\frac{1}{\sum_i m_i}\sum_{i=1}^{T} m_i\,\ln p_\theta\!\left(t_i\mid t_{&lt;i}\right)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\theta</span>: the model's parameters. <span class="tex">t_i</span>: the <span class="tex">i</span>-th token of the flattened conversation. <span class="tex">t_{&lt;i}</span>: all tokens before it (the model always sees the whole prefix, including the prompt). <span class="tex">p_\theta(t_i\mid t_{&lt;i})</span>: the probability the model assigns to the true next token. <span class="tex">m_i</span>: the mask, 1 on response tokens and 0 on prompt tokens. The sum in the denominator counts the response tokens, so the result is a mean. Setting every <span class="tex">m_i=1</span> recovers plain next-token training (<a href="math-information.html#cross-entropy-kl">cross-entropy</a>).</div>
+        <p>Across a batch there are two common averaging choices: mean per example, then over examples (every example counts equally) or mean over all response tokens in the batch (long replies count more). Neither is wrong, but they weight long and short answers differently, which is a design decision worth knowing about.</p>
+
+        <div data-lab="gen-al-sft"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With "response tokens only", press play. The green response bars rise, the loss falls, and the grey masked prompt tokens do not move.</li>
+          <li>Switch to "all tokens" and reset. The orange prompt tokens now also climb: the model is being trained to write the question. Compare the "loss being minimised" number with the first run at the same step.</li>
+          <li>Edit the response (for example to <code>It is four . &lt;end&gt;</code>), press Enter, and watch the number of trained tokens change with it.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"SFT teaches the model new knowledge."</b> It mainly teaches a <i>format and a habit</i> on top of what pretraining stored. Facts absent from pretraining are not reliably added by a small SFT set, and training on replies that state facts the model does not know can push it toward confident invention.</li>
+            <li><b>Forgetting the end marker.</b> If the stop token is left out of the loss, the model never learns to stop and keeps generating.</li>
+            <li><b>Wrong template at inference.</b> A model tuned with one template behaves worse if prompted with a different one, because the marker tokens are part of what it learned.</li>
+            <li><b>Imitation copies mistakes.</b> SFT can only be as good as its demonstrations; it cannot tell a better reply from a worse one. The next lessons add a signal for that.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Assistant models</b> commonly begin post-training with an SFT stage on instruction-and-reply pairs, then apply preference methods (lessons 4.2 to 4.4) on top.</li>
+            <li><b>Cheap adaptation:</b> SFT is the standard way to specialise a model to a format or domain, often combined with <a href="gen-efficiency.html#lora">low-rank adapters</a> so that only a few parameters are updated.</li>
+            <li><b>Synthetic data:</b> replies written by another model can serve as SFT data; the quality caveat above applies, and so do the licensing terms of whatever produced them.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the worked example, what are the masked loss and the unmasked loss, and what does the difference tell you?</summary><div class="ans">Masked: (0.6931 + 0.9163 + 1.3863 + 0.2231 + 0.1054)/5 = 3.3242/5 = 0.6648. Unmasked: (12.8755 + 3.3242)/13 = 16.1997/13 = 1.2461. The unmasked loss is dominated by the 8 prompt tokens, which the model is not meant to generate, so it is a misleading target.</div></details>
+        <details class="check"><summary>2. If the model's probability for the response token "4" rose from 0.25 to 0.50, by how much does that one token's loss fall?</summary><div class="ans">From -ln 0.25 = 1.3863 to -ln 0.50 = 0.6931, a fall of 0.6931 (that is, ln 2: doubling a probability always removes ln 2 from that token's loss).</div></details>
+        <details class="check"><summary>3. Why do the prompt tokens still matter if they carry no loss?</summary><div class="ans">They are in the prefix <span class="tex">t_{&lt;i}</span> of every response token, so the model's prediction of each reply token depends on them through attention. Masking only removes them as <i>targets</i>; they remain context.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>SFT is ordinary next-token training on conversation-formatted data; only the loss mask and the data differ.</li>
+          <li>Loss on the response only: <span class="tex">-\frac{1}{\sum m_i}\sum m_i\ln p_\theta</span>. For the example, 0.6648 masked versus 1.2461 unmasked.</li>
+          <li>It teaches format and habit by imitation, cannot rank good against bad replies, and depends on the diversity and quality of its examples.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.2 ===================== -->
+    <section class="lesson" id="preference-data" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">4.2</span><h2>Preference data and reward models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>It is hard to write the single best answer to a question, but easy to say which of two answers you prefer. How do we turn a pile of "answer X beats answer Y" judgements into a number that scores any answer, and what happens when the people judging disagree with each other?</div>
+
+        <h3 class="sec">Intuition: chess ratings for answers</h3>
+        <p>Imagine rating chess players. You never see a player's "true strength"; you only see who beat whom. A model that gives each player a number, and says the player with the bigger number usually wins, can be fitted to the results. The same trick scores answers: each answer gets a number called a <b>reward</b>, and an answer with a larger reward should usually win a comparison. A <b>reward model</b> is a neural network (typically the language model with a small scoring head) that reads a prompt and an answer and outputs that number.</p>
+        <p>Comparisons are cheaper and more consistent than asking people to give absolute scores: two people disagree about whether an answer is a 6 or a 7 out of 10, but they often agree which of two answers is better.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>A preference record</b> is a prompt <span class="tex">x</span>, two answers, and a label saying which was preferred, written <span class="tex">y_w\succ y_l</span> ("winner" and "loser"). The <b>Bradley-Terry model</b> says that the probability that <span class="tex">y_w</span> wins depends only on the difference of the two rewards, squashed into 0 to 1 by the logistic function <span class="tex">\sigma(z)=1/(1+e^{-z})</span>.</p>
+        <div class="worked"><b>Worked example: three answers, three rewards</b>
+          <p>For the prompt "What is the capital of France?", let the answers be A = "Paris.", B = "The capital of France is Paris.", C = "Lyon." and let a reward model currently score them <span class="tex">r(A)=1,\ r(B)=2,\ r(C)=0</span>.</p>
+          <table class="tbl"><thead><tr><th>pair</th><th>gap <span class="tex">r_w-r_l</span></th><th><span class="tex">P(y_w\succ y_l)=\sigma(\text{gap})</span></th></tr></thead>
+          <tbody><tr><td>B over A</td><td>1</td><td>0.7311</td></tr><tr><td>A over C</td><td>1</td><td>0.7311</td></tr><tr><td>B over C</td><td>2</td><td>0.8808</td></tr></tbody></table>
+          <p><b>Loss for one labelled pair.</b> If the label says B beat A, the model's probability of that label is 0.7311 and the loss is <span class="tex">-\ln 0.7311=0.3133</span>. If the label had said A beat B, the gap would be <span class="tex">-1</span>, the probability <span class="tex">\sigma(-1)=0.2689</span> and the loss <span class="tex">1.3133</span>. If both rewards were equal the gap is 0, the probability is 0.5 and the loss is <span class="tex">\ln 2=0.6931</span>: no opinion costs ln 2.</p>
+          <p><b>One update.</b> Take the pair B over A with learning rate 0.5. The gradient of the loss with respect to the gap is <span class="tex">-(1-\sigma(\text{gap}))=-0.2689</span>, so the update raises <span class="tex">r(B)</span> and lowers <span class="tex">r(A)</span> by <span class="tex">0.5\times0.2689=0.1345</span> each: new rewards 2.1345 and 0.8655, new gap 1.2689, new probability 0.7806, new loss 0.2477. The loss fell from 0.3133 to 0.2477 after one step.</p>
+        </div>
+        <p>Notice that the update shrinks as the model gets the pair right: the weight <span class="tex">1-\sigma(\text{gap})</span> is 0.5 when the gap is 0 and approaches 0 when the gap is large. A pair the model already ranks correctly with confidence barely changes anything; a pair it ranks wrongly pushes hard.</p>
+        <p><b>Annotator noise.</b> Real labels are noisy. If annotators pick B over A only with probability 0.7311, then even a <i>perfect</i> reward model cannot make its average loss lower than the entropy of that label, <span class="tex">-[0.7311\ln0.7311+0.2689\ln0.2689]=0.5822</span>, not zero. That floor is a feature of the data, not a failure of training. It also explains why a reward model should not be trained to drive its loss to zero: a loss far below the noise floor means it is memorising particular labels.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">P(y_w\succ y_l\mid x)=\sigma\!\big(r_\phi(x,y_w)-r_\phi(x,y_l)\big),\qquad \mathcal{L}_{\text{RM}}(\phi)=-\,\mathbb{E}_{(x,y_w,y_l)}\Big[\ln\sigma\big(r_\phi(x,y_w)-r_\phi(x,y_l)\big)\Big]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">x</span>: the prompt. <span class="tex">y_w,y_l</span>: the preferred and rejected answers. <span class="tex">r_\phi(x,y)</span>: the reward model's scalar score, with parameters <span class="tex">\phi</span>. <span class="tex">\sigma</span>: the logistic function. <span class="tex">\mathbb{E}</span>: average over the preference dataset. The loss is the negative log-likelihood of the observed winners under Bradley-Terry, so minimising it is maximum-likelihood fitting. The gradient with respect to the gap is <span class="tex">-(1-\sigma(\text{gap}))</span>, as used above.</div>
+        <p>Two properties are worth stating. The model sees only <i>differences</i>: adding the same constant to every reward changes no probability, so the absolute value of a reward has no meaning on its own (it will matter again in lesson 4.4, where the constant cancels). And the model assumes a <b>transitive</b>, single-scale preference: if B beats A and A beats C, it expects B to beat C. Real groups of annotators can violate this.</p>
+
+        <div data-lab="gen-al-btcurve"></div>
+        <div data-lab="gen-al-bt"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>In the first lab set r_w = 2 and r_l = 1 and read gap 1, probability 0.7311, loss 0.3133. Then make r_l larger than r_w and watch the loss grow roughly in a straight line.</li>
+          <li>In the second lab press play at noise 0.6: the bars drift toward the dashed hidden qualities and the loss falls below the grey ln 2 line. Each update names the pair that was used.</li>
+          <li>Set the noise to 3 and reset. The ranking is still recoverable but slowly, and the loss stays higher: noisy labels limit what any reward model can reach.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Reading a reward as a score out of ten.</b> Only differences are meaningful. A reward of 2 does not mean "good".</li>
+            <li><b>Treating the labels as truth.</b> The data records what <i>these annotators</i>, under this guideline, preferred. Length, confident tone and formatting are frequently over-rewarded by people reading quickly, and the reward model learns exactly that.</li>
+            <li><b>Distribution shift.</b> A reward model is accurate on answers like those it was trained on. If a policy later produces answers unlike any in the data, the scores there are extrapolation (lesson 4.3 shows why that is dangerous).</li>
+            <li><b>Ties and disagreement.</b> Dropping pairs where annotators split loses information; keeping them with a hard label adds noise. How to handle them is a data-design choice.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>RLHF</b> (lesson 4.3) uses the trained reward model as the signal to optimise a policy against.</li>
+            <li><b>Evaluation and ranking:</b> reward models are also used to rank or filter candidate answers (for instance, picking the best of several samples), and to filter training data.</li>
+            <li><b>Pairwise comparison</b> is also how many public leaderboards compute ratings from human votes, using the same Bradley-Terry family of models.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A reward model gives the winner a reward 3 higher than the loser. What probability does it assign to the observed label, and what is the loss?</summary><div class="ans">σ(3) = 0.9526, so the loss is -ln 0.9526 = 0.0486. The model is confident and right, so there is almost nothing to learn from this pair (the update weight is 1 - 0.9526 = 0.0474).</div></details>
+        <details class="check"><summary>2. Adding 100 to every reward: does any preference probability or the loss change?</summary><div class="ans">No. Every probability depends only on a difference <span class="tex">r_w-r_l</span>, and the constant cancels. Rewards are defined only up to an additive constant.</div></details>
+        <details class="check"><summary>3. Annotators prefer B over A 73.11% of the time. Why can no reward model reach a loss of 0 on that pair of answers?</summary><div class="ans">The label is itself random: 26.89% of the time the opposite label appears. The best any model can do is predict the probabilities 0.7311 and 0.2689, which gives an expected loss equal to the label entropy, 0.5822. A lower training loss would mean the model had memorised noise.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Bradley-Terry: <span class="tex">P(y_w\succ y_l)=\sigma(r_w-r_l)</span>; the reward-model loss is <span class="tex">-\ln\sigma(r_w-r_l)</span>, which is ln 2 = 0.6931 at a gap of 0 and 0.3133 at a gap of 1.</li>
+          <li>The update is weighted by <span class="tex">1-\sigma(\text{gap})</span>: wrong and confident pairs teach most.</li>
+          <li>Rewards are only defined up to a constant; labels are noisy, so the loss has a floor above zero; and the model reproduces the annotators' habits, good and bad.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.3 ===================== -->
+    <section class="lesson" id="rlhf" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">4.3</span><h2>Reinforcement learning from human feedback</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>We now have a reward model that scores answers. Why not simply change the language model until its average reward is as high as possible? What goes wrong if we do, and what does a "leash" to the original model do about it?</div>
+
+        <h3 class="sec">Intuition: climbing a hill you can only see through a foggy window</h3>
+        <p>The reward model is a <i>proxy</i> for what people want, learned from limited comparisons. Near the kind of answers it was trained on it is a decent guide. Far from them it is a guess, and an optimiser is very good at finding the places where the guess is too high. If you let a policy chase the proxy with no limit, it tends to find answers the proxy loves and people do not. That is <b>reward hacking</b> (also called reward over-optimisation): the proxy reward keeps rising while the true quality falls.</p>
+        <p>The standard remedy is a penalty for moving away from a trusted <b>reference policy</b> <span class="tex">\pi_{\text{ref}}</span>, usually the SFT model of lesson 4.1. The policy may improve its reward, but every step away from the reference costs something. How much it costs is set by a strength <span class="tex">\beta</span>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>The objective.</b> Sample an answer <span class="tex">y</span> from the policy <span class="tex">\pi</span>, score it with the reward model <span class="tex">r</span>, and subtract <span class="tex">\beta</span> times the log-ratio of the policy to the reference probability of that answer. Averaged over the policy's own samples, the penalty is exactly the <a href="math-information.html#cross-entropy-kl">KL divergence</a> from the policy to the reference.</p>
+        <div class="worked"><b>Worked example: a hackable reward on three answers</b>
+          <p>Same prompt, new answers: A = a concise correct reply, B = a longer correct reply, C = a padded, flattering reply that is actually wrong. The reference policy gives them probabilities <span class="tex">0.5,\,0.3,\,0.2</span>. A reward model trained on fast-reading annotators over-scores length and flattery, so its <b>proxy</b> rewards are <span class="tex">1.0,\,1.8,\,3.0</span>, while the <b>true</b> usefulness is <span class="tex">1,\,1,\,0</span>.</p>
+          <p><b>Before any training</b> the average proxy reward is <span class="tex">0.5\cdot1+0.3\cdot1.8+0.2\cdot3=1.64</span> and the average true reward is 0.8.</p>
+          <p><b>After optimising with a leash</b> (the exact optimum, derived in lesson 4.4, is <span class="tex">\pi^*\propto\pi_{\text{ref}}\,e^{r/\beta}</span>):</p>
+          <table class="tbl"><thead><tr><th><span class="tex">\beta</span></th><th>policy (A, B, C)</th><th>KL to reference</th><th>average proxy</th><th>average true</th></tr></thead>
+          <tbody><tr><td>2</td><td>0.3353, 0.3001, 0.3646</td><td>0.0850</td><td>1.9693</td><td>0.6354</td></tr>
+          <tr><td>1</td><td>0.1890, 0.2524, 0.5586</td><td>0.3463</td><td>2.3191</td><td>0.4414</td></tr>
+          <tr><td>0.5</td><td>0.0387, 0.1151, 0.8461</td><td>1.0110</td><td>2.7843</td><td>0.1539</td></tr></tbody></table>
+          <p>Read the last two columns. The proxy reward <i>rises</i> from 1.64 each time, while the true reward <i>falls</i> from 0.80 to 0.44 (and 0.15 for a weaker leash). Mass has moved to the wrong, flattering answer C because the reward model scored it highest. That is reward hacking on a three-answer toy. A larger <span class="tex">\beta</span> (shorter leash) keeps the policy nearer the reference and limits the damage, at the price of a smaller gain. If the proxy were accurate, the same procedure would help.</p>
+          <p>Check the objective at <span class="tex">\beta=1</span>: average proxy 2.3191 minus <span class="tex">1\times0.3463</span> gives 1.9729, the largest value any policy can reach. Any other distribution, such as all mass on C, scores lower: <span class="tex">3-\ln(1/0.2)=1.3906</span>.</p>
+        </div>
+        <p><b>How it is optimised in practice.</b> The policy is a language model, and its answers are long token sequences, so the expectation cannot be computed exactly as in the toy. The usual outline is: (1) sample answers from the current policy for a batch of prompts; (2) score each with the reward model; (3) subtract the KL penalty, often implemented per token, to give a total reward; (4) update the policy with a <a href="rl-policy-gradient.html#policy-gradient-theorem">policy-gradient</a> method, very commonly <a href="rl-policy-gradient.html#ppo">PPO</a> with its clipped probability ratio and an <a href="rl-policy-gradient.html#baselines-advantage">advantage</a> estimate from a learned value network; (5) repeat, with the reference and the reward model held fixed. The lab below replaces steps (1) to (4) by the exact gradient, so you can watch only the effect of the objective.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">\max_{\pi}\ \ \mathbb{E}_{x}\,\mathbb{E}_{y\sim\pi(\cdot\mid x)}\Big[\,r(x,y)\;-\;\beta\,\ln\frac{\pi(y\mid x)}{\pi_{\text{ref}}(y\mid x)}\Big]\;=\;\max_\pi\ \mathbb{E}\big[r\big]-\beta\,\mathrm{KL}\big(\pi\,\Vert\,\pi_{\text{ref}}\big)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\pi(y\mid x)</span>: the policy, the language model being trained, giving the probability of answer <span class="tex">y</span> to prompt <span class="tex">x</span>. <span class="tex">\pi_{\text{ref}}</span>: the frozen reference policy. <span class="tex">r(x,y)</span>: the reward model's score. <span class="tex">\beta&gt;0</span>: the KL strength. <span class="tex">\mathrm{KL}(\pi\Vert\pi_{\text{ref}})=\sum_y\pi\ln(\pi/\pi_{\text{ref}})</span>: zero when the policy equals the reference and growing as it moves away. As <span class="tex">\beta\to\infty</span> the policy stays at the reference; as <span class="tex">\beta\to0</span> it chases the reward alone.</div>
+
+        <div data-lab="gen-al-kl"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave the defaults (beta 1) and press play. The blue bars slide toward the orange ticks. Read the readout: it should settle at 0.1890, 0.2524, 0.5586, with true reward 0.4414. The red line (proxy) rises and the green line (true) falls: reward hacking.</li>
+          <li>Raise beta to 2, then 4: the policy moves less, the KL stays small, and the true reward falls less. Lower beta to 0.5 and the damage grows.</li>
+          <li>Edit the proxy reward of C down to 0.5 (so the proxy is no longer fooled): optimising the proxy now also raises the true reward.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Reward hacking is not a bug in the optimiser.</b> The optimiser does exactly what it is told. The reward model is a learned approximation, so any gap between it and the real goal is an opportunity for the optimiser. More optimisation pressure finds more such gaps.</li>
+            <li><b>The KL term is not a safety guarantee.</b> It limits how far the policy moves, not in which direction. A policy can stay close in KL and still exploit a flaw, as the beta 2 row shows.</li>
+            <li><b>Choosing beta by the proxy reward.</b> The proxy always prefers a smaller beta. It must be tuned against held-out human judgements or other independent checks.</li>
+            <li><b>Many moving parts.</b> RLHF with PPO needs the policy, a reference copy, a reward model and a value network at once, and is sensitive to its settings. That cost motivates the next lesson.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Aligned chat models:</b> many assistant models have been tuned with some form of reward optimisation against human preferences, with a penalty to a reference model. The precise recipes differ and are not given here.</li>
+            <li><b>Length and style drift:</b> over-optimisation commonly shows up as answers becoming longer, more flattering or more hedged, which is why evaluations check length-controlled and independent measures.</li>
+            <li><b>Best-of-n sampling</b> (generate n answers, return the highest-scoring) is a gentler way to use a reward model; it also over-optimises as n grows.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the toy, what is the average proxy reward of the reference policy, and what is it at beta = 1 after optimisation?</summary><div class="ans">Reference: 0.5·1 + 0.3·1.8 + 0.2·3 = 1.64. After optimisation at beta = 1 the policy is (0.1890, 0.2524, 0.5586) and the average proxy is 0.1890·1 + 0.2524·1.8 + 0.5586·3 = 2.3191.</div></details>
+        <details class="check"><summary>2. Compute the objective for the policy that puts probability 1 on C (beta = 1).</summary><div class="ans">Proxy reward 3. KL to the reference = ln(1/0.2) = 1.6094. Objective = 3 - 1.6094 = 1.3906, lower than the optimum 1.9729. Going all the way to the highest-scored answer is worse once the leash is counted.</div></details>
+        <details class="check"><summary>3. Why does lowering beta raise the proxy reward and lower the true reward in this toy?</summary><div class="ans">A weaker leash lets the policy move further toward the answer with the highest proxy score (C). C is the answer the proxy over-scores relative to the truth, so more of the policy's mass sits on an answer that is actually wrong. Both numbers change together because they are two averages over the same moving distribution.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>RLHF maximises <span class="tex">\mathbb{E}[r]-\beta\,\mathrm{KL}(\pi\Vert\pi_{\text{ref}})</span>: reward, minus a leash to a reference policy.</li>
+          <li>Because the reward is a learned proxy, optimising it hard produces reward hacking: on the toy the proxy went from 1.64 to 2.3191 while the true reward went from 0.80 to 0.4414.</li>
+          <li>In practice the optimisation is sampled, with PPO or a similar policy-gradient method; the toy uses the exact gradient to show the objective itself.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.4 ===================== -->
+    <section class="lesson" id="dpo" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">4.4</span><h2>Direct preference optimisation</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>RLHF needs a reward model, sampling from the policy, a value network and a delicate optimiser. The objective, though, has a closed-form answer. Could we use that answer to skip the reward model and the reinforcement learning, and train on the preference pairs directly?</div>
+
+        <h3 class="sec">Intuition: solve the objective, then run it backwards</h3>
+        <p>The KL-regularised objective of lesson 4.3 is a clean optimisation problem, and its best policy can be written down. That best policy depends on the reward in a simple way, so the relationship can be flipped: given any policy, we can say which reward it would be the best policy <i>for</i>. Call that its <b>implicit reward</b>. The Bradley-Terry model of lesson 4.2 only needs reward <i>differences</i>, and in the difference a troublesome constant cancels. We can therefore fit the preference pairs by treating the policy's own log-ratio to the reference as the reward. The result is <b>direct preference optimisation</b> (DPO): a single supervised loss on pairs, no reward model, no sampling.</p>
+
+        <h3 class="sec">Build it up: the derivation, step by step</h3>
+        <p><b>Step 1: rewrite the objective.</b> For one prompt, the objective is <span class="tex">J(\pi)=\sum_y\pi(y)\,r(y)-\beta\sum_y\pi(y)\ln\frac{\pi(y)}{\pi_{\text{ref}}(y)}</span>. Define a distribution proportional to the reference weighted by the exponential of the reward:</p>
+        <div class="eq">\pi^*(y)=\frac{\pi_{\text{ref}}(y)\,e^{r(y)/\beta}}{Z},\qquad Z=\sum_{y}\pi_{\text{ref}}(y)\,e^{r(y)/\beta}</div>
+        <p>so that <span class="tex">\pi_{\text{ref}}(y)e^{r(y)/\beta}=Z\,\pi^*(y)</span>, that is <span class="tex">r(y)=\beta\ln\frac{Z\pi^*(y)}{\pi_{\text{ref}}(y)}</span>. Substitute this for <span class="tex">r</span> inside the objective:</p>
+        <div class="eq">J(\pi)=\beta\sum_y\pi(y)\Big[\ln\frac{\pi^*(y)}{\pi_{\text{ref}}(y)}+\ln Z-\ln\frac{\pi(y)}{\pi_{\text{ref}}(y)}\Big]=\beta\ln Z-\beta\,\mathrm{KL}\big(\pi\,\Vert\,\pi^*\big)</div>
+        <p><b>Step 2: read off the optimum.</b> A KL divergence is never negative and is zero only when the two distributions are equal. So <span class="tex">J</span> is largest exactly when <span class="tex">\pi=\pi^*</span>, and the best achievable value is <span class="tex">\beta\ln Z</span>. That is the statement: <b>the optimal policy is proportional to <span class="tex">\pi_{\text{ref}}\,e^{r/\beta}</span></b>.</p>
+        <div class="worked"><b>Worked example: the optimum on the three-answer toy</b>
+          <p>Take the reference <span class="tex">(0.5,0.3,0.2)</span> and rewards <span class="tex">r=(1,2,0)</span>, <span class="tex">\beta=1</span>. The unnormalised weights <span class="tex">\pi_{\text{ref}}e^{r/\beta}</span> are <span class="tex">0.5e^{1}=1.3591</span>, <span class="tex">0.3e^{2}=2.2167</span> and <span class="tex">0.2e^{0}=0.2000</span>. Their sum is <span class="tex">Z=3.7759</span>, so <span class="tex">\pi^*=(0.3600,\ 0.5871,\ 0.0530)</span>. The maximum of the objective is <span class="tex">\beta\ln Z=\ln 3.7759=1.3286</span>. With <span class="tex">\beta=2</span> the leash is shorter: <span class="tex">Z=1.8398</span> and <span class="tex">\pi^*=(0.4481,\ 0.4432,\ 0.1087)</span>, closer to the reference.</p>
+          <p><b>The implicit reward.</b> Solving for the reward: <span class="tex">r(y)=\beta\ln\frac{\pi^*(y)}{\pi_{\text{ref}}(y)}+\beta\ln Z</span>. On the toy at <span class="tex">\beta=1</span>: <span class="tex">\ln(0.3600/0.5)=-0.3286</span>, <span class="tex">\ln(0.5871/0.3)=0.6714</span>, <span class="tex">\ln(0.0530/0.2)=-1.3286</span>. Adding <span class="tex">\beta\ln Z=1.3286</span> gives <span class="tex">1,\ 2,\ 0</span>, exactly the rewards we started from.</p>
+        </div>
+        <p><b>Step 3: put it into Bradley-Terry.</b> From lesson 4.2, <span class="tex">P(y_w\succ y_l)=\sigma(r(y_w)-r(y_l))</span>. Insert the implicit reward for both answers. The term <span class="tex">\beta\ln Z</span> depends only on the prompt, so it appears in both and <b>cancels in the difference</b>. That cancellation is the whole trick, because <span class="tex">Z</span> is a sum over every possible answer and cannot be computed for a language model. What is left is a probability expressed only with policy and reference probabilities. Now let a trainable model <span class="tex">\pi_\theta</span> play the role of <span class="tex">\pi^*</span> and maximise the likelihood of the observed pairs. That gives the DPO loss below.</p>
+        <div class="worked"><b>Worked example: one DPO loss and its gradient weight</b>
+          <p>Reference <span class="tex">(0.5,0.3,0.2)</span>; the current policy is <span class="tex">\pi_\theta=(0.40,\,0.45,\,0.15)</span>; the pair is B preferred over A; <span class="tex">\beta=0.5</span>.</p>
+          <p>Log-ratios: for the winner B, <span class="tex">\ln(0.45/0.3)=0.4055</span>; for the loser A, <span class="tex">\ln(0.40/0.5)=-0.2231</span>. The margin is <span class="tex">m=0.5\,(0.4055-(-0.2231))=0.3143</span>. Then <span class="tex">\sigma(m)=0.5779</span> and the loss is <span class="tex">-\ln0.5779=0.5483</span>. The gradient weight is <span class="tex">\sigma(-m)=0.4221</span>. With <span class="tex">\beta=1</span> instead, <span class="tex">m=0.6286</span> and the loss is 0.4274. If the policy equals the reference, both log-ratios are 0, the margin is 0, the loss is <span class="tex">\ln2=0.6931</span> and the weight is 0.5.</p>
+        </div>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">\mathcal{L}_{\text{DPO}}(\theta)=-\,\mathbb{E}_{(x,y_w,y_l)}\Big[\ln\sigma\Big(\beta\ln\frac{\pi_\theta(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)}-\beta\ln\frac{\pi_\theta(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\Big)\Big]</div>
+        <div class="eq">\nabla_\theta\mathcal{L}=-\beta\,\sigma(-m)\,\big[\nabla_\theta\ln\pi_\theta(y_w\mid x)-\nabla_\theta\ln\pi_\theta(y_l\mid x)\big],\qquad m=\beta\Big[\ln\tfrac{\pi_\theta(y_w)}{\pi_{\text{ref}}(y_w)}-\ln\tfrac{\pi_\theta(y_l)}{\pi_{\text{ref}}(y_l)}\Big]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">\pi_\theta</span>: the model being trained (starts equal to <span class="tex">\pi_{\text{ref}}</span>). <span class="tex">y_w,y_l</span>: preferred and rejected answers. <span class="tex">\beta</span>: the same leash strength as in RLHF. <span class="tex">m</span>: the margin, the gap between the implicit rewards <span class="tex">\hat r(y)=\beta\ln(\pi_\theta/\pi_{\text{ref}})</span>. <span class="tex">\sigma(-m)</span>: the weight on the update, large when the implicit rewards rank the pair wrongly and small when they already rank it right. The gradient raises the probability of the winner and lowers that of the loser, weighted by how wrong the model currently is. For a sequence, <span class="tex">\pi_\theta(y\mid x)</span> is the product of the token probabilities, so the log is a sum of token log-probabilities.</div>
+        <p><b>Comparison with RLHF.</b> Same objective, same optimum in the idealised case (the lab shows the policy converging to <span class="tex">\pi^*</span> from noisy pairs alone). DPO needs only the dataset of pairs and the reference model: no reward model, no sampling loop, no value network, and training is as simple as supervised learning. The price: it learns only from the fixed pairs, which were usually written by other policies, so it cannot explore new answers or correct a reward model's flaws by seeing fresh samples; and it is sensitive to <span class="tex">\beta</span> and to the quality of the pairs. RLHF can keep sampling from the current policy and keep scoring, which is more expensive and more flexible. Which works better in practice depends on the task and data, and I make no general claim here.</p>
+
+        <div data-lab="gen-al-dpo"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the defaults, press play. The blue bars slide to the orange ticks (0.3600, 0.5871, 0.0530) and the lower chart shows the implicit reward bars matching the hidden reward (centred). Nothing sampled, no reward model.</li>
+          <li>Change beta to 2: the orange ticks move closer to the grey outline. Change a hidden reward (for example r(C) = 3) and watch the target move with the labels.</li>
+          <li>Switch the labels to "always the same winner". The loss now falls without limit, C and A are pushed toward zero probability, and the policy runs far from the reference. That is DPO over-fitting a dataset with no disagreement.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"DPO has no reward."</b> It has one, implicitly: <span class="tex">\beta\ln(\pi_\theta/\pi_{\text{ref}})</span> up to a prompt-dependent constant. It simply never trains or uses a separate reward network.</li>
+            <li><b>Probabilities of both answers can fall.</b> The loss depends on a <i>difference</i>, so training may lower the likelihood of the winner as well, as long as the loser drops more. Watching the margin alone can hide this.</li>
+            <li><b>Equivalence is idealised.</b> The match to RLHF assumes the data follow Bradley-Terry, the model class can represent <span class="tex">\pi^*</span>, and the pairs cover the answers that matter. None is guaranteed for real data.</li>
+            <li><b>Reference mismatch.</b> If <span class="tex">\pi_{\text{ref}}</span> is not the model the pairs were drawn from, the implicit reward is measured against the wrong baseline.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Open-model tuning:</b> because it needs only a pair dataset, a reference and ordinary training code, DPO and its many variants are widely used for tuning openly available models.</li>
+            <li><b>Variants</b> change the loss (for example, adding a length term or a margin) to fix specific failure modes; they all keep the idea of a log-ratio to a reference.</li>
+            <li><b>Iterative use:</b> pairs can be re-sampled from the updated policy and re-labelled, which gives back some of RLHF's exploration.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. With reference (0.5, 0.3, 0.2) and rewards (1, 2, 0), beta = 1, what is the optimal policy?</summary><div class="ans">Weights 1.3591, 2.2167, 0.2000, Z = 3.7759, so π* = (0.3600, 0.5871, 0.0530).</div></details>
+        <details class="check"><summary>2. Why does Z not appear in the DPO loss?</summary><div class="ans">Z depends only on the prompt, not on the answer, so it adds the same constant β ln Z to the implicit reward of both answers in a pair. The Bradley-Terry probability uses the difference, and the constant cancels. That is essential, because Z sums over every possible answer and cannot be computed for a language model.</div></details>
+        <details class="check"><summary>3. Policy (0.40, 0.45, 0.15), reference (0.5, 0.3, 0.2), pair B over A, beta = 0.5: give the DPO loss.</summary><div class="ans">Margin = 0.5·(ln 1.5 - ln 0.8) = 0.5·(0.4055 + 0.2231) = 0.3143; σ(0.3143) = 0.5779; loss = 0.5483.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The KL-regularised objective equals <span class="tex">\beta\ln Z-\beta\,\mathrm{KL}(\pi\Vert\pi^*)</span>, so the optimum is <span class="tex">\pi^*\propto\pi_{\text{ref}}\,e^{r/\beta}</span> and the implicit reward is <span class="tex">r=\beta\ln(\pi^*/\pi_{\text{ref}})+\beta\ln Z</span>.</li>
+          <li>Bradley-Terry cancels <span class="tex">Z</span>, giving the DPO loss <span class="tex">-\ln\sigma\big(\beta[\ln\tfrac{\pi_\theta(y_w)}{\pi_{\text{ref}}(y_w)}-\ln\tfrac{\pi_\theta(y_l)}{\pi_{\text{ref}}(y_l)}]\big)</span>: a supervised loss on pairs.</li>
+          <li>Simpler and cheaper than RLHF, but limited to the fixed pairs and exposed to over-fitting when labels never disagree.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.5 ===================== -->
+    <section class="lesson" id="verifiable-rewards" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">4.5</span><h2>Verifiable rewards and reasoning</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>For a maths problem or a coding task, we do not need a learned reward model: a checker can say whether the final answer is right. How can a model be trained directly from such pass-or-fail signals, and how do we turn a plain 1 or 0 into a learning signal without a value network?</div>
+
+        <h3 class="sec">Intuition: practise problems with an answer key</h3>
+        <p>A student who has an answer key can practise alone: attempt a problem, check, adjust. For tasks with a mechanical check (a numeric answer compared with the key, code run against unit tests, a formal proof checked by a verifier) the same loop works for a model. The reward is a <b>verifiable reward</b>: computed by a program, hard to flatter, and free of the annotator-taste problems of lesson 4.2. This removes one source of reward hacking (the proxy is the truth), but not all of them, as the traps show.</p>
+        <p>There is one practical problem. A reward of 1 or 0 on its own is a poor learning signal: if a problem is usually solved, almost every sample gets 1 and nothing seems to separate the good from the bad. The fix is to compare answers <i>with each other</i>. Sample a group of answers to the same question, and ask how each compares with the group's typical result.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Group-relative advantage.</b> For one question, draw <span class="tex">G</span> answers from the policy and score each with the checker. Subtract the group mean (so an average answer gets 0) and divide by the group standard deviation (so the scale is the same whatever the rewards are). This is the idea behind <i>group-relative</i> policy-gradient methods: the group itself acts as the baseline in place of a learned value network (compare <a href="rl-policy-gradient.html#baselines-advantage">baselines and advantages</a>). Published methods differ in their details (clipping, KL terms, how long sequences are normalised); this lesson states only the central idea and makes no claim about any particular system.</p>
+        <div class="worked"><b>Worked example: eight sampled answers to "17 × 3 = ?"</b>
+          <p>A checker gives reward 1 to the answer 51 and 0 to anything else. Eight samples came back with these rewards:</p>
+          <table class="tbl"><thead><tr><th>sample</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr></thead>
+          <tbody><tr><td>reward <span class="tex">r_i</span></td><td>1</td><td>0</td><td>0</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td></tr>
+          <tr><td>advantage <span class="tex">A_i</span></td><td>1.2910</td><td>-0.7746</td><td>-0.7746</td><td>1.2910</td><td>-0.7746</td><td>1.2910</td><td>-0.7746</td><td>-0.7746</td></tr></tbody></table>
+          <p><b>Mean</b>: <span class="tex">3/8=0.375</span>. <b>Variance</b> (dividing by <span class="tex">G=8</span>): <span class="tex">[3(0.625)^2+5(0.375)^2]/8=1.875/8=0.234375</span>, so the <b>standard deviation</b> is <span class="tex">0.4841</span>. Correct samples: <span class="tex">(1-0.375)/0.4841=1.2910</span>. Wrong samples: <span class="tex">(0-0.375)/0.4841=-0.7746</span>. They sum to zero: <span class="tex">3(1.2910)+5(-0.7746)=0</span>.</p>
+          <p><b>Partial credit.</b> With four answers scored by a checker that gives partial marks, rewards <span class="tex">0,2,1,3</span>: mean 1.5, standard deviation 1.1180, advantages <span class="tex">-1.3416,\ 0.4472,\ -0.4472,\ 1.3416</span>.</p>
+          <p><b>When nothing can be learned.</b> If all eight got 1 (or all 0) the standard deviation is 0, every advantage is 0, and the group provides no signal: the question was too easy or too hard for the current policy. Implementations typically add a tiny constant to the denominator to avoid dividing by zero, and often favour questions of intermediate difficulty.</p>
+        </div>
+        <p><b>The update.</b> Each sampled answer's log-probability is pushed up in proportion to its advantage: the correct samples become more likely, the wrong ones less likely. In the toy, with the policy a softmax over four candidate answers, a step is <span class="tex">\Delta\theta_k=\eta\,\frac1G\sum_i A_i\,(\mathbb 1[y_i=k]-\pi_k)</span>, which is the policy-gradient rule with the group-relative advantage in place of the return. The lab runs this loop.</p>
+        <p><b>Long reasoning traces.</b> For harder problems the answer comes after a long chain of intermediate steps written by the model. The reward is checked only at the end (an <b>outcome reward</b>); a policy that is rewarded for correct final answers is free to develop longer or more careful intermediate text if that raises the pass rate. Spending more tokens at inference to reason before answering is one way to trade compute for accuracy, and it makes sampling cost grow with trace length. Rewarding the correctness of <i>each step</i> (a <b>process reward</b>) is an alternative that needs step labels, which are costly and can themselves be wrong.</p>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">A_i=\frac{r_i-\bar r}{s_r},\qquad \bar r=\frac1G\sum_{j=1}^{G}r_j,\qquad s_r=\sqrt{\frac1G\sum_{j=1}^{G}(r_j-\bar r)^2}</div>
+        <div class="eq">\nabla_\theta J\approx\mathbb{E}_{x}\Big[\frac1G\sum_{i=1}^{G}A_i\,\nabla_\theta\ln\pi_\theta(y_i\mid x)\Big]</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">G</span>: group size, the number of answers sampled for one question <span class="tex">x</span>. <span class="tex">y_i</span>: the <span class="tex">i</span>-th sampled answer (a whole trace). <span class="tex">r_i</span>: its reward from the checker. <span class="tex">\bar r</span> and <span class="tex">s_r</span>: the group mean and standard deviation. <span class="tex">A_i</span>: the advantage, positive when the answer beat its group. <span class="tex">\pi_\theta</span>: the policy. Because the advantages sum to zero, subtracting the group mean acts as a baseline and does not bias the gradient direction in expectation, though the finite group makes it noisy (see <a href="rl-policy-gradient.html#baselines-advantage">the baseline lesson</a>). Real systems commonly add a KL term to a reference and a clipped ratio as in PPO, omitted here.</div>
+
+        <div data-lab="gen-al-group"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Let a round play out slowly: answers appear one at a time, then the mean, standard deviation and advantages, then the bars move. Check the readout against the worked example when the group has 3 correct out of 8.</li>
+          <li>Set the start probability to 0.05 with G = 4. Most groups contain no correct answer, so the advantages are all zero and the policy does not move: a hard problem teaches nothing until luck produces a success. Then raise G to 16 and watch learning start sooner.</li>
+          <li>Raise the start probability to 0.9: now most groups are all correct and again there is no signal. Learning is fastest at intermediate success rates.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>"Verifiable" does not mean "correct in every sense".</b> A checker tests what it tests. Weak unit tests can be passed by special-casing the examples; a numeric match can be reached with an invalid chain of reasoning. The model optimises the checker, not the intention behind it.</li>
+            <li><b>Reasoning text is not a faithful transcript.</b> A longer trace can raise accuracy, but the visible steps need not be the real cause of the answer, so they should not be treated as an audit trail.</li>
+            <li><b>Coverage.</b> The method applies where a reliable checker exists. Open-ended writing, advice or judgement has none, and gains on checkable tasks do not automatically transfer.</li>
+            <li><b>Standardising by the standard deviation</b> magnifies tiny differences in a group where almost everything has the same reward, and different normalisations weight easy and hard questions differently. That is a design choice with consequences.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Reasoning models:</b> training with checkable rewards on maths, programming and logic puzzles is a widely discussed route to models that produce long step-by-step solutions.</li>
+            <li><b>Code:</b> unit tests and compilers are ready-made verifiers; the quality of the tests bounds what the model can learn.</li>
+            <li><b>Test-time compute:</b> sampling several solutions and choosing by a checker or by majority vote uses the same machinery at inference.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the worked group (3 correct out of 8), recompute the advantage of a wrong answer.</summary><div class="ans">Mean 0.375, standard deviation 0.4841, so (0 - 0.375)/0.4841 = -0.7746.</div></details>
+        <details class="check"><summary>2. Rewards in a group of four are 0, 2, 1, 3. What advantage does the answer scoring 3 get, and do the advantages sum to zero?</summary><div class="ans">Mean 1.5; deviations -1.5, 0.5, -0.5, 1.5; variance (2.25 + 0.25 + 0.25 + 2.25)/4 = 1.25; standard deviation 1.1180. The answer with 3 gets 1.5/1.1180 = 1.3416. The four advantages (-1.3416, 0.4472, -0.4472, 1.3416) sum to zero.</div></details>
+        <details class="check"><summary>3. A question is so easy that all 16 samples are correct. What happens to the update from that question, and why might that be sensible?</summary><div class="ans">The standard deviation is 0, every advantage is 0 (with a small constant in the denominator in practice), and the gradient from that group is zero. It is sensible because no sample did better than the others, so there is nothing to learn from comparing them.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A program that checks answers gives a reward that is hard to flatter; it cannot reward anything the checker does not test.</li>
+          <li>Group-relative advantage: sample <span class="tex">G</span> answers, subtract the group mean, divide by the group standard deviation. For rewards 1,0,0,1,0,1,0,0 the advantages are +1.2910 and -0.7746.</li>
+          <li>Groups with identical rewards carry no signal; learning is fastest at intermediate success rates; verifiable does not mean complete.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 4.6 ===================== -->
+    <section class="lesson" id="ai-feedback-red-teaming" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">4.6</span><h2>AI feedback and red teaming</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Human preference labels are slow and costly. Can a model write some of the feedback, guided by a written set of principles? And once a model is trained to decline some requests, how do we find where it fails, and how do we balance wrongly answering a request it should have declined against wrongly refusing one it should have answered?</div>
+
+        <h3 class="sec">Intuition: written rules, a second reader, and a tester who tries to break things</h3>
+        <p><b>AI feedback.</b> Instead of asking a person "which of these two replies is better?", we ask a model, giving it a short written list of principles (a <b>constitution</b>): for example "prefer the reply that is honest about uncertainty" or "prefer the reply that does not help with harming others". The model judges pairs, and the judgements become preference data for the methods of lessons 4.2 to 4.4. Sometimes the model also critiques and rewrites its own replies against the principles, and the revised replies become SFT data (lesson 4.1). This is sometimes called reinforcement learning from AI feedback.</p>
+        <p><b>Red teaming.</b> A red team deliberately probes a system to find where it fails: wrong answers, unsafe behaviour, leaks, inconsistent refusals. The term comes from security practice. Red teamers can be people or other models; the point is to discover failures before real users do, so they can be fixed, and to measure how often they occur.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>Why AI feedback can work, and where it stops.</b> A judge model can be cheap, fast and consistent, and it makes the principles explicit and editable: change the text, and the labels change. But the judge has its own biases (for example a preference for longer or more confident replies), inherits the blind spots of the model that produced it, and can only apply principles it understands. If a judge is wrong in the same way as the policy it trains, agreement between them proves nothing. Careful setups check the judge against human labels on a sample, and keep people in the loop for the principles themselves, because deciding what a model should and should not do is a value judgement, not a technical fact.</p>
+        <div class="worked"><b>Worked example: how reliable must a judge be?</b>
+          <p>Suppose the judge agrees with a careful human on 80% of pairs and picks the opposite on 20%. Used as a labeller, it behaves like noise on the labels: it adds the entropy floor of lesson 4.2 for that fraction of pairs. If the judge's errors are random, a large number of pairs can still teach the correct ranking, just as in the noisy reward-model lab. If its errors are <i>systematic</i> (say it always favours the longer reply), more pairs do not help: the reward model learns the bias, and the policy optimises it (lesson 4.3).</p>
+        </div>
+        <p><b>Refusals and the two kinds of error.</b> Training a model to decline some requests creates a classification problem: for each incoming request, answer or refuse. There are two ways to be wrong. <b>Missed refusal</b>: the model answers something it should have declined. <b>Over-refusal</b>: it declines something harmless and useful, which frustrates legitimate users and withholds help (for example from someone asking a safety question in order to stay safe). No setting removes both: if the model's internal "risk score" for harmless and harmful requests overlaps, moving the threshold trades one error for the other. Only better separation, from better training, better context handling and better data, reduces both. How to weigh the two mistakes is a judgement about costs and values that differs by setting (a medical-information service and a children's learning app would reasonably choose differently), and it is the responsibility of the people and organisations deploying the system. The lab uses abstract scores and prints no request content.</p>
+        <p><b>Measuring safety behaviour.</b> A single number hides this trade-off, so it is common to report both rates: the share of requests that should be declined that were declined, and the share of harmless requests that were wrongly declined. Evaluation sets should be fixed in advance, cover different categories and contexts, and be kept partly secret from training so they remain a fair test. Red-team measurement also has a statistical side. If each attempt finds a failure with probability <span class="tex">p</span>, independent attempts find at least one with probability <span class="tex">1-(1-p)^k</span>.</p>
+        <div class="worked"><b>Worked example: what k attempts can and cannot tell you</b>
+          <p>If <span class="tex">p=0.02</span>, then 100 independent attempts find at least one failure with probability <span class="tex">1-0.98^{100}=0.8674</span>: about one run in seven finds nothing even though the failure is real. If a red team makes 100 attempts and finds no failure, the 95% upper bound on <span class="tex">p</span> is <span class="tex">1-0.05^{1/100}=0.0295</span>, close to the common "rule of three" estimate <span class="tex">3/k=0.03</span>. So "nothing found in 100 tries" supports "<span class="tex">p</span> is probably below about 3%", not "<span class="tex">p=0</span>". Rare failures need many varied attempts.</p>
+        </div>
+
+        <h3 class="sec">The formal picture</h3>
+        <div class="eq">P(\text{at least one failure in }k\text{ independent attempts})=1-(1-p)^k,\qquad p_{95\%}^{\max}=1-0.05^{1/k}\approx\frac{3}{k}\ \ \text{(zero failures seen)}</div>
+        <div class="eq">\text{missed-refusal rate}=P(\text{answer}\mid\text{should refuse}),\qquad \text{over-refusal rate}=P(\text{refuse}\mid\text{should answer})</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">p</span>: the chance that a single attempt finds a failure. <span class="tex">k</span>: the number of attempts, assumed independent (many near-copies of one trick are not independent). <span class="tex">p^{\max}_{95\%}</span>: the largest <span class="tex">p</span> still consistent, at the 95% level, with seeing zero failures in <span class="tex">k</span> attempts. The two rates are conditional probabilities and depend on the evaluation set: change the mix of requests and they change.</div>
+
+        <div data-lab="gen-al-refusal"></div>
+        <div data-lab="gen-al-redteam-k"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>In the refusal lab, drag the threshold right: wrong refusals (over-refusal) fall while wrongly answered requests rise. Move the "cheapest threshold" marker by changing the two costs, and note how it depends on them.</li>
+          <li>Raise "how well the scores separate" from 1 to 4: both error rates fall at once. That is what better training buys; moving the threshold cannot.</li>
+          <li>In the red-team lab set p = 2%, press play, and see when the first failure turns up; reset to a different run by changing p. At p = 0.5% watch how many attempts can pass with nothing found, and read the upper bound.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>One number for safety.</b> A model that refuses everything has no missed refusals and is useless. Report both error rates, and for several kinds of request separately.</li>
+            <li><b>"Found nothing" as proof.</b> It bounds the failure rate; it does not show there is none, and it only covers the kinds of attempts that were tried.</li>
+            <li><b>Training on the test.</b> If red-team prompts that are used to measure safety also appear in training, the measurement is no longer a fair test, and the system may handle those exact prompts while failing on a rephrasing.</li>
+            <li><b>Judge circularity.</b> Evaluating a model with a judge built from the same family, using the same principles it was trained on, can understate its failures.</li>
+            <li><b>Principles are not neutral.</b> Any written constitution encodes choices about what to prefer; publishing and revisiting them, and checking them against affected users, is part of doing this responsibly.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Safety training:</b> AI-generated critiques and preference labels, guided by written principles, are one published route to scaling preference data; human oversight of the principles and spot-checks of the labels are the usual safeguards.</li>
+            <li><b>Evaluation before release:</b> structured red teaming, internal and external, is widely used to find failures across categories; results are better reported as rates with uncertainty than as anecdotes.</li>
+            <li><b>Deployment guardrails:</b> input and output filters add a second layer with their own missed-refusal and over-refusal rates, which compound with the model's own (<a href="gen-multimodal.html#production-genai">production lesson</a>).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Each attempt finds a failure with probability 2%. What is the probability that 100 independent attempts find none?</summary><div class="ans">0.98^100 = 0.1326, so at least one is found with probability 1 - 0.1326 = 0.8674. Even a real, 2%-frequency failure is missed by a 100-attempt red team about 13% of the time.</div></details>
+        <details class="check"><summary>2. A model refuses 100% of requests. What are its missed-refusal and over-refusal rates, and why is this not "safe"?</summary><div class="ans">Missed refusal 0%, over-refusal 100%. It never answers a harmless request, so it provides no value and withholds legitimate help. Safety behaviour has to be judged on both rates together.</div></details>
+        <details class="check"><summary>3. An AI judge agrees with careful human labels 80% of the time, with errors that are random. Another judge agrees 80% of the time but always errs by favouring longer replies. Which is more harmful as a labeller, and why?</summary><div class="ans">The second. Random errors average out over many pairs, so a reward model still learns the right ranking. A systematic error is a consistent signal: the reward model learns "longer is better" and the policy optimises that, a form of reward hacking (lesson 4.3), however many pairs there are.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>AI feedback uses a model and a written set of principles to produce preference labels or revisions; it scales cheaply, but systematic judge bias is learned, not averaged away, and the principles are human value judgements.</li>
+          <li>Refusal behaviour has two errors, missed refusals and over-refusals; a threshold trades them off, better separation lowers both, and the weighting is a policy choice.</li>
+          <li>Red teaming measures failure rates: <span class="tex">1-(1-p)^k</span> to find one, and "none in 100" only bounds <span class="tex">p</span> below about 3% (0.0295).</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 5 (<a href="gen-efficiency.html">Efficient adaptation &amp; inference</a>) shows how to adapt these models cheaply with low-rank updates and how to quantise and speed up serving. The <a href="gen-multimodal.html#production-genai">production lesson</a> returns to guardrails and evaluation.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

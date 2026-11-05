@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generative AI · AI Learning Hub</title>
+<meta name="description" content="A zero-to-hero generative AI curriculum: language modelling and tokenisation, attention and the Transformer, training large language models, alignment, efficient inference, retrieval and agents, VAEs and GANs, diffusion and flow matching, and responsible generation.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-pipeline.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › Generative AI</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">✨</div>
+      <div style="flex:1">
+        <h1>Generative AI — zero to hero</h1>
+        <p>See how models <b>create</b>: how a language model predicts the next token, why the <b>Transformer</b> works, how large models are trained, aligned and served, how retrieval and agents are built on top, and how <b>diffusion</b> models turn noise into images.</p>
+        <div class="chips"><span class="chip">10 modules</span><span class="chip">61 lessons</span><span class="chip">Transformers &amp; diffusion</span><span class="chip">Animated sampling</span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <section class="lesson" id="start" style="border:0;margin-top:10px;padding-top:0">
+      <div class="lesson-head"><h2>How to learn from this</h2></div>
+      <div class="prose">
+        <p>Every lesson starts with a generation problem. Then comes a hand-worked example on a tiny vocabulary, a three-token attention head or a one-dimensional noise chain, the formal definition, an <b>animated lab you can edit</b>, traps, real uses and self-check questions. The labs are small toy models: real systems are far larger, so no claim is made about any particular commercial model.</p>
+        <p>The maths and ML are linked, not repeated: probability and information theory point to <a href="mathematics.html">Mathematics</a>, networks to <a href="machine-learning.html">Machine Learning</a>, and image-specific generation to <a href="computer-vision.html">Computer Vision</a>.</p>
+      </div>
+    </section>
+
+    <section class="lesson" id="pipeline">
+      <div class="lesson-head"><h2>The generative AI pipeline</h2></div>
+      <div class="prose"><p>Most generative systems pass through these six stages, from raw data to a monitored product. Click a stage for what it does, what it needs and where its data is stored.</p></div>
+      <div data-lab="pipeline" data-id="genai"></div>
+    </section>
+
+    <section class="lesson" id="map">
+      <div class="lesson-head"><h2>The map</h2></div>
+      <div class="pathbar" id="pathbar"></div>
+      <div class="prose"><p>Module 0 frames generative modelling: what it means to model a distribution and the families of methods. Module 1 builds language modelling, tokens and decoding, and Module 2 the attention mechanism and the Transformer. Module 3 trains large language models, and Module 4 aligns them with human preferences. Module 5 makes models cheaper and faster, and Module 6 builds prompting, retrieval and agents on top. Module 7 covers latent-variable and adversarial generators, and Module 8 diffusion and flow matching. Module 9 reaches multimodal models, evaluation and responsible use.</p></div>
+    </section>
+
+    <section class="lesson" id="curriculum">
+      <div class="lesson-head"><h2>The curriculum</h2></div>
+      <div class="mods" id="mod-list"></div>
+      <p style="color:var(--muted);font-size:13px">Full lesson specification: <a href="https://github.com/AbdelrahmanKatkat/AI-Hub/blob/main/curriculum/generative-ai.md" target="_blank" rel="noopener">curriculum/generative-ai.md</a>.</p>
+    </section>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>

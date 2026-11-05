@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 · Language modelling &amp; tokenisation · Generative AI</title>
+<meta name="description" content="N-gram models and smoothing, perplexity, byte-pair encoding done by hand, embeddings as a lookup table, a neural language model with the softmax cross-entropy gradient, and decoding with temperature, top-k, top-p and beam search, all on tiny printed examples with animated labs.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="assets/topics.js"></script>
+<script defer src="assets/curriculum-genai.js"></script>
+<script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-gen-language.js"></script>
+<script defer src="assets/shell.js"></script>
+</head>
+<body data-topic="genai" data-module="1">
+<header id="hdr"></header>
+<div class="app">
+  <aside id="side"></aside>
+  <main>
+    <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="generative-ai.html">Generative AI</a> › Module 1</div>
+    <div class="hero">
+      <div class="big" style="background:#a371f726">1</div>
+      <div style="flex:1">
+        <h1>Module 1 · Language modelling &amp; tokenisation</h1>
+        <p>A language model assigns a probability to the next piece of text. This module builds that idea from the humblest possible tool, counting, and climbs to the neural version that sits at the end of every large language model. It covers the first three stages of the generative AI pipeline: <b>collect and tokenise</b> (cutting text into pieces), <b>pretrain</b> (learn next-piece probabilities, measured by perplexity), and the <b>generate</b> step (choosing a word from those probabilities).</p>
+        <div class="chips"><span class="chip">6 lessons</span><span class="chip">≈ 3.5 hours</span><span class="chip">Needs: <a href="math-probability.html#conditional-bayes">conditional probability</a>, <a href="math-information.html#cross-entropy-kl">cross-entropy</a>, <a href="ml-neural.html#perceptron-mlp">what a network is</a></span></div>
+      </div>
+      <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
+    </div>
+
+    <div class="callout"><b>How this module works.</b> Every lesson works on a toy: a three-sentence text, a four-word corpus, a six-word vocabulary, a two-step sentence. All numbers printed here were computed by running the same code the labs use, and are quoted to the digits shown. The labs are <i>illustrative</i>: tiny models with seeded random numbers, so a run can be repeated. They teach the mechanics; real systems use the same ideas at a vastly larger scale, and nothing here claims anything about a specific commercial model. Probability and cross-entropy are linked, not re-taught: see <a href="math-information.html#entropy">entropy</a> and <a href="math-information.html#cross-entropy-kl">cross-entropy and KL</a>.</div>
+
+    <!-- ===================== 1.1 ===================== -->
+    <section class="lesson" id="ngram-models" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">1.1</span><h2>N-gram language models</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A phone keyboard has just seen you type "the dog" and must suggest the next word. It has never been taught grammar. All it has is a pile of past text. How can it turn that pile into "ate is unlikely, sat is likely", and what should it do about a word it has never seen follow "dog" at all?</div>
+
+        <h3 class="sec">Intuition: finish the sentence by remembering who followed whom</h3>
+        <p>Imagine you could read every sentence ever written. To guess the word after "the dog" you would look through all of them for the places where "dog" appears and note what came next: "sat" 40 times, "barked" 30 times, "ate" 2 times. The share of each is a sensible probability. A <b>language model</b> is exactly this: a rule that, given what has been written so far, gives a probability to every possible next token. The simplest one just <b>counts</b>.</p>
+        <p>Counting has a limit: the full history ("the dog that my neighbour bought last spring") is so specific that it almost never repeats in the pile. So we cheat and remember only a short tail of it. An <b>n-gram model</b> conditions on the previous <span class="tex">n-1</span> words: a <i>bigram</i> model looks at 1 word, a <i>trigram</i> model at 2. The price of forgetting is that the model cannot see long-range structure; the reward is that counting becomes possible.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>We need some bookkeeping. Put a start marker <span class="tex">\langle s\rangle</span> before each sentence and an end marker <span class="tex">\langle/s\rangle</span> after it, so the model also learns how sentences begin and end. The <b>vocabulary</b> is the set of tokens the model may predict (here whole words plus the end marker).</p>
+        <div class="worked"><b>Worked example: three sentences</b>
+          <p>The whole training text:</p>
+          <p style="font-family:ui-monospace,Consolas,monospace">the cat sat on the mat<br>the cat ate the fish<br>the dog sat on the rug</p>
+          <p>The vocabulary has <span class="tex">V=10</span> items: the, cat, sat, on, mat, ate, fish, dog, rug and the end marker. The text contains 20 adjacent pairs (7 + 6 + 7). The pair counts, written as "previous → next: count":</p>
+          <table class="tbl"><thead><tr><th>previous</th><th>next words and counts</th><th>row total</th></tr></thead><tbody>
+            <tr><td>&lt;s&gt;</td><td>the: 3</td><td>3</td></tr>
+            <tr><td>the</td><td>cat: 2, mat: 1, fish: 1, dog: 1, rug: 1</td><td>6</td></tr>
+            <tr><td>cat</td><td>sat: 1, ate: 1</td><td>2</td></tr>
+            <tr><td>sat</td><td>on: 2</td><td>2</td></tr>
+            <tr><td>on</td><td>the: 2</td><td>2</td></tr>
+            <tr><td>mat, fish, rug</td><td>&lt;/s&gt;: 1 each</td><td>1 each</td></tr>
+            <tr><td>ate, dog</td><td>the: 1 (after ate), sat: 1 (after dog)</td><td>1 each</td></tr></tbody></table>
+          <p><b>Counts to probabilities.</b> Divide a cell by its row total. <span class="tex">P(\text{cat}\mid\text{the})=2/6=0.3333</span>, <span class="tex">P(\text{sat}\mid\text{cat})=1/2</span>. Each row of probabilities adds to 1.</p>
+          <p><b>A whole sentence.</b> By the chain rule (see <a href="gen-foundations.html#chain-rule-factorisation">the chain rule lesson</a>) we multiply the steps: <span class="tex">P(\text{the cat sat on the mat})=1\cdot\tfrac{2}{6}\cdot\tfrac12\cdot1\cdot1\cdot\tfrac16\cdot1=\tfrac1{36}=0.0278</span> (the last factor is <span class="tex">P(\langle/s\rangle\mid\text{mat})=1</span>).</p>
+          <p><b>The sparsity problem.</b> What is <span class="tex">P(\text{ate}\mid\text{dog})</span>? The word "dog" was followed only by "sat", so the count is 0 and the probability is exactly 0. Then the perfectly sensible sentence "the dog ate the fish" gets probability <b>0</b>, because one factor is zero. The table has 100 cells (10 possible previous tokens times 10 next tokens) but only 15 are non-zero: most perfectly good pairs were simply never observed.</p>
+          <p><b>The fix: add-k smoothing.</b> Pretend that every possible pair was seen <span class="tex">k</span> extra times. For <span class="tex">k=1</span>: <span class="tex">P(\text{ate}\mid\text{dog})=\dfrac{0+1}{1+1\cdot10}=\dfrac1{11}=0.0909</span>. The row still adds to 1: sat gets <span class="tex">(1+1)/11=2/11</span> and the other nine words get <span class="tex">1/11</span> each, so <span class="tex">2/11+9/11=1</span>. The cost: seen words lose some probability, for example <span class="tex">P(\text{fish}\mid\text{the})</span> falls from <span class="tex">1/6=0.1667</span> to <span class="tex">(1+1)/(6+10)=0.125</span>.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">P(w_i\mid w_{i-1})\;=\;\frac{\operatorname{count}(w_{i-1},w_i)+k}{\operatorname{count}(w_{i-1})+k\,V},\qquad P(w_1,\dots,w_m)\;\approx\;\prod_{i=1}^{m}P(w_i\mid w_{i-1})</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">w_i</span>: the i-th token. <span class="tex">\operatorname{count}(a,b)</span>: how many times b directly followed a in the training text. <span class="tex">\operatorname{count}(a)</span>: how many pairs start with a (the row total). <span class="tex">V</span>: vocabulary size (10 above). <span class="tex">k\ge0</span>: the smoothing constant; <span class="tex">k=0</span> is plain counting. The right-hand side is the bigram approximation of the chain rule: the true next-word probability depends on the whole history, and we keep only the last word. A trigram model conditions on two words and is written with <span class="tex">w_{i-2},w_{i-1}</span>.</div>
+        <p>The scale of the problem: with a vocabulary of 50 000 tokens a bigram table has <span class="tex">50000^2=2.5\times10^{9}</span> cells and a trigram table <span class="tex">50000^3=1.25\times10^{14}</span>. No text collection is large enough to fill them, which is the deep reason that a model that <i>generalises</i> from similar words (lesson 1.5) replaced counting tables.</p>
+
+        <div data-lab="gen-lm-ngram"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Leave k at 0 and press play. Watch the orange (next) word being counted after the blue (previous) word, and the bars for the context "the" growing. When it finishes, change the context to "dog": one bar at 1, all the others exactly 0.</li>
+          <li>Drag k to 1. Words never seen after "dog" now share some probability and the bar sum stays at 1; the seen word "sat" gives some up. Compare the numbers with the worked example (1/11 and 2/11).</li>
+          <li>Press "Generate a sentence" a few times, with k at 0 and at 1. Then edit the text (add your own sentences) and see what the model produces. Notice that it can only reproduce patterns that were in the text.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Zero probability is a claim, not a gap.</b> Without smoothing, one unseen pair makes a whole sentence impossible. A model that says "impossible" about a normal sentence will be scored as infinitely bad (see perplexity next).</li>
+            <li><b>Add-k is blunt.</b> With a huge vocabulary, k = 1 hands a lot of probability to words that are never plausible. Better schemes exist (back-off, interpolation, Kneser–Ney); the point here is the idea, not the best smoother.</li>
+            <li><b>Forgetting the end marker.</b> Without <span class="tex">\langle/s\rangle</span> the model never learns when to stop, and the probabilities of sentences of different lengths cannot be compared.</li>
+            <li><b>"More n is always better."</b> A larger n sees more context but its counts get smaller and sparser. n-grams trade context for reliability.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Baselines and keyboards.</b> Word suggestion on small devices, spelling correctors and old speech recognisers used n-gram tables (often with back-off), and they remain a fast, interpretable baseline to beat.</li>
+            <li><b>Counting is the training objective in disguise.</b> A neural language model (lesson 1.5) is trained to reproduce these same conditional frequencies, but through a shared set of weights, so it can give sensible probability to a pair it never saw.</li>
+            <li><b>Smoothing reappears</b> as label smoothing and as the temperature and truncation tricks of lesson 1.6.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. In the three-sentence text, what are P(sat | the) and P(on | sat), unsmoothed?</summary><div class="ans">"sat" never directly follows "the" (the is followed by cat, mat, fish, dog, rug), so <span class="tex">P(\text{sat}\mid\text{the})=0/6=0</span>. "on" follows "sat" both times that "sat" appears, so <span class="tex">P(\text{on}\mid\text{sat})=2/2=1</span>.</div></details>
+        <details class="check"><summary>2. With k = 1, what is P(cat | the) and does the row for "the" still add to 1?</summary><div class="ans"><span class="tex">P(	ext{cat}mid	ext{the})=(2+1)/(6+10)=3/16=0.1875</span>. The row has 10 entries: cat gives 3/16; mat, fish, dog and rug (count 1 each) give 2/16 each, 8/16 together; the five words with count 0 (the, sat, on, ate and the end marker) give 1/16 each, 5/16 together. Total: 3/16 + 8/16 + 5/16 = 16/16 = 1.</div></details>
+        <details class="check"><summary>3. Why can a bigram model not get the verb right in "The keys to the cabinet ___" (are or is)?</summary><div class="ans">Its prediction depends only on the previous word, "cabinet", which is singular. The plural subject "keys" is four words back and invisible to it, so it tends to prefer "is". Agreement across a distance needs a model with a longer, learned memory (a larger n helps only if that exact long phrase was seen in the training text, which almost never happens).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>A language model gives a probability to the next token given the past; the simplest one counts pairs and divides by the row total.</li>
+          <li>Unseen pairs get probability 0 and ruin whole sentences; add-k smoothing reserves probability for them: <span class="tex">(\text{count}+k)/(\text{total}+kV)</span>.</li>
+          <li>Tables explode with n and V (<span class="tex">V^n</span> cells), which is why learned, shared-weight models took over.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.2 ===================== -->
+    <section class="lesson" id="perplexity" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">1.2</span><h2>Perplexity</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>You have two language models and one test sentence. Model A gives the sentence probability 0.0001, model B gives 0.00002. But the sentence is short; on a longer one both would give astronomically small numbers. How do you score a model on a whole test text so that the number does not depend on how long the text is, and can be read as "how confused is the model"?</div>
+
+        <h3 class="sec">Intuition: the effective number of choices</h3>
+        <p>Suppose a model is completely unsure and gives each of 8 tokens probability 1/8 at every step. It is as confused as someone choosing among 8 equally likely options. Suppose instead it always gives the true next token probability 1/2: it is as confused as a coin flip. We want one number that says "this model behaves as if it were choosing among about <i>this many</i> equally likely tokens at each step". That number is the <b>perplexity</b>: 8 in the first case, 2 in the second, 1 for a model that is always certain and right.</p>
+        <p>To make a score that is independent of length we <i>average</i> the per-token surprise. The surprise of a token the model gave probability <span class="tex">p</span> is <span class="tex">-\log p</span>: a certain token (p = 1) costs 0, a one-in-a-million token costs a lot. This is the same quantity as the cross-entropy loss of <a href="math-information.html#cross-entropy-kl">the information theory module</a>, taken per token.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example 1: four tokens, by hand</b>
+          <p>A model gives the four tokens of a test text the probabilities <span class="tex">0.5,\ 0.25,\ 0.125,\ 0.5</span>. Use logarithms to <b>base 2</b>, so the unit is the <i>bit</i>. Losses: <span class="tex">-\log_2 0.5=1</span>, <span class="tex">-\log_2 0.25=2</span>, <span class="tex">-\log_2 0.125=3</span>, <span class="tex">-\log_2 0.5=1</span> bits. The mean loss is <span class="tex">(1+2+3+1)/4=1.75</span> bits. The perplexity is <span class="tex">2^{1.75}=3.3636</span>.</p>
+          <p><b>Same answer in nats.</b> With the natural logarithm the unit is the <i>nat</i>; each loss is <span class="tex">\ln 2=0.6931</span> times larger, so the mean is <span class="tex">1.75\times0.6931=1.2130</span> nats, and the perplexity is <span class="tex">e^{1.2130}=3.3636</span>. Perplexity is the same in either base, as long as the exponential matches the logarithm (2 with bits, e with nats).</p>
+          <p><b>Sanity check:</b> a model that gives every one of 8 tokens probability 1/8 has loss 3 bits and perplexity <span class="tex">2^3=8</span>.</p>
+        </div>
+        <div class="worked"><b>Worked example 2: the bigram model of lesson 1.1</b>
+          <p>Score the sentence "the dog ate the fish" (plus the end marker, 6 predictions) with the add-1 bigram model built from the three training sentences, log base 2:</p>
+          <table class="tbl"><thead><tr><th>token</th><th>the</th><th>dog</th><th>ate</th><th>the</th><th>fish</th><th>&lt;/s&gt;</th></tr></thead><tbody>
+            <tr><td>probability</td><td>4/13 = 0.3077</td><td>2/16 = 0.1250</td><td>1/11 = 0.0909</td><td>2/11 = 0.1818</td><td>2/16 = 0.1250</td><td>2/11 = 0.1818</td></tr>
+            <tr><td>loss (bits)</td><td>1.700</td><td>3.000</td><td>3.459</td><td>2.459</td><td>3.000</td><td>2.459</td></tr></tbody></table>
+          <p>Mean loss = 16.0788 / 6 = 2.6798 bits, perplexity <span class="tex">2^{2.6798}=6.4076</span>. The unigram model (no context, add-1) gives a mean loss of 3.1378 bits and perplexity 8.8016 on the same text. The bigram model is the better predictor: it is "as unsure as a 6.41-sided die" versus an 8.80-sided one.</p>
+          <p><b>Bits per character.</b> The text has 20 characters (including spaces). The total cost is 16.0788 bits, so <span class="tex">16.0788/20=0.804</span> bits per character. Per-character scores are what you compare when two models use <i>different tokenisers</i>, because per-token perplexities count different units.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\mathrm{PP}\;=\;\exp\!\Big(\underbrace{-\frac1N\sum_{t=1}^{N}\ln P(w_t\mid w_{&lt;t})}_{\text{mean cross-entropy in nats}}\Big)\;=\;2^{\,-\frac1N\sum_{t}\log_2 P(w_t\mid w_{&lt;t})}\;=\;\Big(\prod_{t=1}^{N}\frac{1}{P(w_t\mid w_{&lt;t})}\Big)^{1/N}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">N</span>: the number of tokens scored. <span class="tex">w_t</span>: the t-th token of the test text. <span class="tex">w_{&lt;t}</span>: all tokens before it (for a bigram model, just the previous one). <span class="tex">P(w_t\mid w_{&lt;t})</span>: the probability the model gave the token that really occurred. The braced term is the average cross-entropy between the data and the model (<a href="math-information.html#cross-entropy-kl">cross-entropy</a>). The three forms are equal; the last one reads "the geometric mean of the inverse probabilities". The perplexity is at least 1 and equals the vocabulary size for a model that guesses uniformly.</div>
+
+        <div data-lab="gen-lm-perplexity"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep "the dog ate the fish", base 2, k = 1, bigram. Press play and read the bars: "ate" after "dog" is the costliest token (3.459 bits). The final perplexity should read 6.408.</li>
+          <li>Switch the base to nats. The bar heights shrink by a factor 0.693, the loss line moves down, but the perplexity is still 6.408. Then switch to the unigram model and confirm 8.80.</li>
+          <li>Type a sentence the training text strongly supports ("the cat sat on the mat") and one with an unseen word ("the bird sat"). Lower k to 0.05 and watch how unseen events are punished: with little smoothing a surprising token costs many bits.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Mixing bases.</b> A mean loss of 2.68 means perplexity <span class="tex">2^{2.68}</span> only if the logarithm was base 2. Computing <span class="tex">e^{2.68}</span> from a base-2 loss gives a wrong number. State the base every time.</li>
+            <li><b>Comparing perplexities across tokenisers.</b> A model with a bigger vocabulary predicts bigger pieces, so its per-token perplexity is not comparable to a character model's. Compare bits per character (or per byte) on the same text instead.</li>
+            <li><b>Tuning on the test text.</b> Choosing k to minimise the perplexity of the very sentence you report (k = 0.1 gives 3.89 here) is cheating. Choose k on separate validation text, then score the test text once.</li>
+            <li><b>Lower perplexity is not always better text.</b> It measures how well the model predicts real text, not whether its output is useful, safe or truthful. A model can have low perplexity and still be unhelpful.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Evaluating pretraining.</b> The validation loss curve that practitioners watch during pretraining is exactly this average cross-entropy; perplexity is its exponential, and bits per byte is the tokeniser-independent version (see the training module).</li>
+            <li><b>Model comparison on a fixed held-out text</b> is how language models were ranked before task benchmarks, and it remains a quick sanity check.</li>
+            <li><b>Data quality filters.</b> A small language model's perplexity on a document is used by some data pipelines as a signal of how "ordinary" the text is.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A model gives a 4-token text the probabilities 1/2, 1/4, 1/4, 1/2. What is its perplexity?</summary><div class="ans">Losses in bits: 1, 2, 2, 1; mean 1.5 bits; perplexity <span class="tex">2^{1.5}=2.8284</span>. In nats: <span class="tex">1.5\times0.6931=1.0397</span> and <span class="tex">e^{1.0397}=2.8284</span>, the same.</div></details>
+        <details class="check"><summary>2. A model has a mean loss of 3 nats per token. What is the perplexity, and what would a vocabulary of that perplexity mean?</summary><div class="ans"><span class="tex">e^{3}=20.09</span>. The model is as uncertain at each step as if it chose uniformly among about 20 tokens. (Writing <span class="tex">2^3=8</span> would be the mistake of using base 2 on a base-e loss.)</div></details>
+        <details class="check"><summary>3. Why is the perplexity of a model that assigns probability 0 to one test token infinite?</summary><div class="ans">The loss of that token is <span class="tex">-\log 0=+\infty</span>, so the mean loss is infinite and <span class="tex">\exp(\infty)=\infty</span>. This is why every real language model keeps every token at some small positive probability (smoothing in n-gram models, the softmax in neural ones).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Perplexity = exp of the mean per-token cross-entropy: "the effective number of equally likely choices". It is 1 for a perfect model and V for a uniform guess.</li>
+          <li>Always state the log base (bits with 2, nats with e); the perplexity itself does not depend on it.</li>
+          <li>Compare models on the same text, with the same tokeniser, or use bits per character; never tune on the test text.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.3 ===================== -->
+    <section class="lesson" id="tokenisation" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">1.3</span><h2>Tokenisation: words, characters and subwords</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A model works on a fixed list of symbols called a vocabulary. If the symbols are whole words, the word "unfriendliness" or a new brand name is simply not in the list. If they are single characters, every sentence becomes very long. Is there a middle path that keeps the vocabulary small, can still write any word, and uses one symbol for common words?</div>
+
+        <h3 class="sec">Intuition: build the alphabet of your own text</h3>
+        <p>Text must become numbers before a model can read it, and the first step is cutting it into pieces called <b>tokens</b>. There are three natural choices. <b>Words</b>: short sequences, but the vocabulary is huge and open-ended (every misspelling, name and rare word needs a slot, and unknown words become one useless "unknown" token). <b>Characters</b>: a tiny closed vocabulary that can spell anything, but sequences become 4–6 times longer and each symbol carries almost no meaning. <b>Subwords</b>: frequent words stay whole, rare words are spelled from pieces ("un", "friend", "li", "ness"). Subwords sit in the middle on both axes.</p>
+        <p><b>Byte-pair encoding (BPE)</b> is the standard recipe for finding the pieces automatically from text. The idea is almost childishly simple: start with single characters, find the two symbols that appear next to each other most often, glue them into one new symbol, and repeat. Common letter sequences like "est" quickly become single symbols; frequent whole words follow.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>We need a word list with frequencies, and a mark for the end of each word so that the model can tell "est" inside a word from "est" at the end (we write the mark as an underscore, <span class="tex">\_</span>). Our training text:</p>
+        <div class="worked"><b>Worked example: the merge algorithm on four words</b>
+          <p>Words with their counts: <b>low ×5, lower ×2, newest ×6, widest ×3</b> (16 words). Start with characters: <code>l o w _</code>, <code>l o w e r _</code>, <code>n e w e s t _</code>, <code>w i d e s t _</code>. The 11 starting symbols are l, o, w, e, r, n, s, t, i, d and _.</p>
+          <p><b>Count every adjacent pair, weighted by word frequency.</b> The largest: <code>es</code> appears in newest (6) and widest (3): <b>9</b>; <code>st</code> 6 + 3 = <b>9</b>; <code>t_</code> 6 + 3 = <b>9</b>; <code>we</code> in lower (2) and newest (6): 8; <code>lo</code> in low (5) and lower (2): 7; <code>ow</code>: 7.</p>
+          <p><b>Merge 1.</b> Three pairs tie at 9. Our rule (and the lab's) is to break ties by sorting the pair names, so <code>e + s → es</code>. Now newest is <code>n e w es t _</code> and widest is <code>w i d es t _</code>. Recount: <code>es t</code> is 9, <code>t _</code> is 9. <b>Merge 2:</b> <code>es + t → est</code>. <b>Merge 3:</b> <code>est + _ → est_</code> (9). Now the pair counts are lo 7, ow 7, ew 6, ne 6, w+est_ 6 ... <b>Merge 4:</b> <code>l + o → lo</code> (7, ties with ow and loses alphabetically). <b>Merge 5:</b> <code>lo + w → low</code> (7).</p>
+          <p>The full list of twelve merges, each with the count that won, in order: es 9, est 9, est_ 9, lo 7, low 7, ew 6, ewest_ 6, newest_ 6, low_ 5, dest_ 3, idest_ 3, widest_ 3. Written as pairs: (e,s) 9; (es,t) 9; (est,_) 9; (l,o) 7; (lo,w) 7; (e,w) 6; (ew,est_) 6; (n,ewest_) 6; (low,_) 5; (d,est_) 3; (i,dest_) 3; (w,idest_) 3.</p>
+          <p><b>The result after 12 merges:</b> low becomes the single symbol <code>low_</code>, newest becomes <code>newest_</code>, widest becomes <code>widest_</code>, and lower is <code>low e r _</code> (4 symbols). The vocabulary is 11 starting symbols plus 12 merges = <b>23</b>.</p>
+          <p><b>Encoding a new word</b> means replaying the merges in the learned order. "lowest": l o w e s t _ → (e,s) → (es,t) → (est,_) gives l o w est_ → (l,o) → (lo,w) gives <code>low est_</code>: <b>2 tokens</b> for a word never seen in training. "newer" gives <code>n ew e r _</code> (5 tokens), "wide" gives <code>w i d e _</code> (5). Rare, unseen words are spelled with small pieces; common ones are cheap.</p>
+        </div>
+        <div data-lab="gen-lm-bpe"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play and read the caption each cycle: count the pairs, highlight the winner (orange bar), then merge it everywhere. Compare the winner and its count with the list above (9, 9, 9, 7, 7, 6, ...). Use Step to go one merge at a time.</li>
+          <li>Edit the word list: change "newest 6" to "newest 1" and see how the first merges change. Frequency, not meaning, decides what gets merged.</li>
+          <li>Add a word such as "lowest 4" or "wider 3" and rerun. Which new merges appear? The vocabulary readout shows start symbols + merges.</li>
+        </ol></div>
+
+        <h3 class="sec">Byte-level fallback, vocabulary size and cost</h3>
+        <p><b>Byte-level fallback.</b> What if the text contains a character that was never in the training list, such as "é" or an emoji? A character-based BPE would have to emit an unknown token. A <b>byte-level</b> tokeniser works on the UTF-8 <i>bytes</i> of the text instead of on characters. There are only 256 possible byte values, so every possible text is spelled from a base alphabet of 256 symbols; merges then build bigger pieces on top. In the lab, "é" is two bytes (<code>C3 A9</code> in hexadecimal) and appears as red byte tokens. Many systems use this design, so that nothing can ever be "unknown".</p>
+        <p><b>Vocabulary size trade-off.</b> Each merge adds one symbol to the vocabulary and shortens the sequences. A larger vocabulary means fewer tokens per text (cheaper for the model to read) but a bigger embedding table and output layer (<span class="tex">V\times d</span> numbers each, see lesson 1.4) and rarer, less well-trained rows for the long-tail tokens. Practical vocabularies are commonly in the tens of thousands to a few hundred thousand; the right size depends on the data, languages and budget.</p>
+        <p><b>Tokens and cost.</b> Models read and write tokens, so context limits, speed and price are all counted in tokens, not words or characters. If a tokeniser needs on average <span class="tex">r</span> tokens per word, a text of <span class="tex">W</span> words costs <span class="tex">rW</span> tokens. A language the tokeniser was trained on poorly might need twice as many tokens per word as one it fits well: the same message then costs twice as much to process and uses up the context twice as fast. The tokeniser is a design decision of the model, not a neutral pre-processing step.</p>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">\text{repeat }M\text{ times:}\quad (a^\star,b^\star)=\arg\max_{(a,b)}\ \sum_{\text{words }u}f_u\cdot\#_u(a,b),\qquad \text{replace every adjacent }(a^\star,b^\star)\text{ by the new symbol }a^\star b^\star</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">(a,b)</span>: a pair of adjacent symbols currently in the corpus. <span class="tex">f_u</span>: how often word <span class="tex">u</span> occurs. <span class="tex">\#_u(a,b)</span>: how many times the pair occurs inside the current spelling of word u (the end mark is a symbol too). <span class="tex">M</span>: the number of merges, a hyper-parameter; final vocabulary size = number of starting symbols + M. The merge list, in order, <i>is</i> the tokeniser: encoding replays it. Ties must be broken by a fixed rule so the result is reproducible.</div>
+
+        <div data-lab="gen-lm-encode"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>With the default text, press play. Each merge fires in training order; orange marks the symbol just created. Check that "lowest" ends as <code>low est_</code>.</li>
+          <li>Drag "Merges applied" to 0, then 12. Read the bar chart: tokens needed for the text fall as the vocabulary grows, with diminishing returns as the merges become rarer.</li>
+          <li>The text contains "café". The red tokens are the UTF-8 bytes of "é". Type an emoji or a word in another script: nothing is ever unknown.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>A token is not a word.</b> Tokens can be whole words, pieces of words, single characters, or bytes; a leading space is often part of the token. Counting words to estimate token usage is only a rough guide.</li>
+            <li><b>Spelling and arithmetic effects.</b> If "strawberry" is two tokens, the model never sees the letters directly; questions about individual letters or digits are harder because the tokeniser hides them.</li>
+            <li><b>Changing the tokeniser changes the model.</b> The embedding table, the output layer and every learned weight assume this exact vocabulary and merge order. You cannot swap it afterwards.</li>
+            <li><b>Greedy is not "best".</b> BPE minimises nothing global: it just repeats the most frequent pair. Other methods (unigram language-model tokenisation, WordPiece) choose pieces differently and give different splits.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Every language model</b> starts with a trained tokeniser; the merge list ships with the model and is applied to every prompt.</li>
+            <li><b>Cost and context.</b> Pricing, rate limits and context windows are in tokens; efficiency of the tokeniser across languages directly changes cost and quality for different users.</li>
+            <li><b>Beyond text.</b> The same merging idea is used on image patches and audio codes (see the representing-data lesson in <a href="gen-foundations.html#representing-data">Module 0</a>).</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. After the 12 merges, what is the vocabulary size, and what would it be after only 5 merges?</summary><div class="ans">11 starting symbols plus one per merge: 11 + 12 = 23, and 11 + 5 = 16. (Each merge adds exactly one symbol; we count symbols still used, ignoring that a few early pieces such as "es" stop appearing once merged further.)</div></details>
+        <details class="check"><summary>2. Before merge 4, what is the count of the pair (l, o), and why?</summary><div class="ans">7: "lo" occurs once in each copy of "low" (5 copies) and once in each "lower" (2 copies), 5 + 2 = 7. The pair (o, w) is also 7; the tie is broken alphabetically ("lo" sorts before "ow").</div></details>
+        <details class="check"><summary>3. How many tokens does "widest" need before any merge, and after all 12? Why is a byte fallback useful?</summary><div class="ans">Before: w i d e s t _ = 7 symbols (the end mark counts). After 12 merges: one symbol, <code>widest_</code>. A byte fallback guarantees that any text can be encoded, even characters absent from the training data, because every character is some sequence of the 256 byte values; there is no "unknown" token to lose information.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>BPE: start from characters (or bytes), repeatedly merge the most frequent adjacent pair, record the merge order; encoding replays the merges.</li>
+          <li>Vocabulary size = base symbols + merges. More merges give shorter sequences but a bigger embedding and output table.</li>
+          <li>Byte-level fallback makes every text encodable. Costs and context limits are counted in tokens, so the tokeniser is part of the model's design.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.4 ===================== -->
+    <section class="lesson" id="embeddings-lm" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">1.4</span><h2>Embeddings</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A neural network does arithmetic on numbers, but a token is an ID such as 7 or 31 204. The ID has no meaning: token 7 is not "between" 6 and 8. How do you turn a token into numbers so that tokens used in similar ways get similar numbers, and so that the network can <i>learn</i> what each token should mean?</div>
+
+        <h3 class="sec">Intuition: give every token a row in a table</h3>
+        <p>The simplest honest encoding is the <b>one-hot vector</b>: for a vocabulary of V tokens, token number 3 becomes a vector of V zeros with a single 1 in position 3. It has the right shape for a network, but every pair of different tokens is equally far apart: "cat" is as unrelated to "kitten" as to "truck". Nothing to learn from.</p>
+        <p>Instead we keep a table with one row of <span class="tex">d</span> numbers per token, an <b>embedding table</b>, and let training adjust the numbers. Reading the row for a token is its <b>embedding</b>. Because gradient descent changes the rows to help the prediction task, tokens that are used in similar contexts end up with similar rows. The picture to hold: every token is an arrow in a space of d dimensions; similar tokens point the same way.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: six words, two numbers each</b>
+          <p>Tokens (rows): cat, kitten, dog, puppy, car, truck. We set the 2-D embeddings by hand so the picture is clear (a trained model learns its own and they are rarely this readable):</p>
+          <table class="tbl"><thead><tr><th></th><th>cat</th><th>kitten</th><th>dog</th><th>puppy</th><th>car</th><th>truck</th></tr></thead><tbody>
+            <tr><td>coordinate 1</td><td>0.9</td><td>0.8</td><td>0.9</td><td>0.8</td><td>−0.7</td><td>−0.8</td></tr>
+            <tr><td>coordinate 2</td><td>0.6</td><td>0.9</td><td>0.3</td><td>0.7</td><td>0.1</td><td>−0.5</td></tr></tbody></table>
+          <p><b>One-hot times a matrix is a lookup.</b> Stack the rows into the 6×2 matrix <span class="tex">E</span>. The one-hot vector for "dog" is <span class="tex">x=(0,0,1,0,0,0)</span>. The product <span class="tex">xE</span> is <span class="tex">0\cdot(0.9,0.6)+0\cdot(0.8,0.9)+1\cdot(0.9,0.3)+\dots=(0.9,\,0.3)</span>: exactly row 3. So the matrix product is never actually computed in practice; the program just reads row 3. The matrix form matters because it shows the lookup is a linear layer, so gradients flow into the table by the usual rules (lesson 1.5).</p>
+          <p><b>Similarity by the dot product.</b> For two vectors <span class="tex">u,v</span>, <span class="tex">u\cdot v=u_1v_1+u_2v_2</span>. cat · kitten = 0.9·0.8 + 0.6·0.9 = 0.72 + 0.54 = <b>1.26</b>. cat · car = 0.9·(−0.7) + 0.6·0.1 = −0.63 + 0.06 = <b>−0.57</b>: negative, pointing apart.</p>
+          <p><b>Cosine similarity</b> divides out the lengths, so it measures only the angle. The lengths are <span class="tex">|{\rm cat}|=\sqrt{0.81+0.36}=1.0817</span> and <span class="tex">|{\rm kitten}|=\sqrt{0.64+0.81}=1.2042</span>. So <span class="tex">\cos=1.26/(1.0817\times1.2042)=0.9674</span>. Other values: cat–dog 0.9648, cat–car −0.7452, cat–truck −0.9996 (nearly opposite), car–truck 0.7645.</p>
+          <p><b>Tying input and output embeddings.</b> The last layer of a language model must score every vocabulary token against the current hidden vector <span class="tex">h</span>. If the output table equals the input table, the score of token i is simply <span class="tex">E_i\cdot h</span>. Take <span class="tex">h=E_{\rm cat}=(0.9,0.6)</span>: scores for cat, kitten, dog, puppy, car, truck are 1.17, 1.26, 0.99, 1.14, −0.57, −1.02, and the softmax of these gives the probabilities 0.2388, 0.2613, 0.1995, 0.2318, 0.0419, 0.0267. Note that "kitten" outscores "cat" itself: raw dot products also reward length, a point to remember. <b>Tying saves parameters</b>: with V = 50 000 and d = 768 the table has <span class="tex">50000\times768=38{,}400{,}000</span> numbers; two separate tables would need 76,800,000.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">e_i=E_{i,:}=\mathbf{x}_i^{\top}E,\quad E\in\mathbb{R}^{V\times d};\qquad \cos(u,v)=\frac{u\cdot v}{\lVert u\rVert\,\lVert v\rVert};\qquad z_i=E_i\cdot h\ \ (\text{tied output})</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">V</span>: vocabulary size. <span class="tex">d</span>: embedding dimension (here 2; real models use hundreds to thousands). <span class="tex">E</span>: the embedding table, a matrix whose row i is token i's vector. <span class="tex">\mathbf{x}_i</span>: the one-hot vector of token i. <span class="tex">e_i</span>: its embedding. <span class="tex">\lVert u\rVert=\sqrt{u\cdot u}</span>: the length of u. <span class="tex">h</span>: the hidden vector the model has computed for the current position (lesson 1.5). <span class="tex">z_i</span>: the score (logit) of token i. See <a href="math-linear-algebra.html">linear algebra</a> for dot products and matrix products.</div>
+
+        <div data-lab="gen-lm-embed"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Let the auto walk run. The orange band shows the one-hot "1" selecting a row, and the matching arrow lights up on the plot. Read the readout: cat’s nearest neighbours should be puppy (cosine 0.99), kitten (0.97) and dog (0.96), with the vehicles far away (negative).</li>
+          <li>Pause, select "car", and drag its tip next to "cat". The cosine between them rises toward 1 and the neighbour list reorders. That is all "learning an embedding" does: move the arrows.</li>
+          <li>Drag "cat" to twice its length without changing its direction. The cosine with kitten does not change but the dot product doubles, and the tied output probabilities shift. Length and direction carry different information.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>The axes are not meanings.</b> Here we labelled directions "animal" and "vehicle" for teaching. A trained table has no human-readable axes, and a single coordinate means nothing alone.</li>
+            <li><b>Dot product is not cosine.</b> A long vector has big dot products with everything. Use cosine when you want direction only.</li>
+            <li><b>Similar embedding does not mean same meaning.</b> Words used in similar contexts get similar vectors, which includes antonyms ("hot" and "cold" appear in the same sentences).</li>
+            <li><b>The table is the biggest block of a small model.</b> It has <span class="tex">V\times d</span> numbers; this is why vocabulary size matters for memory.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>The first layer of every neural language model</b> is an embedding table, and the last layer is often tied to it (weight tying) to save parameters and improve training.</li>
+            <li><b>Retrieval and search</b> compare embeddings by cosine similarity; the applications module builds on exactly this arithmetic.</li>
+            <li><b>Embeddings beyond words</b>: image patches, users and products in recommenders, and graph nodes are all rows of learned tables.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the dot product and cosine of dog (0.9, 0.3) and puppy (0.8, 0.7).</summary><div class="ans">Dot: 0.9·0.8 + 0.3·0.7 = 0.72 + 0.21 = 0.93. Lengths: <span class="tex">\sqrt{0.81+0.09}=0.9487</span> and <span class="tex">\sqrt{0.64+0.49}=1.0630</span>. Cosine = 0.93 / (0.9487 × 1.0630) = 0.9222.</div></details>
+        <details class="check"><summary>2. Why is the matrix product of a one-hot vector with E not computed in real systems?</summary><div class="ans">The product just copies one row, so reading that row costs d memory reads, whereas multiplying a length-V vector by a V×d matrix would cost V·d multiplications, almost all by zero. The matrix view is still useful for the maths and the gradient: only the selected row receives a gradient.</div></details>
+        <details class="check"><summary>3. A model has V = 32 000 and d = 1 024. How many numbers are in the embedding table, and how many are saved by tying the output layer to it?</summary><div class="ans">32 000 × 1 024 = 32,768,000 numbers in one table. A separate output table would need another 32,768,000, so tying saves 32,768,000 parameters (half of the two-table total, 65,536,000).</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>An embedding table is a V×d matrix; embedding a token is reading its row, equal to one-hot × E.</li>
+          <li>Training moves the rows so tokens used alike point alike; similarity is a dot product or, direction only, a cosine.</li>
+          <li>Tying input and output tables reuses E for scoring (<span class="tex">z_i=E_i\cdot h</span>) and halves the parameters of the two tables.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.5 ===================== -->
+    <section class="lesson" id="neural-language-model" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">1.5</span><h2>A neural language model</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A count table needs a separate row for every context and cannot say anything about a context it never saw. How can one small set of weights produce a probability for <i>every</i> next token from <i>any</i> context, and how do you nudge those weights, using calculus, when the model gives the right word too little probability?</div>
+
+        <h3 class="sec">Intuition: scores, then probabilities, then a nudge</h3>
+        <p>A neural language model is a pipeline with three steps. <b>(1) Context to hidden vector:</b> look up the embedding of the context (for a real model, a deep network turns the whole context into a vector <span class="tex">h</span>; here we use the last word's embedding as <span class="tex">h</span>). <b>(2) Hidden vector to logits:</b> a linear layer gives every vocabulary token a raw score called a <b>logit</b>. <b>(3) Logits to probabilities:</b> the <b>softmax</b> turns any list of scores into positive numbers adding to 1, by exponentiating and dividing by the total. Bigger score, bigger share.</p>
+        <p>Training asks one question: how much probability did the model give the word that actually came next? Take the negative logarithm of that probability: the <b>cross-entropy loss</b>. It is small when the model was confident and right, large when it was surprised. Then, as with any neural network, we compute the gradient of the loss and move the weights a small step downhill. The remarkable fact, derived below, is that the gradient with respect to the logits has a beautifully simple form: <b>what the model said minus what was true</b>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <h4>The softmax and the loss</h4>
+        <div class="worked"><b>Worked example 1: three logits</b>
+          <p>Logits <span class="tex">z=(2.0,\ 1.0,\ 0.1)</span>. Exponentials: <span class="tex">e^{2.0}=7.3891,\ e^{1.0}=2.7183,\ e^{0.1}=1.1052</span>; the sum is 11.2125. Probabilities: <span class="tex">p=(0.6590,\ 0.2424,\ 0.0986)</span>, which add to 1. If the true next token is the second (index 1), the loss is <span class="tex">-\ln 0.2424=1.4170</span> nats.</p>
+        </div>
+        <h4>Why the gradient is p minus one-hot</h4>
+        <p>Let the loss for a true token <span class="tex">y</span> be <span class="tex">L=-\ln p_y</span> with <span class="tex">p_y=e^{z_y}/S</span>, <span class="tex">S=\sum_j e^{z_j}</span>. Then <span class="tex">L=-z_y+\ln S</span>. Differentiate with respect to a logit <span class="tex">z_i</span>. The first term gives <span class="tex">-1</span> if <span class="tex">i=y</span> and 0 otherwise, which we write <span class="tex">-\mathbb{1}[i=y]</span>. For the second term, <span class="tex">\partial\ln S/\partial z_i=\frac{1}{S}\,e^{z_i}=p_i</span>. Adding them:</p>
+        <div class="eq">\frac{\partial L}{\partial z_i}=p_i-\mathbb{1}[i=y]\qquad\text{i.e.}\qquad \nabla_z L=p-\mathbf{y}</div>
+        <p><b>Check on the example.</b> The gradient is <span class="tex">(0.6590,\ 0.2424-1,\ 0.0986)=(0.6590,\ -0.7576,\ 0.0986)</span>. A numerical check by nudging each logit by <span class="tex">\pm10^{-5}</span> and measuring the change of the loss gives <span class="tex">(0.659001,\ -0.757567,\ 0.098566)</span>, matching to six digits. The meaning: a wrong token with high probability is pushed down in proportion to its probability; the true token is pushed up by the missing probability <span class="tex">1-p_y</span>. When the model is already certain and right (<span class="tex">p_y\to1</span>), the gradient vanishes.</p>
+        <h4>One whole training step</h4>
+        <div class="worked"><b>Worked example 2: vocabulary (the, cat, sat, mat), context "cat", true next "sat"</b>
+          <p>Embedding dimension 2. The context embedding is <span class="tex">x=(1.0,\ 0.5)</span>. The output table has rows <span class="tex">U=\begin{pmatrix}0.2&amp;0.4\\1.0&amp;-0.5\\0.8&amp;0.6\\-0.3&amp;0.1\end{pmatrix}</span> and logits are <span class="tex">z=Ux</span>.</p>
+          <p><b>Forward.</b> <span class="tex">z=(0.2+0.2,\ 1.0-0.25,\ 0.8+0.3,\ -0.3+0.05)=(0.40,\ 0.75,\ 1.10,\ -0.25)</span>. Softmax: <span class="tex">p=(0.2018,\ 0.2864,\ 0.4064,\ 0.1054)</span>. The true token "sat" has p = 0.4064, so the loss is <span class="tex">-\ln0.4064=0.9004</span>.</p>
+          <p><b>Backward.</b> <span class="tex">p-\mathbf{y}=(0.2018,\ 0.2864,\ -0.5936,\ 0.1054)</span>. For the output table, the gradient is the outer product <span class="tex">(p-\mathbf{y})\,x^{\top}</span>: row "the" is (0.2018, 0.1009), "cat" (0.2864, 0.1432), "sat" (−0.5936, −0.2968), "mat" (0.1054, 0.0527). The gradient reaching the context embedding is <span class="tex">U^{\top}(p-\mathbf{y})=(-0.1797,\ -0.4081)</span> (for the first entry: <span class="tex">0.2\cdot0.2018+1.0\cdot0.2864+0.8\cdot(-0.5936)-0.3\cdot0.1054=-0.1797</span>). Finite differences on the embedding give <span class="tex">(-0.179710,\ -0.408083)</span>, a match.</p>
+          <p><b>Update</b> with learning rate 0.5: subtract 0.5 times each gradient from <span class="tex">U</span> and from the embedding <span class="tex">x</span>. The new probability of "sat" rises from 0.4064 to <b>0.5929</b> and the loss falls from 0.9004 to <b>0.5227</b>. One step, one example, in the right direction.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">h=E_{w_{t-1}},\qquad z=U h+b,\qquad p_i=\frac{e^{z_i}}{\sum_j e^{z_j}},\qquad L=-\ln p_{y},\qquad \frac{\partial L}{\partial z}=p-\mathbf{y},\ \ \frac{\partial L}{\partial U}=(p-\mathbf{y})h^{\top},\ \ \frac{\partial L}{\partial h}=U^{\top}(p-\mathbf{y})</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">w_{t-1}</span>: the previous token (a deeper model would use the whole context). <span class="tex">E</span>: input embedding table; <span class="tex">h</span>: the hidden vector (here just the embedding row). <span class="tex">U</span>: the V×d output matrix; <span class="tex">b</span>: an optional bias (0 in the example). <span class="tex">z</span>: logits. <span class="tex">p</span>: probabilities. <span class="tex">y</span>: the index of the true next token and <span class="tex">\mathbf{y}</span> its one-hot vector. <span class="tex">L</span>: the cross-entropy loss for this position. The last three expressions come from the chain rule (<a href="math-neural.html">backpropagation</a>). Averaging <span class="tex">L</span> over a text and exponentiating gives the perplexity of lesson 1.2. A deeper model replaces <span class="tex">h=E_{w_{t-1}}</span> by a network of the whole context; the output end, <span class="tex">z\to p\to L</span> and the gradient <span class="tex">p-\mathbf{y}</span>, stays exactly the same.</div>
+
+        <div data-lab="gen-lm-neural"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with context "the". At first every bar is near 1/6 (the loss is about ln 6 = 1.792). Watch the bars move toward the green lines (cat 0.75, dog 0.25) and the loss curve fall toward the dashed floor, 0.347 nats, the entropy of the counts.</li>
+          <li>Press "Check gradient numerically" once or twice: the analytic <span class="tex">p-\mathbf{y}</span> and the finite-difference numbers agree to about five decimals. Compare the readout's "p − onehot" line with the last example.</li>
+          <li>Raise the learning rate to 2, then lower it to 0.05, resetting each time. Too large is jumpy, too small is slow. Tick "tie input and output embeddings", reset, and compare the parameter count and the learning speed. Then look at context "cat": it can only learn sat 2/3 and ran 1/3.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Logits are not probabilities.</b> They can be negative and do not add to 1. Only the softmax makes them probabilities. Loss functions in libraries often take logits directly, for numerical stability, and apply the softmax inside.</li>
+            <li><b>Overflow.</b> <span class="tex">e^{z}</span> overflows for large z. Real code subtracts the largest logit first (it changes nothing, since the common factor cancels in the ratio); the labs do the same.</li>
+            <li><b>The model cannot beat the counts.</b> With only the previous word as context, the best possible loss is the entropy of the conditional counts (0.347 nats here). Lower loss needs more context or more data, not a longer run.</li>
+            <li><b>Probability 0 is unreachable.</b> The softmax gives every token positive probability, so the loss is never infinite, unlike an unsmoothed count table.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>The output head of every large language model</b> is this: a vector for the current position, a V-way linear layer, a softmax, trained with cross-entropy against the next token. Only the middle (how <span class="tex">h</span> is computed from the context, with attention in the next module) is different.</li>
+            <li><b>The gradient <span class="tex">p-\mathbf{y}</span></b> is the same simple expression for every classifier with softmax output: image classifiers, intent detectors and reward-model heads.</li>
+            <li><b>Generalisation by sharing.</b> Because words with similar embeddings produce similar logits, the model can give sensible probability to a pair it never saw in training, the thing counting could not do.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Logits (1, 0, 0), true token index 0. Compute p, the loss, and the gradient.</summary><div class="ans">Exponentials: 2.7183, 1, 1; sum 4.7183. <span class="tex">p=(0.5761,\ 0.2119,\ 0.2119)</span>. Loss <span class="tex">-\ln0.5761=0.5514</span>. Gradient <span class="tex">p-\mathbf{y}=(0.5761-1,\ 0.2119,\ 0.2119)=(-0.4239,\ 0.2119,\ 0.2119)</span>; the entries sum to 0, as they must (softmax outputs always add to 1, so the gradient entries add to 0).</div></details>
+        <details class="check"><summary>2. Why do the entries of p minus one-hot always add up to 0?</summary><div class="ans">The entries of p add to 1 and the one-hot vector adds to 1, so their difference adds to 0. Moving the logits along this gradient therefore never changes their sum: the loss depends only on differences between logits (adding the same number to all logits leaves the softmax unchanged).</div></details>
+        <details class="check"><summary>3. In worked example 2, what happens to the gradient for "sat" if the model already gives sat probability 0.99?</summary><div class="ans">The gradient entry for the true token is <span class="tex">0.99-1=-0.01</span> and the others are tiny positive numbers adding to 0.01. The update is correspondingly tiny: a model that is already confident and right is barely changed. The surprise-weighted gradient focuses learning on the mistakes.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Context → hidden vector → logits → softmax → cross-entropy against the true next token; one shared set of weights covers every context.</li>
+          <li>The loss gradient with respect to the logits is <span class="tex">p-\text{one-hot}</span>: the model's belief minus the truth. It was derived with <span class="tex">L=-z_y+\ln\sum e^{z}</span> and checked numerically.</li>
+          <li>Gradients then flow to the output matrix <span class="tex">(p-\mathbf{y})h^\top</span> and the embedding <span class="tex">U^\top(p-\mathbf{y})</span>; the best any model can do is the entropy of the data given its context.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- ===================== 1.6 ===================== -->
+    <section class="lesson" id="decoding-sampling" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">1.6</span><h2>Decoding and sampling</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A trained model hands you a probability for every possible next token. You must pick exactly one, then repeat. Always picking the most probable looks sensible but tends to give dull, repetitive text; picking at random in proportion to the probabilities can wander into nonsense. What dials give you control over the dull-versus-wild trade-off, and why are they safe to apply?</div>
+
+        <h3 class="sec">Intuition: the model proposes, the decoder disposes</h3>
+        <p>Training produces a model of probabilities. <b>Decoding</b> is the separate procedure that turns those probabilities into actual text, one token at a time. Think of a pointer on a roulette wheel whose slices are the probabilities. <b>Greedy decoding</b> always takes the biggest slice. <b>Sampling</b> spins the wheel. Between them sit dials that reshape the wheel before the spin: <b>temperature</b> makes the big slices bigger or smaller relative to the others; <b>top-k</b> and <b>top-p</b> cut off the thin slivers at the unlikely end (where nonsense lives) and re-divide the wheel among the survivors.</p>
+        <p>Decoding does not change what the model knows. It only changes how it is read out. That is why the same model can serve a code assistant (low temperature, reliable) and a brainstorming tool (higher temperature, varied).</p>
+
+        <h3 class="sec">Build it up</h3>
+        <div class="worked"><b>Worked example: six candidates after "Today the weather is"</b>
+          <p>Logits for sunny, cloudy, rainy, windy, cold, purple: <span class="tex">z=(2.0,\ 1.5,\ 1.0,\ 0.2,\ -0.3,\ -2.0)</span>. Exponentials add to 16.6867.</p>
+          <p><b>Temperature.</b> Divide the logits by T before the softmax. At T = 1 the probabilities are <b>(0.4428, 0.2686, 0.1629, 0.0732, 0.0444, 0.0081)</b>; their entropy is 1.988 bits. At <b>T = 0.5</b> (sharper): (0.6490, 0.2387, 0.0878, 0.0177, 0.0065, 0.0002). At <b>T = 2</b> (flatter): (0.3083, 0.2401, 0.1870, 0.1253, 0.0976, 0.0417). As T → 0 all the mass goes to the largest logit (T = 0.1 gives 0.9933 to "sunny"), which is greedy decoding; as T → ∞ the distribution becomes uniform.</p>
+          <p><b>Top-k, k = 3.</b> Keep the 3 most probable (0.4428, 0.2686, 0.1629 at T = 1; they sum to 0.8743), set the rest to 0, and <b>divide by the kept sum</b>: <span class="tex">0.4428/0.8743=0.5065</span>, <span class="tex">0.2686/0.8743=0.3072</span>, <span class="tex">0.1629/0.8743=0.1863</span>. Now "purple", "cold" and "windy" are impossible, and the three remaining numbers add to 1.</p>
+          <p><b>Top-p (nucleus), p = 0.9.</b> Sort descending and add up until the sum reaches at least 0.9: 0.4428, 0.7114, 0.8743 (not yet), 0.9475 (reached). The nucleus has <b>4 tokens</b>. Divide by 0.9475: (0.4674, 0.2835, 0.1719, 0.0773). With p = 0.8 the nucleus is 3 tokens (the cumulative sum 0.7114 is below 0.8, and 0.8743 passes it), giving the same result as k = 3. Unlike top-k, the size of the nucleus adapts: a confident model keeps few tokens, an unsure one keeps many.</p>
+          <p><b>Greedy versus beam search.</b> Greedy picks the best token at each step; it can miss a sentence whose first word is a little less likely but whose continuation is much better. Beam search keeps the <i>w</i> best partial sentences at each step. Example: first word a (0.5), b (0.4), c (0.1). After a the best second word, x, has 0.4; after b the word x has 0.9. Greedy takes a then x: <span class="tex">0.5\times0.4=0.2</span>. Beam search with width 2 keeps a and b, extends both, and finds b then x: <span class="tex">0.4\times0.9=0.36</span>, the best of all 9 sentences.</p>
+        </div>
+
+        <h3 class="sec">The formal definition</h3>
+        <div class="eq">p_i^{(T)}=\frac{e^{z_i/T}}{\sum_j e^{z_j/T}},\qquad \tilde p_i=\frac{p_i\,\mathbb{1}[i\in S]}{\sum_{j\in S}p_j},\quad S=\begin{cases}\text{the }k\text{ most probable tokens}&amp;\text{top-}k\\ \text{the smallest set of top tokens with }\sum_{j\in S}p_j\ge P&amp;\text{top-}p\end{cases}</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">z_i</span>: logit of token i. <span class="tex">T&gt;0</span>: temperature (T = 1 leaves the model's own probabilities). <span class="tex">p_i</span>: probability before truncation. <span class="tex">S</span>: the set of tokens that survive. <span class="tex">\mathbb{1}[i\in S]</span>: 1 if i survives, else 0. <span class="tex">k</span>, <span class="tex">P</span>: the top-k size and top-p threshold. <span class="tex">\tilde p_i</span>: the final sampling probability. The division by <span class="tex">\sum_{j\in S}p_j</span> is the <b>renormalisation</b>: without it the numbers would not add to 1. In the lab the order is temperature, then top-k, then top-p; software differs on the order and on exact tie handling, which is why you should read the documentation of the system you use.</div>
+
+        <div data-lab="gen-lm-decode"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Keep the default logits and T = 1: panel ① shows 0.4428, 0.2686, 0.1629 ... Move T to 0.5, then 2, and compare with the worked example. The sampled bars (④) track panel ③; with T = 2 even "purple" shows up now and then.</li>
+          <li>Set T = 1 and top-k = 3: panel ② shows 0.5065, 0.3072, 0.1863 and removed words. Then reset top-k to 6 and set top-p = 0.9: four tokens survive, as computed above. Slide top-p to 0.4: a single token survives and sampling becomes greedy.</li>
+          <li>Edit a logit, for example raise "purple" to 3. With top-p on, the survivor set changes with the shape of the distribution. Run at least 100 samples and watch the bars approach the marks; with the Step button you can see single draws.</li>
+        </ol></div>
+
+        <div data-lab="gen-lm-beam"></div>
+        <div class="try"><b>Try this</b><ol>
+          <li>Press play with beam width 1 (greedy): it commits to "a" and returns "ax" with probability 0.2000. Set width 2: the search keeps "b" as well and returns "bx" with 0.3600, the best of the nine sentences.</li>
+          <li>With width 2, lower P(second = x | first = b) from 0.9 down to 0.4. Below 0.5 the path "bx" falls under 0.2 and greedy is right again. A wider beam is a heavier search, not a guarantee of better text.</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b>
+          <ul>
+            <li><b>Temperature 0 is not a setting.</b> The formula divides by T; "T = 0" in software means "take the argmax" (greedy). Very low T also makes results nearly deterministic, but ties and numerical details can still change them.</li>
+            <li><b>Truncate, then renormalise.</b> Cutting tokens without dividing by the kept sum gives numbers that do not add to 1; the mass would silently be assigned to nothing.</li>
+            <li><b>Top-k and top-p are not the same.</b> Top-k keeps a fixed number, even when the model is certain of one token (then it keeps junk) or unsure among 50 (then it cuts good options). Top-p adapts the count to the distribution.</li>
+            <li><b>Beam search is not sampling.</b> It maximises sequence probability and is deterministic; for open-ended text it is often reported to give repetitive, generic output, because the highest-probability sequence is not the most natural one. It shines when there is one right answer (translation, transcription).</li>
+            <li><b>Repetition.</b> Greedy and low-temperature decoding can loop: once a phrase is likely, repeating it is likely again. Penalties on repeated tokens or sampling with moderate T reduce it, at some cost in accuracy.</li>
+          </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b>
+          <ul>
+            <li><b>Chat models and code completion</b> expose temperature and top-p (and sometimes top-k) as settings: low values for factual or code answers, higher for creative writing. These dials change style, not knowledge.</li>
+            <li><b>Constrained decoding</b> (the applications module) sets the probability of forbidden tokens to 0 and renormalises, the same operation as truncation here.</li>
+            <li><b>Speculative decoding and best-of-n</b> (efficiency and alignment modules) build on sampling; a good grasp of the sampled distribution is what makes their guarantees legible.</li>
+          </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. For probabilities (0.5, 0.3, 0.15, 0.05), what does top-p = 0.7 give?</summary><div class="ans">Cumulative sums: 0.5, 0.8. The nucleus is the first two tokens (0.5 alone is below 0.7, and 0.8 passes it). Divide by 0.8: (0.625, 0.375, 0, 0).</div></details>
+        <details class="check"><summary>2. Starting from logits (2, 1, 0), compute the probabilities at T = 1 and at T = 2.</summary><div class="ans">T = 1: exponentials 7.389, 2.718, 1; sum 11.107; p = (0.6652, 0.2447, 0.0900). T = 2: logits halve to (1, 0.5, 0): exponentials 2.718, 1.649, 1; sum 5.367; p = (0.5065, 0.3072, 0.1863). Higher T flattens the distribution.</div></details>
+        <details class="check"><summary>3. Why can a beam of width 1 never beat a beam of width 3 in the sequence probability it finds, on the two-word example?</summary><div class="ans">Width 1 considers one first word, width 3 considers all three, and with only two words, width 3 examines all nine sentences exactly. Any sentence the narrower search returns is among the nine, so the wide search finds one at least as probable. (In longer sentences a wider beam is still not guaranteed to find the true best sentence, only to search more of the space.)</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>The model gives probabilities; decoding picks tokens. Greedy takes the largest, sampling follows the distribution, beam search keeps the best partial sentences.</li>
+          <li>Temperature divides the logits (sharper below 1, flatter above); top-k and top-p cut the tail, then divide by the kept sum so the total is 1.</li>
+          <li>The dials trade reliability for variety and change how the model is read out, never what it has learned.</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 2 (<a href="gen-transformer.html">Attention &amp; the Transformer</a>) replaces the one-word context of lesson 1.5 by a learned, position-aware summary of the whole prefix: it fills in how the hidden vector <span class="tex">h</span> is computed. The softmax, the cross-entropy loss and the gradient <span class="tex">p-\mathbf{y}</span> stay exactly as you have just derived them.</div>
+  </main>
+  <aside id="outline"></aside>
+</div>
+<footer><span>Open source · built for learners</span><a href="https://github.com/AbdelrahmanKatkat/AI-Hub" target="_blank" rel="noopener">Contribute on GitHub</a></footer>
+</body>
+</html>
