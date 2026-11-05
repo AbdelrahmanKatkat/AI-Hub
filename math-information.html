@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Module 5 · Information theory · Mathematics for AI</title>
-<meta name="description" content="Entropy, cross-entropy, KL divergence and mutual information — coming soon.">
+<meta name="description" content="Surprise and entropy, cross-entropy and KL divergence, and mutual information: the measures behind classification losses, maximum likelihood, distillation and representation learning, built from intuition with hand-worked numbers.">
 <link rel="stylesheet" href="assets/style.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script defer src="assets/topics.js"></script>
 <script defer src="assets/curriculum-math.js"></script>
 <script defer src="assets/lib.js"></script>
+<script defer src="assets/labs-information.js"></script>
 <script defer src="assets/shell.js"></script>
 </head>
 <body data-topic="math" data-module="5">
@@ -21,23 +22,201 @@
     <div class="crumbs"><a href="index.html">AI Learning Hub</a> › <a href="mathematics.html">Mathematics for AI</a> › Module 5</div>
     <div class="hero">
       <div class="big" style="background:#a371f726">5</div>
-      <div style="flex:1"><h1>Module 5 · Information theory</h1>
-      <p>This module is still being written. Its three lessons will follow the same deep format as the others — intuition first, hand-worked numbers, editable animated labs. It needs Module 3 (probability) and the logarithms from Module 0.</p>
-      <div class="chips"><span class="chip">3 lessons</span><span class="chip">coming soon</span></div></div>
+      <div style="flex:1">
+        <h1>Module 5 · Information theory</h1>
+        <p>How surprising is a result, how far is a model from the truth, and how much does one variable tell you about another? Three measures answer these questions, and they sit under almost every classification loss, every language model and every representation-learning method.</p>
+        <div class="chips"><span class="chip">3 lessons</span><span class="chip">≈ 1.5 hours</span><span class="chip">Needs: probability (Module 3), logarithms (Module 0)</span></div>
+      </div>
       <div style="min-width:170px"><b id="hero-pct">0% complete</b><div class="bar"><i id="hero-bar"></i></div></div>
     </div>
-    <section class="lesson" id="entropy">
-      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.1</span><h2>Surprise &amp; entropy</h2></div>
-      <div class="prose"><div class="callout"><b>Coming soon</b>Information as surprise, <span class="tex">-\log p</span>; entropy as average surprise; bits versus nats; why a fair coin is more uncertain than a loaded one.</div></div>
+
+    <!-- ===================== 5.1 ===================== -->
+    <section class="lesson" id="entropy" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.1</span><h2>Surprise &amp; entropy</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A weather forecast says "rain tomorrow" with probability 0.9, and a second says "rain tomorrow" with probability 0.1. When rain comes, which forecast was more informative? And how many yes/no questions, on average, would you need to pin down tomorrow's weather?</div>
+
+        <h3 class="sec">Intuition: surprise is the cost of being wrong</h3>
+        <p>A rare event is more surprising than a common one. If you were told "it did not rain", you would shrug; if you were told "it snowed in July here", you would sit up. We want a number that grows as the probability shrinks, and that adds up sensibly when independent events happen together.</p>
+        <p>The standard choice is the <b>surprise</b> (also called self-information) of an outcome with probability <span class="tex">p</span>:</p>
+        <div class="eq">\text{surprise}(p) = -\log_2 p \quad\text{bits}</div>
+        <p>The minus sign makes it positive, because <span class="tex">\log_2 p</span> is negative for any probability below one. The base-2 logarithm measures in <b>bits</b>: one bit is the surprise of a fair coin landing heads, and it is the answer to one yes/no question. (With natural logarithms the same quantity is measured in <b>nats</b>; the ideas do not change.)</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p><b>One outcome.</b> The surprise of a certain event is <span class="tex">-\log_2 1=0</span>: nothing to learn. A coin landing heads (p = 0.5) gives <span class="tex">-\log_2 0.5=1</span> bit. A rare outcome with <span class="tex">p=1/1024</span> gives <span class="tex">10</span> bits, the same as learning the answer to ten yes/no questions. Doubling the rarity adds exactly one bit, which is why the logarithm is the right tool.</p>
+        <div class="worked"><b>Worked example — two forecasts</b>
+          <p>The rain forecast at probability 0.9 has surprise <span class="tex">-\log_2 0.9=0.1520</span> bits if it rains, and <span class="tex">-\log_2 0.1=3.3219</span> bits if it stays dry. Rain was expected, so it tells you little; a dry day after a 0.9 forecast is a big surprise.</p>
+          <p>Surprise is a property of one outcome. To judge the whole forecast we need the <b>average</b> surprise, weighted by how often each outcome happens.</p>
+        </div>
+
+        <p><b>Entropy: average surprise.</b> If outcome <span class="tex">x</span> has probability <span class="tex">p(x)</span>, the expected surprise is the entropy:</p>
+        <div class="eq">H(p) = \sum_x p(x)\,\bigl(-\log_2 p(x)\bigr) = -\sum_x p(x)\log_2 p(x)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">p(x)</span>: probability of outcome <span class="tex">x</span>. <span class="tex">\sum_x</span>: sum over all outcomes. <span class="tex">H(p)</span>: entropy in bits, the expected surprise. By convention <span class="tex">0\log 0=0</span>, because an impossible outcome never occurs and adds no surprise.</div>
+
+        <div class="worked"><b>Worked example — the loaded coin</b>
+          <p>A fair coin, <span class="tex">p=(0.5,0.5)</span>: <span class="tex">H=-(0.5\log_2 0.5+0.5\log_2 0.5)=1</span> bit. Every flip is as uncertain as possible for two outcomes.</p>
+          <p>A loaded coin, <span class="tex">p=(0.9,0.1)</span>: <span class="tex">H=-(0.9\cdot0.1520+0.1\cdot3.3219)=0.4690</span> bits. Most flips are heads, so the average surprise is far below one bit.</p>
+          <p>A fair six-sided die: <span class="tex">H=\log_2 6=2.5850</span> bits. A distribution with four unequal outcomes, <span class="tex">(\tfrac12,\tfrac14,\tfrac18,\tfrac18)</span>: <span class="tex">H=1.75</span> bits, which equals the average number of yes/no questions an optimal guessing strategy needs. This is the bridge to compression.</p>
+        </div>
+
+        <p><b>What entropy is maximised by.</b> Among all distributions over <span class="tex">n</span> outcomes, the uniform one has the largest entropy, <span class="tex">\log_2 n</span>. Any bias lowers it. So entropy measures how spread out, and so how uncertain, a distribution is.</p>
+
+        <div data-lab="info-surprise"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set p to 0.5 and read H. Then move p towards 0 and 1. Where is the entropy largest, and why does it fall to zero at both ends?</li>
+          <li>Find the p where the heads surprise and the tails surprise are equal. Is it the same p where entropy peaks? Explain why not.</li>
+          <li>Press Play and watch H(p) trace its hump. What does the dashed line show at each moment?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Bits versus nats.</b> The same distribution gives a different number in nats (multiply bits by <span class="tex">\ln 2\approx0.693</span>). Always state which unit you use.</li>
+          <li><b>Entropy is not a property of one outcome.</b> The surprise of the outcome you actually saw is a random variable; the entropy is the expectation over all outcomes.</li>
+          <li><b>High entropy is not "good" per se.</b> A uniform guess is maximally uncertain, which is not the same as maximally accurate.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Compression and coding:</b> entropy is the lower bound on the average number of bits needed to store outcomes drawn from a source (Shannon's source coding theorem).</li>
+          <li><b>Uncertainty estimates:</b> a classifier that outputs a flat distribution over 1000 ImageNet classes has entropy near <span class="tex">\log_2 1000\approx10</span> bits; a confident one has low entropy.</li>
+          <li><b>Decision-making:</b> active learning and exploration pick the input whose predicted distribution has the highest entropy.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Compute the surprise, in bits, of an outcome with probability 1/8.</summary><div class="ans">−log₂(1/8) = 3 bits. Three halvings, three yes/no questions.</div></details>
+        <details class="check"><summary>2. What is the entropy of a distribution over 4 outcomes with probabilities (0.25, 0.25, 0.25, 0.25)?</summary><div class="ans">H = −4 · 0.25 · log₂ 0.25 = 2 bits, which is log₂ 4, the maximum for four outcomes.</div></details>
+        <details class="check"><summary>3. Why is H of the loaded coin (0.9, 0.1) smaller than 1 bit?</summary><div class="ans">Because the outcomes are unequally likely, so the average surprise is pulled down. The most probable outcome carries little surprise and the rare one is averaged in with a small weight: H = 0.4690 bits.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Surprise of an outcome: <span class="tex">-\log_2 p</span> bits; rarer means more surprising, and independent surprises add.</li>
+          <li>Entropy <span class="tex">H(p)</span> is the expected surprise; it peaks for the uniform distribution and is zero for a certain outcome.</li>
+          <li>Entropy is the minimum average number of bits needed to encode outcomes from the source.</li>
+        </ul></div>
+      </div>
     </section>
-    <section class="lesson" id="cross-entropy-kl">
-      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.2</span><h2>Cross-entropy &amp; KL divergence</h2></div>
-      <div class="prose"><div class="callout"><b>Coming soon</b>The cost of using the wrong code; why <span class="tex">\mathrm{KL}\ge0</span>; asymmetry; why minimising cross-entropy is maximum likelihood; distillation and RLHF.</div></div>
+
+    <!-- ===================== 5.2 ===================== -->
+    <section class="lesson" id="cross-entropy-kl" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.2</span><h2>Cross-entropy &amp; KL divergence</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>A classifier outputs a probability for each class, and the true label is a single class. How do we score the classifier? And when a model is trained by maximising likelihood, what exactly is it trying to make close to the data?</div>
+
+        <h3 class="sec">Intuition: the price of using the wrong code</h3>
+        <p>Suppose you design a code that spends short codewords on outcomes you expect and long codewords on outcomes you do not. If the world actually behaves like <span class="tex">p</span> but you built the code for a belief <span class="tex">q</span>, every message costs more bits than it needed. The extra cost is the mismatch between the two.</p>
+        <p>Two quantities describe this. The <b>cross-entropy</b> is the total average cost of using your belief <span class="tex">q</span> when the truth is <span class="tex">p</span>. The <b>KL divergence</b> is just the extra cost over the unavoidable minimum <span class="tex">H(p)</span>.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Start with the cost of one outcome <span class="tex">x</span>. If you believe <span class="tex">q(x)</span> but it happens with truth <span class="tex">p(x)</span>, your code gives it a length <span class="tex">-\log_2 q(x)</span> bits, and it occurs on average with weight <span class="tex">p(x)</span>. Summing gives the cross-entropy:</p>
+        <div class="eq">H(p,q) = -\sum_x p(x)\,\log_2 q(x)</div>
+        <p>If <span class="tex">q=p</span> this is just the entropy <span class="tex">H(p)</span>, the best possible. The extra cost is the <b>Kullback–Leibler divergence</b>:</p>
+        <div class="eq">\mathrm{KL}(p\,\|\,q) = \sum_x p(x)\,\log_2\frac{p(x)}{q(x)} = H(p,q)-H(p)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">p</span>: the true distribution. <span class="tex">q</span>: the model's distribution. <span class="tex">H(p,q)</span>: cross-entropy. <span class="tex">\mathrm{KL}(p\|q)</span>: KL divergence, read "the KL from p to q". Both are in bits.</div>
+
+        <div class="worked"><b>Worked example — three classes</b>
+          <p>The truth is <span class="tex">p=(0.7,\,0.2,\,0.1)</span> over (cat, dog, bird). The model says <span class="tex">q=(0.5,\,0.3,\,0.2)</span>.</p>
+          <p>Entropy of the truth: <span class="tex">H(p)=-(0.7\log_2 0.7+0.2\log_2 0.2+0.1\log_2 0.1)=1.1568</span> bits.</p>
+          <p>Cross-entropy: <span class="tex">H(p,q)=-(0.7\log_2 0.5+0.2\log_2 0.3+0.1\log_2 0.2)=1.2796</span> bits.</p>
+          <p>KL: <span class="tex">\mathrm{KL}(p\|q)=1.2796-1.1568=0.1228</span> bits. The model wastes about an eighth of a bit per symbol.</p>
+          <p>Reverse KL: <span class="tex">\mathrm{KL}(q\|p)=0.1328</span> bits. It is <b>not</b> the same. KL is asymmetric; the two directions penalise errors differently.</p>
+        </div>
+
+        <p><b>Why KL is never negative.</b> Using Jensen's inequality on the concave logarithm one can show <span class="tex">\mathrm{KL}(p\|q)\ge0</span>, with equality exactly when <span class="tex">q=p</span>. Nothing can beat the true distribution's own code. This is the reason cross-entropy is minimised at <span class="tex">q=p</span>.</p>
+
+        <p><b>Cross-entropy is maximum likelihood.</b> Train a classifier on <span class="tex">N</span> labelled examples. Its likelihood of the data is <span class="tex">\prod_i q(y_i\mid x_i)</span>. Taking <span class="tex">-\tfrac1N\log_2</span> of that gives the average cross-entropy between the empirical label distribution (a one-hot vector per example) and the model. So minimising the standard classification loss is exactly maximising likelihood.</p>
+
+        <div data-lab="info-kl"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set q equal to p (cat 0.7, dog 0.2). What is the KL? Why does the cross-entropy then equal H(p)?</li>
+          <li>Make the model confident and wrong: q(cat) = 0.05. Watch the cross-entropy grow. Why does a near-zero probability on the true class hurt so much?</li>
+          <li>Find a model where KL(p‖q) is small but KL(q‖p) is large, or the reverse. What does that say about which direction a model should be penalised in?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>KL is not a distance.</b> It is not symmetric and does not satisfy the triangle inequality. Call it a divergence.</li>
+          <li><b>The order matters in the formula.</b> Writing <span class="tex">\mathrm{KL}(q\|p)</span> when you meant <span class="tex">\mathrm{KL}(p\|q)</span> changes which errors are punished most.</li>
+          <li><b>Zero probability is fatal.</b> If <span class="tex">q(x)=0</span> where <span class="tex">p(x)>0</span>, the cross-entropy is infinite. Models use softmax to keep every probability above zero.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Classification loss:</b> softmax plus cross-entropy is the default loss for every neural classifier, from image models to language models (next-token prediction).</li>
+          <li><b>Distillation:</b> a small student model is trained to match a large teacher's output distribution with a KL term.</li>
+          <li><b>RLHF and fine-tuning:</b> policy updates are often regularised with a KL penalty that keeps the new model close to a reference model.</li>
+          <li><b>Variational models:</b> VAEs use KL to pull the learned latent distribution towards a simple prior.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. A one-hot label says the true class is "dog", and the model gives q(dog) = 0.25. What is the cross-entropy of this example?</summary><div class="ans">The truth is p = (0, 1, 0), so H(p,q) = −log₂ 0.25 = 2 bits. The loss for a single example is just the negative log of the probability given to the correct class.</div></details>
+        <details class="check"><summary>2. Why is KL(p‖q) ≥ 0, and when is it exactly zero?</summary><div class="ans">By Jensen's inequality on the concave log, KL ≥ 0 for any two distributions, and it is zero exactly when q = p on every outcome with p(x) > 0.</div></details>
+        <details class="check"><summary>3. Why does minimising cross-entropy over a dataset equal maximising likelihood?</summary><div class="ans">The log-likelihood of independent labels is a sum of log q(y_i | x_i). Each term equals minus the cross-entropy between a one-hot label and the model's distribution. Negating and averaging turns maximising the likelihood into minimising the cross-entropy loss.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li>Cross-entropy <span class="tex">H(p,q)=-\sum p\log_2 q</span> is the average cost of coding with the wrong belief q.</li>
+          <li><span class="tex">\mathrm{KL}(p\|q)=H(p,q)-H(p)\ge0</span>: the wasted bits; asymmetric, zero only when q = p.</li>
+          <li>Minimising cross-entropy is maximum likelihood, which is why it is the standard loss for classifiers and language models.</li>
+        </ul></div>
+      </div>
     </section>
-    <section class="lesson" id="mutual-info">
-      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.3</span><h2>Mutual information</h2></div>
-      <div class="prose"><div class="callout"><b>Coming soon</b>How much knowing one variable reduces uncertainty about another; dependence beyond correlation; contrastive learning.</div></div>
+
+    <!-- ===================== 5.3 ===================== -->
+    <section class="lesson" id="mutual-info" data-lesson>
+      <div class="lesson-head"><span class="level" style="color:var(--purple)">5.3</span><h2>Mutual information</h2><button class="btn small mark"></button></div>
+      <div class="prose">
+        <div class="question"><b>The question</b>Two variables can be unrelated yet have zero correlation, or be strongly related in a way correlation misses. How much does knowing a photo's label tell you about its pixels, or a word's context about the word itself? We need a measure of dependence that captures any relationship.</div>
+
+        <h3 class="sec">Intuition: how much uncertainty does one variable remove?</h3>
+        <p>Let <span class="tex">X</span> be a coin you are about to flip and <span class="tex">Y</span> a friend's guess at the result. If the guess is always right, knowing <span class="tex">Y</span> removes all of <span class="tex">X</span>'s uncertainty. If the guess is random, it removes none. Mutual information measures exactly this: the reduction in uncertainty about one variable from observing the other.</p>
+
+        <h3 class="sec">Build it up</h3>
+        <p>Uncertainty about <span class="tex">X</span> is its entropy <span class="tex">H(X)</span>. After seeing <span class="tex">Y</span>, the uncertainty that remains is the <b>conditional entropy</b> <span class="tex">H(X\mid Y)</span>, the average entropy of <span class="tex">X</span> within each value of <span class="tex">Y</span>. The reduction is the mutual information:</p>
+        <div class="eq">I(X;Y) = H(X) - H(X\mid Y) = H(X)+H(Y)-H(X,Y)</div>
+        <div class="sym"><b>Symbols.</b> <span class="tex">H(X,Y)=-\sum_{x,y}p(x,y)\log_2 p(x,y)</span>: joint entropy. <span class="tex">H(X\mid Y)</span>: uncertainty left in X once Y is known. <span class="tex">I(X;Y)\ge0</span>, and it is zero exactly when X and Y are independent.</div>
+        <p>The second form is the one to compute with: sum the three entropies from the joint table.</p>
+
+        <div class="worked"><b>Worked example — a noisy copy</b>
+          <p>Let <span class="tex">X</span> be a fair bit, so <span class="tex">H(X)=1</span> bit. Let <span class="tex">Y</span> copy <span class="tex">X</span> with 90% accuracy. The joint table is <span class="tex">P(X,Y)=\begin{pmatrix}0.4&0.1\\0.1&0.4\end{pmatrix}</span> (rows X = 0,1; columns Y = 0,1). Its marginals are fair, so <span class="tex">H(Y)=1</span>.</p>
+          <p>Joint entropy: <span class="tex">H(X,Y)=-(2\cdot0.4\log_2 0.4+2\cdot0.1\log_2 0.1)=1.7219</span> bits.</p>
+          <p>Mutual information: <span class="tex">I=1+1-1.7219=0.2781</span> bits. Knowing the noisy copy removes about a quarter of a bit of the one bit of uncertainty.</p>
+          <p>Now make the joint table independent: <span class="tex">\begin{pmatrix}0.25&0.25\\0.25&0.25\end{pmatrix}</span>. Then <span class="tex">H(X,Y)=2</span> and <span class="tex">I=1+1-2=0</span>: no information, exactly as independence predicts.</p>
+          <p>A stronger copy, <span class="tex">\begin{pmatrix}0.45&0.05\\0.05&0.45\end{pmatrix}</span> (95% accuracy), gives <span class="tex">I=0.5310</span> bits. Dependence increases monotonically as the copy gets more accurate.</p>
+        </div>
+
+        <p><b>Why not correlation?</b> Correlation only sees linear relationships. Take <span class="tex">X</span> uniform on <span class="tex">\{-1,0,1\}</span> and <span class="tex">Y=X^2</span>. The correlation is zero, yet <span class="tex">Y</span> is determined by <span class="tex">X</span>, so <span class="tex">I(X;Y)=H(Y)>0</span>. Mutual information catches any dependence, linear or not.</p>
+
+        <div data-lab="info-mi"></div>
+
+        <div class="try"><b>Try this</b><ol>
+          <li>Set ε = 0: the variables are independent and I = 0. Increase ε slowly. At what point does I pass 0.1 bits?</li>
+          <li>At the maximum ε = 0.25, Y is a perfect copy of X. What is I, and why does it equal H(X)?</li>
+          <li>Press Play. Watch how the joint cells and the bars change together. Which bar grows as dependence grows, and which stays fixed?</li>
+        </ol></div>
+
+        <div class="trap"><b>Common traps</b><ul>
+          <li><b>Zero correlation is not independence.</b> The <span class="tex">Y=X^2</span> example above is the standard counterexample.</li>
+          <li><b>MI is not a causal effect.</b> It measures statistical dependence in either direction, with no notion of which one causes the other.</li>
+          <li><b>Estimating MI from data is hard.</b> With few samples, plug-in estimates of entropy are biased. Continuous variables need density or neural estimators.</li>
+        </ul></div>
+
+        <div class="aihook"><b>Where it shows up in AI</b><ul>
+          <li><b>Contrastive learning:</b> methods such as InfoNCE train representations so that matching pairs (two views of one image) have high mutual information and mismatched pairs low. InfoNCE gives a lower bound on I.</li>
+          <li><b>Information bottleneck:</b> a good representation <span class="tex">Z</span> keeps I(Z;Y) high for the target <span class="tex">Y</span> while keeping I(Z;X) low, discarding nuisance detail.</li>
+          <li><b>Feature selection:</b> ranking inputs by their MI with the label catches non-linear relationships that correlation misses.</li>
+        </ul></div>
+
+        <h3 class="sec">Check yourself</h3>
+        <details class="check"><summary>1. Two binary variables have independent fair coins. What is I(X;Y)?</summary><div class="ans">0 bits. For independent variables the joint entropy equals H(X) + H(Y), so I = H(X) + H(Y) − H(X,Y) = 0.</div></details>
+        <details class="check"><summary>2. If Y is a deterministic function of X, what is I(X;Y)?</summary><div class="ans">I(X;Y) = H(Y), because H(X,Y) = H(X) when Y is determined by X, so I = H(X) + H(Y) − H(X) = H(Y). Knowing X removes all of Y's uncertainty.</div></details>
+        <details class="check"><summary>3. Why can two variables have zero correlation and yet a positive mutual information?</summary><div class="ans">Correlation measures only linear association. A non-linear dependence such as Y = X² can give zero covariance while Y is completely determined by X, so the mutual information is positive.</div></details>
+
+        <div class="takeaways"><h4>Takeaways</h4><ul>
+          <li><span class="tex">I(X;Y)=H(X)+H(Y)-H(X,Y)</span> is the uncertainty about X removed by knowing Y, in bits.</li>
+          <li>It is zero exactly for independent variables and catches non-linear dependence that correlation misses.</li>
+          <li>Contrastive learning and the information bottleneck use mutual information as their training objective.</li>
+        </ul></div>
+      </div>
     </section>
+
+    <div class="callout" style="margin-top:28px"><b>Module complete?</b>
+      Mark each lesson when you are done. Module 6 (<a href="math-optimization.html">Optimization</a>) uses the cross-entropy loss from lesson 5.2 to explain how models learn.</div>
   </main>
   <aside id="outline"></aside>
 </div>
