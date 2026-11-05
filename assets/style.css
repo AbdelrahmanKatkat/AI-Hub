@@ -232,3 +232,12 @@ pre code{background:none;padding:0}
 @media(max-width:900px){.arch-bottom{grid-template-columns:1fr}}
 
 .topic.sub{margin-left:18px;border-left:2px solid var(--border);border-radius:0 8px 8px 0}
+
+/* lesson notes (assets/shell.js) */
+.notes{margin:18px 0 6px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);padding:8px 12px;max-width:780px}
+.notes summary{cursor:pointer;font-weight:600;color:var(--fg)}
+.notes textarea{width:100%;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--fg);padding:8px;font:14px/1.5 system-ui,sans-serif;resize:vertical}
+.notes-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0 4px;flex-wrap:wrap}
+.notes-bar small{color:var(--muted)}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:5px 10px;font:inherit;font-size:13px;cursor:pointer}
+.btn-ghost:hover{border-color:var(--blue);color:var(--blue)}

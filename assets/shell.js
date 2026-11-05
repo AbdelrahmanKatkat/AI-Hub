@@ -74,6 +74,46 @@
     paint();
     btn.onclick = () => { progress[key] = !progress[key]; store.set('progress', progress); paint(); renderSide(); updateHero(); };
   });
+  // lesson notes: saved in this browser (localStorage), exportable as Markdown
+  const noteKey = (id) => 'notes:' + page + ':' + id;
+  $$('section.lesson[id]').forEach((sec) => {
+    if (!$('.mark', sec)) return;
+    const box = document.createElement('details');
+    box.className = 'notes'; box.innerHTML = '<summary>My notes</summary>'
+      + '<textarea rows="4" placeholder="Write your own notes on this lesson…" aria-label="Notes for this lesson"></textarea>'
+      + '<div class="notes-bar"><small>Saved in this browser only</small><button type="button" class="btn-ghost notes-export">Export all notes (.md)</button></div>';
+    sec.appendChild(box);
+    const ta = $('textarea', box), saved = store.get(noteKey(sec.id), '');
+    ta.value = saved; if (saved) box.open = true;
+    let timer = null, dirty = false;
+    const flush = () => { clearTimeout(timer); if (dirty) { store.set(noteKey(sec.id), ta.value); dirty = false; } };
+    ta.addEventListener('input', () => { dirty = true; clearTimeout(timer); timer = setTimeout(flush, 300); });
+    ta.addEventListener('blur', flush);
+    // another browser tab changed this note: show it here unless the user is typing in this box
+    window.addEventListener('storage', (e) => {
+      if (e.key !== 'aihub:' + noteKey(sec.id) || document.activeElement === ta) return;
+      ta.value = e.newValue ? JSON.parse(e.newValue) : '';
+    });
+    // switching away from the tab: save what is typed; coming back: reload the saved note
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) flush();
+      else if (document.activeElement !== ta && !dirty) ta.value = store.get(noteKey(sec.id), '');
+    });
+    window.addEventListener('pagehide', flush);
+    $('.notes-export', box).onclick = () => {
+      store.set(noteKey(sec.id), ta.value);
+      const parts = [];
+      $$('section.lesson[id]').forEach((s) => {
+        const txt = store.get(noteKey(s.id), '');
+        if (!txt.trim()) return;
+        const h = $('h2', s); parts.push('## ' + (h ? h.textContent.trim() : s.id) + '\n\n' + txt.trim());
+      });
+      const blob = new Blob([`# Notes · ${document.title.replace(/ · AI Learning Hub$/, '')}\n\n` + (parts.join('\n\n') || '_No notes yet._') + '\n'], { type: 'text/markdown' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = page + '-notes.md'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+  });
+
   const updateHero = () => {
     const t = H.topics.find((x) => x.id === page); if (!t || !t.sections) return;
     const el = $('#hero-pct'); if (el) { el.textContent = pct(t) + '% complete'; $('#hero-bar').style.width = pct(t) + '%'; }
