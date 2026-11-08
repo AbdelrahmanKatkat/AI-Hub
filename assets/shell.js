@@ -18,8 +18,10 @@
   };
 
   // theme
+  const THEMES = ['dark', 'light', 'neon'], THEME_ICON = { dark: '🌙', light: '☀️', neon: '⚡' }, THEME_NAME = { dark: 'Dark', light: 'Light', neon: 'Neon' };
   const setTheme = (t) => { document.documentElement.dataset.theme = t; store.set('theme', t); window.dispatchEvent(new Event('themechange')); };
-  document.documentElement.dataset.theme = store.get('theme', 'dark');
+  const savedTheme = store.get('theme', 'dark');
+  document.documentElement.dataset.theme = THEMES.includes(savedTheme) ? savedTheme : 'dark';
 
   // progress
   const progress = store.get('progress', {});
@@ -39,8 +41,9 @@
       <span class="btn" id="prog" title="Overall progress"></span>
       <button class="btn" id="theme" aria-label="Toggle theme"></button>
     </div>`;
-  const themeBtn = $('#theme'), icon = () => (themeBtn.textContent = document.documentElement.dataset.theme === 'dark' ? '🌙' : '☀️');
-  icon(); themeBtn.onclick = () => { setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); icon(); };
+  const themeBtn = $('#theme'), curTheme = () => document.documentElement.dataset.theme, nextTheme = () => THEMES[(THEMES.indexOf(curTheme()) + 1) % THEMES.length];
+  const icon = () => { themeBtn.textContent = THEME_ICON[curTheme()]; themeBtn.title = `Theme: ${THEME_NAME[curTheme()]}. Click for ${THEME_NAME[nextTheme()]}.`; themeBtn.setAttribute('aria-label', themeBtn.title); };
+  icon(); themeBtn.onclick = () => { setTheme(nextTheme()); icon(); };
 
   // sidebar
   const side = $('#side');
@@ -56,7 +59,7 @@
     side.innerHTML = `<div class="side-title">AI learning paths</div>` + H.topics.map((t) => {
       const on = t.id === page, p = t.status === 'live' ? pct(t) : 0;
       const a = t.status === 'live'
-        ? `<a class="topic ${on ? 'active' : ''} ${t.sub ? 'sub' : ''}" href="${t.href}">` : `<div class="topic soon">`;
+        ? `<a class="topic ${on ? 'active' : ''} ${t.sub ? 'sub' : ''}" data-t="${t.id}" href="${t.href}">` : `<div class="topic soon" data-t="${t.id}">`;
       return `${a}<span class="ico" style="background:${t.color}26;color:${t.color}">${t.icon}</span><span class="nm">${t.title}</span>${t.status === 'live' ? `<span class="pct">${p}%</span>` : '<span class="tag">soon</span>'}${t.status === 'live' ? '</a>' : '</div>'}`
         + (on ? subnav(t) : '') + (t.children ? `<div class="subnav kids">${t.children.map((c) => `<span class="kid">${c.icon} ${c.title}</span>`).join('')}</div>` : '');
     }).join('') + `<div class="journey"><b>Your learning journey</b><div class="bar"><i style="width:${total()}%"></i></div><span style="color:var(--muted)">${total()}% of live topics complete</span></div>`;
@@ -228,4 +231,21 @@
     $$('[data-lab]').forEach((el) => { try { AI.labs[el.dataset.lab](el); } catch (e) { el.textContent = 'Lab failed to load: ' + e.message; console.error(e); } });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();
+
+  // neon theme: geometric heading font (loaded only while neon is active) and one highlighted word in the page title
+  const ensureFont = () => {
+    if (document.documentElement.dataset.theme !== 'neon' || document.getElementById('neon-font')) return;
+    const l = document.createElement('link'); l.id = 'neon-font'; l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap'; document.head.appendChild(l);
+  };
+  ensureFont(); window.addEventListener('themechange', ensureFont);
+  const h1 = $('.hero h1');
+  if (h1 && !h1.children.length) {
+    // "Module 3 · Statistics for data science" highlights the last word after the dot; "Computer Vision — zero to hero" the last word before the dash
+    const t = h1.textContent, dot = t.indexOf(' · '), dash = t.indexOf(' — ');
+    let a = '', b = t, c = '';
+    if (dot >= 0) { a = t.slice(0, dot + 3); b = t.slice(dot + 3); }
+    else if (dash >= 0) { b = t.slice(0, dash); c = t.slice(dash); }
+    const m = /^(.*\s)?(\S+)$/.exec(b);
+    if (m) { h1.textContent = ''; h1.append(a, m[1] || '', Object.assign(document.createElement('span'), { className: 'hl', textContent: m[2] }), c); }
+  }
 })();

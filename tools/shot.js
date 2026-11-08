@@ -8,6 +8,8 @@ const puppeteer = require(path.join(process.argv[2], 'node_modules/puppeteer-cor
   page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text().slice(0, 160)); });
   page.on('pageerror', (e) => errs.push('PAGEERROR ' + e.message.slice(0, 160)));
   await page.setViewport({ width: +(process.argv[7] || 1300), height: +(process.argv[8] || 900) });
+  // optional theme: THEME=neon node tools/shot.js ...   (dark | light | neon)
+  if (process.env.THEME) await page.evaluateOnNewDocument((t) => { try { localStorage.setItem('aihub:theme', JSON.stringify(t)); } catch (e) { /* ignore */ } }, process.env.THEME);
   await page.goto('file:///' + process.argv[3].replace(/\\/g, '/') + '/' + process.argv[4], { waitUntil: 'load' });
   await new Promise((r) => setTimeout(r, 3500));
   const info = await page.evaluate((a) => {
